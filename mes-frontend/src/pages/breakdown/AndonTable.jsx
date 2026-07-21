@@ -1,0 +1,159 @@
+import { useState, useEffect } from "react";
+import { Btn, fmtDuration, fmtClock } from "./shared";
+
+/* ════════════════════════════════════════════════════════════════════
+ * 1) ANDON Live Table
+ * ════════════════════════════════════════════════════════════════════ */
+function AndonTable({ rows, fullscreenRef, isFullscreen, toggleFullscreen }) {
+  // Tick at 1Hz so duration column stays live without re-fetch.
+  const [, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const live = (r) => {
+    if (!r.started_at) return 0;
+    return Math.floor((Date.now() - new Date(r.started_at).getTime()) / 1000);
+  };
+
+  return (
+    <div ref={fullscreenRef} style={{
+      background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14,
+      overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,.04)",
+      // When fullscreen, fill the screen and centre vertically.
+      ...(isFullscreen ? {
+        height: "100vh", width: "100vw", display: "flex",
+        flexDirection: "column", borderRadius: 0, border: "none",
+      } : {}),
+    }}>
+      <div style={{
+        padding: "14px 20px",
+        background: "linear-gradient(135deg,#dc2626,#b91c1c)",
+        color: "#fff", display: "flex", alignItems: "center",
+        justifyContent: "space-between", gap: 10,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 22, animation: rows.length ? "blinkDot 1.2s infinite" : "none" }}>🔔</span>
+          <div>
+            <div style={{ fontFamily: "'Barlow Condensed',sans-serif",
+                          fontSize: 22, fontWeight: 800, letterSpacing: ".02em" }}>
+              MAINTENANCE ANDON
+            </div>
+            <div style={{ fontSize: 11, opacity: 0.9, fontWeight: 600 }}>
+              {rows.length === 0 ? "All lines running ✓" : `${rows.length} active breakdown${rows.length>1?"s":""}`}
+            </div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          {/* No manual "Open Breakdown" — entries arrive automatically
+              from the collector when the line's status bit goes to
+              BREAKDOWN.  Auto-resolves when status returns to RUNNING. */}
+          <Btn variant="ghost" size="sm" onClick={toggleFullscreen}
+               style={{ background: "rgba(255,255,255,.18)", color: "#fff", borderColor: "rgba(255,255,255,.35)" }}
+               title={isFullscreen ? "Exit fullscreen" : "Fullscreen view"}>
+            {isFullscreen ? "🗗 Exit Fullscreen" : "⛶ Fullscreen"}
+          </Btn>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto",
+                     fontSize: isFullscreen ? "1.6vmin" : 13,
+                     padding: isFullscreen ? "1vmin 2vmin" : 0 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse",
+                         fontSize: isFullscreen ? "inherit" : 13 }}>
+          <thead>
+            <tr style={{ background: "#f8fafc" }}>
+              {["S.No", "Zone", "Line Name", "Start Time", "Duration"].map((h, i) => (
+                <th key={i} style={{
+                  padding: isFullscreen ? "1.4vmin 1.6vmin" : "12px 16px",
+                  textAlign: "left",
+                  fontSize: isFullscreen ? "1.2vmin" : 10,
+                  fontWeight: 800, letterSpacing: ".1em",
+                  textTransform: "uppercase", color: "#64748b",
+                  borderBottom: "2px solid #e2e8f0",
+                  whiteSpace: "nowrap",
+                }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={5} style={{ padding: isFullscreen ? "8vmin" : "60px 20px",
+                                            textAlign: "center", color: "#94a3b8",
+                                            fontStyle: "italic",
+                                            fontSize: isFullscreen ? "2vmin" : 14 }}>
+                  No active breakdowns — all lines running smoothly. ✨
+                </td>
+              </tr>
+            ) : rows.map((r) => {
+              const isRed = live(r) > 30*60;   // breakdown running > 30 min → urgent
+              return (
+              <tr key={r.id} style={{
+                borderBottom: "1px solid #f1f5f9",
+                background: isRed ? "rgba(220,38,38,.09)" : "transparent",
+              }}>
+                <td style={{ padding: isFullscreen ? "1.4vmin 1.6vmin" : "12px 16px",
+                              fontFamily: "'Barlow Condensed',sans-serif",
+                              fontSize: isFullscreen ? "2.2vmin" : 18,
+                              fontWeight: 800, color: "#dc2626" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
+                    {isRed && (
+                      <span style={{
+                        width: isFullscreen ? "1.6vmin" : 11, height: isFullscreen ? "1.6vmin" : 11,
+                        borderRadius: "50%", background: "#dc2626", flexShrink: 0,
+                        boxShadow: "0 0 0 3px rgba(220,38,38,.25)",
+                        animation: "blinkDot 0.8s infinite",
+                      }} />
+                    )}
+                    {r.serial_in_shift ?? "—"}
+                  </span>
+                </td>
+                <td style={{ padding: isFullscreen ? "1.4vmin 1.6vmin" : "12px 16px",
+                              fontWeight: 600, color: "#0f172a" }}>
+                  {r.zone_name ? (
+                    <span style={{ display: "inline-block", padding: "3px 10px",
+                                    borderRadius: 99,
+                                    background: "rgba(30,64,175,.1)",
+                                    color: "#1e40af", fontSize: isFullscreen ? "1.4vmin" : 11,
+                                    fontWeight: 700 }}>
+                      {r.zone_name}
+                    </span>
+                  ) : <span style={{ color: "#cbd5e1" }}>—</span>}
+                </td>
+                <td style={{ padding: isFullscreen ? "1.4vmin 1.6vmin" : "12px 16px",
+                              fontWeight: 700, color: "#0f172a" }}>
+                  {r.line_name || `Line ${r.line_id}`}
+                  {r.line_code && <span style={{ marginLeft: 6, fontSize: isFullscreen ? "1.2vmin" : 10,
+                                                    color: "#94a3b8", fontFamily: "monospace" }}>
+                    {r.line_code}
+                  </span>}
+                </td>
+                <td style={{ padding: isFullscreen ? "1.4vmin 1.6vmin" : "12px 16px",
+                              fontFamily: "monospace", color: "#475569" }}>
+                  {fmtClock(r.started_at)}
+                </td>
+                <td style={{ padding: isFullscreen ? "1.4vmin 1.6vmin" : "12px 16px",
+                              fontFamily: "'Barlow Condensed',sans-serif",
+                              fontSize: isFullscreen ? "2.2vmin" : 18,
+                              fontWeight: 800,
+                              color: isRed ? "#dc2626" : "#b45309" }}>
+                  {fmtDuration(live(r))}
+                </td>
+              </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <style>{`
+        @keyframes blinkDot { 0%,100% { opacity: 1 } 50% { opacity: 0.35 } }
+      `}</style>
+    </div>
+  );
+}
+
+
+export default AndonTable;

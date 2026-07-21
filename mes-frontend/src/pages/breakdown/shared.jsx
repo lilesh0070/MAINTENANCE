@@ -1,0 +1,101 @@
+/* ───────────────────────────────────────────────────────────────────
+ * breakdown/shared.jsx
+ * ───────────────────────────────────────────────────────────────────
+ * Cross-cutting helpers & visual primitives shared by every Maintenance
+ * (Breakdown) dashboard section: AndonTable, PmThisMonth, KpiPanel,
+ * StatsSection and ClosureFormModal.  Keep only things used by 2+
+ * sections here — section-specific code lives in that section's file.
+ */
+
+export const API = "";
+
+// today as YYYY-MM-DD (the Pending Breakdown panel's date filter defaults here)
+export function todayLocalISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/* ── Tiny fetch helpers ───────────────────────────────────────────── */
+export const api = {
+  async get(path, token) {
+    const r = await fetch(API + path, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error(await r.text() || `HTTP ${r.status}`);
+    return r.json();
+  },
+  async post(path, body, token) {
+    const r = await fetch(API + path, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
+    return r.json();
+  },
+};
+
+/* ── Visual primitives ────────────────────────────────────────────── */
+export function Btn({ children, onClick, variant = "default", size = "md", disabled, style, title }) {
+  const base = {
+    border: "none", borderRadius: 8, cursor: disabled ? "not-allowed" : "pointer",
+    fontFamily: "inherit", fontWeight: 700, transition: "all .15s",
+    opacity: disabled ? 0.55 : 1,
+    fontSize: size === "sm" ? 11 : 13,
+    padding: size === "sm" ? "5px 10px" : "9px 16px",
+  };
+  const variants = {
+    default: { background: "#fff", color: "#1e40af", border: "1px solid #cbd5e1" },
+    primary: { background: "linear-gradient(135deg,#1e40af,#2563eb)", color: "#fff", boxShadow: "0 2px 8px rgba(30,64,175,.25)" },
+    danger:  { background: "linear-gradient(135deg,#dc2626,#b91c1c)", color: "#fff" },
+    ghost:   { background: "transparent", color: "#475569", border: "1px solid #e2e8f0" },
+    success: { background: "linear-gradient(135deg,#16a34a,#15803d)", color: "#fff" },
+  };
+  return (
+    <button onClick={onClick} disabled={disabled} title={title}
+            style={{ ...base, ...variants[variant], ...style }}>
+      {children}
+    </button>
+  );
+}
+
+export function StatCard({ label, value, sub, color = "#1e40af" }) {
+  return (
+    <div style={{
+      background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12,
+      padding: "14px 18px", minWidth: 140, flex: "0 0 auto",
+      boxShadow: "0 1px 3px rgba(0,0,0,.04)",
+    }}>
+      <div style={{ fontSize: 10, color: "#64748b", fontWeight: 700,
+                     letterSpacing: ".08em", textTransform: "uppercase" }}>{label}</div>
+      <div style={{ fontSize: 28, fontWeight: 800, color, marginTop: 2,
+                     fontFamily: "'Barlow Condensed',sans-serif" }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>{sub}</div>}
+    </div>
+  );
+}
+
+/* ── Duration / time helpers ──────────────────────────────────────── */
+export function fmtDuration(seconds) {
+  if (seconds == null) return "—";
+  const s = Math.max(0, Math.floor(seconds));
+  if (s < 60) return `${s} s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min${m > 1 ? "s" : ""}`;
+  const h = Math.floor(m / 60), rem = m % 60;
+  return rem ? `${h}h ${rem}m` : `${h} hr${h > 1 ? "s" : ""}`;
+}
+
+export function fmtClock(iso) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } catch { return "—"; }
+}
+
+export function fmtDateTime(iso) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString("en-IN", {
+      day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
+    });
+  } catch { return "—"; }
+}

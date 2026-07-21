@@ -1,0 +1,32 @@
+# ─────────────────────────────────────────────────────────────
+# Secrets — NEVER commit. Use .env.example as the template.
+# ─────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+Phase2/.env
+
+# ─── Python ──────────────────────────────────────────────────
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# ─── Logs ────────────────────────────────────────────────────
+*.log
+Phase2/logs/
+
+# ─── DB / data backups & caches (regenerated, not source) ────
+*backup*.csv
+*backup*.json
+*backup*.sql
+*_cache.json
+
+# ─── OS / editor ─────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
