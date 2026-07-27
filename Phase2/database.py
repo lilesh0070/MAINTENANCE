@@ -22,7 +22,7 @@ import psycopg2.pool
 from contextlib import contextmanager
 
 DB_CONFIG = {
-    "host":     os.getenv("DB_HOST",     "192.168.10.210"),
+    "host":     os.getenv("DB_HOST",     "192.168.30.15"),
     "port":     int(os.getenv("DB_PORT", "5432") or 5432),
     "database": os.getenv("DB_NAME",     "energydb"),
     "user":     os.getenv("DB_USER",     "postgres"),

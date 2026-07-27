@@ -376,6 +376,23 @@ def close_breakdown(br_id: int, body: BreakdownClose,
              WHERE id = %s
         """, (br_id,))
         conn.commit()
+
+    # ── AUTO-MIRROR DISABLED (per request: for now ONLY the manual Break Down
+    # Slip writes to mes_breakdown_data; auto/collector closes do NOT). ────────
+    # To re-enable, un-comment the block below — it mirrors the closed slip into
+    # the standalone mes_breakdown_data table (best-effort, own transaction).
+    # try:
+    #     from routers.breakdown_slips import mirror_from_halves
+    #     prod = body.production_data if isinstance(body.production_data, dict) else {}
+    #     with get_conn() as mconn:
+    #         mc = mconn.cursor()
+    #         mc.execute("SELECT started_at, ended_at FROM mes_breakdowns WHERE id = %s", (br_id,))
+    #         r = mc.fetchone()
+    #         sa, ea = (r[0], r[1]) if r else (None, None)
+    #         mirror_from_halves(mconn, prod, payload, user["id"], started_at=sa, ended_at=ea)
+    # except Exception as e:
+    #     print(f"[BD-MIRROR] mes_breakdown_data mirror failed for br {br_id}: {e}")
+
     return {"ok": True}
 
 

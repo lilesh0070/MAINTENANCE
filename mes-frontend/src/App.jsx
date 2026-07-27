@@ -1,6 +1,7 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Layout from "./components/Layout";
+import { NewBreakdownSlip } from "./pages/breakdown/NewBreakdownSlip";
 
 // ─── Pages — MAINTENANCE-ONLY SLICE ─────────────────────────────────────────
 // This is a standalone copy of the Maintenance department UI extracted from
@@ -80,6 +81,23 @@ function RootRedirect() {
   return <Navigate to="/dashboard" replace />;
 }
 
+// ─── Breakdown Slip (direct sidebar entry) ──────────────────────────────────
+// Opens the blank Break Down Slip straight from the sidebar — no landing page
+// hop.  The slip saves to the standalone mes_breakdown_data table (NOT
+// mes_breakdowns), so it does NOT appear in BD History — on Save/Cancel we
+// simply return to the Breakdown landing page.
+function BreakdownSlipRoute() {
+  const { token } = useAuth();
+  const nav = useNavigate();
+  return (
+    <NewBreakdownSlip
+      token={token}
+      onSaved={() => alert("✓ Break Down Slip save ho gayi.")}
+      onClose={() => nav("/maintenance-breakdown", { replace: true })}
+    />
+  );
+}
+
 // ─── Routes ───────────────────────────────────────────────────────────────
 function AppRoutes() {
   return (
@@ -134,6 +152,10 @@ function AppRoutes() {
       {/* Breakdown — landing page with BD History / Analysis / Log Book / … buttons. */}
       <Route path="/maintenance-breakdown" element={
         <Protected requiredAccess="maintenance-breakdown"><MaintenanceBreakdown /></Protected>
+      } />
+      {/* Breakdown Slip — direct sidebar entry: opens the blank fillable slip. */}
+      <Route path="/maintenance-breakdown/new-slip" element={
+        <Protected requiredAccess="maintenance-breakdown-slip"><BreakdownSlipRoute /></Protected>
       } />
       {/* Breakdown → BD History — read-only list of "Breakdown" entries. */}
       <Route path="/maintenance-breakdown/bd-history" element={

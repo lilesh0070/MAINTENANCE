@@ -24,6 +24,9 @@ Phase2/logs/
 *backup*.sql
 *_cache.json
 
+# ─── Local render-check / debug scratch (not source) ─────────
+*rendercheck*
+
 # ─── OS / editor ─────────────────────────────────────────────
 .DS_Store
 Thumbs.db

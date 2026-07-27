@@ -126,7 +126,7 @@ export default function MaintenanceBreakdown() {
       {newSlip && (
         <NewBreakdownSlip token={token}
                           onClose={() => setNewSlip(false)}
-                          onSaved={() => { setToast("✓ Break Down Slip saved — BD History me aa gayi."); }} />
+                          onSaved={() => { setToast("✓ Break Down Slip save ho gayi."); }} />
       )}
 
       {toast && (

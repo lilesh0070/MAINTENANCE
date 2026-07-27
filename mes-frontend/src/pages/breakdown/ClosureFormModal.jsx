@@ -1,6 +1,62 @@
 import { useState, useEffect, useMemo } from "react";
 import { Btn, api, fmtDuration, fmtDateTime } from "./shared";
 
+// One spare row — SAME shape the Log Book uses, so spare data is consistent
+// across both features.
+const EMPTY_SPARE = { spare_name: "", spare_model_no: "", spare_cnmm_no: "", spare_qty: "" };
+
+// Manual slip (pickLine) — the ZONE dropdown is restricted to these zones only,
+// in this order.  Values must match the mes_machines master zone_name exactly.
+// (Temporary allow-list — add/remove here to change what's offered.)
+const MANUAL_SLIP_ZONES = [
+  "SEAT_SLIDER", "RECLINER", "PRESS_SHOP", "THIN_RECLINER", "LOOP_PIPE", "SUB_ASSEMBLY",
+];
+// A readable one-line summary of the spare rows → kept in the legacy
+// `spares_used` text field so old readers / the flat column still show them.
+const spareSummary = (spares) => (spares || [])
+  .filter(s => Object.values(s).some(v => String(v ?? "").trim()))
+  .map(s => {
+    const bits = [s.spare_name, s.spare_model_no && `[${s.spare_model_no}]`,
+                  s.spare_cnmm_no, s.spare_qty && `×${s.spare_qty}`].filter(Boolean);
+    return bits.join(" ");
+  })
+  .join(" ; ");
+
+// Minutes between two "HH:MM" (24h, from <input type=time>) values.
+// If the end is earlier than the start we assume it crossed midnight (+24h).
+// Returns "" when either time is missing/invalid — so the box stays blank.
+const diffMins = (startHHMM, endHHMM) => {
+  const p = (t) => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || "").trim());
+    return m ? (+m[1]) * 60 + (+m[2]) : null;
+  };
+  const a = p(startHHMM), b = p(endHHMM);
+  if (a == null || b == null) return "";
+  let d = b - a;
+  if (d < 0) d += 24 * 60;              // crossed midnight (same-day fallback)
+  return String(d);
+};
+
+// Minutes between two FULL date+time points — each = ("YYYY-MM-DD", "HH:MM").
+// Unlike diffMins() this uses the DATES too, so a breakdown that is OK'd on a
+// LATER day is counted in full (e.g. 27th 03:14 → 29th 03:14 = 2880 min), not
+// wrapped at 24h.  Returns "" when any part is missing/invalid, and "" (blank,
+// never a negative) when the end point is before the start — that signals the
+// dates/times are inconsistent and need fixing.
+const diffMinsDT = (startDate, startHHMM, endDate, endHHMM) => {
+  const parse = (dstr, tstr) => {
+    const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dstr || "").trim());
+    const tm = /^(\d{1,2}):(\d{2})$/.exec(String(tstr || "").trim());
+    if (!dm || !tm) return null;
+    // UTC epoch → no DST / timezone drift, purely arithmetic.
+    return Date.UTC(+dm[1], +dm[2] - 1, +dm[3], +tm[1], +tm[2]);
+  };
+  const a = parse(startDate, startHHMM), b = parse(endDate, endHHMM);
+  if (a == null || b == null) return "";
+  const mins = Math.round((b - a) / 60000);
+  return mins >= 0 ? String(mins) : "";
+};
+
 /* ════════════════════════════════════════════════════════════════════
  * Closure form modal — Toyota Boshoku BREAK DOWN SLIP
  * (TBDI/MAINT/F/001 · REV. 00 · 20/03/2024)
@@ -10,7 +66,10 @@ import { Btn, api, fmtDuration, fmtDateTime } from "./shared";
  * down time minutes) are pre-filled but stay editable in case the
  * filer wants to override.  Everything else is typed by the user.
  *
- * Submitted payload shape (stored as mes_breakdowns.closure_data JSONB):
+ * Submitted payload shape.  The collector-driven close stores it in
+ * mes_breakdowns (production_data / maintenance_data); the manual New-Slip
+ * (pickLine) flow instead flattens it into the standalone mes_breakdown_data
+ * table and never touches mes_breakdowns:
  *   {
  *     zone, line, machine_no, machine_name, date,
  *     shift, line_leader_name, model_no, machine_operator_name,
@@ -40,7 +99,7 @@ import { Btn, api, fmtDuration, fmtDateTime } from "./shared";
  *     is instantaneous and works offline of the lookup endpoint after
  *     the first fetch.
  */
-export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose, onSave, token }) {
+export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose, onSave, token, pickLine = false }) {
   // mode  : "fill" | "view"
   // phase : "production" → user can edit only the upper half (Production)
   //         "maintenance" → user can edit only the lower half (Maintenance)
@@ -58,6 +117,8 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
     "category", "bd_received_time", "problem_reported_by_production",
     // times/dates/down-time are now editable + saved too (default from collector)
     "bd_start_time", "bd_ok_time", "bd_start_date", "bd_end_date", "mc_down_time_minutes",
+    // auto-computed response time (Start→Received) + the breakdown frequency
+    "response_time_minutes", "frequency",
   ]);
   const MAINT_FIELDS = new Set([
     // Machine No. is selectable (dropdown) + saved in the maintenance half
@@ -65,7 +126,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
     "machine_no", "machine_name",
     "problem_related_to", "type_of_problem",
     "actual_problem_observed", "action_taken_on_problem",
-    "spares_used", "bd_attended_by",
+    "spares_used", "spares", "bd_attended_by",
     "prepared_by", "received_by", "line_leader_operator", "quality_engineer",
   ]);
   // (Previously the collector-stamped times/dates were always-locked; they
@@ -84,6 +145,12 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   const [data, setData] = useState({});
   const [saving, setSaving] = useState(false);
   const [machines, setMachines] = useState([]);  // [{serial_no, machine_no(code), machine_name}]
+  // Manual "New Break Down Slip" (opened blank from the sidebar): ZONE / LINE /
+  // MACHINE NO. / MACHINE NAME all come from the Machine Master (mes_machines)
+  // via /api/machines/ — the SAME source every other Zone/Line/Machine filter
+  // in the app uses.  Picking the LINE resolves the numeric mes_lines.line_id
+  // the breakdown POST needs, via /api/machines/resolve-line.
+  const [masterRows, setMasterRows]     = useState([]);
 
   // ── Auto-fill on first open from the breakdown record ─────────────
   useEffect(() => {
@@ -103,6 +170,19 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
     const maint = ticket.maintenance_data || {};
     const legacy = readOnly ? (ticket.closure_data || {}) : {};
 
+    // Resolved times (used both for the raw cells AND the auto-computed
+    // Response Time / Down Time below).
+    const _st  = prod.bd_start_time    ?? legacy.bd_start_time    ?? fmtTime(start);
+    const _rcv = prod.bd_received_time ?? legacy.bd_received_time ?? "";
+    const _ok  = prod.bd_ok_time       ?? legacy.bd_ok_time       ?? fmtTime(end);
+    // Resolved dates — needed for the DATE-AWARE down-time (Start → OK can span
+    // several days), so compute them here alongside the times.
+    const _sd  = prod.bd_start_date    ?? legacy.bd_start_date    ?? fmtDate(start);
+    // Default END DATE to the START DATE (never blank) so the down-time is
+    // always DATE-AWARE and END ≥ START holds from the start — the user just
+    // bumps END to the next day for an overnight breakdown.  (Both slips.)
+    const _ed  = prod.bd_end_date      ?? legacy.bd_end_date      ?? (fmtDate(end) || _sd);
+
     // Auto-locked timestamps always sourced from collector — never from
     // any saved blob — so they reflect the live record.
     setData({
@@ -117,17 +197,27 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
       model_no:              prod.model_no           ?? legacy.model_no           ?? "",
       machine_operator_name: prod.machine_operator_name ?? legacy.machine_operator_name ?? "",
       category:              prod.category           ?? legacy.category           ?? "",
-      bd_received_time:      prod.bd_received_time   ?? legacy.bd_received_time   ?? "",
+      bd_received_time:      _rcv,
+      // Response time (auto: Start → Received) + Frequency — now on BOTH the
+      // manual and the auto/dashboard slip so the format is identical.
+      response_time_minutes: prod.response_time_minutes ?? legacy.response_time_minutes ?? diffMins(_st, _rcv),
+      frequency:             prod.frequency ?? legacy.frequency ?? "1",
       problem_reported_by_production:
         prod.problem_reported_by_production ?? legacy.problem_reported_by_production ?? "",
 
       // Times/dates/down-time — default from the collector, but editable &
       // saved (read the saved value first if the slip was already filled).
-      bd_start_time:        prod.bd_start_time        ?? legacy.bd_start_time        ?? fmtTime(start),
-      bd_ok_time:           prod.bd_ok_time           ?? legacy.bd_ok_time           ?? fmtTime(end),
-      bd_start_date:        prod.bd_start_date        ?? legacy.bd_start_date        ?? fmtDate(start),
-      bd_end_date:          prod.bd_end_date          ?? legacy.bd_end_date          ?? fmtDate(end),
-      mc_down_time_minutes: prod.mc_down_time_minutes ?? legacy.mc_down_time_minutes ?? (downMin != null ? String(downMin) : ""),
+      bd_start_time:        _st,
+      bd_ok_time:           _ok,
+      bd_start_date:        _sd,
+      bd_end_date:          _ed,
+      // M/C Down Time — auto-computed from Start → OK using the DATES too (so a
+      // next-day / multi-day OK is counted in full) on BOTH slips; falls back
+      // to the saved / collector value when the times aren't both set.
+      mc_down_time_minutes:
+        (_sd && _ed ? diffMinsDT(_sd, _st, _ed, _ok) : diffMins(_st, _ok))
+        || prod.mc_down_time_minutes || legacy.mc_down_time_minutes
+        || (downMin != null ? String(downMin) : ""),
 
       // Maintenance half (or carried-over)
       problem_related_to:      maint.problem_related_to      ?? legacy.problem_related_to      ?? { maintenance: true, tool_room: false },
@@ -137,6 +227,12 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
       actual_problem_observed: maint.actual_problem_observed ?? legacy.actual_problem_observed ?? "",
       action_taken_on_problem: maint.action_taken_on_problem ?? legacy.action_taken_on_problem ?? "",
       spares_used:             maint.spares_used             ?? legacy.spares_used             ?? "",
+      // Repeatable Spare Details (same shape as the Log Book): one breakdown
+      // can consume several spares.  `spares_used` above is kept as a derived
+      // text summary so old readers / the flat column still get something.
+      spares: (Array.isArray(maint.spares) && maint.spares.length ? maint.spares
+             : Array.isArray(legacy.spares) && legacy.spares.length ? legacy.spares
+             : [{ ...EMPTY_SPARE }]).map(s => ({ ...EMPTY_SPARE, ...s })),
       bd_attended_by:          maint.bd_attended_by          ?? legacy.bd_attended_by          ?? "",
       prepared_by:             maint.prepared_by             ?? legacy.prepared_by             ?? { name: "" },
       received_by:             maint.received_by             ?? legacy.received_by             ?? { name: "" },
@@ -145,15 +241,26 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
     });
   }, [ticket?.id, readOnly, phase]);
 
-  // ── Pull the machine master list for this line (one fetch on open) ──
-  // The Machine Master (mes_machines) is the SINGLE source for Zone / Line /
-  // Machine — /api/machines/by-line/{line_id} resolves this line to its
-  // master (zone_name, line_name) + machine rows.  We auto-fill Zone + Line
-  // from the master here (overriding whatever the ticket/production blob had),
-  // exactly like Machine No./Name auto-fill from the Serial No.  So the slip
-  // always shows the mes_machines names, decided automatically.
+  // Effective line id — only a collector-opened ticket carries one.  The
+  // manual New-Slip flow saves to a standalone table and needs no line_id.
+  const effLineId = ticket?.line_id ?? null;
+
+  // Manual mode: pull the whole Machine Master once (same source & row shape
+  // the app's other Zone/Line/Machine filters use) to drive the dropdowns.
   useEffect(() => {
-    if (!ticket?.line_id || !token) return;
+    if (!pickLine || !token) return;
+    let cancelled = false;
+    api.get("/api/machines/", token)
+      .then(rows => { if (!cancelled) setMasterRows(Array.isArray(rows) ? rows : []); })
+      .catch(() => { if (!cancelled) setMasterRows([]); });
+    return () => { cancelled = true; };
+  }, [pickLine, token]);
+
+  // ── Collector-opened slip: pull the machine list for the ticket's line and
+  // auto-fill Zone + Line from the master.  (Manual mode gets its machines
+  // from `masterRows` via `machineRows` below, so this is skipped there.)
+  useEffect(() => {
+    if (pickLine || !ticket?.line_id || !token) return;
     let cancelled = false;
     api.get(`/api/machines/by-line/${ticket.line_id}`, token)
       .then(res => {
@@ -169,7 +276,30 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
       })
       .catch(() => {});  // empty list — manual entry still works
     return () => { cancelled = true; };
-  }, [ticket?.line_id, token]);
+  }, [ticket?.line_id, token, pickLine]);
+
+  // Manual (pickLine) dropdown option lists — all sourced from the Machine
+  // Master (mes_machines): distinct ZONE → LINE in that zone → MACHINE NO. for
+  // that (zone, line).  MACHINE NAME auto-fills from the picked machine row.
+  const zoneOptions = useMemo(() => {
+    // Only the allow-listed zones that actually exist in the master, in the
+    // MANUAL_SLIP_ZONES order (restricted per request).
+    const present = new Set(masterRows.map(m => m.zone_name).filter(Boolean));
+    return MANUAL_SLIP_ZONES.filter(z => present.has(z));
+  }, [masterRows]);
+  const lineOptions = useMemo(
+    () => [...new Set(masterRows.filter(m => m.zone_name === data.zone)
+                               .map(m => m.line_name).filter(Boolean))]
+           .sort((a, b) => String(a).localeCompare(String(b))),
+    [masterRows, data.zone]);
+  // Machine rows for the current (zone, line): master-filtered in manual mode,
+  // or the by-line list in the collector flow.  Feeds MACHINE NO. options and
+  // the MACHINE NAME auto-fill in both.
+  const machineRows = useMemo(
+    () => pickLine
+      ? masterRows.filter(m => m.zone_name === data.zone && m.line_name === data.line)
+      : machines,
+    [pickLine, masterRows, machines, data.zone, data.line]);
 
   if (!ticket) return null;
 
@@ -177,15 +307,66 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   const setSub = (parent, k, v) =>
     setData(d => ({ ...d, [parent]: { ...(d[parent] || {}), [k]: v } }));
 
-  // Machine No. is a dropdown of this (zone, line)'s machines (from
-  // /api/machines/by-line → mes_machines).  Picking a Machine No. auto-fills
-  // the Machine Name.  No Serial No. needed.
+  // Re-derive the two auto totals from a full data slice (manual slip only):
+  //   RESPONSE TIME  = Received − Start        (same-day, minutes-scale)
+  //   M/C DOWN TIME  = (End date + OK) − (Start date + Start)  — DATE-AWARE, so
+  //                    an OK on a later day is counted in full.
+  const recalcTotals = (d) => ({
+    ...d,
+    response_time_minutes: diffMins(d.bd_start_time, d.bd_received_time),
+    mc_down_time_minutes:
+      (d.bd_start_date && d.bd_end_date)
+        ? diffMinsDT(d.bd_start_date, d.bd_start_time, d.bd_end_date, d.bd_ok_time)
+        : diffMins(d.bd_start_time, d.bd_ok_time),
+  });
+
+  // Changing any of the 3 times re-computes both auto totals.
+  const setTime = (k, v) => setData(d => recalcTotals({ ...d, [k]: v }));
+
+  // ── Date handlers with the "END ≥ START" rule ──────────────────────
+  // END DATE can never be before START DATE.  ISO "YYYY-MM-DD" strings sort
+  // lexically, so a plain `<` is a valid date comparison here.
+  // Manual slip: START moves → bump END up if it would fall behind; recompute
+  // the auto down-time.  Dashboard slip: same guard, but no auto-recompute
+  // (down-time is entered manually there).
+  const setStartDate = (v, recompute) => setData(d => {
+    const ed = (d.bd_end_date && v && d.bd_end_date < v) ? v : d.bd_end_date;
+    const nd = { ...d, bd_start_date: v, bd_end_date: ed };
+    return recompute ? recalcTotals(nd) : nd;
+  });
+  const setEndDate = (v, recompute) => setData(d => {
+    if (d.bd_start_date && v && v < d.bd_start_date) return d;   // reject: END < START
+    const nd = { ...d, bd_end_date: v };
+    return recompute ? recalcTotals(nd) : nd;
+  });
+
+  // ── repeatable Spare Details (same as the Log Book) ──
+  // Every change keeps `spares` (structured) AND `spares_used` (text summary)
+  // in sync, so both the new JSONB column and the legacy text column stay right.
+  const withSpares = (d, spares) => ({ ...d, spares, spares_used: spareSummary(spares) });
+  const setSpare = (i, k, v) => setData(d =>
+    withSpares(d, (d.spares || []).map((s, idx) => idx === i ? { ...s, [k]: v } : s)));
+  const addSpare = () => setData(d => withSpares(d, [...(d.spares || []), { ...EMPTY_SPARE }]));
+  const removeSpare = (i) => setData(d => {
+    const next = (d.spares || []).filter((_, idx) => idx !== i);
+    return withSpares(d, next.length ? next : [{ ...EMPTY_SPARE }]);
+  });
+
+  // Machine No. is a dropdown of this (zone, line)'s machines (from the Machine
+  // Master, mes_machines).  Picking a Machine No. auto-fills the Machine Name
+  // from the same master row.  No Serial No. needed.
   const onPickMachine = (mno) => {
-    setData(d => {
-      const hit = machines.find(m => String(m.machine_no) === String(mno));
-      return { ...d, machine_no: mno, machine_name: hit ? hit.machine_name : "" };
-    });
+    const hit = machineRows.find(m => String(m.machine_no) === String(mno));
+    setData(d => ({ ...d, machine_no: mno, machine_name: hit ? hit.machine_name : "" }));
   };
+
+  // Manual mode: picking a ZONE resets the line + machine below it; picking a
+  // LINE resets the machine.  (Values are stored as text — the standalone
+  // slip table needs no line_id, so any master line works.)
+  const onPickZone = (z) =>
+    setData(d => ({ ...d, zone: z, line: "", machine_no: "", machine_name: "" }));
+  const onPickLine = (ln) =>
+    setData(d => ({ ...d, line: ln, machine_no: "", machine_name: "" }));
 
   // Extract just the slice of `data` that the active phase is responsible
   // for.  The parent passes this to its API call so the *other* half
@@ -207,6 +388,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
     const checkVal = (v) => {
       if (v == null) return false;
       if (typeof v === "string") return v.trim().length > 0;
+      if (Array.isArray(v)) return true;    // spares are optional ("IF ANY") — never block submit
       if (typeof v === "object") {
         // For radio (problem_related_to) — require one true.
         // For multi-select (type_of_problem) — require at least one true.
@@ -218,7 +400,15 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
       }
       return true;
     };
-    return Object.values(slice).every(checkVal);
+    // Spare fields are optional ("IF ANY") — the derived `spares_used` summary
+    // is empty when no spare is filled, so it must not block the submit.
+    // Auto-computed / optional fields never block the submit:
+    //   response_time / mc_down_time depend on times that may not both be set
+    //   at production-fill time (OK time is only known after the fix), and
+    //   spares are "IF ANY".
+    const OPTIONAL = new Set(["spares", "spares_used",
+                              "response_time_minutes", "mc_down_time_minutes"]);
+    return Object.entries(slice).every(([k, v]) => OPTIONAL.has(k) || checkVal(v));
   };
 
   const submit = async () => {
@@ -229,7 +419,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
       const prodExtra = isMaintenance
         ? Object.fromEntries(Object.entries(data).filter(([k]) => PROD_FIELDS.has(k)))
         : null;
-      await onSave(subsetForPhase(), phase, prodExtra);
+      await onSave(subsetForPhase(), phase, prodExtra, effLineId);
     } finally { setSaving(false); }
   };
 
@@ -433,10 +623,11 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
           <div className="bds-grid bds-grid-3">
             <BdsCell label="ZONE"
                      value={data.zone}             readOnly={!fieldEditable("zone")}
-                     onChange={v => set("zone", v)}/>
+                     options={pickLine ? zoneOptions : undefined}
+                     onChange={pickLine ? onPickZone : (v => set("zone", v))}/>
             <BdsCell label="MACHINE NO."
                      value={data.machine_no}          readOnly={!fieldEditable("machine_no")}
-                     options={machines.map(m => m.machine_no).filter(Boolean)}
+                     options={machineRows.map(m => m.machine_no).filter(Boolean)}
                      onChange={onPickMachine}/>
             <BdsCell label="DATE" type="date"
                      value={data.date}             readOnly={!fieldEditable("date")}
@@ -444,7 +635,8 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
 
             <BdsCell label="LINE"
                      value={data.line}             readOnly={!fieldEditable("line")}
-                     onChange={v => set("line", v)}/>
+                     options={pickLine ? lineOptions : undefined}
+                     onChange={pickLine ? onPickLine : (v => set("line", v))}/>
             <BdsCell label="SHIFT"
                      value={data.shift}            readOnly={!fieldEditable("shift")}
                      onChange={v => set("shift", v)}/>
@@ -485,27 +677,39 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
             </div>
           ))}
 
-          {/* ── Time + date + downtime row ─────────────────────── */}
+          {/* ── Time + date + downtime row ───────────────────────
+              SAME format for BOTH the manual (pickLine) and the auto/dashboard
+              slip: auto RESPONSE TIME (Start→Received), auto DATE-AWARE M/C DOWN
+              TIME (Start→OK), and a FREQUENCY field.  Any time/date change
+              re-computes the two auto totals via setTime / setStartDate. */}
           <div className="bds-grid bds-grid-3">
             <BdsCell label="B/D START TIME" type="time"
                      value={data.bd_start_time}    readOnly={!fieldEditable("bd_start_time")}
-                     onChange={v => set("bd_start_time", v)}/>
+                     onChange={v => setTime("bd_start_time", v)}/>
             <BdsCell label="B/D RECEIVED TIME" type="time"
                      value={data.bd_received_time} readOnly={!fieldEditable("bd_received_time")}
-                     onChange={v => set("bd_received_time", v)}/>
+                     onChange={v => setTime("bd_received_time", v)}/>
+            {/* AUTO: Start → Received (maintenance response time), read-only */}
+            <BdsCell label="RESPONSE TIME ( MIN )" type="number" readOnly
+                     value={data.response_time_minutes}/>
+
             <BdsCell label="B/D OK TIME" type="time"
                      value={data.bd_ok_time}       readOnly={!fieldEditable("bd_ok_time")}
-                     onChange={v => set("bd_ok_time", v)}/>
+                     onChange={v => setTime("bd_ok_time", v)}/>
+            {/* AUTO: Start → OK (total machine down time), read-only */}
+            <BdsCell label="M/C DOWN TIME ( MIN )" type="number" readOnly
+                     value={data.mc_down_time_minutes}/>
+            <BdsCell label="FREQUENCY" type="number"
+                     value={data.frequency}        readOnly={!fieldEditable("frequency")}
+                     onChange={v => set("frequency", v)}/>
 
             <BdsCell label="B/D START DATE" type="date"
                      value={data.bd_start_date}    readOnly={!fieldEditable("bd_start_date")}
-                     onChange={v => set("bd_start_date", v)}/>
-            <BdsCell label="B/D END DATE" type="date"
+                     onChange={v => setStartDate(v, true)}/>
+            <BdsCell label="B/D END DATE" type="date" min={data.bd_start_date}
                      value={data.bd_end_date}      readOnly={!fieldEditable("bd_end_date")}
-                     onChange={v => set("bd_end_date", v)}/>
-            <BdsCell label="M/C DOWN TIME IN MINUTES" type="number"
-                     value={data.mc_down_time_minutes} readOnly={!fieldEditable("mc_down_time_minutes")}
-                     onChange={v => set("mc_down_time_minutes", v)}/>
+                     onChange={v => setEndDate(v, true)}/>
+            <div />
           </div>
 
           {/* ── Reported by Production ─────────────────────────── */}
@@ -589,10 +793,64 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                   value={data.action_taken_on_problem}
                   readOnly={!fieldEditable("action_taken_on_problem")}
                   onChange={v => set("action_taken_on_problem", v)}/>
-          <BdsRow label="SPARES USED ( IF ANY )"
-                  value={data.spares_used}
-                  readOnly={!fieldEditable("spares_used")}
-                  onChange={v => set("spares_used", v)}/>
+          {/* ── SPARE DETAILS (repeatable — same as the Log Book) ── */}
+          {(() => {
+            const spEdit = fieldEditable("spares");
+            const rows = data.spares && data.spares.length ? data.spares : [{ ...EMPTY_SPARE }];
+            const cell = { flex: "1 1 0", minWidth: 0, borderRight: "1px solid #cbd5e1",
+                           display: "flex", flexDirection: "column" };
+            const lbl = { padding: "3px 8px", background: "#f1f5f9", fontWeight: 800, fontSize: 9,
+                          color: "#0f172a", letterSpacing: ".02em", borderBottom: "1px solid #cbd5e1", whiteSpace: "nowrap" };
+            const inp = { width: "100%", border: "none", outline: "none", background: "transparent",
+                          padding: "5px 8px", fontSize: 12, fontWeight: 500, color: "#0f172a",
+                          fontFamily: "inherit", boxSizing: "border-box" };
+            return (
+              <div style={{ borderLeft: "1.5px solid #0f172a", borderRight: "1.5px solid #0f172a",
+                            borderTop: "1.5px solid #0f172a" }}>
+                <div style={{ padding: "6px 10px", background: "#f1f5f9", fontWeight: 800,
+                              fontSize: 10, color: "#0f172a", letterSpacing: ".02em",
+                              borderBottom: "1px solid #cbd5e1", display: "flex", alignItems: "center", gap: 8 }}>
+                  🔧 SPARE DETAILS ( IF ANY )
+                  {rows.filter(s => Object.values(s).some(v => String(v ?? "").trim())).length > 1 && (
+                    <span style={{ fontWeight: 600, color: "#94a3b8", fontSize: 9.5 }}>
+                      · {rows.filter(s => Object.values(s).some(v => String(v ?? "").trim())).length} spares
+                    </span>
+                  )}
+                </div>
+                {rows.map((sp, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "stretch",
+                                        borderBottom: "1px solid #cbd5e1" }}>
+                    {[["spare_name", "SPARE NAME"], ["spare_model_no", "MODEL NUMBER"],
+                      ["spare_cnmm_no", "CNMM NUMBER"], ["spare_qty", "QUANTITY"]].map(([k, l], ci) => (
+                      <div key={k} style={{ ...cell, borderRight: ci === 3 && !spEdit ? "none" : cell.borderRight }}>
+                        <div style={lbl}>{l}{rows.length > 1 && ci === 0 ? ` ${i + 1}` : ""}</div>
+                        <input style={inp} value={sp[k] || ""} disabled={!spEdit}
+                               type={k === "spare_qty" ? "number" : "text"}
+                               onChange={(e) => setSpare(i, k, e.target.value)} />
+                      </div>
+                    ))}
+                    {spEdit && (
+                      <button type="button" onClick={() => removeSpare(i)}
+                              title={rows.length > 1 ? "Remove this spare" : "Clear this spare"}
+                              style={{ width: 40, border: "none", borderLeft: "1px solid #cbd5e1",
+                                       background: "#fff", color: "#dc2626", cursor: "pointer",
+                                       fontSize: 15, fontWeight: 800 }}>🗑</button>
+                    )}
+                  </div>
+                ))}
+                {spEdit && (
+                  <div style={{ padding: 6 }}>
+                    <button type="button" onClick={addSpare}
+                            style={{ padding: "6px 14px", borderRadius: 7, border: "1px dashed #94a3b8",
+                                     background: "#f8fafc", color: "#0f172a", cursor: "pointer",
+                                     fontSize: 12, fontWeight: 800, fontFamily: "inherit" }}>
+                      ＋ Add another spare
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           <BdsRow label="B/D ATTENDED BY"
                   value={data.bd_attended_by}
                   readOnly={!fieldEditable("bd_attended_by")}
@@ -643,7 +901,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
             {/* Maintenance can request a Deviation when the fix needs more
                 than 24h.  Available in maintenance fill / view modes; the
                 Quality user takes it from there. */}
-            {(isMaintenance || (readOnly && phase === "maintenance")) && ticket?.id && (
+            {(isMaintenance || (readOnly && phase === "maintenance")) && ticket?.id && !pickLine && (
               <Btn variant="ghost" onClick={() => {
                 // Lazy-load Deviation form so the closure modal stays small.
                 import("../DeviationForm").then(m => {
@@ -907,7 +1165,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
 }
 
 /* ── Single label+input cell (for the 3×3 header & time grids) ──── */
-function BdsCell({ label, value, type = "text", readOnly, onChange, options }) {
+function BdsCell({ label, value, type = "text", readOnly, onChange, options, min }) {
   return (
     <div className="bds-cell">
       <div className="bds-cell-label">{label} :-</div>
@@ -925,6 +1183,7 @@ function BdsCell({ label, value, type = "text", readOnly, onChange, options }) {
           <input type={type}
                  value={value || ""}
                  disabled={readOnly}
+                 min={min}
                  onChange={(e) => onChange?.(e.target.value)}/>
         )}
       </div>

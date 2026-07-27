@@ -1742,7 +1742,7 @@ def get_line_realtime(line_id: int, user=Depends(get_current_user_optional)):
         # 2026-05-18 perf — was doing 3 separate SELECTs on mes_lines
         # (table/current_row, collector/ot_active, planned_takt/energy).
         # Folded into one query → /realtime now saves 2 LAN round-trips
-        # per poll (~150ms each on the 192.168.10.210 DB).
+        # per poll (~150ms each on the 192.168.30.15 DB).
         # The _ensure_*_column calls also moved to once-per-process,
         # so the takt/energy columns are guaranteed present here.
         _ensure_planned_takt_column(conn)

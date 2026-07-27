@@ -66,6 +66,7 @@ from routers.sunday_plan      import router as sunday_plan_router
 from routers.daily_plan       import router as daily_plan_router
 from routers.shutdown_plan    import router as shutdown_plan_router
 from routers.machine_dmc      import router as machine_dmc_router
+from routers.breakdown_slips  import router as breakdown_slips_router
 
 # ── App ────────────────────────────────────────────────────────
 app = FastAPI(
@@ -152,6 +153,7 @@ app.include_router(sunday_plan_router)          # Update Plan → Sunday Plan Wo
 app.include_router(daily_plan_router)           # Update Plan → Daily Work Assign
 app.include_router(shutdown_plan_router)        # Update Plan → Shutdown Plan Work
 app.include_router(machine_dmc_router)          # Machine DMC — daily check-sheet points
+app.include_router(breakdown_slips_router)      # Manual Break Down Slip → standalone mes_breakdown_data
 
 
 # NOTE (maintenance-only slice): the manpower / kanban / report-scheduler
