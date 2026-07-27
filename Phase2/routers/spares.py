@@ -78,15 +78,6 @@ def parse_qty(text: str) -> tuple[Optional[int], str]:
     return sum(nums), "summed"
 
 
-def _to_int(v) -> Optional[int]:
-    """Log Book qty is VARCHAR — take a clean integer if it is one."""
-    s = str(v or "").strip()
-    if not s:
-        return None
-    m = re.search(r"\d{1,5}", s)
-    return int(m.group()) if m else None
-
-
 @router.get("/consumption")
 def spare_consumption(zone:       Optional[str] = Query(None),
                       line:       Optional[str] = Query(None),

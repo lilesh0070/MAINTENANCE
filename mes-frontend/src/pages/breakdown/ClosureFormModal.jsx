@@ -148,8 +148,8 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   // Manual "New Break Down Slip" (opened blank from the sidebar): ZONE / LINE /
   // MACHINE NO. / MACHINE NAME all come from the Machine Master (mes_machines)
   // via /api/machines/ — the SAME source every other Zone/Line/Machine filter
-  // in the app uses.  Picking the LINE resolves the numeric mes_lines.line_id
-  // the breakdown POST needs, via /api/machines/resolve-line.
+  // in the app uses.  The slip saves to the standalone mes_breakdown_data table,
+  // so no mes_lines.line_id is needed.
   const [masterRows, setMasterRows]     = useState([]);
   const [spareMaster, setSpareMaster]   = useState([]);   // spare picker (maintenance_spare)
 
