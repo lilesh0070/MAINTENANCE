@@ -27,12 +27,10 @@ import {
 } from "recharts";
 import { useAuth } from "../context/AuthContext";
 
-const SOURCES = ["Breakdown", "Log Book", "PM"];
-/* Fixed categorical order — validated for colour-vision separation in this
- * exact adjacency (worst CVD ΔE 29.9, normal 38.2).  The old Breakdown/
- * LogBook/PM red-blue-violet set failed: blue↔violet were ΔE 0.4 apart under
- * deuteranopia.  Do not re-order or swap a hue without re-validating. */
-const SRC_COLOR = { "Breakdown": "#dc2626", "Log Book": "#2563eb", "PM": "#d97706" };
+// Spare data now comes ONLY from the Manual Break Down Slip + Log Book
+// (via the maintenance_spare table).  Breakdown-log / PM sources removed.
+const SOURCES = ["Manual Slip", "Log Book"];
+const SRC_COLOR = { "Manual Slip": "#dc2626", "Log Book": "#2563eb" };
 const ONE_HUE = "#2563eb";               // single-series charts: one hue, no legend
 const MONTHS = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
 
@@ -142,8 +140,8 @@ export default function Spare() {
       const k = (r.used_date || "").slice(0, 7);
       if (!k) return;
       if (!m.has(k)) m.set(k, { key: k, label: `${MONTHS[(Number(k.slice(5, 7)) + 8) % 12]} ${k.slice(2, 4)}`,
-                                "Breakdown": 0, "Log Book": 0, "PM": 0 });
-      m.get(k)[r.source] += 1;
+                                "Manual Slip": 0, "Log Book": 0 });
+      if (m.get(k)[r.source] != null) m.get(k)[r.source] += 1;
     });
     return [...m.values()].sort((a, b) => a.key.localeCompare(b.key));
   }, [rows]);
@@ -226,7 +224,7 @@ export default function Spare() {
         <div className="sp-top">
           <div>
             <div className="sp-title">🔩 <span>Spare</span></div>
-            <div className="sp-sub">Spare consumption — Breakdown · Log Book · PM</div>
+            <div className="sp-sub">Spare consumption — Manual Slip · Log Book</div>
           </div>
           {user?.username && <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>{user.username}</span>}
         </div>
@@ -381,8 +379,8 @@ export default function Spare() {
           {data && (data.qty_guessed > 0 || data.qty_unknown > 0) && (
             <div className="sp-card" style={{ marginBottom: 14, fontSize: 11.5, color: "#92400e",
                                               background: "#fffbeb", borderColor: "#fde68a" }}>
-              ⓘ Quantity: <b>{data.qty_recorded}</b> rows ka number Log Book me seedha bhara gaya tha.
-              <b> {data.qty_guessed}</b> rows Breakdown/PM ke free text se padha gaya hai — wo <b>~</b> ke saath dikh raha hai.
+              ⓘ Quantity: <b>{data.qty_recorded}</b> rows ka number Manual Slip / Log Book me seedha bhara gaya tha.
+              <b> {data.qty_guessed}</b> rows text se padha gaya hai — wo <b>~</b> ke saath dikh raha hai.
               <b> {data.qty_unknown}</b> rows me text me quantity likhi hi nahi thi, isliye wahan khaali chhoda hai
               (galat number dikhane se behtar). Charts isliye entries ginte hain, quantity nahi.
             </div>
@@ -446,8 +444,8 @@ export default function Spare() {
           </div>
 
           <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 8 }}>
-            Ye sirf report hai — entry yahan se nahi hoti. Galat spare dikhe to wahin theek karo jahan bhara tha
-            (Breakdown / Log Book / PM). PM me sirf woh sheets aati hain jo In-Charge approve kar chuka hai.
+            Ye sirf report hai — entry yahan se nahi hoti. Spare data ab sirf Manual Break Down Slip aur
+            Log Book se aata hai (maintenance_spare table). Galat spare dikhe to wahin theek karo jahan bhara tha.
           </div>
         </div>
       </div>

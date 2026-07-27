@@ -179,6 +179,17 @@ def create_entry(body: EntryIn, user=Depends(get_current_user)):
         except Exception as e:
             conn.rollback()
             raise HTTPException(400, f"Save failed: {e}")
+    # Record this entry's spares into maintenance_spare (own txn, best-effort).
+    try:
+        from routers.maintenance_spare import record_usage
+        with get_conn() as sconn:
+            record_usage(sconn, "Log Book", {
+                "zone": data.get("zone_name"), "line": data.get("line_name"),
+                "machine_no": data.get("machine_no"), "machine_name": data.get("machine_name"),
+                "used_date": data.get("bd_date"),
+            }, spares)
+    except Exception as e:
+        print(f"[SPARE-MASTER] record failed (logbook): {e}")
     return {"id": new_id, "serial_no": serial_no}
 
 

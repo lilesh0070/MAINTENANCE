@@ -238,6 +238,17 @@ def create_slip(body: BreakdownSlipIn, user=Depends(get_current_user)):
     with get_conn() as conn:
         new_id = _insert_flat(conn, body.model_dump(), user["id"])
         conn.commit()
+    # Record this slip's spares into maintenance_spare (own txn, best-effort).
+    try:
+        from routers.maintenance_spare import record_usage
+        with get_conn() as sconn:
+            record_usage(sconn, "Manual Slip", {
+                "zone": body.zone, "line": body.line,
+                "machine_no": body.machine_no, "machine_name": body.machine_name,
+                "used_date": body.slip_date or body.bd_start_date,
+            }, body.spares)
+    except Exception as e:
+        print(f"[SPARE-MASTER] record failed (slip): {e}")
     return {"id": new_id, "ok": True}
 
 

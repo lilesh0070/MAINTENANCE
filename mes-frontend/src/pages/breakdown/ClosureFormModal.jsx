@@ -126,7 +126,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
     "machine_no", "machine_name",
     "problem_related_to", "type_of_problem",
     "actual_problem_observed", "action_taken_on_problem",
-    "spares_used", "spares", "bd_attended_by",
+    "spare_used", "spares_used", "spares", "bd_attended_by",
     "prepared_by", "received_by", "line_leader_operator", "quality_engineer",
   ]);
   // (Previously the collector-stamped times/dates were always-locked; they
@@ -151,6 +151,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   // in the app uses.  Picking the LINE resolves the numeric mes_lines.line_id
   // the breakdown POST needs, via /api/machines/resolve-line.
   const [masterRows, setMasterRows]     = useState([]);
+  const [spareMaster, setSpareMaster]   = useState([]);   // spare picker (maintenance_spare)
 
   // ── Auto-fill on first open from the breakdown record ─────────────
   useEffect(() => {
@@ -233,6 +234,11 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
       spares: (Array.isArray(maint.spares) && maint.spares.length ? maint.spares
              : Array.isArray(legacy.spares) && legacy.spares.length ? legacy.spares
              : [{ ...EMPTY_SPARE }]).map(s => ({ ...EMPTY_SPARE, ...s })),
+      // "Spare used?" Yes/No — Yes reveals the Spare Details grid (all columns
+      // then mandatory).  Default: infer from any already-filled spare, else No.
+      spare_used: maint.spare_used ?? legacy.spare_used ?? (
+        (maint.spares || legacy.spares || [])
+          .some(s => Object.values(s || {}).some(v => String(v ?? "").trim())) ? "yes" : "no"),
       bd_attended_by:          maint.bd_attended_by          ?? legacy.bd_attended_by          ?? "",
       prepared_by:             maint.prepared_by             ?? legacy.prepared_by             ?? { name: "" },
       received_by:             maint.received_by             ?? legacy.received_by             ?? { name: "" },
@@ -255,6 +261,16 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
       .catch(() => { if (!cancelled) setMasterRows([]); });
     return () => { cancelled = true; };
   }, [pickLine, token]);
+
+  // Spare master (maintenance_spare) → Spare Name autocomplete + auto-fill.
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    api.get("/api/maintenance-spare/", token)
+      .then(rows => { if (!cancelled) setSpareMaster(Array.isArray(rows) ? rows : []); })
+      .catch(() => { if (!cancelled) setSpareMaster([]); });
+    return () => { cancelled = true; };
+  }, [token]);
 
   // ── Collector-opened slip: pull the machine list for the ticket's line and
   // auto-fill Zone + Line from the master.  (Manual mode gets its machines
@@ -346,6 +362,16 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   const withSpares = (d, spares) => ({ ...d, spares, spares_used: spareSummary(spares) });
   const setSpare = (i, k, v) => setData(d =>
     withSpares(d, (d.spares || []).map((s, idx) => idx === i ? { ...s, [k]: v } : s)));
+  // Spare Name picker (from maintenance_spare): choosing a known spare auto-fills
+  // its Model No. / CNMM No.; a new name is kept (and added to the master on save).
+  const onSpareName = (i, v) => setData(d => withSpares(d,
+    (d.spares || []).map((s, idx) => {
+      if (idx !== i) return s;
+      const hit = spareMaster.find(m => String(m.spare_name || "").toLowerCase() === String(v).trim().toLowerCase());
+      return hit
+        ? { ...s, spare_name: v, spare_model_no: hit.spare_model_no || s.spare_model_no, spare_cnmm_no: hit.spare_cnmm_no || s.spare_cnmm_no }
+        : { ...s, spare_name: v };
+    })));
   const addSpare = () => setData(d => withSpares(d, [...(d.spares || []), { ...EMPTY_SPARE }]));
   const removeSpare = (i) => setData(d => {
     const next = (d.spares || []).filter((_, idx) => idx !== i);
@@ -384,15 +410,18 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   // *editable* field has a non-empty value.  Locked + other-phase fields
   // are ignored.
   const phaseComplete = () => {
-    const slice = subsetForPhase();
+    const pick = (set) => Object.fromEntries(Object.entries(data).filter(([k]) => set.has(k)));
+    // Manual slip fills the WHOLE slip in one go → validate BOTH the Production +
+    // Maintenance halves before submit.  The collector/dashboard slip validates
+    // only the active phase's fields (each half is filled separately there).
+    const slice = pickLine ? { ...pick(PROD_FIELDS), ...pick(MAINT_FIELDS) } : subsetForPhase();
     const checkVal = (v) => {
       if (v == null) return false;
       if (typeof v === "string") return v.trim().length > 0;
-      if (Array.isArray(v)) return true;    // spares are optional ("IF ANY") — never block submit
+      if (Array.isArray(v)) return true;    // spares handled by their own rule below
       if (typeof v === "object") {
-        // For radio (problem_related_to) — require one true.
-        // For multi-select (type_of_problem) — require at least one true.
-        // For sigs (prepared_by etc) — require a name (sign optional).
+        // radio (problem_related_to) → one true; multi (type_of_problem) → ≥1 true;
+        // signatures (prepared_by …) → require a name.
         if ("maintenance" in v && "tool_room" in v) return v.maintenance || v.tool_room;
         if ("electrical" in v && "mechanical" in v) return v.electrical || v.mechanical;
         if ("name" in v) return !!(v.name && String(v.name).trim());
@@ -400,15 +429,19 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
       }
       return true;
     };
-    // Spare fields are optional ("IF ANY") — the derived `spares_used` summary
-    // is empty when no spare is filled, so it must not block the submit.
-    // Auto-computed / optional fields never block the submit:
-    //   response_time / mc_down_time depend on times that may not both be set
-    //   at production-fill time (OK time is only known after the fix), and
-    //   spares are "IF ANY".
+    // Auto-computed (response_time / mc_down_time) + the raw spare fields never
+    // block via the generic check — spares get their own rule right below.
     const OPTIONAL = new Set(["spares", "spares_used",
                               "response_time_minutes", "mc_down_time_minutes"]);
-    return Object.entries(slice).every(([k, v]) => OPTIONAL.has(k) || checkVal(v));
+    if (!Object.entries(slice).every(([k, v]) => OPTIONAL.has(k) || checkVal(v))) return false;
+    // SPARE USED = YES → at least one spare row, and EVERY filled row must have
+    // ALL 4 columns.  (When NO, the grid is hidden and spares don't block.)
+    if (data.spare_used === "yes") {
+      const cols = ["spare_name", "spare_model_no", "spare_cnmm_no", "spare_qty"];
+      const rows = (data.spares || []).filter(s => cols.some(c => String(s[c] ?? "").trim()));
+      if (!rows.length || !rows.every(s => cols.every(c => String(s[c] ?? "").trim()))) return false;
+    }
+    return true;
   };
 
   const submit = async () => {
@@ -793,8 +826,27 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                   value={data.action_taken_on_problem}
                   readOnly={!fieldEditable("action_taken_on_problem")}
                   onChange={v => set("action_taken_on_problem", v)}/>
-          {/* ── SPARE DETAILS (repeatable — same as the Log Book) ── */}
-          {(() => {
+          {/* ── SPARE USED?  YES reveals the (mandatory) Spare Details grid ── */}
+          <div className="bds-relto-row">
+            <div className="bds-relto-label">SPARE USED ?</div>
+            <label className="bds-relto-opt">
+              <input type="radio" name="spare_used"
+                     disabled={!fieldEditable("spare_used")}
+                     checked={data.spare_used === "yes"}
+                     onChange={() => set("spare_used", "yes")}/>
+              YES
+            </label>
+            <label className="bds-relto-opt">
+              <input type="radio" name="spare_used"
+                     disabled={!fieldEditable("spare_used")}
+                     checked={data.spare_used === "no"}
+                     onChange={() => setData(d => withSpares({ ...d, spare_used: "no" }, [{ ...EMPTY_SPARE }]))}/>
+              NO
+            </label>
+          </div>
+          {/* ── SPARE DETAILS (repeatable) — only shown when SPARE USED = YES;
+                 then every column of every row is mandatory (see phaseComplete). ── */}
+          {data.spare_used === "yes" && (() => {
             const spEdit = fieldEditable("spares");
             const rows = data.spares && data.spares.length ? data.spares : [{ ...EMPTY_SPARE }];
             const cell = { flex: "1 1 0", minWidth: 0, borderRight: "1px solid #cbd5e1",
@@ -817,6 +869,9 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                     </span>
                   )}
                 </div>
+                <datalist id="bds-spare-names">
+                  {spareMaster.map((m, idx) => <option key={idx} value={m.spare_name} />)}
+                </datalist>
                 {rows.map((sp, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "stretch",
                                         borderBottom: "1px solid #cbd5e1" }}>
@@ -826,7 +881,10 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                         <div style={lbl}>{l}{rows.length > 1 && ci === 0 ? ` ${i + 1}` : ""}</div>
                         <input style={inp} value={sp[k] || ""} disabled={!spEdit}
                                type={k === "spare_qty" ? "number" : "text"}
-                               onChange={(e) => setSpare(i, k, e.target.value)} />
+                               list={k === "spare_name" ? "bds-spare-names" : undefined}
+                               placeholder={k === "spare_name" ? "Pick or type" : undefined}
+                               onChange={(e) => k === "spare_name"
+                                 ? onSpareName(i, e.target.value) : setSpare(i, k, e.target.value)} />
                       </div>
                     ))}
                     {spEdit && (

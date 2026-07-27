@@ -58,6 +58,7 @@ const EMPTY = {
   zone_name: "", line_name: "", machine_no: "", machine_name: "",
   bd_date: todayISO(), bd_start_time: "", bd_ok_time: "",
   problem_observed_by_maintenance: "", action_taken: "",
+  spare_used: "no",               // "yes" reveals the (mandatory) Spare Details
   spares: [{ ...EMPTY_SPARE }],   // one entry can consume several spares
   attended_by: "",
 };
@@ -99,6 +100,7 @@ export default function BreakdownLogBook() {
   const nav = useNavigate();
   const [form, setForm]   = useState(newForm);
   const [master, setMaster] = useState([]);
+  const [spareMaster, setSpareMaster] = useState([]);   // spare picker (maintenance_spare)
   const [view, setView]   = useState("entry");   // entry | list
   const [rows, setRows]   = useState([]);
   const [saving, setSaving] = useState(false);
@@ -114,6 +116,7 @@ export default function BreakdownLogBook() {
   useEffect(() => {
     if (!token) return;
     api.get("/api/machines/", token).then((m) => setMaster(Array.isArray(m) ? m : [])).catch(() => {});
+    api.get("/api/maintenance-spare/", token).then((s) => setSpareMaster(Array.isArray(s) ? s : [])).catch(() => {});
   }, [token]);
 
   const loadList = useCallback(async () => {
@@ -158,6 +161,22 @@ export default function BreakdownLogBook() {
     ...f,
     spares: f.spares.length > 1 ? f.spares.filter((_, idx) => idx !== i) : [{ ...EMPTY_SPARE }],
   }));
+  // Spare Name picker (from maintenance_spare): choosing a known spare auto-fills
+  // its Model No. / CNMM No.; a brand-new name is kept (and added to the master
+  // on save).
+  const onSpareName = (i, v) => setForm((f) => ({
+    ...f,
+    spares: f.spares.map((s, idx) => {
+      if (idx !== i) return s;
+      const hit = spareMaster.find((m) => String(m.spare_name || "").toLowerCase() === String(v).trim().toLowerCase());
+      const name = String(v).toUpperCase();
+      return hit
+        ? { ...s, spare_name: name,
+            spare_model_no: (hit.spare_model_no || s.spare_model_no || "").toUpperCase(),
+            spare_cnmm_no:  (hit.spare_cnmm_no  || s.spare_cnmm_no  || "").toUpperCase() }
+        : { ...s, spare_name: name };
+    }),
+  }));
   const onZone = (v) => setForm((f) => ({ ...f, zone_name: v, line_name: "", machine_no: "", machine_name: "" }));
   const onLine = (v) => setForm((f) => ({ ...f, line_name: v, machine_no: "", machine_name: "" }));
   const onMc = (v) => {
@@ -195,6 +214,21 @@ export default function BreakdownLogBook() {
     ["zone_name", "Zone"], ["line_name", "Line"], ["machine_no", "Machine No."],
     ["bd_date", "Date"], ["problem_observed_by_maintenance", "Problem Observed by Maintenance"],
   ];
+
+  // Save is only enabled once EVERY field is filled — and, when Spare Used = YES,
+  // every filled spare row must have all 4 columns.
+  const REQUIRED_ALL = [
+    "shift", "zone_name", "line_name", "machine_no", "machine_name", "bd_date",
+    "bd_start_time", "bd_ok_time", "problem_observed_by_maintenance",
+    "action_taken", "attended_by",
+  ];
+  const spareRuleOK = () => {
+    if (form.spare_used !== "yes") return true;   // No → spares don't block
+    const cols = ["spare_name", "spare_model_no", "spare_cnmm_no", "spare_qty"];
+    const rows = (form.spares || []).filter((s) => cols.some((c) => String(s[c] ?? "").trim()));
+    return rows.length > 0 && rows.every((s) => cols.every((c) => String(s[c] ?? "").trim()));
+  };
+  const canSubmit = REQUIRED_ALL.every((k) => String(form[k] ?? "").trim()) && spareRuleOK();
 
   const save = async () => {
     const missing = REQUIRED.filter(([k]) => !String(form[k] ?? "").trim()).map(([, l]) => l);
@@ -386,22 +420,39 @@ export default function BreakdownLogBook() {
                   </div>
                 </div>
 
-                {/* ── Spare (divided, repeatable) ─────────────── */}
+                {/* ── Spare Used? + (mandatory when YES) Spare Details ── */}
                 <div className="lb-section">
                   <div className="lb-section-t">
                     🔧 Spare Details
-                    {form.spares.length > 1 && (
+                    {form.spare_used === "yes" && form.spares.length > 1 && (
                       <span style={{ fontWeight: 600, color: "#94a3b8", fontSize: 11.5 }}> · {form.spares.length} spares</span>
                     )}
                   </div>
-                  {form.spares.map((sp, i) => (
+                  <div className="lb-field" style={{ maxWidth: 300 }}>
+                    <span className="lb-lbl">Spare Used ?</span>
+                    <div style={{ display: "flex", gap: 24, paddingTop: 6 }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
+                        <input type="radio" name="lb_spare_used" checked={form.spare_used === "yes"}
+                               onChange={() => set("spare_used", "yes")} /> YES
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
+                        <input type="radio" name="lb_spare_used" checked={form.spare_used === "no"}
+                               onChange={() => setForm((f) => ({ ...f, spare_used: "no", spares: [{ ...EMPTY_SPARE }] }))} /> NO
+                      </label>
+                    </div>
+                  </div>
+                  <datalist id="lb-spare-names">
+                    {spareMaster.map((m, i) => <option key={i} value={m.spare_name} />)}
+                  </datalist>
+                  {form.spare_used === "yes" && form.spares.map((sp, i) => (
                     <div key={i} style={{ display: "flex", alignItems: "flex-end", gap: 10,
                                           paddingTop: i ? 10 : 0, marginTop: i ? 10 : 0,
                                           borderTop: i ? "1px dashed #e2e8f0" : "none" }}>
                       <div className="lb-grid" style={{ flex: 1 }}>
                         <div className="lb-field">
                           <span className="lb-lbl">Spare Name{form.spares.length > 1 ? ` ${i + 1}` : ""}</span>
-                          <input className="lb-in" value={sp.spare_name} onChange={(e) => setSpare(i, "spare_name", e.target.value)} />
+                          <input className="lb-in" list="lb-spare-names" placeholder="Pick or type a spare"
+                                 value={sp.spare_name} onChange={(e) => onSpareName(i, e.target.value)} />
                         </div>
                         <div className="lb-field">
                           <span className="lb-lbl">Model Number</span>
@@ -423,12 +474,14 @@ export default function BreakdownLogBook() {
                                        fontWeight: 800, fontSize: 13, marginBottom: 2 }}>🗑</button>
                     </div>
                   ))}
-                  <button type="button" onClick={addSpare}
-                          style={{ marginTop: 12, border: "1px dashed #cbd5e1", background: "#f8fafc",
-                                   color: "#334155", borderRadius: 8, padding: "8px 16px",
-                                   cursor: "pointer", fontWeight: 800, fontSize: 12.5 }}>
-                    ＋ Add another spare
-                  </button>
+                  {form.spare_used === "yes" && (
+                    <button type="button" onClick={addSpare}
+                            style={{ marginTop: 12, border: "1px dashed #cbd5e1", background: "#f8fafc",
+                                     color: "#334155", borderRadius: 8, padding: "8px 16px",
+                                     cursor: "pointer", fontWeight: 800, fontSize: 12.5 }}>
+                      ＋ Add another spare
+                    </button>
+                  )}
                 </div>
 
                 {/* ── Attended By ────────────────────────────── */}
@@ -442,7 +495,8 @@ export default function BreakdownLogBook() {
 
               <div className="lb-actions">
                 <button className="lb-btn" onClick={reset}>↺ Reset</button>
-                <button className="lb-btn primary" onClick={save} disabled={saving}>
+                <button className="lb-btn primary" onClick={save} disabled={saving || !canSubmit}
+                        title={canSubmit ? "" : "Pehle saare fields bharo (aur Spare Used = Yes ho to spares) — tabhi Save enable hoga"}>
                   {saving ? "Saving…" : "💾 Save Entry"}
                 </button>
               </div>
