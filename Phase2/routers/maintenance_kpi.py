@@ -361,8 +361,8 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
     MTTR, MTBF, LTTR, breakdowns > 1 hour, total breakdown frequency,
     total breakdown hours.
 
-    Source: mes_breakdown_log — the maintenance breakdown register, which
-    carries the per-slip repair time (solve_time_min) and breakdown date
+    Source: mes_breakdown_data — the maintenance breakdown register, which
+    carries the per-slip repair time (mc_down_time_minutes) and breakdown date
     (bd_date).  Live — recomputed on every call."""
     now = datetime.utcnow()
     if not fy:
@@ -375,21 +375,21 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
     eff_end = min(end, now)
     window_hours = max((eff_end - start).total_seconds() / 3600.0, 0.001)
 
-    # Source = mes_breakdown_log — the maintenance breakdown register (910
-    # rows).  Its zone_code / line_code / machine_no use the same Machine-
+    # Source = mes_breakdown_data — the maintenance breakdown register (910
+    # rows).  Its zone / line / machine_no use the same Machine-
     # Master taxonomy as the master list, so the page's zone/line/machine
-    # filters map straight onto those columns.  solve_time_min is a numeric
+    # filters map straight onto those columns.  mc_down_time_minutes is a numeric
     # column here → used directly (no text cast needed).
-    where = "bd_date >= %s AND bd_date < %s"
+    where = "COALESCE(slip_date, bd_start_date) >= %s AND COALESCE(slip_date, bd_start_date) < %s"
     params: list = [start.date(), end.date()]
     if zone_name:
-        where += " AND zone_code = %s";  params.append(zone_name)
+        where += " AND zone = %s";  params.append(zone_name)
     if line_name:
-        where += " AND line_code = %s";  params.append(line_name)
+        where += " AND line = %s";  params.append(line_name)
     if machine_no:
         where += " AND machine_no = %s"; params.append(machine_no)
 
-    st = "solve_time_min"
+    st = "mc_down_time_minutes"
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute(f"""
@@ -399,7 +399,7 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
                 COALESCE(AVG({st}), 0)                    AS avg_min,
                 COALESCE(MAX({st}), 0)                    AS max_min,
                 COUNT(*) FILTER (WHERE ({st}) > 60)       AS over_1hr
-              FROM mes_breakdown_log
+              FROM mes_breakdown_data
              WHERE {where}
         """, params)
         row = cur.fetchone() or {}
@@ -452,34 +452,34 @@ def fy_trend(fy:         Optional[str] = Query(None, description="e.g. 2025-26")
              machine_no: Optional[str] = Query(None),
              user=Depends(get_current_user)):
     """Month-by-month series (Apr → Mar, 12 buckets) for the same six
-    KPIs as /summary.  Source: mes_breakdown_log (the breakdown register),
-    filterable by zone/line/machine_no via its zone_code/line_code columns."""
+    KPIs as /summary.  Source: mes_breakdown_data (the breakdown register),
+    filterable by zone/line/machine_no via its zone/line columns."""
     now = datetime.utcnow()
     if not fy:
         cy = _current_fy_start(now)
         fy = f"{cy}-{str(cy + 1)[-2:]}"
     start, end, label = _fy_window(fy)
 
-    where = "bd_date >= %s AND bd_date < %s"
+    where = "COALESCE(slip_date, bd_start_date) >= %s AND COALESCE(slip_date, bd_start_date) < %s"
     params: list = [start.date(), end.date()]
     if zone_name:
-        where += " AND zone_code = %s";  params.append(zone_name)
+        where += " AND zone = %s";  params.append(zone_name)
     if line_name:
-        where += " AND line_code = %s";  params.append(line_name)
+        where += " AND line = %s";  params.append(line_name)
     if machine_no:
         where += " AND machine_no = %s"; params.append(machine_no)
 
-    st = "solve_time_min"
+    st = "mc_down_time_minutes"
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute(f"""
-            SELECT date_trunc('month', bd_date)::date           AS m,
+            SELECT date_trunc('month', COALESCE(slip_date, bd_start_date))::date           AS m,
                    COUNT(*)                                      AS bd_count,
                    COALESCE(SUM({st}), 0)                        AS total_min,
                    COALESCE(AVG({st}), 0)                        AS avg_min,
                    COALESCE(MAX({st}), 0)                        AS max_min,
                    COUNT(*) FILTER (WHERE ({st}) > 60)           AS over_1hr
-              FROM mes_breakdown_log
+              FROM mes_breakdown_data
              WHERE {where}
              GROUP BY 1
         """, params)
@@ -540,11 +540,11 @@ def breakdown_by(group:        str = Query("zone", description="zone | line | ma
                  user=Depends(get_current_user)):
     """Grouped breakdown totals for the BD-Analysis drill-down charts:
     total breakdown FREQUENCY (count) and total breakdown HOURS
-    (SUM(solve_time_min)/60) per zone / per line / per machine_no.
-    Source: mes_breakdown_log (same register as /summary & /trend).
+    (SUM(mc_down_time_minutes)/60) per zone / per line / per machine_no.
+    Source: mes_breakdown_data (same register as /summary & /trend).
     Drill: no zone filter → group=zone; zone picked → group=line;
     line picked → group=machine."""
-    col = {"zone": "zone_code", "line": "line_code", "machine": "machine_no"}.get(group)
+    col = {"zone": "zone", "line": "line", "machine": "machine_no"}.get(group)
     if not col:
         raise HTTPException(400, "group must be one of: zone, line, machine")
 
@@ -556,20 +556,20 @@ def breakdown_by(group:        str = Query("zone", description="zone | line | ma
             m_end   = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
         except (ValueError, TypeError):
             raise HTTPException(400, "month must be YYYY-MM")
-        where.append("bd_date >= %s AND bd_date < %s"); params += [m_start, m_end]
+        where.append("COALESCE(slip_date, bd_start_date) >= %s AND COALESCE(slip_date, bd_start_date) < %s"); params += [m_start, m_end]
     elif fy:
         start, end, _ = _fy_window(fy)
-        where.append("bd_date >= %s AND bd_date < %s"); params += [start.date(), end.date()]
+        where.append("COALESCE(slip_date, bd_start_date) >= %s AND COALESCE(slip_date, bd_start_date) < %s"); params += [start.date(), end.date()]
     if zone_name:
-        where.append("zone_code = %s");    params.append(zone_name)
+        where.append("zone = %s");    params.append(zone_name)
     if line_name:
-        where.append("line_code = %s");    params.append(line_name)
+        where.append("line = %s");    params.append(line_name)
     if machine_no:
         where.append("machine_no = %s");   params.append(machine_no)
     if machine_name:
         where.append("machine_name = %s"); params.append(machine_name)
 
-    st = "solve_time_min"
+    st = "mc_down_time_minutes"
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute(f"""
@@ -577,7 +577,7 @@ def breakdown_by(group:        str = Query("zone", description="zone | line | ma
                    COUNT(*)                                     AS frequency,
                    ROUND(COALESCE(SUM({st}), 0) / 60.0, 2)      AS hours,
                    ROUND(COALESCE(SUM({st}), 0))                AS minutes
-              FROM mes_breakdown_log
+              FROM mes_breakdown_data
              WHERE {' AND '.join(where)}
              GROUP BY 1
              ORDER BY 1
@@ -593,18 +593,18 @@ def breakdown_by(group:        str = Query("zone", description="zone | line | ma
 @router.get("/filter-options")
 def filter_options(user=Depends(get_current_user)):
     """Distinct zone / line / machine combos actually present in
-    mes_breakdown_log — feeds the KPI & MTTR/MTBF filter dropdowns so the
+    mes_breakdown_data — feeds the KPI & MTTR/MTBF filter dropdowns so the
     options always match the data (instead of the machine master, whose
     taxonomy can drift from the register)."""
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("""
-            SELECT DISTINCT zone_code  AS zone_name,
-                            line_code  AS line_name,
+            SELECT DISTINCT zone  AS zone_name,
+                            line  AS line_name,
                             machine_no,
                             machine_name
-              FROM mes_breakdown_log
-             WHERE zone_code IS NOT NULL AND zone_code <> ''
+              FROM mes_breakdown_data
+             WHERE zone IS NOT NULL AND zone <> ''
              ORDER BY 1, 2, 3
         """)
         return cur.fetchall()

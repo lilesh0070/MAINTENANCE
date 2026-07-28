@@ -252,6 +252,14 @@ def run_migrations():
         print("[STARTUP] DB unreachable — skipping migrations (API boots anyway; "
               "migrations re-run on next startup once DB is back)")
         return
+    # Ensure the mes_breakdown_data table (manual Break Down Slip store) exists
+    # and drop the obsolete mes_breakdown_data_v view — KPI / History / Analysis
+    # / CAPA now read mes_breakdown_data DIRECTLY.  Idempotent + best-effort.
+    try:
+        from routers.breakdown_slips import _ensure_table as _ensure_bd_data
+        _ensure_bd_data()
+    except Exception as e:
+        print(f"[STARTUP] mes_breakdown_data ensure failed: {e}")
     migrations = [
         "ALTER TABLE mes_lines ADD COLUMN IF NOT EXISTS current_shift_row_id INTEGER",
         "ALTER TABLE mes_lines ADD COLUMN IF NOT EXISTS ot_active_shift VARCHAR(10)",

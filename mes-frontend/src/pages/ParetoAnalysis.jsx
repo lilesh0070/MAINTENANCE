@@ -18,7 +18,7 @@
  * machines cause 74% of the downtime".
  *
  * Data: GET /api/maintenance-kpi/breakdown-by?group=machine
- *       (mes_breakdown_log — the same source as Maintenance KPI).
+ *       (mes_breakdown_data — the same source as Maintenance KPI).
  * Routing: /maintenance-breakdown/pareto-analysis
  */
 import { useEffect, useMemo, useRef, useState } from "react";

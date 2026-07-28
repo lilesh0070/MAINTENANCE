@@ -2,25 +2,10 @@
 #  routers/spares.py — Spare consumption, consolidated
 # --------------------------------------------------------------------
 #  READ-ONLY report.  Nothing is entered here: every spare shown was
-#  recorded in the page that already owns that workflow.  Three sources:
-#
-#    Breakdown  mes_breakdown_log.spares_detail
-#               → ONE free-text field ("CNMM0320 QTY-02 NOS"), often with
-#                 several spares mashed into one string.  Kept VERBATIM;
-#                 the quantity is a best-effort parse and is flagged as
-#                 such (qty_source) so a guess is never mistaken for data.
-#    Log Book   maintenance_logbook_db_history
-#               → properly split: spare_name / spare_model_no /
-#                 spare_cnmm_no / spare_qty, plus a multi-spare `spares`
-#                 JSONB list.  This is the only source that has a MODEL.
-#    PM         maintenance_pm_check_sheet_filled.entries[].spares_used
-#               → free text per check point.  Only APPROVED sheets count,
-#                 same rule History uses — an unapproved sheet can still
-#                 be edited or sent back.
-#
-#  NOTE: mes_breakdown_log.model_no is empty for every row and
-#  mes_machines has no model column at all, so Breakdown/PM rows carry
-#  no model.  That is a data-capture gap, not a bug here.
+#  recorded on the Manual Break Down Slip or the Maintenance Log Book,
+#  which write their spares into the `maintenance_spare` table (one row
+#  per spare occurrence, with zone/line/machine/qty/date + source).
+#  This page just reads + filters that table.  Sources: Manual Slip · Log Book.
 # ════════════════════════════════════════════════════════════════════
 from __future__ import annotations
 

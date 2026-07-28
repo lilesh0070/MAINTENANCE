@@ -13,7 +13,7 @@
  * Filter options come from the Machine Master List (mes_machines).
  *
  * Data: GET /api/maintenance-kpi/breakdown-by?group=zone|line|machine
- *       (mes_breakdown_log — the same source as Pareto / BD Analysis).
+ *       (mes_breakdown_data — the same source as Pareto / BD Analysis).
  * Routing: /maintenance-breakdown/top-10
  */
 import { useEffect, useMemo, useRef, useState } from "react";

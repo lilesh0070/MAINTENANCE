@@ -734,7 +734,7 @@ def set_slip_config(body: SlipThresholdConfig, admin=Depends(require_admin)):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# BREAKDOWN LOG  (mes_breakdown_log)  — the MAINTENANCE MASTER list
+# BREAKDOWN LOG  (reads mes_breakdown_data DIRECTLY — no DB view)
 # ════════════════════════════════════════════════════════════════════════════
 # 2026-06-18 — Single flat hub that holds ALL breakdown records across the
 # whole plant (not just the 3 MES-monitored lines): FY25-26 Excel base
@@ -742,6 +742,60 @@ def set_slip_config(body: SlipThresholdConfig, admin=Depends(require_admin)):
 # page's "Breakdown History" tab reads/writes here.  Zone→line→machine universe
 # is derived from THIS table (the master), so the dropdowns/filters cover every
 # zone/line/machine, independent of mes_lines.  Collector untouched.
+
+# mes_breakdown_data read straight, with the readable column aliases the readers
+# below (and _bdlog_serialize) expect — zone_code, solve_time_min, bd_date, …
+# This is the SAME column mapping the removed mes_breakdown_data_v view carried,
+# now inlined as a subquery so every reader hits mes_breakdown_data DIRECTLY and
+# no separate DB view object exists.  (Columns absent on the slip table — dept,
+# nature_of_work, remarks, handover_to, src_row_no, line_id, zone_id — surface as
+# NULL, exactly as the view did.)
+_BD_SRC = """(
+    SELECT
+        id,
+        'Manual Slip'::text                            AS source,
+        NULL::int                                      AS src_row_no,
+        zone                                           AS zone_code,
+        line                                           AS line_code,
+        machine_no,
+        machine_name,
+        COALESCE(slip_date, bd_start_date)             AS bd_date,
+        shift,
+        NULL::text                                     AS nature_of_work,
+        problem_reported_by_production                 AS problem_production,
+        actual_problem_observed                        AS problem_maintenance,
+        action_taken_on_problem                        AS action_taken,
+        bd_start_time,
+        bd_received_time,
+        response_time_minutes::text                    AS bd_response_time,
+        bd_ok_time,
+        mc_down_time_minutes::numeric                  AS solve_time_min,
+        ROUND(mc_down_time_minutes::numeric / 60, 2)   AS solve_time_hours,
+        spares_used                                    AS spares_detail,
+        bd_attended_by                                 AS attended_by,
+        NULL::text                                     AS dept,
+        NULL::text                                     AS handover_to,
+        category,
+        frequency::text                                AS frequency,
+        NULL::text                                     AS remarks,
+        NULL::int                                      AS line_id,
+        NULL::int                                      AS zone_id,
+        submitted_at                                   AS created_at,
+        model_no,
+        line_leader_name,
+        machine_operator_name,
+        bd_start_date,
+        bd_end_date,
+        problem_related_to,
+        NULLIF(TRIM(BOTH ', ' FROM CONCAT_WS(', ',
+            CASE WHEN type_electrical THEN 'ELECTRICAL' END,
+            CASE WHEN type_mechanical THEN 'MECHANICAL' END)), '') AS type_of_problem,
+        prepared_by_name                               AS prepared_by,
+        received_by_name                               AS received_by,
+        line_leader_operator_name                      AS line_leader_operator,
+        quality_engineer_name                          AS quality_engineer
+      FROM mes_breakdown_data
+) AS bd"""
 
 _BDLOG_COLS = (
     "id, source, src_row_no, zone_code, line_code, machine_no, machine_name, "
@@ -753,44 +807,6 @@ _BDLOG_COLS = (
     "problem_related_to, type_of_problem, prepared_by, received_by, "
     "line_leader_operator, quality_engineer, created_at"
 )
-
-
-class BreakdownLogCreate(BaseModel):
-    zone_code:           Optional[str] = None
-    line_code:           Optional[str] = None
-    machine_no:          Optional[str] = None
-    machine_name:        Optional[str] = None
-    bd_date:             Optional[str] = None
-    shift:               Optional[str] = None
-    nature_of_work:      Optional[str] = None
-    problem_production:   Optional[str] = None
-    problem_maintenance:  Optional[str] = None
-    action_taken:        Optional[str] = None
-    bd_start_time:       Optional[str] = None
-    bd_received_time:    Optional[str] = None
-    bd_response_time:    Optional[str] = None
-    bd_ok_time:          Optional[str] = None
-    solve_time_min:      Optional[float] = None
-    solve_time_hours:    Optional[float] = None
-    spares_detail:       Optional[str] = None
-    attended_by:         Optional[str] = None
-    dept:                Optional[str] = None
-    handover_to:         Optional[str] = None
-    category:            Optional[str] = None
-    frequency:           Optional[str] = None
-    remarks:             Optional[str] = None
-    # full breakdown-slip fields (2026-06-18)
-    model_no:              Optional[str] = None
-    line_leader_name:     Optional[str] = None
-    machine_operator_name:Optional[str] = None
-    bd_start_date:        Optional[str] = None
-    bd_end_date:          Optional[str] = None
-    problem_related_to:   Optional[str] = None
-    type_of_problem:      Optional[str] = None
-    prepared_by:          Optional[str] = None
-    received_by:          Optional[str] = None
-    line_leader_operator: Optional[str] = None
-    quality_engineer:     Optional[str] = None
 
 
 def _bdlog_serialize(r: dict) -> dict:
@@ -903,11 +919,11 @@ def list_breakdown_log(
     wsql, params = _bdlog_where(z, ln, mc, df, dt, dept, category, q)
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute(f"SELECT {_BDLOG_COLS} FROM mes_breakdown_log WHERE {wsql} "
+        cur.execute(f"SELECT {_BDLOG_COLS} FROM {_BD_SRC} WHERE {wsql} "
                     f"ORDER BY bd_date DESC NULLS LAST, id DESC LIMIT %s", params + [limit])
         rows = [_bdlog_serialize(r) for r in (cur.fetchall() or [])]
         cur.execute(f"SELECT COUNT(*) n, COALESCE(SUM(solve_time_hours),0) hrs "
-                    f"FROM mes_breakdown_log WHERE {wsql}", params)
+                    f"FROM {_BD_SRC} WHERE {wsql}", params)
         agg = cur.fetchone()
     return {"rows": rows, "total": agg["n"], "total_hours": round(float(agg["hrs"]), 1)}
 
@@ -918,9 +934,9 @@ def breakdown_log_master(user=Depends(get_current_user)):
     derived from the master table itself."""
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("SELECT DISTINCT zone_code, line_code, machine_name "
-                    "FROM mes_breakdown_log WHERE zone_code IS NOT NULL "
-                    "ORDER BY zone_code, line_code, machine_name")
+        cur.execute(f"SELECT DISTINCT zone_code, line_code, machine_name "
+                    f"FROM {_BD_SRC} WHERE zone_code IS NOT NULL "
+                    f"ORDER BY zone_code, line_code, machine_name")
         tree = {}
         for r in cur.fetchall() or []:
             z, ln, m = r["zone_code"], r["line_code"], r["machine_name"]
@@ -929,9 +945,9 @@ def breakdown_log_master(user=Depends(get_current_user)):
                 tree[z].setdefault(ln, set())
                 if m:
                     tree[z][ln].add(m)
-        cur.execute("SELECT DISTINCT dept FROM mes_breakdown_log WHERE dept IS NOT NULL ORDER BY 1")
+        cur.execute(f"SELECT DISTINCT dept FROM {_BD_SRC} WHERE dept IS NOT NULL ORDER BY 1")
         depts = [r["dept"] for r in cur.fetchall()]
-        cur.execute("SELECT DISTINCT category FROM mes_breakdown_log WHERE category IS NOT NULL ORDER BY 1")
+        cur.execute(f"SELECT DISTINCT category FROM {_BD_SRC} WHERE category IS NOT NULL ORDER BY 1")
         cats = [r["category"] for r in cur.fetchall()]
     zones = [{"zone": z,
               "lines": [{"line": ln, "machines": sorted(tree[z][ln])} for ln in sorted(tree[z])]}
@@ -939,40 +955,10 @@ def breakdown_log_master(user=Depends(get_current_user)):
     return {"zones": zones, "depts": depts, "categories": cats}
 
 
-@router.post("/log")
-def add_breakdown_log(body: BreakdownLogCreate, user=Depends(get_current_user)):
-    """Add a manual breakdown row (same flat format) → appears instantly in the
-    Historical 'Breakdown History' tab.  source='manual'."""
-    def up(v):  return v.strip().upper() if v and v.strip() else None
-    def s(v):   return v.strip() if v and v.strip() else None
-    with get_conn() as conn:
-        cur = dict_cursor(conn)
-        cur.execute(
-            "INSERT INTO mes_breakdown_log "
-            "(source, zone_code, line_code, machine_no, machine_name, bd_date, shift, "
-            " nature_of_work, problem_production, problem_maintenance, action_taken, "
-            " bd_start_time, bd_received_time, bd_response_time, bd_ok_time, "
-            " solve_time_min, solve_time_hours, spares_detail, attended_by, dept, "
-            " handover_to, category, frequency, remarks, "
-            " model_no, line_leader_name, machine_operator_name, bd_start_date, bd_end_date, "
-            " problem_related_to, type_of_problem, prepared_by, received_by, "
-            " line_leader_operator, quality_engineer) "
-            "VALUES ('manual', %s,%s,%s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,%s, "
-            "        %s,%s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s, %s,%s) "
-            "RETURNING id, created_at",
-            (up(body.zone_code), up(body.line_code), s(body.machine_no), s(body.machine_name),
-             s(body.bd_date), up(body.shift), s(body.nature_of_work), s(body.problem_production),
-             s(body.problem_maintenance), s(body.action_taken), s(body.bd_start_time),
-             s(body.bd_received_time), s(body.bd_response_time), s(body.bd_ok_time),
-             body.solve_time_min, body.solve_time_hours, s(body.spares_detail), s(body.attended_by),
-             up(body.dept), s(body.handover_to), up(body.category), s(body.frequency), s(body.remarks),
-             s(body.model_no), s(body.line_leader_name), s(body.machine_operator_name),
-             s(body.bd_start_date), s(body.bd_end_date), s(body.problem_related_to),
-             up(body.type_of_problem), s(body.prepared_by), s(body.received_by),
-             s(body.line_leader_operator), s(body.quality_engineer)))
-        row = cur.fetchone()
-        conn.commit()
-    return {"ok": True, "id": row["id"]}
+# NOTE: the old POST /api/breakdowns/log (add_breakdown_log) has been REMOVED.
+# Manual breakdowns are now raised via the Break Down Slip (→ mes_breakdown_data),
+# and every reader (KPI / History / Analysis / CAPA) reads mes_breakdown_data
+# DIRECTLY (via the _BD_SRC alias subquery above — no DB view).
 
 
 @router.get("/log/stats")
@@ -1015,14 +1001,14 @@ def breakdown_log_stats(
         cur.execute(f"""SELECT zone_code AS zone_name, zone_code AS zone_id,
                           COUNT(*) AS breakdowns_count, AVG(solve_time_min) AS mttr_minutes,
                           MAX(solve_time_min) AS lttr_minutes, {MTBF} AS mtbf_hours
-                        FROM mes_breakdown_log WHERE {wsql} AND zone_code IS NOT NULL
+                        FROM {_BD_SRC} WHERE {wsql} AND zone_code IS NOT NULL
                         GROUP BY zone_code ORDER BY breakdowns_count DESC""", params)
         zones = _fl(cur.fetchall() or [])
         cur.execute(f"""SELECT line_code AS line_name, line_code AS line_id,
                           zone_code AS zone_name, COUNT(*) AS breakdowns_count,
                           AVG(solve_time_min) AS mttr_minutes, MAX(solve_time_min) AS lttr_minutes,
                           {MTBF} AS mtbf_hours
-                        FROM mes_breakdown_log WHERE {wsql} AND line_code IS NOT NULL
+                        FROM {_BD_SRC} WHERE {wsql} AND line_code IS NOT NULL
                         GROUP BY line_code, zone_code ORDER BY breakdowns_count DESC""", params)
         lines = _fl(cur.fetchall() or [])
         cur.execute(f"""SELECT COALESCE(machine_no, machine_name) AS machine_no,
@@ -1030,7 +1016,7 @@ def breakdown_log_stats(
                           zone_code AS zone_name, COUNT(*) AS breakdowns_count,
                           AVG(solve_time_min) AS mttr_minutes, MAX(solve_time_min) AS lttr_minutes,
                           {MTBF} AS mtbf_hours
-                        FROM mes_breakdown_log WHERE {wsql} AND machine_name IS NOT NULL
+                        FROM {_BD_SRC} WHERE {wsql} AND machine_name IS NOT NULL
                         GROUP BY machine_name, machine_no, line_code, zone_code
                         ORDER BY breakdowns_count DESC""", params)
         machines = _fl(cur.fetchall() or [])

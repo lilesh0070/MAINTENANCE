@@ -2,10 +2,8 @@
  * Spare.jsx — "Spare" (Maintenance)
  * ───────────────────────────────────────────────────────────────────
  * Consolidated spare CONSUMPTION report.  Read-only: every row was
- * recorded in the page that owns that workflow —
- *   Breakdown  → mes_breakdown_log.spares_detail   (one free-text field)
- *   Log Book   → spare_name / model / CNMM / qty   (properly split)
- *   PM         → entries[].spares_used, APPROVED sheets only
+ * recorded on the Manual Break Down Slip or the Log Book, which write
+ * their spares into the maintenance_spare table.  Sources: Manual Slip · Log Book.
  * Nothing is entered here; fix a wrong entry where it was made.
  *
  * Layout follows the BD Analysis pattern: sticky top bar → one filter

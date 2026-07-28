@@ -3,7 +3,7 @@
  * ───────────────────────────────────────────────────────────────────
  * CAPA (Corrective Action / Preventive Action) for Maintenance.
  *
- * Original page format — driven by the MES Breakdown Log (mes_breakdown_log,
+ * Original page format — driven by the MES Breakdown Log (mes_breakdown_data,
  * the SAME source as Maintenance KPI / BD History / BD Analysis):
  *   • KPI tiles (Open / Closed / Total CAPA)
  *   • Filter bar

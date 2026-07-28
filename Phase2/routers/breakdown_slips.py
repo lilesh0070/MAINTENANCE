@@ -71,6 +71,13 @@ def _ensure_table():
                 submitted_at                   TIMESTAMP DEFAULT NOW()
             )
         """)
+        # NOTE: the old reporting view mes_breakdown_data_v has been REMOVED.
+        # KPI / History / Analysis / CAPA now read mes_breakdown_data DIRECTLY
+        # (breakdowns.py inlines the same column-alias mapping as _BD_SRC).
+        # Drop it FIRST — it depends on the `category` column, so the widen
+        # below would otherwise fail with "cannot alter type of a column used
+        # by a view" and abort this whole migration.
+        cur.execute("DROP VIEW IF EXISTS mes_breakdown_data_v")
         # Legacy category values are descriptive ('Mechanical', 'PLC / Software'),
         # not just 'A'/'B'/'C' — widen an existing VARCHAR(1) column if present.
         cur.execute("ALTER TABLE mes_breakdown_data ALTER COLUMN category TYPE VARCHAR(40)")

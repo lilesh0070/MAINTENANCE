@@ -59,7 +59,7 @@ export default function BDHistory() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Source = mes_breakdown_log — the SAME table the Maintenance KPI /
+      // Source = mes_breakdown_data — the SAME table the Maintenance KPI /
       // MTTR-MTBF pages compute from, so counts always match.
       // Only the selected window is fetched (default: last 7 days) so the
       // page stays light on a continuously running site.

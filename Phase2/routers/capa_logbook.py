@@ -1,11 +1,11 @@
 """
 routers/capa_logbook.py
 =======================
-CAPA driven directly by the MES Breakdown Log (`mes_breakdown_log`) — the
+CAPA driven directly by the Break Down Slip table (`mes_breakdown_data`) — the
 SAME source the Maintenance-KPI / BD-History / BD-Analysis pages compute
 from, so the CAPA counts always reconcile with those pages.
 
-Rule: every breakdown whose repair duration (solve_time_min, numeric) is
+Rule: every breakdown whose repair duration (mc_down_time_minutes, numeric) is
 60 minutes or more is automatically a CAPA.
 
   • OPEN   (Pending)      — its CAPA-QPR has not been completed yet.
@@ -13,7 +13,7 @@ Rule: every breakdown whose repair duration (solve_time_min, numeric) is
                             (maintenance_qpr.logbook_id = breakdown id,
                              capa_status = 'CLOSED').
 
-`maintenance_qpr.logbook_id` stores the **mes_breakdown_log id** (since
+`maintenance_qpr.logbook_id` stores the **mes_breakdown_data id** (since
 2026-07-03; it previously pointed at maintenance_logbook_db_history — the
 old open stubs were backed up to Phase2/qpr_capa_stubs_backup.csv and
 removed during the switch).
@@ -37,8 +37,8 @@ from auth import get_current_user
 
 router = APIRouter(prefix="/api/capa-lb", tags=["capa-logbook"])
 
-# a CAPA = a breakdown with a ≥60-minute repair (solve_time_min is numeric)
-_MIN60 = "solve_time_min >= 60"
+# a CAPA = a breakdown with a ≥60-minute repair (mc_down_time_minutes)
+_MIN60 = "mc_down_time_minutes >= 60"
 
 
 def _author(user) -> str:
@@ -68,16 +68,20 @@ def summary(user=Depends(get_current_user)):
         cur = dict_cursor(conn)
         cur.execute(f"""
             SELECT bd.id,
-                   bd.zone_code  AS zone_name,
-                   bd.line_code  AS line_name,
+                   bd.zone AS zone_name,
+                   bd.line AS line_name,
                    bd.machine_no, bd.machine_name,
-                   bd.bd_date, bd.problem_production, bd.problem_maintenance,
-                   bd.action_taken, bd.solve_time_min, bd.attended_by,
+                   COALESCE(bd.slip_date, bd.bd_start_date)  AS bd_date,
+                   bd.problem_reported_by_production          AS problem_production,
+                   bd.actual_problem_observed                 AS problem_maintenance,
+                   bd.action_taken_on_problem                 AS action_taken,
+                   bd.mc_down_time_minutes                    AS solve_time_min,
+                   bd.bd_attended_by                          AS attended_by,
                    q.id AS qpr_id, q.qpr_no, q.capa_status
-              FROM mes_breakdown_log bd
+              FROM mes_breakdown_data bd
               LEFT JOIN maintenance_qpr q ON q.logbook_id = bd.id
              WHERE {_MIN60}
-             ORDER BY bd.bd_date DESC NULLS LAST, bd.id DESC
+             ORDER BY COALESCE(bd.slip_date, bd.bd_start_date) DESC NULLS LAST, bd.id DESC
         """)
         rows = cur.fetchall()
 
@@ -109,7 +113,13 @@ def start_capa(bd_id: int, user=Depends(get_current_user)):
     _ensure_qpr()
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute(f"SELECT * FROM mes_breakdown_log WHERE id=%s AND {_MIN60}", (bd_id,))
+        cur.execute(f"""SELECT id, zone AS zone_code,
+                               COALESCE(slip_date, bd_start_date) AS bd_date,
+                               problem_reported_by_production AS problem_production,
+                               actual_problem_observed AS problem_maintenance,
+                               machine_name, machine_no,
+                               bd_attended_by AS attended_by
+                          FROM mes_breakdown_data WHERE id=%s AND {_MIN60}""", (bd_id,))
         bd = cur.fetchone()
         if not bd:
             raise HTTPException(404, "No ≥60-minute breakdown for this id")

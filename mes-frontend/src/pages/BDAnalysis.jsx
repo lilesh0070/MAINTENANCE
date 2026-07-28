@@ -1,7 +1,7 @@
 /* ───────────────────────────────────────────────────────────────────
  * BDAnalysis.jsx
  * ───────────────────────────────────────────────────────────────────
- * "BD Analysis" — drill-down breakdown analysis over mes_breakdown_log.
+ * "BD Analysis" — drill-down breakdown analysis over mes_breakdown_data.
  *
  *   filter bar (FY · Month · Zone · Line · Machine No · Machine Name —
  *   options from the Machine Master List `mes_machines`)
@@ -14,7 +14,7 @@
  *      line selected      → MACHINE-wise (machine_no of that line;
  *                           picking a Machine No / Name highlights its bar)
  *
- * Data: GET /api/maintenance-kpi/breakdown-by (mes_breakdown_log).
+ * Data: GET /api/maintenance-kpi/breakdown-by (mes_breakdown_data).
  * Routing: /maintenance-breakdown/bd-analysis
  */
 import { useEffect, useMemo, useState } from "react";
