@@ -19,6 +19,7 @@ import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   PieChart, Pie, Cell, BarChart, Bar,
 } from "recharts";
+import TvFit from "../components/TvFit";
 
 const api = {
   async get(path, token) {
@@ -144,6 +145,7 @@ export default function MaintenanceOverview() {
   const tstr = tick ? tick.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "—";
 
   return (
+    <TvFit designWidth={1500} bg="#0a1120">
     <>
       <style>{`
         .ov-root { min-height:100vh; background:#0a1120; font-family:'Barlow',system-ui,sans-serif;
@@ -375,5 +377,6 @@ export default function MaintenanceOverview() {
         </div>
       </div>
     </>
+    </TvFit>
   );
 }

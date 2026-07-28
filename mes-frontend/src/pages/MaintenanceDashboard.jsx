@@ -33,6 +33,7 @@ import PmThisMonth from "./breakdown/PmThisMonth";
 import KpiPanel from "./breakdown/KpiPanel";
 import DmcNgPanel from "./breakdown/DmcNgPanel";
 import { ClosureFormModal } from "./breakdown/ClosureFormModal";
+import TvFit from "../components/TvFit";
 
 /* ════════════════════════════════════════════════════════════════════
  * Toast
@@ -220,6 +221,7 @@ export default function MaintenanceDashboard() {
   }, 0);
 
   return (
+    <TvFit designWidth={1280} bg="#f8fafc">
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@600;700;800&display=swap');
@@ -324,5 +326,6 @@ export default function MaintenanceDashboard() {
 
       {toastNode}
     </>
+    </TvFit>
   );
 }
