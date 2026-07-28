@@ -24,6 +24,36 @@ Root folder mein 3 batch files hain. Pehli baar:
 
 ---
 
+## Quick start — Linux / Ubuntu
+Same repo Linux par bhi chalta hai — bas `.sh` scripts use karo (Windows ke `.bat` ke barabar).
+
+```bash
+# 1. one-time system prereqs
+sudo apt update && sudo apt install -y python3 python3-venv python3-pip nodejs npm lsof
+
+# 2. clone + per-machine config
+git clone https://github.com/lilesh0070/MAINTENANCEDX.git
+cd MAINTENANCEDX
+cp Phase2/.env.example Phase2/.env      # phir DB_HOST / DB_PASS set karo
+
+# 3. install deps — SIRF EK BAAR (Windows ke INSTALL.bat jaisa)
+./install.sh
+
+# 4. run / stop
+./start.sh        # backend :8892 + frontend :9965 (logs/ me)
+./stop.sh
+```
+
+**Portability — kyun clone-and-go kaam karta hai:**
+- `.venv/` aur `node_modules/` git me **nahi** hain (gitignored) — ye har OS par `install.sh` se **fresh** ban-te hain. Windows ka venv Linux par chalta hi nahi, isliye copy karne ki koshish mat karna.
+- Ek baar `install.sh` chalane ke baad, code changes sirf **`git pull`** se aa jaate hain — **dependencies dobara install karne ki zaroorat nahi** (sirf jab `requirements.txt` / `package.json` badle tab `./install.sh` phir chalao).
+- Config `Phase2/.env` me hai (gitignored, per-machine) — DB IP/password har machine par apna.
+- Line-endings `.gitattributes` se normalize hain: `.sh` = LF, `.bat` = CRLF — dono OS par sahi chalte hain.
+- Frontend relative `/api` use karta hai (Vite proxy → `:8892`), koi hardcoded IP nahi.
+- Edge: EOL/video-archive feature (`lines.py`) me kuch Windows paths (`D:\VideoArchive` …) hain jo `VIDEO_ARCHIVE_ROOT` jaise env-var se override ho jaate hain — maintenance slice ke liye zaroori nahi.
+
+---
+
 ## Folder structure
 ```
 maintainence/
