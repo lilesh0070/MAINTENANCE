@@ -43,88 +43,69 @@ def _ensure_table() -> None:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS maintenance_logbook_db_history (
                 id                    SERIAL PRIMARY KEY,
+                serial_no             INTEGER,
                 shift                 VARCHAR(8),
-                zone             VARCHAR(120),
-                line             VARCHAR(120),
+                zone                  VARCHAR(120),
+                line                  VARCHAR(120),
                 machine_no            VARCHAR(60),
                 machine_name          VARCHAR(160),
                 bd_date               DATE,
-                nature_of_work        VARCHAR(60),
-                problem_production    TEXT,
-                actual_problem_observed   TEXT,
-                action_taken_on_problem          TEXT,
-                knockout_production   VARCHAR(40),
-                cumulative_production VARCHAR(40),
-                total_production      VARCHAR(40),
                 bd_start_time         VARCHAR(8),
-                bd_received_time      VARCHAR(8),
                 bd_ok_time            VARCHAR(8),
-                mc_down_time_minutes        VARCHAR(20),
+                mc_down_time_minutes  VARCHAR(20),
                 solve_time_hours      VARCHAR(20),
-                problem_repeated      VARCHAR(8),
-                spare_used            VARCHAR(8),
-                spares_detail         TEXT,
-                spare_part_code       VARCHAR(120),
+                problem_observed_by_maintenance TEXT,
+                action_taken_on_problem TEXT,
+                spare_name            TEXT,
+                spare_model_no        VARCHAR(120),
+                spare_cnmm_no         VARCHAR(120),
                 spare_qty             VARCHAR(40),
-                bd_attended_by           VARCHAR(160),
-                tool_room_maintenance VARCHAR(8),
-                handover_to           VARCHAR(160),
-                category              VARCHAR(40),
-                remarks               TEXT,
+                spares                JSONB,
+                bd_attended_by        VARCHAR(160),
                 created_by            VARCHAR(120),
                 created_at            TIMESTAMP DEFAULT NOW()
             )
         """)
-        # Extra columns from the Machine-History-Card format (root cause +
-        # B/D response time) so the Log Book list can show every column.
-        cur.execute("ALTER TABLE maintenance_logbook_db_history ADD COLUMN IF NOT EXISTS root_cause TEXT")
-        cur.execute("ALTER TABLE maintenance_logbook_db_history ADD COLUMN IF NOT EXISTS bd_response_time VARCHAR(20)")
+        # The Log Book table now mirrors EXACTLY what the frontend Log Book
+        # (BreakdownLogBook) saves.  Drop the legacy columns the current form
+        # never fills — old fuller-format leftovers + History-Card-only blanks.
+        for _col in ("nature_of_work", "problem_production", "actual_problem_observed",
+                     "spare_used", "spares_detail", "category", "remarks",
+                     "knockout_production", "cumulative_production", "total_production",
+                     "bd_received_time", "problem_repeated", "spare_part_code",
+                     "tool_room_maintenance", "handover_to", "root_cause", "bd_response_time"):
+            cur.execute(f"ALTER TABLE maintenance_logbook_db_history DROP COLUMN IF EXISTS {_col}")
         conn.commit()
 
 
 # Column order used for INSERT (everything except id / created_at).
 FIELDS = [
-    "shift", "zone", "line", "machine_no", "machine_name", "bd_date",
-    "nature_of_work", "problem_production", "actual_problem_observed", "root_cause",
-    "action_taken_on_problem", "knockout_production", "cumulative_production", "total_production",
-    "bd_start_time", "bd_received_time", "bd_response_time", "bd_ok_time", "mc_down_time_minutes",
-    "solve_time_hours", "problem_repeated", "spare_used", "spares_detail",
-    "spare_part_code", "spare_qty", "bd_attended_by", "tool_room_maintenance",
-    "handover_to", "category", "remarks",
+    "serial_no", "shift", "zone", "line", "machine_no", "machine_name", "bd_date",
+    "bd_start_time", "bd_ok_time", "mc_down_time_minutes", "solve_time_hours",
+    "problem_observed_by_maintenance", "action_taken_on_problem",
+    "spare_name", "spare_model_no", "spare_cnmm_no", "spare_qty", "bd_attended_by",
 ]
 
 
 class EntryIn(BaseModel):
-    shift:                 Optional[str] = None
-    zone:             Optional[str] = None
-    line:             Optional[str] = None
-    machine_no:            Optional[str] = None
-    machine_name:          Optional[str] = None
-    bd_date:               Optional[str] = None
-    nature_of_work:        Optional[str] = None
-    problem_production:    Optional[str] = None
-    actual_problem_observed:   Optional[str] = None
-    root_cause:            Optional[str] = None
-    action_taken_on_problem:          Optional[str] = None
-    knockout_production:   Optional[str] = None
-    cumulative_production: Optional[str] = None
-    total_production:      Optional[str] = None
-    bd_start_time:         Optional[str] = None
-    bd_received_time:      Optional[str] = None
-    bd_response_time:      Optional[str] = None
-    bd_ok_time:            Optional[str] = None
-    mc_down_time_minutes:        Optional[str] = None
-    solve_time_hours:      Optional[str] = None
-    problem_repeated:      Optional[str] = None
-    spare_used:            Optional[str] = None
-    spares_detail:         Optional[str] = None
-    spare_part_code:       Optional[str] = None
-    spare_qty:             Optional[str] = None
-    bd_attended_by:           Optional[str] = None
-    tool_room_maintenance: Optional[str] = None
-    handover_to:           Optional[str] = None
-    category:              Optional[str] = None
-    remarks:               Optional[str] = None
+    serial_no:               Optional[int] = None
+    shift:                   Optional[str] = None
+    zone:                    Optional[str] = None
+    line:                    Optional[str] = None
+    machine_no:              Optional[str] = None
+    machine_name:            Optional[str] = None
+    bd_date:                 Optional[str] = None
+    bd_start_time:           Optional[str] = None
+    bd_ok_time:              Optional[str] = None
+    mc_down_time_minutes:    Optional[str] = None
+    solve_time_hours:        Optional[str] = None
+    problem_observed_by_maintenance: Optional[str] = None
+    action_taken_on_problem: Optional[str] = None
+    spare_name:              Optional[str] = None
+    spare_model_no:          Optional[str] = None
+    spare_cnmm_no:           Optional[str] = None
+    spare_qty:               Optional[str] = None
+    bd_attended_by:          Optional[str] = None
 
 
 def _author(user) -> str:

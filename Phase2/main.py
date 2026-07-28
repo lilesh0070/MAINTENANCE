@@ -260,6 +260,13 @@ def run_migrations():
         _ensure_bd_data()
     except Exception as e:
         print(f"[STARTUP] mes_breakdown_data ensure failed: {e}")
+    # Ensure the Log Book table matches the frontend Log Book's columns and
+    # drop the legacy columns the form no longer fills.  Idempotent.
+    try:
+        from routers.breakdown_logbook import _ensure_table as _ensure_logbook
+        _ensure_logbook()
+    except Exception as e:
+        print(f"[STARTUP] Log Book table ensure failed: {e}")
     migrations = [
         "ALTER TABLE mes_lines ADD COLUMN IF NOT EXISTS current_shift_row_id INTEGER",
         "ALTER TABLE mes_lines ADD COLUMN IF NOT EXISTS ot_active_shift VARCHAR(10)",

@@ -57,16 +57,13 @@ const COLS = [
   { key: "machine_no",          label: "M/C No." },
   { key: "machine_name",        label: "Machine Name", wrap: true },
   { key: "bd_date",             label: "Breakdown Date", date: true },
-  { key: "nature_of_work",      label: "Nature of Work" },
-  { key: "problem_production",  label: "Problem Reported by Production", wrap: true },
-  { key: "actual_problem_observed", label: "Actual Problem Observed by Maintenance", wrap: true },
+  { key: "bd_start_time",       label: "Start Time" },
+  { key: "bd_ok_time",          label: "End Time" },
+  { key: "problem_observed_by_maintenance", label: "Problem Observed by Maintenance", wrap: true },
   { key: "action_taken_on_problem",        label: "Action Taken on Problem", wrap: true },
   { key: "mc_down_time_minutes",      label: "Time (min)" },
-  { key: "spare_used",          label: "Spare Used" },
-  { key: "spares_detail",       label: "Spares Detail", wrap: true },
+  { key: "spare_name",          label: "Spare Name", wrap: true },
   { key: "bd_attended_by",         label: "B/D Attended By" },
-  { key: "category",            label: "Category" },
-  { key: "remarks",             label: "Remarks", wrap: true },
 ];
 
 export default function HistoryCard() {
