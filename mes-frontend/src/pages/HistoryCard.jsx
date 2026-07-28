@@ -49,7 +49,9 @@ function fyMonths(fy) {
   return out;
 }
 
-// Table columns (in order).  wrap = allow multi-line text.
+// Table columns (in order) — the FULL Manual Break Down Slip (mes_breakdown_data)
+// column set.  Log Book rows only carry a subset; the slip-only columns come back
+// blank for them.  wrap = allow multi-line text; date = format YYYY-MM-DD.
 const COLS = [
   { key: "_sno",                label: "S No." },
   { key: "source",              label: "Source" },
@@ -58,15 +60,34 @@ const COLS = [
   { key: "line",                label: "Line" },
   { key: "machine_no",          label: "M/C No." },
   { key: "machine_name",        label: "Machine Name", wrap: true },
+  { key: "model_no",            label: "Model No." },
+  { key: "line_leader_name",    label: "Line Leader" },
+  { key: "machine_operator_name", label: "Operator" },
+  { key: "category",            label: "Category" },
   { key: "bd_date",             label: "Breakdown Date", date: true },
+  { key: "bd_start_date",       label: "Start Date", date: true },
+  { key: "bd_end_date",         label: "End Date", date: true },
   { key: "bd_start_time",       label: "Start Time" },
-  { key: "bd_ok_time",          label: "End Time" },
+  { key: "bd_received_time",    label: "Received Time" },
+  { key: "response_time_minutes", label: "Response (min)" },
+  { key: "bd_ok_time",          label: "OK Time" },
+  { key: "mc_down_time_minutes", label: "Down Time (min)" },
+  { key: "frequency",           label: "Frequency" },
+  { key: "problem_reported_by_production", label: "Problem Reported by Production", wrap: true },
+  { key: "problem_related_to",  label: "Related To" },
+  { key: "type_of_problem",     label: "Type of Problem" },
   { key: "problem_observed_by_maintenance", label: "Problem Observed by Maintenance", wrap: true },
-  { key: "action_taken_on_problem",        label: "Action Taken on Problem", wrap: true },
-  { key: "mc_down_time_minutes",      label: "Time (min)" },
+  { key: "action_taken_on_problem", label: "Action Taken on Problem", wrap: true },
   { key: "spares_used",         label: "Spares Used", wrap: true },
-  { key: "bd_attended_by",         label: "B/D Attended By" },
+  { key: "bd_attended_by",      label: "B/D Attended By" },
+  { key: "prepared_by_name",    label: "Prepared By" },
+  { key: "received_by_name",    label: "Received By" },
+  { key: "line_leader_operator_name", label: "Line Leader / Operator" },
+  { key: "quality_engineer_name", label: "Quality Engineer" },
 ];
+
+// Enum/boolean prettifiers for the derived cells.
+const RELATED_LBL = { maintenance: "Maintenance", tool_room: "Tool Room" };
 
 export default function HistoryCard() {
   const { token, theme, user } = useAuth();
@@ -169,6 +190,14 @@ export default function HistoryCard() {
 
   const cell = (e, c, i) => {
     if (c.key === "_sno") return i + 1;
+    if (c.key === "type_of_problem") {           // derived from the two booleans
+      const t = [];
+      if (e.type_electrical) t.push("Electrical");
+      if (e.type_mechanical) t.push("Mechanical");
+      return t.length ? t.join(", ") : "—";
+    }
+    if (c.key === "problem_related_to")
+      return RELATED_LBL[e.problem_related_to] || e.problem_related_to || "—";
     if (c.date) return fmtDate(e[c.key]);
     return e[c.key] || "—";
   };

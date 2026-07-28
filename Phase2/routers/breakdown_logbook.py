@@ -128,24 +128,51 @@ def list_entries(date: Optional[str] = Query(None, description="bd_date YYYY-MM-
         return cur.fetchall()
 
 
-# Column list that both registers share (aliased to the same names).  Down-time
-# is cast to text because it's INTEGER on the slip table and VARCHAR on the Log
-# Book; `ts` (created_at / submitted_at) is the merge sort key.
+# Both halves expose the FULL Manual-Break-Down-Slip (mes_breakdown_data) column
+# set, IN THE SAME ORDER, so UNION ALL lines up 1:1.  The Log Book table has only
+# a subset of these, so every slip-only column is returned as a typed NULL for
+# Log Book rows (they simply show blank in the History Card).  Numeric columns are
+# cast to text (INTEGER on the slip vs VARCHAR on the Log Book must match under
+# UNION); `ts` (created_at / submitted_at) is the merge sort key.
+# NOTE: the Log Book half is listed FIRST in the UNION, so ITS aliases name the
+# output columns — keep both blocks' column order identical.
 _COMBINED_LB = """
     'Log Book'::text AS source,
     id, serial_no, shift, zone, line, machine_no, machine_name,
-    bd_date, bd_start_time, bd_ok_time,
+    NULL::text AS model_no, NULL::text AS line_leader_name, NULL::text AS machine_operator_name,
+    bd_date, NULL::text AS category,
+    bd_start_time, NULL::text AS bd_received_time,
+    NULL::text AS response_time_minutes,
+    bd_ok_time, NULL::date AS bd_start_date, NULL::date AS bd_end_date,
     mc_down_time_minutes::text AS mc_down_time_minutes,
+    NULL::text AS frequency,
+    NULL::text AS problem_reported_by_production,
+    NULL::text AS problem_related_to,
+    NULL::boolean AS type_electrical, NULL::boolean AS type_mechanical,
     problem_observed_by_maintenance, action_taken_on_problem,
-    spares_used, spares, bd_attended_by, created_at AS ts
+    spares_used, spares, bd_attended_by,
+    NULL::text AS prepared_by_name, NULL::text AS received_by_name,
+    NULL::text AS line_leader_operator_name, NULL::text AS quality_engineer_name,
+    created_at AS ts
 """
 _COMBINED_SLIP = """
     'Break Down Slip'::text AS source,
     id, NULL::int AS serial_no, shift, zone, line, machine_no, machine_name,
-    COALESCE(slip_date, bd_start_date) AS bd_date, bd_start_time, bd_ok_time,
+    model_no, line_leader_name, machine_operator_name,
+    COALESCE(slip_date, bd_start_date) AS bd_date, category,
+    bd_start_time, bd_received_time,
+    response_time_minutes::text AS response_time_minutes,
+    bd_ok_time, bd_start_date, bd_end_date,
     mc_down_time_minutes::text AS mc_down_time_minutes,
+    frequency::text AS frequency,
+    problem_reported_by_production,
+    problem_related_to,
+    type_electrical, type_mechanical,
     problem_observed_by_maintenance, action_taken_on_problem,
-    spares_used, spares, bd_attended_by, submitted_at AS ts
+    spares_used, spares, bd_attended_by,
+    prepared_by_name, received_by_name,
+    line_leader_operator_name, quality_engineer_name,
+    submitted_at AS ts
 """
 
 

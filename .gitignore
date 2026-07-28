@@ -27,6 +27,9 @@ Phase2/logs/
 # ─── Local render-check / debug scratch (not source) ─────────
 *rendercheck*
 
+# ─── Cross-session status/handoff worklog (local only, not product) ──
+PROJECT_STATUS.md
+
 # ─── OS / editor ─────────────────────────────────────────────
 .DS_Store
 Thumbs.db
