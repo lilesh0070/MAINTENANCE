@@ -1,10 +1,11 @@
 /* ───────────────────────────────────────────────────────────────────
  * BDHistory.jsx
  * ───────────────────────────────────────────────────────────────────
- * "BD History" — read-only history of the Breakdown Log Book entries whose
- * Nature of Work is "Breakdown", shown in the same table format as the Log
- * Book → List view.  Source: /api/breakdown-logbook (the same table the Log
- * Book form saves into), filtered to nature_of_work === "Breakdown".
+ * "BD History" — read-only history of the Manual Break Down Slips, shown in
+ * the same table format as the Log Book → List view.  Source:
+ * /api/breakdowns/log (→ mes_breakdown_data, the table the Break Down Slip
+ * saves into).  This is a SEPARATE register from the Log Book / History Card
+ * (those read maintenance_logbook_db_history).
  *
  * Routing: /maintenance-breakdown/bd-history
  */
