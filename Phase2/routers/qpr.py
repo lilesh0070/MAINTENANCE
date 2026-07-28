@@ -46,6 +46,14 @@ def _ensure_table() -> None:
         # filled, CLOSED once saved).
         cur.execute("ALTER TABLE maintenance_qpr ADD COLUMN IF NOT EXISTS logbook_id INTEGER")
         cur.execute("ALTER TABLE maintenance_qpr ADD COLUMN IF NOT EXISTS capa_status VARCHAR(12)")
+        # One CAPA-QPR per breakdown: a partial UNIQUE index on logbook_id makes
+        # it impossible to create two QPRs for the same ≥60-min breakdown (blocks
+        # the double-click / concurrent "Start CAPA" race).  Without this a bd
+        # could end up with both an OPEN and a CLOSED QPR, and a closed CAPA could
+        # appear to re-open.  Partial (WHERE logbook_id IS NOT NULL) so the legacy
+        # standalone QPRs (logbook_id NULL) are unaffected.
+        cur.execute("""CREATE UNIQUE INDEX IF NOT EXISTS maintenance_qpr_logbook_uq
+                       ON maintenance_qpr (logbook_id) WHERE logbook_id IS NOT NULL""")
         conn.commit()
 
 

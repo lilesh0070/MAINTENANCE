@@ -66,6 +66,11 @@ def summary(user=Depends(get_current_user)):
     _ensure_qpr()
     with get_conn() as conn:
         cur = dict_cursor(conn)
+        # LEFT JOIN LATERAL that picks ONE QPR per breakdown and PREFERS a CLOSED
+        # one — so once a CAPA has been closed it can never reappear as Open, even
+        # if a stray/legacy duplicate QPR exists.  (The unique index on logbook_id
+        # normally prevents duplicates in the first place; this is belt-and-braces
+        # and also makes the row choice deterministic.)
         cur.execute(f"""
             SELECT bd.id,
                    bd.zone AS zone_name,
@@ -77,9 +82,15 @@ def summary(user=Depends(get_current_user)):
                    bd.action_taken_on_problem                 AS action_taken,
                    bd.mc_down_time_minutes                    AS solve_time_min,
                    bd.bd_attended_by                          AS attended_by,
-                   q.id AS qpr_id, q.qpr_no, q.capa_status
+                   q.qpr_id, q.qpr_no, q.capa_status
               FROM mes_breakdown_data bd
-              LEFT JOIN maintenance_qpr q ON q.logbook_id = bd.id
+              LEFT JOIN LATERAL (
+                   SELECT mq.id AS qpr_id, mq.qpr_no, mq.capa_status
+                     FROM maintenance_qpr mq
+                    WHERE mq.logbook_id = bd.id
+                    ORDER BY (mq.capa_status = 'CLOSED') DESC, mq.id DESC
+                    LIMIT 1
+              ) q ON TRUE
              WHERE {_MIN60}
              ORDER BY COALESCE(bd.slip_date, bd.bd_start_date) DESC NULLS LAST, bd.id DESC
         """)
@@ -144,11 +155,22 @@ def start_capa(bd_id: int, user=Depends(get_current_user)):
         cur2.execute("SELECT COALESCE(MAX(qpr_no),0)+1 FROM maintenance_qpr")
         next_no = cur2.fetchone()[0]
         title = f"CAPA · {bd['machine_no'] or bd['machine_name'] or ''} · QPR No. {next_no}"
+        # ON CONFLICT makes the create atomic vs the unique index on logbook_id:
+        # if a concurrent "Start CAPA" (double-click / another tab) already made
+        # the QPR, our insert is skipped and we resume the existing one — never a
+        # duplicate.
         cur2.execute(
             """INSERT INTO maintenance_qpr (qpr_no, title, payload, logbook_id, capa_status, created_by)
-               VALUES (%s, %s, %s::jsonb, %s, 'OPEN', %s) RETURNING id""",
+               VALUES (%s, %s, %s::jsonb, %s, 'OPEN', %s)
+               ON CONFLICT (logbook_id) WHERE logbook_id IS NOT NULL DO NOTHING
+               RETURNING id""",
             (next_no, title, json.dumps(payload), bd_id, _author(user)),
         )
-        new_id = cur2.fetchone()[0]
+        row = cur2.fetchone()
         conn.commit()
+        if row is None:                       # lost the race — resume the winner
+            cur.execute("SELECT id, qpr_no FROM maintenance_qpr WHERE logbook_id=%s", (bd_id,))
+            ex = cur.fetchone()
+            return {"qpr_id": ex["id"], "qpr_no": ex["qpr_no"], "resumed": True}
+        new_id = row[0]
     return {"qpr_id": new_id, "qpr_no": next_no, "resumed": False}
