@@ -1,11 +1,12 @@
 /* ───────────────────────────────────────────────────────────────────
  * HistoryCard.jsx
  * ───────────────────────────────────────────────────────────────────
- * "History Card" — zone-wise machine history from the Log Book.  Pick a
- * Zone tab to see EVERY log-book entry for that zone (all natures of work)
- * in a detailed table, with search + month filter.
+ * "History Card" — zone-wise machine history MERGED from BOTH the Log Book
+ * (maintenance_logbook_db_history) and the Manual Break Down Slip
+ * (mes_breakdown_data).  Pick a Zone tab to see every entry for that zone from
+ * both registers in one detailed table, tagged by Source, with search + filters.
  *
- * Source: /api/breakdown-logbook (table maintenance_logbook_db_history).
+ * Source: /api/breakdown-logbook/combined (UNION of both tables).
  * Routing: /maintenance-history-card  (top-level sidebar page "History Card")
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -51,6 +52,7 @@ function fyMonths(fy) {
 // Table columns (in order).  wrap = allow multi-line text.
 const COLS = [
   { key: "_sno",                label: "S No." },
+  { key: "source",              label: "Source" },
   { key: "shift",               label: "Shift" },
   { key: "zone",                label: "Zone" },
   { key: "line",                label: "Line" },
@@ -83,7 +85,7 @@ export default function HistoryCard() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { const r = await api.get("/api/breakdown-logbook/", token); setAll(Array.isArray(r) ? r : []); }
+    try { const r = await api.get("/api/breakdown-logbook/combined", token); setAll(Array.isArray(r) ? r : []); }
     catch { setAll([]); }
     finally { setLoading(false); }
   }, [token]);
@@ -231,7 +233,7 @@ export default function HistoryCard() {
             <button className="hc-back" onClick={() => nav("/dashboard")}>← Back</button>
             <div>
               <div className="hc-title">History <span>Card</span></div>
-              <div className="hc-sub">Zone-wise machine history from the Log Book</div>
+              <div className="hc-sub">Zone-wise machine history — Log Book + Break Down Slip</div>
             </div>
           </div>
           {user?.username && <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
@@ -317,7 +319,7 @@ export default function HistoryCard() {
                   </thead>
                   <tbody>
                     {rows.map((e, i) => (
-                      <tr key={e.id}>
+                      <tr key={`${e.source}-${e.id}`}>
                         {COLS.map((c) => (
                           <td key={c.key} className={`${c.wrap ? "wrap" : ""} ${c.key === "_sno" ? "sno" : ""}`}>
                             {cell(e, c, i)}

@@ -128,6 +128,46 @@ def list_entries(date: Optional[str] = Query(None, description="bd_date YYYY-MM-
         return cur.fetchall()
 
 
+# Column list that both registers share (aliased to the same names).  Down-time
+# is cast to text because it's INTEGER on the slip table and VARCHAR on the Log
+# Book; `ts` (created_at / submitted_at) is the merge sort key.
+_COMBINED_LB = """
+    'Log Book'::text AS source,
+    id, serial_no, shift, zone, line, machine_no, machine_name,
+    bd_date, bd_start_time, bd_ok_time,
+    mc_down_time_minutes::text AS mc_down_time_minutes,
+    problem_observed_by_maintenance, action_taken_on_problem,
+    spares_used, spares, bd_attended_by, created_at AS ts
+"""
+_COMBINED_SLIP = """
+    'Break Down Slip'::text AS source,
+    id, NULL::int AS serial_no, shift, zone, line, machine_no, machine_name,
+    COALESCE(slip_date, bd_start_date) AS bd_date, bd_start_time, bd_ok_time,
+    mc_down_time_minutes::text AS mc_down_time_minutes,
+    problem_observed_by_maintenance, action_taken_on_problem,
+    spares_used, spares, bd_attended_by, submitted_at AS ts
+"""
+
+
+@router.get("/combined")
+def list_combined(user=Depends(get_current_user)):
+    """History Card source — MERGES the Log Book (maintenance_logbook_db_history)
+    AND the Manual Break Down Slip (mes_breakdown_data) into one unified list,
+    each row tagged by `source`.  The two tables now share the same core columns,
+    so the halves line up 1:1 (down-time cast to text, dates coalesced)."""
+    _ensure_table()
+    from routers.breakdown_slips import _ensure_table as _ensure_slip
+    _ensure_slip()
+    sql = (f"SELECT {_COMBINED_LB} FROM maintenance_logbook_db_history "
+           f"UNION ALL "
+           f"SELECT {_COMBINED_SLIP} FROM mes_breakdown_data "
+           f"ORDER BY ts DESC NULLS LAST, id DESC LIMIT 5000")
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute(sql)
+        return cur.fetchall()
+
+
 @router.post("/", status_code=201)
 def create_entry(body: EntryIn, user=Depends(get_current_user)):
     _ensure_table()
