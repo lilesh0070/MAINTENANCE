@@ -672,6 +672,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                      onChange={pickLine ? onPickLine : (v => set("line", v))}/>
             <BdsCell label="SHIFT"
                      value={data.shift}            readOnly={!fieldEditable("shift")}
+                     options={pickLine ? ["A", "B"] : undefined}
                      onChange={v => set("shift", v)}/>
             <BdsCell label="LINE LEADER NAME"
                      value={data.line_leader_name} readOnly={!fieldEditable("line_leader_name")}
