@@ -763,7 +763,7 @@ _BD_SRC = """(
         shift,
         NULL::text                                     AS nature_of_work,
         problem_reported_by_production                 AS problem_production,
-        actual_problem_observed                        AS problem_maintenance,
+        problem_observed_by_maintenance                        AS problem_maintenance,
         action_taken_on_problem                        AS action_taken,
         bd_start_time,
         bd_received_time,
@@ -835,7 +835,7 @@ def _bdlog_serialize(r: dict) -> dict:
             "machine_operator_name": r.get("machine_operator_name"),
             "problem_reported_by_production": r.get("problem_production"),
             "bd_received_time": r.get("bd_received_time")}
-    maint = {"actual_problem_observed": r.get("problem_maintenance"),
+    maint = {"problem_observed_by_maintenance": r.get("problem_maintenance"),
              "action_taken_on_problem": r.get("action_taken"),
              "spares_used": r.get("spares_detail"), "bd_attended_by": r.get("attended_by"),
              "problem_related_to": {"maintenance": "maint" in _prt, "tool_room": "tool" in _prt},

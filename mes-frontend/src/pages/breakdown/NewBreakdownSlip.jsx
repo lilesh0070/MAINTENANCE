@@ -58,7 +58,7 @@ export function NewBreakdownSlip({ token, onClose, onSaved }) {
                            : all.problem_related_to?.tool_room   ? "tool_room" : null,
       type_electrical:       !!all.type_of_problem?.electrical,
       type_mechanical:       !!all.type_of_problem?.mechanical,
-      actual_problem_observed:   all.actual_problem_observed || null,
+      problem_observed_by_maintenance:   all.problem_observed_by_maintenance || null,
       action_taken_on_problem:   all.action_taken_on_problem || null,
       spares_used:               all.spares_used || null,
       // repeatable Spare Details (drop completely-blank rows) — stored as JSONB

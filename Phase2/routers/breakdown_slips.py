@@ -58,7 +58,7 @@ def _ensure_table():
                 problem_related_to             VARCHAR(20),
                 type_electrical                BOOLEAN DEFAULT FALSE,
                 type_mechanical                BOOLEAN DEFAULT FALSE,
-                actual_problem_observed        TEXT,
+                problem_observed_by_maintenance        TEXT,
                 action_taken_on_problem        TEXT,
                 spares_used                    TEXT,
                 bd_attended_by                 VARCHAR(160),
@@ -78,6 +78,25 @@ def _ensure_table():
         # below would otherwise fail with "cannot alter type of a column used
         # by a view" and abort this whole migration.
         cur.execute("DROP VIEW IF EXISTS mes_breakdown_data_v")
+        # 2026-07-28: actual_problem_observed renamed to
+        # problem_observed_by_maintenance (to match the Log Book).  Guarded so
+        # it runs once on an existing table; fresh tables already use the new
+        # name (see CREATE above).
+        cur.execute("""
+            DO $$
+            BEGIN
+              IF EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name='mes_breakdown_data'
+                            AND column_name='actual_problem_observed')
+                 AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_name='mes_breakdown_data'
+                            AND column_name='problem_observed_by_maintenance')
+              THEN
+                ALTER TABLE mes_breakdown_data
+                  RENAME COLUMN actual_problem_observed TO problem_observed_by_maintenance;
+              END IF;
+            END $$;
+        """)
         # Legacy category values are descriptive ('Mechanical', 'PLC / Software'),
         # not just 'A'/'B'/'C' — widen an existing VARCHAR(1) column if present.
         cur.execute("ALTER TABLE mes_breakdown_data ALTER COLUMN category TYPE VARCHAR(40)")
@@ -118,7 +137,7 @@ class BreakdownSlipIn(BaseModel):
     problem_related_to: Optional[str] = None            # 'maintenance' | 'tool_room'
     type_electrical: bool = False
     type_mechanical: bool = False
-    actual_problem_observed: Optional[str] = None
+    problem_observed_by_maintenance: Optional[str] = None
     action_taken_on_problem: Optional[str] = None
     spares_used: Optional[str] = None
     bd_attended_by: Optional[str] = None
@@ -138,7 +157,7 @@ _COLS = [
     "bd_end_date", "mc_down_time_minutes", "response_time_minutes", "frequency",
     "problem_reported_by_production",
     "problem_related_to", "type_electrical", "type_mechanical",
-    "actual_problem_observed", "action_taken_on_problem", "spares_used",
+    "problem_observed_by_maintenance", "action_taken_on_problem", "spares_used",
     "bd_attended_by", "prepared_by_name", "received_by_name",
     "line_leader_operator_name", "quality_engineer_name",
 ]
@@ -215,7 +234,7 @@ def mirror_from_halves(conn, prod: dict, maint: dict, user_id,
                               else ("tool_room" if prt.get("tool_room") else None),
         "type_electrical": bool(top.get("electrical")),
         "type_mechanical": bool(top.get("mechanical")),
-        "actual_problem_observed": maint.get("actual_problem_observed"),
+        "problem_observed_by_maintenance": maint.get("problem_observed_by_maintenance"),
         "action_taken_on_problem": maint.get("action_taken_on_problem"),
         "spares_used": maint.get("spares_used"),
         "bd_attended_by": maint.get("bd_attended_by"),

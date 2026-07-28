@@ -62,7 +62,7 @@ const COLS = [
   { key: "problem_observed_by_maintenance", label: "Problem Observed by Maintenance", wrap: true },
   { key: "action_taken_on_problem",        label: "Action Taken on Problem", wrap: true },
   { key: "mc_down_time_minutes",      label: "Time (min)" },
-  { key: "spare_name",          label: "Spare Name", wrap: true },
+  { key: "spares_used",         label: "Spares Used", wrap: true },
   { key: "bd_attended_by",         label: "B/D Attended By" },
 ];
 

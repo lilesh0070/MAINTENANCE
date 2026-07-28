@@ -55,14 +55,11 @@ def _ensure_table() -> None:
             ("solve_time_hours",                "VARCHAR(20)"),
             ("problem_observed_by_maintenance", "TEXT"),
             ("action_taken_on_problem",                    "TEXT"),
-            ("spare_name",                      "TEXT"),
-            ("spare_model_no",                  "VARCHAR(120)"),
-            ("spare_cnmm_no",                   "VARCHAR(120)"),
-            ("spare_qty",                       "VARCHAR(40)"),
-            # Full multi-spare list: [{spare_name, spare_model_no, spare_cnmm_no,
-            # spare_qty}, …].  The FIRST spare is also mirrored into the flat
-            # spare_* columns above so existing rows/readers keep working.
+            # Spare storage — SAME shape as the Manual Break Down Slip:
+            # `spares` (full multi-spare JSONB list) + `spares_used` (one-line
+            # text summary).  No flat spare_* columns.
             ("spares",                          "JSONB"),
+            ("spares_used",                     "TEXT"),
             ("bd_attended_by",                     "VARCHAR(160)"),
             ("created_by",                      "VARCHAR(120)"),
         ]:
@@ -99,23 +96,37 @@ class EntryIn(BaseModel):
     solve_time_hours: Optional[str] = None
     problem_observed_by_maintenance: Optional[str] = None
     action_taken_on_problem: Optional[str] = None
-    # Legacy single-spare fields (still accepted); the first entry of `spares`
-    # wins when both are sent.
-    spare_name:     Optional[str] = None
-    spare_model_no: Optional[str] = None
-    spare_cnmm_no:  Optional[str] = None
-    spare_qty:      Optional[str] = None
     # Multi-spare list — [{spare_name, spare_model_no, spare_cnmm_no, spare_qty}, …]
+    # (same shape as the Manual Break Down Slip).  `spares_used` (text summary)
+    # is derived from this list on the backend.
     spares:         Optional[List[dict]] = None
+    spares_used:    Optional[str] = None
     bd_attended_by:  Optional[str] = None
 
 
 _SPARE_KEYS = ("spare_name", "spare_model_no", "spare_cnmm_no", "spare_qty")
 
+
+def _spare_summary(spares: list) -> Optional[str]:
+    """One-line text summary of the spares list → stored in `spares_used`
+    (mirrors the Manual Break Down Slip's derived text field)."""
+    parts = []
+    for s in spares or []:
+        name = str(s.get("spare_name") or "").strip()
+        if not name:
+            continue
+        extra = " / ".join(x for x in (str(s.get("spare_model_no") or "").strip(),
+                                       str(s.get("spare_cnmm_no") or "").strip()) if x)
+        qty = str(s.get("spare_qty") or "").strip()
+        bit = name + (f" ({extra})" if extra else "") + (f" QTY-{qty}" if qty else "")
+        parts.append(bit)
+    return " | ".join(parts) if parts else None
+
+
 _LIST_COLS = ("id, serial_no, shift, zone, line, machine_no, machine_name, "
               "bd_date, bd_start_time, bd_ok_time, mc_down_time_minutes, solve_time_hours, "
               "problem_observed_by_maintenance, action_taken_on_problem, "
-              "spare_name, spare_model_no, spare_cnmm_no, spare_qty, spares, "
+              "spares, spares_used, "
               "bd_attended_by, created_by, created_at")
 
 
@@ -136,17 +147,11 @@ def create_entry(body: EntryIn, user=Depends(get_current_user)):
     if not (data.get("bd_date") or "").strip():
         data["bd_date"] = None
 
-    # ── spares: keep the full list in `spares`, mirror the first into the flat
-    # spare_* columns (backward compatibility for old rows / readers / exports).
+    # ── spares: keep the full list in `spares` (JSONB) + a one-line text
+    # summary in `spares_used` — SAME shape as the Manual Break Down Slip.
     spares = [s for s in (data.get("spares") or [])
               if any(str(s.get(k) or "").strip() for k in _SPARE_KEYS)]
-    if spares:
-        first = spares[0]
-        for k in _SPARE_KEYS:
-            data[k] = first.get(k)
-    elif any(str(data.get(k) or "").strip() for k in _SPARE_KEYS):
-        # legacy single-spare payload → store it as a one-item list too
-        spares = [{k: data.get(k) for k in _SPARE_KEYS}]
+    spares_used = _spare_summary(spares)
 
     with get_conn() as conn:
         cur = conn.cursor()
@@ -160,9 +165,9 @@ def create_entry(body: EntryIn, user=Depends(get_current_user)):
                     (serial_no, shift, zone, line, machine_no, machine_name,
                      bd_date, bd_start_time, bd_ok_time, mc_down_time_minutes, solve_time_hours,
                      problem_observed_by_maintenance, action_taken_on_problem,
-                     spare_name, spare_model_no, spare_cnmm_no, spare_qty, spares,
+                     spares, spares_used,
                      bd_attended_by, created_by)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 RETURNING id, serial_no
             """, (
                 next_serial, data["shift"], data["zone"], data["line"],
@@ -170,8 +175,7 @@ def create_entry(body: EntryIn, user=Depends(get_current_user)):
                 data["bd_start_time"], data["bd_ok_time"],
                 data["mc_down_time_minutes"], data["solve_time_hours"],
                 data["problem_observed_by_maintenance"], data["action_taken_on_problem"],
-                data["spare_name"], data["spare_model_no"], data["spare_cnmm_no"],
-                data["spare_qty"], json.dumps(spares) if spares else None,
+                json.dumps(spares) if spares else None, spares_used,
                 data["bd_attended_by"], _author(user),
             ))
             new_id, serial_no = cur.fetchone()

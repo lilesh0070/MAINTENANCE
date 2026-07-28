@@ -78,7 +78,7 @@ const diffMinsDT = (startDate, startHHMM, endDate, endHHMM) => {
  *     bd_start_date, bd_end_date, mc_down_time_minutes,
  *     problem_reported_by_production,
  *     problem_related_to, // { maintenance: bool, tool_room: bool }
- *     actual_problem_observed,
+ *     problem_observed_by_maintenance,
  *     action_taken_on_problem,
  *     spares_used,
  *     bd_attended_by,
@@ -125,7 +125,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
     // too, so a maintenance-driven close still captures the machine.
     "machine_no", "machine_name",
     "problem_related_to", "type_of_problem",
-    "actual_problem_observed", "action_taken_on_problem",
+    "problem_observed_by_maintenance", "action_taken_on_problem",
     "spare_used", "spares_used", "spares", "bd_attended_by",
     "prepared_by", "received_by", "line_leader_operator", "quality_engineer",
   ]);
@@ -225,7 +225,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
       // 2026-05-20 — Multi-select (electrical and/or mechanical can both
       // be ticked, unlike problem_related_to which is single-pick).
       type_of_problem:         maint.type_of_problem         ?? legacy.type_of_problem         ?? { electrical: false, mechanical: false },
-      actual_problem_observed: maint.actual_problem_observed ?? legacy.actual_problem_observed ?? "",
+      problem_observed_by_maintenance: maint.problem_observed_by_maintenance ?? legacy.problem_observed_by_maintenance ?? "",
       action_taken_on_problem: maint.action_taken_on_problem ?? legacy.action_taken_on_problem ?? "",
       spares_used:             maint.spares_used             ?? legacy.spares_used             ?? "",
       // Repeatable Spare Details (same shape as the Log Book): one breakdown
@@ -819,9 +819,9 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
 
           {/* ── Investigation + action ─────────────────────────── */}
           <BdsRow label="ACTUAL PROBLEM OBSERVED BY MAINTENANCE / TOOL ROOM"
-                  value={data.actual_problem_observed}
-                  readOnly={!fieldEditable("actual_problem_observed")}
-                  onChange={v => set("actual_problem_observed", v)}/>
+                  value={data.problem_observed_by_maintenance}
+                  readOnly={!fieldEditable("problem_observed_by_maintenance")}
+                  onChange={v => set("problem_observed_by_maintenance", v)}/>
           <BdsRow label="ACTION TAKEN ON PROBLEM"
                   value={data.action_taken_on_problem}
                   readOnly={!fieldEditable("action_taken_on_problem")}
@@ -977,7 +977,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                       zone_name:    ticket.zone_name,
                       machine_no:   ticket.production_data?.machine_no || "",
                       machine_name: ticket.production_data?.machine_name || "",
-                      reason:       data.actual_problem_observed || "",
+                      reason:       data.problem_observed_by_maintenance || "",
                       observation:  data.action_taken_on_problem || "",
                     };
                     const close = () => { r.unmount(); root.remove(); };

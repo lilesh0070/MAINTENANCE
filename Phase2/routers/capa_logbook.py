@@ -73,7 +73,7 @@ def summary(user=Depends(get_current_user)):
                    bd.machine_no, bd.machine_name,
                    COALESCE(bd.slip_date, bd.bd_start_date)  AS bd_date,
                    bd.problem_reported_by_production          AS problem_production,
-                   bd.actual_problem_observed                 AS problem_maintenance,
+                   bd.problem_observed_by_maintenance                 AS problem_maintenance,
                    bd.action_taken_on_problem                 AS action_taken,
                    bd.mc_down_time_minutes                    AS solve_time_min,
                    bd.bd_attended_by                          AS attended_by,
@@ -116,7 +116,7 @@ def start_capa(bd_id: int, user=Depends(get_current_user)):
         cur.execute(f"""SELECT id, zone AS zone_code,
                                COALESCE(slip_date, bd_start_date) AS bd_date,
                                problem_reported_by_production AS problem_production,
-                               actual_problem_observed AS problem_maintenance,
+                               problem_observed_by_maintenance AS problem_maintenance,
                                machine_name, machine_no,
                                bd_attended_by AS attended_by
                           FROM mes_breakdown_data WHERE id=%s AND {_MIN60}""", (bd_id,))

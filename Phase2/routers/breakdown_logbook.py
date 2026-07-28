@@ -56,24 +56,25 @@ def _ensure_table() -> None:
                 solve_time_hours      VARCHAR(20),
                 problem_observed_by_maintenance TEXT,
                 action_taken_on_problem TEXT,
-                spare_name            TEXT,
-                spare_model_no        VARCHAR(120),
-                spare_cnmm_no         VARCHAR(120),
-                spare_qty             VARCHAR(40),
                 spares                JSONB,
+                spares_used           TEXT,
                 bd_attended_by        VARCHAR(160),
                 created_by            VARCHAR(120),
                 created_at            TIMESTAMP DEFAULT NOW()
             )
         """)
-        # The Log Book table now mirrors EXACTLY what the frontend Log Book
-        # (BreakdownLogBook) saves.  Drop the legacy columns the current form
-        # never fills — old fuller-format leftovers + History-Card-only blanks.
+        # Spare storage matches the Manual Break Down Slip: `spares` (JSONB
+        # multi-spare list) + `spares_used` (one-line text summary) — no flat
+        # spare_* columns.
+        cur.execute("ALTER TABLE maintenance_logbook_db_history ADD COLUMN IF NOT EXISTS spares_used TEXT")
+        # Drop the legacy columns the current form never fills — old fuller-format
+        # leftovers, History-Card-only blanks, and the flat spare_* columns.
         for _col in ("nature_of_work", "problem_production", "actual_problem_observed",
                      "spare_used", "spares_detail", "category", "remarks",
                      "knockout_production", "cumulative_production", "total_production",
                      "bd_received_time", "problem_repeated", "spare_part_code",
-                     "tool_room_maintenance", "handover_to", "root_cause", "bd_response_time"):
+                     "tool_room_maintenance", "handover_to", "root_cause", "bd_response_time",
+                     "spare_name", "spare_model_no", "spare_cnmm_no", "spare_qty"):
             cur.execute(f"ALTER TABLE maintenance_logbook_db_history DROP COLUMN IF EXISTS {_col}")
         conn.commit()
 
@@ -83,7 +84,7 @@ FIELDS = [
     "serial_no", "shift", "zone", "line", "machine_no", "machine_name", "bd_date",
     "bd_start_time", "bd_ok_time", "mc_down_time_minutes", "solve_time_hours",
     "problem_observed_by_maintenance", "action_taken_on_problem",
-    "spare_name", "spare_model_no", "spare_cnmm_no", "spare_qty", "bd_attended_by",
+    "spares_used", "bd_attended_by",
 ]
 
 
@@ -101,10 +102,7 @@ class EntryIn(BaseModel):
     solve_time_hours:        Optional[str] = None
     problem_observed_by_maintenance: Optional[str] = None
     action_taken_on_problem: Optional[str] = None
-    spare_name:              Optional[str] = None
-    spare_model_no:          Optional[str] = None
-    spare_cnmm_no:           Optional[str] = None
-    spare_qty:               Optional[str] = None
+    spares_used:             Optional[str] = None
     bd_attended_by:          Optional[str] = None
 
 
