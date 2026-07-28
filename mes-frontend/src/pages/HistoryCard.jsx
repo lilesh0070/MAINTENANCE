@@ -164,6 +164,13 @@ export default function HistoryCard() {
   // Changing the zone tab resets the line/machine filters (they're zone-scoped).
   const pickZone = (z) => { setZone(z); setFLine(""); setFMno(""); setFMname(""); };
   const onFLine  = (v) => { setFLine(v); setFMno(""); setFMname(""); };
+  // Picking a Machine No auto-fills its Machine Name (1:1 from the machine master).
+  const onFMno = (v) => {
+    setFMno(v);
+    const m = master.find((x) => x.zone_name === zone && x.line_name === fLine
+                                 && String(x.machine_no) === String(v));
+    setFMname(m?.machine_name || "");
+  };
   const clearFilters = () => {
     setFFy(""); setFMonth(""); setFDate(""); setFLine(""); setFMno(""); setFMname(""); setQ("");
   };
@@ -310,7 +317,7 @@ export default function HistoryCard() {
             </div>
             <div className="hc-fld">
               <label>Machine No.</label>
-              <select className="hc-fsel" value={fMno} onChange={(e) => setFMno(e.target.value)} disabled={!fLine}>
+              <select className="hc-fsel" value={fMno} onChange={(e) => onFMno(e.target.value)} disabled={!fLine}>
                 <option value="">All Machine No.</option>
                 {machineNoOpts.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
