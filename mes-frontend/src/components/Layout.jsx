@@ -1,4 +1,5 @@
 import SlideNav from "./SlideNav";
+import FullscreenButton from "./FullscreenButton";
 
 export default function Layout({ children }) {
   return (
@@ -16,6 +17,9 @@ export default function Layout({ children }) {
 
       {/* Floating nav — always visible on top */}
       <SlideNav />
+
+      {/* Full-screen toggle — on every page (handy for the TV wall-display) */}
+      <FullscreenButton />
     </div>
   );
 }
