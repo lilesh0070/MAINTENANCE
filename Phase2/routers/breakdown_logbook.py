@@ -44,29 +44,29 @@ def _ensure_table() -> None:
             CREATE TABLE IF NOT EXISTS maintenance_logbook_db_history (
                 id                    SERIAL PRIMARY KEY,
                 shift                 VARCHAR(8),
-                zone_name             VARCHAR(120),
-                line_name             VARCHAR(120),
+                zone             VARCHAR(120),
+                line             VARCHAR(120),
                 machine_no            VARCHAR(60),
                 machine_name          VARCHAR(160),
                 bd_date               DATE,
                 nature_of_work        VARCHAR(60),
                 problem_production    TEXT,
-                problem_maintenance   TEXT,
-                action_taken          TEXT,
+                actual_problem_observed   TEXT,
+                action_taken_on_problem          TEXT,
                 knockout_production   VARCHAR(40),
                 cumulative_production VARCHAR(40),
                 total_production      VARCHAR(40),
                 bd_start_time         VARCHAR(8),
                 bd_received_time      VARCHAR(8),
                 bd_ok_time            VARCHAR(8),
-                solve_time_min        VARCHAR(20),
+                mc_down_time_minutes        VARCHAR(20),
                 solve_time_hours      VARCHAR(20),
                 problem_repeated      VARCHAR(8),
                 spare_used            VARCHAR(8),
                 spares_detail         TEXT,
                 spare_part_code       VARCHAR(120),
                 spare_qty             VARCHAR(40),
-                attended_by           VARCHAR(160),
+                bd_attended_by           VARCHAR(160),
                 tool_room_maintenance VARCHAR(8),
                 handover_to           VARCHAR(160),
                 category              VARCHAR(40),
@@ -84,28 +84,28 @@ def _ensure_table() -> None:
 
 # Column order used for INSERT (everything except id / created_at).
 FIELDS = [
-    "shift", "zone_name", "line_name", "machine_no", "machine_name", "bd_date",
-    "nature_of_work", "problem_production", "problem_maintenance", "root_cause",
-    "action_taken", "knockout_production", "cumulative_production", "total_production",
-    "bd_start_time", "bd_received_time", "bd_response_time", "bd_ok_time", "solve_time_min",
+    "shift", "zone", "line", "machine_no", "machine_name", "bd_date",
+    "nature_of_work", "problem_production", "actual_problem_observed", "root_cause",
+    "action_taken_on_problem", "knockout_production", "cumulative_production", "total_production",
+    "bd_start_time", "bd_received_time", "bd_response_time", "bd_ok_time", "mc_down_time_minutes",
     "solve_time_hours", "problem_repeated", "spare_used", "spares_detail",
-    "spare_part_code", "spare_qty", "attended_by", "tool_room_maintenance",
+    "spare_part_code", "spare_qty", "bd_attended_by", "tool_room_maintenance",
     "handover_to", "category", "remarks",
 ]
 
 
 class EntryIn(BaseModel):
     shift:                 Optional[str] = None
-    zone_name:             Optional[str] = None
-    line_name:             Optional[str] = None
+    zone:             Optional[str] = None
+    line:             Optional[str] = None
     machine_no:            Optional[str] = None
     machine_name:          Optional[str] = None
     bd_date:               Optional[str] = None
     nature_of_work:        Optional[str] = None
     problem_production:    Optional[str] = None
-    problem_maintenance:   Optional[str] = None
+    actual_problem_observed:   Optional[str] = None
     root_cause:            Optional[str] = None
-    action_taken:          Optional[str] = None
+    action_taken_on_problem:          Optional[str] = None
     knockout_production:   Optional[str] = None
     cumulative_production: Optional[str] = None
     total_production:      Optional[str] = None
@@ -113,14 +113,14 @@ class EntryIn(BaseModel):
     bd_received_time:      Optional[str] = None
     bd_response_time:      Optional[str] = None
     bd_ok_time:            Optional[str] = None
-    solve_time_min:        Optional[str] = None
+    mc_down_time_minutes:        Optional[str] = None
     solve_time_hours:      Optional[str] = None
     problem_repeated:      Optional[str] = None
     spare_used:            Optional[str] = None
     spares_detail:         Optional[str] = None
     spare_part_code:       Optional[str] = None
     spare_qty:             Optional[str] = None
-    attended_by:           Optional[str] = None
+    bd_attended_by:           Optional[str] = None
     tool_room_maintenance: Optional[str] = None
     handover_to:           Optional[str] = None
     category:              Optional[str] = None

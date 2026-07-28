@@ -52,19 +52,19 @@ function fyMonths(fy) {
 const COLS = [
   { key: "_sno",                label: "S No." },
   { key: "shift",               label: "Shift" },
-  { key: "zone_name",           label: "Zone" },
-  { key: "line_name",           label: "Line" },
+  { key: "zone",                label: "Zone" },
+  { key: "line",                label: "Line" },
   { key: "machine_no",          label: "M/C No." },
   { key: "machine_name",        label: "Machine Name", wrap: true },
   { key: "bd_date",             label: "Breakdown Date", date: true },
   { key: "nature_of_work",      label: "Nature of Work" },
   { key: "problem_production",  label: "Problem Reported by Production", wrap: true },
-  { key: "problem_maintenance", label: "Actual Problem Observed by Maintenance", wrap: true },
-  { key: "action_taken",        label: "Action Taken on Problem", wrap: true },
-  { key: "solve_time_min",      label: "Time (min)" },
+  { key: "actual_problem_observed", label: "Actual Problem Observed by Maintenance", wrap: true },
+  { key: "action_taken_on_problem",        label: "Action Taken on Problem", wrap: true },
+  { key: "mc_down_time_minutes",      label: "Time (min)" },
   { key: "spare_used",          label: "Spare Used" },
   { key: "spares_detail",       label: "Spares Detail", wrap: true },
-  { key: "attended_by",         label: "B/D Attended By" },
+  { key: "bd_attended_by",         label: "B/D Attended By" },
   { key: "category",            label: "Category" },
   { key: "remarks",             label: "Remarks", wrap: true },
 ];
@@ -152,7 +152,7 @@ export default function HistoryCard() {
     const ql = q.trim().toLowerCase();
     const w = fFy ? fyWindow(fFy) : null;
     return all
-      .filter((e) => e.zone_name === zone)
+      .filter((e) => e.zone === zone)
       .filter((e) => {
         if (!w && !fMonth && !fDate) return true;
         const d = e.bd_date ? String(e.bd_date).slice(0, 10) : "";
@@ -161,7 +161,7 @@ export default function HistoryCard() {
         if (fDate && d !== fDate) return false;
         return true;
       })
-      .filter((e) => !fLine  || e.line_name === fLine)
+      .filter((e) => !fLine  || e.line === fLine)
       .filter((e) => !fMno   || String(e.machine_no) === String(fMno))
       .filter((e) => !fMname || e.machine_name === fMname)
       .filter((e) => !ql || COLS.some((c) => String(e[c.key] ?? "").toLowerCase().includes(ql)))

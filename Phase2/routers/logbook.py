@@ -44,17 +44,17 @@ def _ensure_table() -> None:
         for col, typ in [
             ("serial_no",                       "INTEGER"),
             ("shift",                           "VARCHAR(8)"),
-            ("zone_name",                       "VARCHAR(120)"),
-            ("line_name",                       "VARCHAR(120)"),
+            ("zone",                       "VARCHAR(120)"),
+            ("line",                       "VARCHAR(120)"),
             ("machine_no",                      "VARCHAR(60)"),
             ("machine_name",                    "VARCHAR(160)"),
             ("bd_date",                         "DATE"),
             ("bd_start_time",                   "VARCHAR(8)"),
             ("bd_ok_time",                      "VARCHAR(8)"),
-            ("solve_time_min",                  "VARCHAR(20)"),
+            ("mc_down_time_minutes",                  "VARCHAR(20)"),
             ("solve_time_hours",                "VARCHAR(20)"),
             ("problem_observed_by_maintenance", "TEXT"),
-            ("action_taken",                    "TEXT"),
+            ("action_taken_on_problem",                    "TEXT"),
             ("spare_name",                      "TEXT"),
             ("spare_model_no",                  "VARCHAR(120)"),
             ("spare_cnmm_no",                   "VARCHAR(120)"),
@@ -63,7 +63,7 @@ def _ensure_table() -> None:
             # spare_qty}, …].  The FIRST spare is also mirrored into the flat
             # spare_* columns above so existing rows/readers keep working.
             ("spares",                          "JSONB"),
-            ("attended_by",                     "VARCHAR(160)"),
+            ("bd_attended_by",                     "VARCHAR(160)"),
             ("created_by",                      "VARCHAR(120)"),
         ]:
             cur.execute(f"ALTER TABLE maintenance_logbook_db_history "
@@ -88,17 +88,17 @@ def _ser(r: dict) -> dict:
 
 class EntryIn(BaseModel):
     shift:        Optional[str] = None
-    zone_name:    Optional[str] = None
-    line_name:    Optional[str] = None
+    zone:    Optional[str] = None
+    line:    Optional[str] = None
     machine_no:   Optional[str] = None
     machine_name: Optional[str] = None
     bd_date:      Optional[str] = None
     bd_start_time:    Optional[str] = None
     bd_ok_time:       Optional[str] = None
-    solve_time_min:   Optional[str] = None
+    mc_down_time_minutes:   Optional[str] = None
     solve_time_hours: Optional[str] = None
     problem_observed_by_maintenance: Optional[str] = None
-    action_taken: Optional[str] = None
+    action_taken_on_problem: Optional[str] = None
     # Legacy single-spare fields (still accepted); the first entry of `spares`
     # wins when both are sent.
     spare_name:     Optional[str] = None
@@ -107,16 +107,16 @@ class EntryIn(BaseModel):
     spare_qty:      Optional[str] = None
     # Multi-spare list — [{spare_name, spare_model_no, spare_cnmm_no, spare_qty}, …]
     spares:         Optional[List[dict]] = None
-    attended_by:  Optional[str] = None
+    bd_attended_by:  Optional[str] = None
 
 
 _SPARE_KEYS = ("spare_name", "spare_model_no", "spare_cnmm_no", "spare_qty")
 
-_LIST_COLS = ("id, serial_no, shift, zone_name, line_name, machine_no, machine_name, "
-              "bd_date, bd_start_time, bd_ok_time, solve_time_min, solve_time_hours, "
-              "problem_observed_by_maintenance, action_taken, "
+_LIST_COLS = ("id, serial_no, shift, zone, line, machine_no, machine_name, "
+              "bd_date, bd_start_time, bd_ok_time, mc_down_time_minutes, solve_time_hours, "
+              "problem_observed_by_maintenance, action_taken_on_problem, "
               "spare_name, spare_model_no, spare_cnmm_no, spare_qty, spares, "
-              "attended_by, created_by, created_at")
+              "bd_attended_by, created_by, created_at")
 
 
 @router.get("/")
@@ -157,22 +157,22 @@ def create_entry(body: EntryIn, user=Depends(get_current_user)):
         try:
             cur.execute("""
                 INSERT INTO maintenance_logbook_db_history
-                    (serial_no, shift, zone_name, line_name, machine_no, machine_name,
-                     bd_date, bd_start_time, bd_ok_time, solve_time_min, solve_time_hours,
-                     problem_observed_by_maintenance, action_taken,
+                    (serial_no, shift, zone, line, machine_no, machine_name,
+                     bd_date, bd_start_time, bd_ok_time, mc_down_time_minutes, solve_time_hours,
+                     problem_observed_by_maintenance, action_taken_on_problem,
                      spare_name, spare_model_no, spare_cnmm_no, spare_qty, spares,
-                     attended_by, created_by)
+                     bd_attended_by, created_by)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 RETURNING id, serial_no
             """, (
-                next_serial, data["shift"], data["zone_name"], data["line_name"],
+                next_serial, data["shift"], data["zone"], data["line"],
                 data["machine_no"], data["machine_name"], data["bd_date"],
                 data["bd_start_time"], data["bd_ok_time"],
-                data["solve_time_min"], data["solve_time_hours"],
-                data["problem_observed_by_maintenance"], data["action_taken"],
+                data["mc_down_time_minutes"], data["solve_time_hours"],
+                data["problem_observed_by_maintenance"], data["action_taken_on_problem"],
                 data["spare_name"], data["spare_model_no"], data["spare_cnmm_no"],
                 data["spare_qty"], json.dumps(spares) if spares else None,
-                data["attended_by"], _author(user),
+                data["bd_attended_by"], _author(user),
             ))
             new_id, serial_no = cur.fetchone()
             conn.commit()
@@ -184,7 +184,7 @@ def create_entry(body: EntryIn, user=Depends(get_current_user)):
         from routers.maintenance_spare import record_usage
         with get_conn() as sconn:
             record_usage(sconn, "Log Book", {
-                "zone": data.get("zone_name"), "line": data.get("line_name"),
+                "zone": data.get("zone"), "line": data.get("line"),
                 "machine_no": data.get("machine_no"), "machine_name": data.get("machine_name"),
                 "used_date": data.get("bd_date"),
             }, spares)

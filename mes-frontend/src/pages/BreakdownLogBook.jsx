@@ -55,12 +55,12 @@ function diffMinutes(start, ok) {
 const EMPTY_SPARE = { spare_name: "", spare_model_no: "", spare_cnmm_no: "", spare_qty: "" };
 const EMPTY = {
   shift: "A",
-  zone_name: "", line_name: "", machine_no: "", machine_name: "",
+  zone: "", line: "", machine_no: "", machine_name: "",
   bd_date: todayISO(), bd_start_time: "", bd_ok_time: "",
-  problem_observed_by_maintenance: "", action_taken: "",
+  problem_observed_by_maintenance: "", action_taken_on_problem: "",
   spare_used: "no",               // "yes" reveals the (mandatory) Spare Details
   spares: [{ ...EMPTY_SPARE }],   // one entry can consume several spares
-  attended_by: "",
+  bd_attended_by: "",
 };
 // EMPTY holds an array — always hand out a FRESH copy, never the same reference.
 const newForm = () => ({ ...EMPTY, bd_date: todayISO(), spares: [{ ...EMPTY_SPARE }] });
@@ -77,22 +77,22 @@ const spareCell = (r, k) => {
 const LIST_COLS = [
   { h: "Serial No.", k: "serial_no" },
   { h: "Shift", k: "shift" },
-  { h: "Zone", k: "zone_name" },
-  { h: "Line", k: "line_name" },
+  { h: "Zone", k: "zone" },
+  { h: "Line", k: "line" },
   { h: "Machine No.", k: "machine_no" },
   { h: "Machine Name", k: "machine_name", wide: true },
   { h: "Date", k: "bd_date" },
   { h: "Start Time", k: "bd_start_time" },
   { h: "End Time", k: "bd_ok_time" },
-  { h: "Total (min)", k: "solve_time_min" },
+  { h: "Total (min)", k: "mc_down_time_minutes" },
   { h: "Total (hrs)", k: "solve_time_hours" },
   { h: "Problem Observed by Maintenance", k: "problem_observed_by_maintenance", wide: true },
-  { h: "Action Taken", k: "action_taken", wide: true },
+  { h: "Action Taken", k: "action_taken_on_problem", wide: true },
   { h: "Spare Name", k: "spare_name" },
   { h: "Model No.", k: "spare_model_no" },
   { h: "CNMM No.", k: "spare_cnmm_no" },
   { h: "Qty", k: "spare_qty" },
-  { h: "Attended By", k: "attended_by" },
+  { h: "Attended By", k: "bd_attended_by" },
 ];
 
 export default function BreakdownLogBook() {
@@ -135,18 +135,18 @@ export default function BreakdownLogBook() {
   const zoneOpts = useMemo(
     () => [...new Set(master.map((m) => m.zone_name).filter(Boolean))].sort(), [master]);
   const lineOpts = useMemo(
-    () => form.zone_name
-      ? [...new Set(master.filter((m) => m.zone_name === form.zone_name).map((m) => m.line_name).filter(Boolean))].sort()
-      : [], [master, form.zone_name]);
+    () => form.zone
+      ? [...new Set(master.filter((m) => m.zone_name === form.zone).map((m) => m.line_name).filter(Boolean))].sort()
+      : [], [master, form.zone]);
   const mcOpts = useMemo(
-    () => (form.zone_name && form.line_name)
-      ? master.filter((m) => m.zone_name === form.zone_name && m.line_name === form.line_name && m.machine_no)
+    () => (form.zone && form.line)
+      ? master.filter((m) => m.zone_name === form.zone && m.line_name === form.line && m.machine_no)
               .sort((a, b) => (a.serial_no || 0) - (b.serial_no || 0))
-      : [], [master, form.zone_name, form.line_name]);
+      : [], [master, form.zone, form.line]);
 
   const UPPER = new Set([
-    "problem_observed_by_maintenance", "action_taken",
-    "spare_name", "spare_model_no", "spare_cnmm_no", "attended_by",
+    "problem_observed_by_maintenance", "action_taken_on_problem",
+    "spare_name", "spare_model_no", "spare_cnmm_no", "bd_attended_by",
   ]);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: UPPER.has(k) ? String(v).toUpperCase() : v }));
 
@@ -177,8 +177,8 @@ export default function BreakdownLogBook() {
         : { ...s, spare_name: name };
     }),
   }));
-  const onZone = (v) => setForm((f) => ({ ...f, zone_name: v, line_name: "", machine_no: "", machine_name: "" }));
-  const onLine = (v) => setForm((f) => ({ ...f, line_name: v, machine_no: "", machine_name: "" }));
+  const onZone = (v) => setForm((f) => ({ ...f, zone: v, line: "", machine_no: "", machine_name: "" }));
+  const onLine = (v) => setForm((f) => ({ ...f, line: v, machine_no: "", machine_name: "" }));
   const onMc = (v) => {
     const hit = mcOpts.find((m) => String(m.machine_no) === String(v));
     setForm((f) => ({ ...f, machine_no: v, machine_name: hit?.machine_name || "" }));
@@ -201,8 +201,8 @@ export default function BreakdownLogBook() {
   const filteredRows = useMemo(() => rows.filter((r) => {
     if (flDate && String(r.bd_date || "").slice(0, 10) !== flDate) return false;
     if (flShift && r.shift !== flShift) return false;
-    if (flZone && r.zone_name !== flZone) return false;
-    if (flLine && r.line_name !== flLine) return false;
+    if (flZone && r.zone !== flZone) return false;
+    if (flLine && r.line !== flLine) return false;
     if (flMno && String(r.machine_no) !== String(flMno)) return false;
     return true;
   }), [rows, flDate, flShift, flZone, flLine, flMno]);
@@ -211,16 +211,16 @@ export default function BreakdownLogBook() {
 
   // Required to save: machine (zone+line+no) + problem observed.
   const REQUIRED = [
-    ["zone_name", "Zone"], ["line_name", "Line"], ["machine_no", "Machine No."],
+    ["zone", "Zone"], ["line", "Line"], ["machine_no", "Machine No."],
     ["bd_date", "Date"], ["problem_observed_by_maintenance", "Problem Observed by Maintenance"],
   ];
 
   // Save is only enabled once EVERY field is filled — and, when Spare Used = YES,
   // every filled spare row must have all 4 columns.
   const REQUIRED_ALL = [
-    "shift", "zone_name", "line_name", "machine_no", "machine_name", "bd_date",
+    "shift", "zone", "line", "machine_no", "machine_name", "bd_date",
     "bd_start_time", "bd_ok_time", "problem_observed_by_maintenance",
-    "action_taken", "attended_by",
+    "action_taken_on_problem", "bd_attended_by",
   ];
   const spareRuleOK = () => {
     if (form.spare_used !== "yes") return true;   // No → spares don't block
@@ -242,7 +242,7 @@ export default function BreakdownLogBook() {
       // drop completely-blank spare rows so an unused "Add" doesn't get saved
       const spares = (form.spares || []).filter((s) => Object.values(s).some((v) => String(v ?? "").trim()));
       const r = await api.post("/api/logbook/",
-        { ...form, spares, solve_time_min: solveMin, solve_time_hours: solveHrs }, token);
+        { ...form, spares, mc_down_time_minutes: solveMin, solve_time_hours: solveHrs }, token);
       setMsg({ type: "ok", text: `Entry saved ✓ (Serial No. ${r.serial_no})` });
       setForm(newForm());
     } catch (e) { setMsg({ type: "err", text: e.message || "Save failed" }); }
@@ -361,22 +361,22 @@ export default function BreakdownLogBook() {
                   </div>
                   <div className="lb-field">
                     <span className="lb-lbl">Zone</span>
-                    <select className="lb-sel" value={form.zone_name} onChange={(e) => onZone(e.target.value)}>
+                    <select className="lb-sel" value={form.zone} onChange={(e) => onZone(e.target.value)}>
                       <option value="">— Select Zone —</option>
                       {zoneOpts.map((z) => <option key={z} value={z}>{z}</option>)}
                     </select>
                   </div>
                   <div className="lb-field">
                     <span className="lb-lbl">Line</span>
-                    <select className="lb-sel" value={form.line_name} disabled={!form.zone_name} onChange={(e) => onLine(e.target.value)}>
-                      <option value="">{form.zone_name ? "— Select Line —" : "Select Zone first"}</option>
+                    <select className="lb-sel" value={form.line} disabled={!form.zone} onChange={(e) => onLine(e.target.value)}>
+                      <option value="">{form.zone ? "— Select Line —" : "Select Zone first"}</option>
                       {lineOpts.map((l) => <option key={l} value={l}>{l}</option>)}
                     </select>
                   </div>
                   <div className="lb-field">
                     <span className="lb-lbl">Machine No.</span>
-                    <select className="lb-sel" value={form.machine_no} disabled={!form.line_name} onChange={(e) => onMc(e.target.value)}>
-                      <option value="">{form.line_name ? "— Select M/C No —" : "Select Line first"}</option>
+                    <select className="lb-sel" value={form.machine_no} disabled={!form.line} onChange={(e) => onMc(e.target.value)}>
+                      <option value="">{form.line ? "— Select M/C No —" : "Select Line first"}</option>
                       {mcOpts.map((m) => <option key={m.id} value={m.machine_no}>{m.machine_no}</option>)}
                     </select>
                   </div>
@@ -415,8 +415,8 @@ export default function BreakdownLogBook() {
                   </div>
                   <div className="lb-field full">
                     <span className="lb-lbl">Action Taken</span>
-                    <textarea className="lb-ta" value={form.action_taken}
-                              onChange={(e) => set("action_taken", e.target.value)} />
+                    <textarea className="lb-ta" value={form.action_taken_on_problem}
+                              onChange={(e) => set("action_taken_on_problem", e.target.value)} />
                   </div>
                 </div>
 
@@ -488,7 +488,7 @@ export default function BreakdownLogBook() {
                 <div className="lb-section lb-grid">
                   <div className="lb-field">
                     <span className="lb-lbl">Attended By</span>
-                    <input className="lb-in" value={form.attended_by} onChange={(e) => set("attended_by", e.target.value)} />
+                    <input className="lb-in" value={form.bd_attended_by} onChange={(e) => set("bd_attended_by", e.target.value)} />
                   </div>
                 </div>
               </div>
