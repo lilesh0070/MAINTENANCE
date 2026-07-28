@@ -1416,29 +1416,36 @@ def dashboard(month: str = Query(None), user=Depends(get_current_user)):
 @router.get("/compliance")
 def pm_compliance(fy: str = Query(None, description="e.g. 2026-27; empty = all-time"),
                   user=Depends(get_current_user)):
-    """PM compliance over a whole financial year (Apr→Mar), or all-time when
-    `fy` is omitted — counted from the PM planner (pm_schedule): how many PMs
-    are scheduled, how many are done, and how many are still pending.  This is
-    the schedule-wide view (not one calendar month, which /dashboard gives)."""
-    where, params = "1=1", []
+    """PM compliance for a financial year — counted from the SAME yearly PM
+    planner the PM pages use (`maintenance_yearly_pm_shedule`), NOT the sparse
+    `pm_schedule` table (which is where the old version looked, so its counts
+    were wrong).
+
+      • scheduled = every PLANNED PM  → each 'due' week in `plan_weeks`
+      • done      = those planned weeks marked complete in `actual_weeks`
+      • pending   = scheduled − done
+
+    `fy` empty → across every planned year.  The plan lives per (machine, week)
+    inside plan_weeks/actual_weeks JSONB keyed by week-index, so we expand and
+    count in Python (mirrors the planner's own done = 'week in actual' rule)."""
+    where, params = "plan_weeks <> '{}'::jsonb", []
     if fy:
-        try:
-            y = int(str(fy).split("-")[0])
-            # pm_month is a 'YYYY-MM' text column → the FY spans Apr..next-Mar,
-            # which sorts correctly as strings.
-            where = "pm_month >= %s AND pm_month <= %s"
-            params = [f"{y}-04", f"{y + 1}-03"]
-        except (ValueError, TypeError):
-            pass
+        where += " AND year_label = %s"
+        params = [fy]
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute(f"""SELECT COUNT(*) AS scheduled,
-                          COUNT(*) FILTER (WHERE LOWER(status) = 'done') AS done
-                          FROM pm_schedule WHERE {where}""", params)
-        r = cur.fetchone() or {}
-    scheduled = int(r.get("scheduled") or 0)
-    done      = int(r.get("done") or 0)
-    pending   = scheduled - done
+        cur.execute(f"SELECT plan_weeks, actual_weeks FROM maintenance_yearly_pm_shedule "
+                    f"WHERE {where}", params)
+        rows = cur.fetchall()
+    scheduled = done = 0
+    for r in rows:
+        plan   = r.get("plan_weeks") or {}
+        actual = r.get("actual_weeks") or {}
+        for wk in plan.keys():                 # each planned week = one PM
+            scheduled += 1
+            if wk in actual:                   # that planned week was completed
+                done += 1
+    pending = scheduled - done
     return {"fy": fy, "scheduled": scheduled, "done": done, "pending": pending,
             "pct": round(done * 100 / scheduled) if scheduled else 0}
 
