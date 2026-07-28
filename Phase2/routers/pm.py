@@ -1413,6 +1413,36 @@ def dashboard(month: str = Query(None), user=Depends(get_current_user)):
     }
 
 
+@router.get("/compliance")
+def pm_compliance(fy: str = Query(None, description="e.g. 2026-27; empty = all-time"),
+                  user=Depends(get_current_user)):
+    """PM compliance over a whole financial year (Apr→Mar), or all-time when
+    `fy` is omitted — counted from the PM planner (pm_schedule): how many PMs
+    are scheduled, how many are done, and how many are still pending.  This is
+    the schedule-wide view (not one calendar month, which /dashboard gives)."""
+    where, params = "1=1", []
+    if fy:
+        try:
+            y = int(str(fy).split("-")[0])
+            # pm_month is a 'YYYY-MM' text column → the FY spans Apr..next-Mar,
+            # which sorts correctly as strings.
+            where = "pm_month >= %s AND pm_month <= %s"
+            params = [f"{y}-04", f"{y + 1}-03"]
+        except (ValueError, TypeError):
+            pass
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute(f"""SELECT COUNT(*) AS scheduled,
+                          COUNT(*) FILTER (WHERE LOWER(status) = 'done') AS done
+                          FROM pm_schedule WHERE {where}""", params)
+        r = cur.fetchone() or {}
+    scheduled = int(r.get("scheduled") or 0)
+    done      = int(r.get("done") or 0)
+    pending   = scheduled - done
+    return {"fy": fy, "scheduled": scheduled, "done": done, "pending": pending,
+            "pct": round(done * 100 / scheduled) if scheduled else 0}
+
+
 # ════════════════════════════════════════════════════════════════════
 # SCHEDULE / PLANNER
 # ════════════════════════════════════════════════════════════════════

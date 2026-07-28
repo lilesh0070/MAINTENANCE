@@ -16,6 +16,7 @@ import MaintenanceDeviations from "./pages/MaintenanceDeviations";
 import MaintenancePokaYoke   from "./pages/MaintenancePokaYoke";
 import PMPanel               from "./pages/PMPanel";
 import MaintenanceKPI        from "./pages/MaintenanceKPI";
+import MaintenanceOverview   from "./pages/MaintenanceOverview";
 import MaintenanceBreakdown  from "./pages/MaintenanceBreakdown";
 import BDHistory             from "./pages/BDHistory";
 import BreakdownLogBook      from "./pages/BreakdownLogBook";
@@ -142,6 +143,11 @@ function AppRoutes() {
       {/* Preventive Maintenance check sheets (/api/pm/*). */}
       <Route path="/maintenance-pm" element={
         <Protected requiredAccess="maintenance-pm"><PMPanel /></Protected>
+      } />
+
+      {/* Maintenance Overview — management dashboard (KPI tiles + charts, our data). */}
+      <Route path="/maintenance-overview" element={
+        <Protected requiredAccess="maintenance-overview"><MaintenanceOverview /></Protected>
       } />
 
       {/* Maintenance KPI — financial-year headline cards (MTTR/MTBF/LTTR…). */}

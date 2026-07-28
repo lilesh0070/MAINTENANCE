@@ -158,6 +158,7 @@ export function AuthProvider({ children }) {
       const slug = (user?.departmentSlug || "").toLowerCase();
       if (slug === "maintenance") {
         return ["dashboard", "department-panel", "admin-maintenance",
+                "maintenance-overview",
                 "maintenance-dashboard",
                 "maintenance-update-plan",
                 "maintenance-kpi", "maintenance-breakdown", "maintenance-breakdown-slip",
