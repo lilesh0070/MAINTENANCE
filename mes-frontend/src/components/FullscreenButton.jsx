@@ -45,7 +45,7 @@ export default function FullscreenButton() {
       title={on ? "Exit full screen (Esc)" : "Full screen"}
       aria-label={on ? "Exit full screen" : "Enter full screen"}
       style={{
-        position: "fixed", right: 18, bottom: 18, zIndex: 10000,
+        position: "fixed", right: 18, top: 18, zIndex: 10000,
         width: 46, height: 46, borderRadius: 11,
         border: "1px solid rgba(148,163,184,.4)",
         background: "rgba(15,23,42,.78)", color: "#fff",
