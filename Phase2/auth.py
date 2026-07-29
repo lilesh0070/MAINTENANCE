@@ -12,6 +12,7 @@ To change token expiry → edit TOKEN_EXPIRE_HOURS
 """
 
 import os
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -30,12 +31,17 @@ import psycopg2
 # admin token (get_current_user only checks the signature).  Set JWT_SECRET_KEY
 # (or SECRET_KEY) in .env to a long random value, e.g.:
 #     python -c "import secrets; print(secrets.token_urlsafe(48))"
-_FALLBACK_SECRET    = "mes-tbdi-bawal-2024-secret-key-change-in-production"
-SECRET_KEY          = os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY") or _FALLBACK_SECRET
-if SECRET_KEY == _FALLBACK_SECRET:
-    print("[SECURITY] WARNING: JWT_SECRET_KEY not set — using the built-in "
-          "fallback key. Anyone with this source can forge admin tokens. "
-          "Set JWT_SECRET_KEY in .env before production use.")
+# No signing key is baked into the source (a hardcoded key can be read from the
+# repo and used to FORGE an admin token).  If the env var is missing we generate
+# a RANDOM per-process key instead — tokens then reset on every restart (a safe
+# failure mode), but the key can never be forged from the source.  Set
+# JWT_SECRET_KEY in .env to a long random value for stable, shared sessions.
+SECRET_KEY          = os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    SECRET_KEY = secrets.token_urlsafe(48)
+    print("[SECURITY] WARNING: JWT_SECRET_KEY not set — generated a random "
+          "per-process key. All sessions reset on restart. Set JWT_SECRET_KEY "
+          "in .env for stable signing.")
 ALGORITHM           = "HS256"
 TOKEN_EXPIRE_HOURS  = 12
 
