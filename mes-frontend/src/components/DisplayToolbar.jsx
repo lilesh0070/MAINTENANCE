@@ -8,7 +8,9 @@ import { useDisplay } from "../context/DisplayContext";
 const fsElement = () =>
   document.fullscreenElement || document.webkitFullscreenElement || null;
 
-export default function DisplayToolbar() {
+// `showTheme` — the Light/Dark toggle only applies to the Overview (its dark
+// wall-display look).  The Dashboard is always light, so it hides the toggle.
+export default function DisplayToolbar({ showTheme = true }) {
   const { theme, toggleTheme, aspect, cycleAspect } = useDisplay();
   const [fs, setFs] = useState(false);
 
@@ -59,9 +61,10 @@ export default function DisplayToolbar() {
         backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)",
       }}
     >
-      {/* Light / Dark */}
+      {/* Light / Dark — Overview only */}
+      {showTheme && (
       <button style={btn} onClick={toggleTheme}
-              title="Toggle light / dark (Overview & Dashboard)">
+              title="Toggle light / dark (Overview)">
         {light ? (
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -75,6 +78,7 @@ export default function DisplayToolbar() {
         )}
         {light ? "LIGHT" : "DARK"}
       </button>
+      )}
 
       {/* Aspect ratio */}
       <button style={btn} onClick={cycleAspect}
