@@ -289,8 +289,14 @@ export function DmcSheet({ hdr = {}, groups = [], footer = null,
                       const reason = rKey ? reasons[`${p.id}_${rKey}`] : "";
                       const action = rKey ? actions[`${p.id}_${rKey}`] : null;
                       const hasReason = !!reason;
-                      const tint = isVal ? "#eff6ff" : v === "OK" ? "#dcfce7" : v === "NG" ? "#fee2e2" : "#fff";
-                      const ink  = isVal ? "#1d4ed8" : v === "OK" ? "#16a34a" : v === "NG" ? "#dc2626" : "#111827";
+                      // A ✗ whose NG has a corrective action recorded is CLOSED →
+                      // keep the ✗ but show it YELLOW (amber) instead of red.  An
+                      // open ✗ (no action yet) stays red.
+                      const ngClosed = v === "NG" && !!action;
+                      const tint = isVal ? "#eff6ff" : v === "OK" ? "#dcfce7"
+                                 : v === "NG" ? (ngClosed ? "#fef9c3" : "#fee2e2") : "#fff";
+                      const ink  = isVal ? "#1d4ed8" : v === "OK" ? "#16a34a"
+                                 : v === "NG" ? (ngClosed ? "#a16207" : "#dc2626") : "#111827";
                       const glyph = isVal ? v : v === "OK" ? "✓" : v === "NG" ? "✗" : v;
                       return (
                         <td key={d} colSpan={span} title={hasReason ? reason : undefined}
