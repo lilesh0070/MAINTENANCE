@@ -12,6 +12,19 @@
  * -page work on top of this — this just fixes the app-wide basics.
  * ─────────────────────────────────────────────────────────────────── */
 
+/* ── Reserve top-right space for the floating Full-screen button ──────
+ * Every page header is a sticky top:0 bar with the signed-in username on
+ * its right.  The global full-screen button (FullscreenButton.jsx) floats
+ * at the top-right corner, so we push each header's right-side content a
+ * little further left — exactly like the ~88px the headers already leave on
+ * the LEFT for the slide-nav — so the button never sits on top of the name. */
+.admin-topbar, .ba-top, .bd-topbar, .bh-top, .cp-top, .ddf-topbar, .dmc-topbar,
+.hc-top, .hd-top, .lb-top, .md-topbar, .mk-topbar, .mm-top, .mp-topbar, .mw-topbar,
+.ng-topbar, .oj-top, .ov-top, .pa-top, .qf-top, .se-top, .sp-top, .st-topbar,
+.sv-topbar, .up-top {
+  padding-right: 78px !important;
+}
+
 /* ── Tablet and below (≤ 900px) — laptops (≥ 901px) stay 100% unchanged ── */
 @media (max-width: 900px) {
   /* Wide data tables scroll INSIDE their own box instead of stretching the
