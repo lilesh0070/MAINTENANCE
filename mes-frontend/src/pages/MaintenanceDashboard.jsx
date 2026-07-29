@@ -78,18 +78,27 @@ export default function MaintenanceDashboard() {
 
   const [showToast, toastNode]    = useToast();
 
-  // Fullscreen control for the ANDON section
+  // Fullscreen control for the ANDON section — INDEPENDENT of the page-level
+  // full-screen button.  isFs is true ONLY when the ANDON element itself is the
+  // fullscreen element, so the page's own full-screen (documentElement) never
+  // flips the ANDON table into its fullscreen layout.
   const andonRef = useRef(null);
   const [isFs, setIsFs] = useState(false);
   useEffect(() => {
-    const onChange = () => setIsFs(!!document.fullscreenElement);
+    const onChange = () => setIsFs(document.fullscreenElement === andonRef.current);
     document.addEventListener("fullscreenchange", onChange);
-    return () => document.removeEventListener("fullscreenchange", onChange);
+    document.addEventListener("webkitfullscreenchange", onChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", onChange);
+      document.removeEventListener("webkitfullscreenchange", onChange);
+    };
   }, []);
   const toggleFullscreen = () => {
     const el = andonRef.current;
     if (!el) return;
-    if (document.fullscreenElement) document.exitFullscreen();
+    // only exit if the ANDON is the one in fullscreen; otherwise request it
+    // (switches from a page-level fullscreen straight to the ANDON view).
+    if (document.fullscreenElement === el) document.exitFullscreen?.();
     else el.requestFullscreen?.();
   };
 
