@@ -20,7 +20,7 @@ from auth import get_current_user
 
 router = APIRouter(prefix="/api/spares", tags=["spares"])
 
-SOURCES = ("Manual Slip", "Log Book")
+SOURCES = ("Manual Slip", "Log Book", "PM")
 
 # ── best-effort quantity out of free text ────────────────────────────
 # Alternatives are ordered so the most explicit wins, and finditer never

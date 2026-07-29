@@ -27,8 +27,8 @@ import { useAuth } from "../context/AuthContext";
 
 // Spare data now comes ONLY from the Manual Break Down Slip + Log Book
 // (via the maintenance_spare table).  Breakdown-log / PM sources removed.
-const SOURCES = ["Manual Slip", "Log Book"];
-const SRC_COLOR = { "Manual Slip": "#dc2626", "Log Book": "#2563eb" };
+const SOURCES = ["Manual Slip", "Log Book", "PM"];
+const SRC_COLOR = { "Manual Slip": "#dc2626", "Log Book": "#2563eb", "PM": "#16a34a" };
 const ONE_HUE = "#2563eb";               // single-series charts: one hue, no legend
 const MONTHS = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
 
@@ -138,7 +138,7 @@ export default function Spare() {
       const k = (r.used_date || "").slice(0, 7);
       if (!k) return;
       if (!m.has(k)) m.set(k, { key: k, label: `${MONTHS[(Number(k.slice(5, 7)) + 8) % 12]} ${k.slice(2, 4)}`,
-                                "Manual Slip": 0, "Log Book": 0 });
+                                "Manual Slip": 0, "Log Book": 0, "PM": 0 });
       if (m.get(k)[r.source] != null) m.get(k)[r.source] += 1;
     });
     return [...m.values()].sort((a, b) => a.key.localeCompare(b.key));
@@ -222,7 +222,7 @@ export default function Spare() {
         <div className="sp-top">
           <div>
             <div className="sp-title">🔩 <span>Spare</span></div>
-            <div className="sp-sub">Spare consumption — Manual Slip · Log Book</div>
+            <div className="sp-sub">Spare consumption — Manual Slip · Log Book · PM</div>
           </div>
           {user?.username && <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>{user.username}</span>}
         </div>

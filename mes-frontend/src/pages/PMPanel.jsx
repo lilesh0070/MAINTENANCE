@@ -89,6 +89,40 @@ export default function PMPanel() {
   const [calSheet, setCalSheet] = useState(null);   // DONE-flow check sheet {code, mLabel, week, cp, points, rev, fill, sign, date}
   const [calSaving, setCalSaving] = useState(false);
 
+  // ── per-point SPARES (opened from a "SPARES USED = Yes" check-point cell) ──
+  // Each point can carry a `spares` array [{spare_name, spare_model_no,
+  // spare_cnmm_no, spare_qty}] — exactly like the Break Down Slip.  On save they
+  // go into maintenance_spare (source 'PM') keyed by machine_no.
+  const EMPTY_SP = { spare_name: "", spare_model_no: "", spare_cnmm_no: "", spare_qty: "" };
+  const [spareEdit, setSpareEdit] = useState(null);      // { i } point index (in calSheet) | null
+  const [spareMaster, setSpareMaster] = useState([]);    // maintenance_spare distinct names (datalist)
+  useEffect(() => {
+    if (!token) return;
+    fetch("/api/maintenance-spare/", { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : [])).then((d) => setSpareMaster(Array.isArray(d) ? d : []))
+      .catch(() => setSpareMaster([]));
+  }, [token]);
+  const pointSpares = (i) => {
+    const arr = calSheet?.fill?.[i]?.spares;
+    return (Array.isArray(arr) && arr.length) ? arr : [{ ...EMPTY_SP }];
+  };
+  const setPointSpares = (i, arr) => setCalSheet((s) => s
+    ? ({ ...s, fill: { ...s.fill, [i]: { ...(s.fill[i] || {}), spares: arr } } }) : s);
+  const onSpareCell = (i, ri, key, val) => {
+    const arr = pointSpares(i).map((r, j) => (j === ri ? { ...r, [key]: val } : r));
+    if (key === "spare_name") {                       // known name → auto-fill model / cnmm
+      const m = spareMaster.find((x) => (x.spare_name || "").toLowerCase() === val.toLowerCase());
+      if (m) arr[ri] = { ...arr[ri], spare_model_no: m.spare_model_no || arr[ri].spare_model_no,
+                         spare_cnmm_no: m.spare_cnmm_no || arr[ri].spare_cnmm_no };
+    }
+    setPointSpares(i, arr);
+  };
+  const addSpareRow = (i) => setPointSpares(i, [...pointSpares(i), { ...EMPTY_SP }]);
+  const delSpareRow = (i, ri) => {
+    const arr = pointSpares(i).filter((_, j) => j !== ri);
+    setPointSpares(i, arr.length ? arr : [{ ...EMPTY_SP }]);
+  };
+
   // ── CELL SELECTION over the fill columns (Excel-style) ─────────────
   // Observation / Action Taken / Spares Used / Status / Sign ko drag ya
   // shift+click se select karo, phir Copy → Paste ya Fill Down.  Har cell me
@@ -324,6 +358,9 @@ export default function PMPanel() {
           judgement_standard: p.judgement_standard, method: p.method,
           observation: p.observation || "", action_taken: p.action_taken || "",
           spares_used: p.spares_used || "", status: p.status || "", sign: p.sign || "",
+          // structured spares only when this point's SPARES USED = Yes
+          spares: (String(p.spares_used || "").toLowerCase() === "yes" && Array.isArray(p.spares))
+            ? p.spares.filter(s => (s?.spare_name || "").trim()) : [],
         })),
         // stage 1 only — Engineer / In-Charge sign on their own tabs
         prepared_by: calSheet.sign.prepared, checked_by: "", approved_by: "",
@@ -656,6 +693,7 @@ export default function PMPanel() {
         {/* a re-opened sheet keeps the footer it was originally filled under */}
         <FormatSheet f={fmt ? { ...fmt, doc_footer: calSheet.docFooter || fmt.doc_footer } : fmt}
                      points={merged} rev={calSheet.rev} editable onEdit={onEditCal} signable={[0]}
+                     onSpares={(i) => setSpareEdit({ i })}
                      cellSel={box} onCellDown={onCellDown} onCellEnter={onCellEnter}
                      signVals={[calSheet.sign.prepared, calSheet.sign.checked, calSheet.sign.approved]}
                      signImgs={calSheet.signImgs || [null,null,null]} onSign={onCalSign} onSignVal={onCalSignVal}
@@ -1374,6 +1412,68 @@ export default function PMPanel() {
                  onSave={(url) => { signPad.apply(url); setSignPad(null); }}
                  onClose={() => setSignPad(null)} />
       )}
+
+      {/* Per-point SPARES editor (Break Down Slip–style grid) — opens from a
+          check point whose "SPARES USED" cell is set to Yes. */}
+      {spareEdit && calSheet && (() => {
+        const i = spareEdit.i;
+        const pt = calSheet.points[i] || {};
+        const inpS = { width:"100%", border:"1px solid #cbd5e1", borderRadius:6, padding:"6px 8px",
+                       fontSize:12.5, fontFamily:"inherit", boxSizing:"border-box", outline:"none" };
+        return (
+          <div onClick={() => setSpareEdit(null)}
+               style={{ position:"fixed", inset:0, background:"rgba(15,23,42,.5)", display:"grid",
+                        placeItems:"center", zIndex:9999 }}>
+            <div onClick={(e) => e.stopPropagation()}
+                 style={{ background:"#fff", borderRadius:12, padding:18, width:"min(700px,94vw)",
+                          maxHeight:"86vh", overflow:"auto", boxShadow:"0 20px 60px rgba(0,0,0,.35)" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                <div style={{ fontWeight:800, fontSize:15, color:"#0f172a" }}>
+                  Spares Used — Point {pt.s_no || (i + 1)}
+                </div>
+                <button onClick={() => setSpareEdit(null)}
+                        style={{ border:"none", background:"transparent", fontSize:22, cursor:"pointer", color:"#64748b" }}>×</button>
+              </div>
+              <div style={{ fontSize:11.5, color:"#64748b", marginBottom:6 }}>{pt.check_point || ""}</div>
+              <div style={{ fontSize:11.5, color:"#334155", marginBottom:12, fontWeight:600 }}>
+                {calSheet.cp?.machine_no} · {calSheet.cp?.machine_name} — ye spares maintenance_spare me machine_no ke saath (source “PM”) save honge.
+              </div>
+              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12.5 }}>
+                <thead><tr>{["Spare Name","Model No.","CNMM No.","Qty",""].map((h) =>
+                  <th key={h} style={{ textAlign:"left", padding:"6px 6px", fontSize:10, fontWeight:800,
+                                       color:"#64748b", borderBottom:"1px solid #e2e8f0", textTransform:"uppercase" }}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {pointSpares(i).map((r, ri) => (
+                    <tr key={ri}>
+                      <td style={{ padding:"4px 4px" }}><input list="pm-spare-names" value={r.spare_name}
+                          onChange={(e) => onSpareCell(i, ri, "spare_name", e.target.value)} style={inpS} /></td>
+                      <td style={{ padding:"4px 4px" }}><input value={r.spare_model_no}
+                          onChange={(e) => onSpareCell(i, ri, "spare_model_no", e.target.value)} style={inpS} /></td>
+                      <td style={{ padding:"4px 4px" }}><input value={r.spare_cnmm_no}
+                          onChange={(e) => onSpareCell(i, ri, "spare_cnmm_no", e.target.value)} style={inpS} /></td>
+                      <td style={{ padding:"4px 4px", width:72 }}><input value={r.spare_qty}
+                          onChange={(e) => onSpareCell(i, ri, "spare_qty", e.target.value)} style={inpS} /></td>
+                      <td style={{ padding:"4px 4px", width:34, textAlign:"center" }}>
+                        <button onClick={() => delSpareRow(i, ri)} title="Remove"
+                                style={{ border:"none", background:"transparent", color:"#dc2626", cursor:"pointer", fontWeight:800, fontSize:17 }}>×</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <datalist id="pm-spare-names">{spareMaster.map((s, k) => <option key={k} value={s.spare_name} />)}</datalist>
+              <div style={{ display:"flex", justifyContent:"space-between", marginTop:14 }}>
+                <button onClick={() => addSpareRow(i)}
+                        style={{ border:"1px dashed #94a3b8", background:"#f8fafc", color:"#334155",
+                                 borderRadius:8, padding:"7px 12px", fontWeight:700, cursor:"pointer" }}>+ Add spare</button>
+                <button onClick={() => setSpareEdit(null)}
+                        style={{ border:"none", background:"#1d4ed8", color:"#fff", borderRadius:8,
+                                 padding:"7px 18px", fontWeight:800, cursor:"pointer" }}>Done</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -21,7 +21,13 @@
 // {r1,r2,c1,c2} over point index and FILL column index.  The S.No column is
 // untouched — it stays a plain serial number.
 export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = false, onEdit = null, signVals = [], signImgs = [], onSign = null, onSignVal = null, signable = null,
-                              cellSel = null, onCellDown = null, onCellEnter = null }) {
+                              cellSel = null, onCellDown = null, onCellEnter = null, onSpares = null }) {
+  // one-line summary of a point's structured spares (for the read-only view)
+  const spareSummary = (p) => {
+    const arr = Array.isArray(p.spares) ? p.spares.filter((s) => (s?.spare_name || "").trim()) : [];
+    if (!arr.length) return p.spares_used || "";
+    return arr.map((s) => `${s.spare_name}${String(s.spare_qty || "").trim() ? " ×" + s.spare_qty : ""}`).join(", ");
+  };
   const canSign = (i) => (signable ? signable.includes(i) : editable);
   const inSel = (r, c) => !!cellSel && r >= cellSel.r1 && r <= cellSel.r2 && c >= cellSel.c1 && c <= cellSel.c2;
   if (!f) return <div style={{ color:"#64748b", padding:20 }}>Loading format…</div>;
@@ -99,11 +105,36 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
                                   onChange={(e) => onEdit && onEdit(i, k, e.target.value)}>
                             <option value=""></option><option value="OK">OK</option><option value="NG">NG</option>
                           </select>
+                        ) : k === "spares_used" ? (
+                          <div style={{ display:"flex", alignItems:"center", gap:8, padding:"2px 4px", flexWrap:"wrap" }}>
+                            {["Yes", "No"].map((opt) => (
+                              <label key={opt} onMouseDown={(e) => e.stopPropagation()}
+                                     style={{ display:"inline-flex", alignItems:"center", gap:3, fontSize:11,
+                                              fontWeight:700, cursor:"pointer", color:"#334155" }}>
+                                <input type="radio" name={`spare-used-${i}`} value={opt}
+                                       checked={String(p.spares_used || "").toLowerCase() === opt.toLowerCase()}
+                                       onChange={() => onEdit && onEdit(i, "spares_used", opt)}
+                                       style={{ cursor:"pointer", margin:0 }} />
+                                {opt}
+                              </label>
+                            ))}
+                            {String(p.spares_used || "").toLowerCase() === "yes" && (
+                              <button type="button"
+                                      onMouseDown={(e) => e.stopPropagation()}
+                                      onClick={() => onSpares && onSpares(i)}
+                                      title="Add / edit spares used for this point"
+                                      style={{ border:"1px solid #1d4ed8", background:"#eff6ff", color:"#1d4ed8",
+                                               borderRadius:5, fontSize:10, fontWeight:800, padding:"2px 6px",
+                                               cursor:"pointer", whiteSpace:"nowrap" }}>
+                                🔧 {(Array.isArray(p.spares) ? p.spares.filter((s) => (s?.spare_name || "").trim()).length : 0)}
+                              </button>
+                            )}
+                          </div>
                         ) : (
                           <input style={cellInp} value={p[k] || ""}
                                  onChange={(e) => onEdit && onEdit(i, k, e.target.value)} />
                         )
-                      ) : (p[k] || "")}
+                      ) : (k === "spares_used" ? spareSummary(p) : (p[k] || ""))}
                     </td>
                     );
                   })}

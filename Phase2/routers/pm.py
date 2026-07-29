@@ -462,6 +462,30 @@ class CheckSheetFill(BaseModel):
     sign_imgs:    List = []                 # [prepared, checked, approved] PNG data-URLs
 
 
+def _record_pm_spares(body: "CheckSheetFill", pm_date) -> None:
+    """Mirror every spare entered against this PM sheet's check points into the
+    shared `maintenance_spare` master (source 'PM'), keyed by machine + PM date —
+    exactly like the Break Down Slip / Log Book, so PM spares show on the Spare
+    page.  Idempotent: a re-save (correction) replaces THIS sheet's PM rows."""
+    _SK = ("spare_name", "spare_model_no", "spare_cnmm_no", "spare_qty")
+    spares = [s for e in (body.entries or []) for s in (e.get("spares") or [])
+              if isinstance(s, dict) and any(str(s.get(k) or "").strip() for k in _SK)]
+    try:
+        from routers.maintenance_spare import record_usage
+        with get_conn() as sconn:
+            cur = sconn.cursor()
+            cur.execute("DELETE FROM maintenance_spare WHERE source='PM' "
+                        "AND machine_no=%s AND used_date=%s", (body.machine_no, pm_date))
+            if spares:
+                record_usage(sconn, "PM", {
+                    "zone": body.zone_name, "line": body.line_name,
+                    "machine_no": body.machine_no, "machine_name": body.machine_name,
+                    "used_date": pm_date,
+                }, spares)
+    except Exception as e:
+        print(f"[SPARE-MASTER] record failed (PM): {e}")
+
+
 @router.post("/check-sheet-fill", status_code=201)
 def save_check_sheet_fill(body: CheckSheetFill, user=Depends(get_current_user)):
     """Save one filled PM check sheet (snapshot of points + results)."""
@@ -510,6 +534,7 @@ def save_check_sheet_fill(body: CheckSheetFill, user=Depends(get_current_user)):
               json.dumps([_log("fill", "-", "FILLED", body.prepared_by, author)])))
         new_id = cur.fetchone()[0]
         conn.commit()
+    _record_pm_spares(body, pmd)      # PM spares → maintenance_spare (source 'PM')
     return {"id": new_id, "stage": "FILLED"}
 
 
@@ -561,6 +586,7 @@ def resubmit_check_sheet_fill(fill_id: int, body: CheckSheetFill, user=Depends(g
         """, (pmd, json.dumps(body.entries), body.prepared_by,
               json.dumps([prepared_sign, None, None]), json.dumps(log), fill_id))
         conn.commit()
+    _record_pm_spares(body, pmd)      # re-sync PM spares → maintenance_spare
     return {"id": fill_id, "stage": "FILLED"}
 
 
