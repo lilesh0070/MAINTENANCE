@@ -20,6 +20,7 @@ import {
   PieChart, Pie, Cell, BarChart, Bar,
 } from "recharts";
 import TvFit from "../components/TvFit";
+import { useDisplay } from "../context/DisplayContext";
 
 const api = {
   async get(path, token) {
@@ -42,6 +43,7 @@ const moLabel = (m) => {
 
 export default function MaintenanceOverview() {
   const { token, user } = useAuth();
+  const { theme: dtTheme } = useDisplay();   // "dark" (native) | "light" (skin)
   const nav = useNavigate();
 
   const [fy, setFy]       = useState("");        // "" → backend uses current FY
@@ -204,9 +206,28 @@ export default function MaintenanceOverview() {
         .ov-chip .cv { font-size:24px; font-weight:800; color:#fff; }
         .ov-chip .cl { font-size:10.5px; font-weight:700; letter-spacing:.05em; color:#94a3b8; text-transform:uppercase; margin-top:3px; }
         @media (max-width:1100px){ .ov-cards{grid-template-columns:repeat(2,1fr)} .ov-g23,.ov-g12,.ov-g3{grid-template-columns:1fr} }
+
+        /* ── LIGHT skin (toolbar Light/Dark toggle) — Overview is dark by
+              default; these overrides flip its main surfaces to light. ── */
+        .ov-root[data-dt="light"] { background:#eef2f7; color:#0f172a; }
+        .ov-root[data-dt="light"] .ov-top { background:linear-gradient(180deg,#ffffff,#f1f5f9); border-bottom-color:#e2e8f0; }
+        .ov-root[data-dt="light"] .ov-ttl { color:#0f172a; }
+        .ov-root[data-dt="light"] .ov-meta { color:#475569; }
+        .ov-root[data-dt="light"] .ov-fy { background:#fff; border-color:#cbd5e1; color:#0f172a; }
+        .ov-root[data-dt="light"] .ov-card { background:linear-gradient(160deg,#ffffff,#f8fafc); border-color:#e2e8f0; }
+        .ov-root[data-dt="light"] .ov-card .big { color:#0f172a; }
+        .ov-root[data-dt="light"] .ov-panel { background:#ffffff; border-color:#e2e8f0; }
+        .ov-root[data-dt="light"] .ov-ph { color:#334155; }
+        .ov-root[data-dt="light"] .ov-tbl th { color:#64748b; border-bottom-color:#e2e8f0; }
+        .ov-root[data-dt="light"] .ov-tbl td { color:#334155; border-bottom-color:#eef2f7; }
+        .ov-root[data-dt="light"] .ov-chip { background:#f1f5f9; border-color:#e2e8f0; }
+        .ov-root[data-dt="light"] .ov-bar { background:#e2e8f0; }
+        .ov-root[data-dt="light"] .ov-alert { border-bottom-color:#eef2f7; }
+        .ov-root[data-dt="light"] .ov-alert .ah { color:#0f172a; }
+        .ov-root[data-dt="light"] .ov-empty { color:#94a3b8; }
       `}</style>
 
-      <div className="ov-root">
+      <div className="ov-root" data-dt={dtTheme}>
         <div className="ov-top">
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <button className="ov-fy" onClick={() => nav("/dashboard")}>← Back</button>

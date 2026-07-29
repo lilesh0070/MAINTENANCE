@@ -34,6 +34,7 @@ import KpiPanel from "./breakdown/KpiPanel";
 import DmcNgPanel from "./breakdown/DmcNgPanel";
 import { ClosureFormModal } from "./breakdown/ClosureFormModal";
 import TvFit from "../components/TvFit";
+import { useDisplay } from "../context/DisplayContext";
 
 /* ════════════════════════════════════════════════════════════════════
  * Toast
@@ -63,6 +64,7 @@ function useToast() {
  * ════════════════════════════════════════════════════════════════════ */
 export default function MaintenanceDashboard() {
   const { token, user, theme, isAdmin } = useAuth();
+  const { theme: dtTheme } = useDisplay();   // "light" (native) | "dark" (skin)
   // Admin sees the explicit name ("Maintenance Dashboard") so they can
   // tell at a glance which dept's view they're on.  Department users only
   // see "Dashboard" — they only ever land on their own.
@@ -254,9 +256,21 @@ export default function MaintenanceDashboard() {
         .md-section h3 { margin:0 0 10px; font-family:'Barlow Condensed',sans-serif;
                           font-size:18px; font-weight:800; color:#0f172a;
                           letter-spacing:.02em; text-transform:uppercase; }
+
+        /* ── DARK skin (toolbar Light/Dark toggle) — Dashboard is light by
+              default; this darkens the page SHELL (root, topbar, headings).
+              The inner tiles/panels are inline-styled shared components, so
+              they stay light — a "light cards on dark" look. ── */
+        .md-root[data-dt="dark"] { background:#0a1120; }
+        .md-root[data-dt="dark"] .md-topbar { background:#0f1c33; border-bottom-color:#1e293b; box-shadow:0 1px 3px rgba(0,0,0,.4); }
+        .md-root[data-dt="dark"] .md-logo { color:#f1f5f9; }
+        .md-root[data-dt="dark"] .md-title { color:#f1f5f9; }
+        .md-root[data-dt="dark"] .md-user-pill { background:#0b1526; border-color:#1e293b; color:#cbd5e1; }
+        .md-root[data-dt="dark"] .md-user-pill b { color:#fff; }
+        .md-root[data-dt="dark"] .md-section h3 { color:#e2e8f0; }
       `}</style>
 
-      <div className="md-root">
+      <div className="md-root" data-dt={dtTheme}>
         {/* Production-Dashboard-style topbar (red accent for Maintenance) */}
         <div className="md-topbar">
           <div className="md-logo" />

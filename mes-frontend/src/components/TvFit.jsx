@@ -15,10 +15,21 @@
  * biggest fill, set the TV's Windows display scaling to 100%.
  * ─────────────────────────────────────────────────────────────────── */
 import { useState, useLayoutEffect, useRef, useCallback } from "react";
+import { useDisplay } from "../context/DisplayContext";
 
 const TV_MIN_WIDTH = 2000;   // >= this viewport width → TV fit-mode
 
+// Largest box of the given aspect that fits inside vw×vh (fill = the viewport).
+function aspectBox(vw, vh, aspect) {
+  if (aspect !== "16:9" && aspect !== "4:3") return { w: vw, h: vh };
+  const r = aspect === "4:3" ? 4 / 3 : 16 / 9;
+  let w = vw, h = vw / r;
+  if (h > vh) { h = vh; w = vh * r; }
+  return { w, h };
+}
+
 export default function TvFit({ children, designWidth = 1500, bg = "#0a1120" }) {
+  const { aspect } = useDisplay();
   const isBig = () => typeof window !== "undefined" && window.innerWidth >= TV_MIN_WIDTH;
   const [tv, setTv]       = useState(isBig);
   const [scale, setScale] = useState(1);
@@ -29,8 +40,9 @@ export default function TvFit({ children, designWidth = 1500, bg = "#0a1120" }) 
     setTv(big);
     if (!big || !stage.current) return;
     const h = stage.current.scrollHeight || 1;
-    setScale(Math.min(window.innerWidth / designWidth, window.innerHeight / h));
-  }, [designWidth]);
+    const box = aspectBox(window.innerWidth, window.innerHeight, aspect);
+    setScale(Math.min(box.w / designWidth, box.h / h));
+  }, [designWidth, aspect]);
 
   useLayoutEffect(() => {
     recompute();

@@ -1,7 +1,15 @@
+import { useLocation } from "react-router-dom";
 import SlideNav from "./SlideNav";
 import FullscreenButton from "./FullscreenButton";
+import DisplayToolbar from "./DisplayToolbar";
+
+// The wall-dashboard pages get the full display toolbar (Light/Dark + aspect +
+// fullscreen); every other page keeps just the plain full-screen button.
+const DISPLAY_ROUTES = new Set(["/maintenance-overview", "/maintenance-dashboard"]);
 
 export default function Layout({ children }) {
+  const { pathname } = useLocation();
+  const isDisplay = DISPLAY_ROUTES.has(pathname);
   return (
     <div style={{
       minHeight: "100vh",
@@ -18,8 +26,9 @@ export default function Layout({ children }) {
       {/* Floating nav — always visible on top */}
       <SlideNav />
 
-      {/* Full-screen toggle — on every page (handy for the TV wall-display) */}
-      <FullscreenButton />
+      {/* Display controls — full toolbar on the wall-dashboard pages,
+          otherwise just the full-screen toggle. */}
+      {isDisplay ? <DisplayToolbar /> : <FullscreenButton />}
     </div>
   );
 }

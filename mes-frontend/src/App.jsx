@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { DisplayProvider } from "./context/DisplayContext";
 import Layout from "./components/Layout";
 import { NewBreakdownSlip } from "./pages/breakdown/NewBreakdownSlip";
 
@@ -263,9 +264,11 @@ function AppRoutes() {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
+      <DisplayProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </DisplayProvider>
     </AuthProvider>
   );
 }
