@@ -4,6 +4,17 @@ import { Btn, api, fmtDuration, fmtDateTime } from "./shared";
 // One spare row — SAME shape the Log Book uses, so spare data is consistent
 // across both features.
 const EMPTY_SPARE = { spare_name: "", spare_model_no: "", spare_cnmm_no: "", spare_qty: "" };
+// Spare ERP Number mask — first 4 ALPHABETIC letters + last 4 NUMERIC digits
+// (e.g. ABCD1234).  Formats as you type; ignores anything out of place.
+const fmtErp = (raw) => {
+  const s = String(raw || "").toUpperCase();
+  let out = "";
+  for (const ch of s) {
+    if (out.length < 4) { if (ch >= "A" && ch <= "Z") out += ch; }
+    else if (out.length < 8) { if (ch >= "0" && ch <= "9") out += ch; }
+  }
+  return out;
+};
 
 // Manual slip (pickLine) — the ZONE dropdown is restricted to these zones only,
 // in this order.  Values must match the mes_machines master zone_name exactly.
@@ -877,15 +888,17 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                   <div key={i} style={{ display: "flex", alignItems: "stretch",
                                         borderBottom: "1px solid #cbd5e1" }}>
                     {[["spare_name", "SPARE NAME"], ["spare_model_no", "MODEL NUMBER"],
-                      ["spare_cnmm_no", "CNMM NUMBER"], ["spare_qty", "QUANTITY"]].map(([k, l], ci) => (
+                      ["spare_cnmm_no", "SPARE ERP NUMBER"], ["spare_qty", "QUANTITY"]].map(([k, l], ci) => (
                       <div key={k} style={{ ...cell, borderRight: ci === 3 && !spEdit ? "none" : cell.borderRight }}>
                         <div style={lbl}>{l}{rows.length > 1 && ci === 0 ? ` ${i + 1}` : ""}</div>
                         <input style={inp} value={sp[k] || ""} disabled={!spEdit}
                                type={k === "spare_qty" ? "number" : "text"}
                                list={k === "spare_name" ? "bds-spare-names" : undefined}
-                               placeholder={k === "spare_name" ? "Pick or type" : undefined}
+                               maxLength={k === "spare_cnmm_no" ? 8 : undefined}
+                               placeholder={k === "spare_name" ? "Pick or type" : k === "spare_cnmm_no" ? "ABCD1234" : undefined}
                                onChange={(e) => k === "spare_name"
-                                 ? onSpareName(i, e.target.value) : setSpare(i, k, e.target.value)} />
+                                 ? onSpareName(i, e.target.value)
+                                 : setSpare(i, k, k === "spare_cnmm_no" ? fmtErp(e.target.value) : e.target.value)} />
                       </div>
                     ))}
                     {spEdit && (

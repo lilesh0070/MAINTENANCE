@@ -166,7 +166,7 @@ export default function Spare() {
 
   const exportCsv = () => {
     const head = ["Source", "Date", "Zone", "Line", "Machine No", "Machine Name",
-                  "Model No", "CNMM No", "Spare Name", "Quantity", "Qty From"];
+                  "Model No", "Spare ERP No", "Spare Name", "Quantity", "Qty From"];
     const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const body = rows.map(r => [r.source, r.used_date || "", r.zone || "", r.line || "",
       r.machine_no || "", r.machine_name || "", r.model_no || "", r.cnmm_no || "",
@@ -281,7 +281,7 @@ export default function Spare() {
           <div className="sp-fld">
             <label>Search</label>
             <input className="sp-sel" value={q} onChange={(e) => setQ(e.target.value)}
-                   placeholder="spare name / CNMM / model" style={{ minWidth: 210 }} />
+                   placeholder="spare name / ERP no / model" style={{ minWidth: 210 }} />
           </div>
           <div className="sp-fld">
             <label>&nbsp;</label>
@@ -391,7 +391,7 @@ export default function Spare() {
                 <thead>
                   <tr>
                     {["Source", "Date", "Zone", "Line", "Machine No.", "Machine Name",
-                      "Model No.", "CNMM No.", "Spare Name", "Qty"].map(h => (
+                      "Model No.", "Spare ERP No.", "Spare Name", "Qty"].map(h => (
                       <th key={h} style={{ ...th, textAlign: h === "Qty" ? "center" : "left" }}>{h}</th>
                     ))}
                   </tr>

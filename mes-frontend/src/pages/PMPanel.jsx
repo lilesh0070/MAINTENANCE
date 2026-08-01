@@ -17,6 +17,16 @@ import YearlyPmTab from "./pm/YearlyPmTab";
 import { SignPad } from "./pm/SignPad";
 
 const monthISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
+// Spare ERP Number mask — 4 alphabetic letters + 4 numeric digits (ABCD1234).
+const fmtErp = (raw) => {
+  const s = String(raw || "").toUpperCase();
+  let out = "";
+  for (const ch of s) {
+    if (out.length < 4) { if (ch >= "A" && ch <= "Z") out += ch; }
+    else if (out.length < 8) { if (ch >= "0" && ch <= "9") out += ch; }
+  }
+  return out;
+};
 
 
 export default function PMPanel() {
@@ -1439,7 +1449,7 @@ export default function PMPanel() {
                 {calSheet.cp?.machine_no} · {calSheet.cp?.machine_name} — ye spares maintenance_spare me machine_no ke saath (source “PM”) save honge.
               </div>
               <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12.5 }}>
-                <thead><tr>{["Spare Name","Model No.","CNMM No.","Qty",""].map((h) =>
+                <thead><tr>{["Spare Name","Model No.","Spare ERP No.","Qty",""].map((h) =>
                   <th key={h} style={{ textAlign:"left", padding:"6px 6px", fontSize:10, fontWeight:800,
                                        color:"#64748b", borderBottom:"1px solid #e2e8f0", textTransform:"uppercase" }}>{h}</th>)}</tr></thead>
                 <tbody>
@@ -1449,8 +1459,8 @@ export default function PMPanel() {
                           onChange={(e) => onSpareCell(i, ri, "spare_name", e.target.value)} style={inpS} /></td>
                       <td style={{ padding:"4px 4px" }}><input value={r.spare_model_no}
                           onChange={(e) => onSpareCell(i, ri, "spare_model_no", e.target.value)} style={inpS} /></td>
-                      <td style={{ padding:"4px 4px" }}><input value={r.spare_cnmm_no}
-                          onChange={(e) => onSpareCell(i, ri, "spare_cnmm_no", e.target.value)} style={inpS} /></td>
+                      <td style={{ padding:"4px 4px" }}><input value={r.spare_cnmm_no} maxLength={8} placeholder="ABCD1234"
+                          onChange={(e) => onSpareCell(i, ri, "spare_cnmm_no", fmtErp(e.target.value))} style={inpS} /></td>
                       <td style={{ padding:"4px 4px", width:72 }}><input value={r.spare_qty}
                           onChange={(e) => onSpareCell(i, ri, "spare_qty", e.target.value)} style={inpS} /></td>
                       <td style={{ padding:"4px 4px", width:34, textAlign:"center" }}>

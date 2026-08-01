@@ -53,6 +53,16 @@ function diffMinutes(start, ok) {
 }
 
 const EMPTY_SPARE = { spare_name: "", spare_model_no: "", spare_cnmm_no: "", spare_qty: "" };
+// Spare ERP Number mask — 4 alphabetic letters + 4 numeric digits (ABCD1234).
+const fmtErp = (raw) => {
+  const s = String(raw || "").toUpperCase();
+  let out = "";
+  for (const ch of s) {
+    if (out.length < 4) { if (ch >= "A" && ch <= "Z") out += ch; }
+    else if (out.length < 8) { if (ch >= "0" && ch <= "9") out += ch; }
+  }
+  return out;
+};
 const EMPTY = {
   shift: "A",
   zone: "", line: "", machine_no: "", machine_name: "",
@@ -90,7 +100,7 @@ const LIST_COLS = [
   { h: "Action Taken", k: "action_taken_on_problem", wide: true },
   { h: "Spare Name", k: "spare_name" },
   { h: "Model No.", k: "spare_model_no" },
-  { h: "CNMM No.", k: "spare_cnmm_no" },
+  { h: "Spare ERP No.", k: "spare_cnmm_no" },
   { h: "Qty", k: "spare_qty" },
   { h: "Attended By", k: "bd_attended_by" },
 ];
@@ -459,8 +469,9 @@ export default function BreakdownLogBook() {
                           <input className="lb-in" value={sp.spare_model_no} onChange={(e) => setSpare(i, "spare_model_no", e.target.value)} />
                         </div>
                         <div className="lb-field">
-                          <span className="lb-lbl">CNMM Number</span>
-                          <input className="lb-in" value={sp.spare_cnmm_no} onChange={(e) => setSpare(i, "spare_cnmm_no", e.target.value)} />
+                          <span className="lb-lbl">Spare ERP Number</span>
+                          <input className="lb-in" value={sp.spare_cnmm_no} maxLength={8} placeholder="ABCD1234"
+                                 onChange={(e) => setSpare(i, "spare_cnmm_no", fmtErp(e.target.value))} />
                         </div>
                         <div className="lb-field">
                           <span className="lb-lbl">Quantity</span>
