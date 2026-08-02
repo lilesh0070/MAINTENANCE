@@ -6,7 +6,7 @@
  *     Machine Name auto-fills from Machine No.
  *   • Serial No is AUTO-GENERATED on save (running number).
  *   • "Problem Reported / Found"  →  "Problem Observed by Maintenance".
- *   • Spare split: Spare Name · Model Number · CNMM Number · Quantity.
+ *   • Spare split: Spare Name · Model Number · Spare ERP Number · Quantity.
  * Fill the form, then "Save Entry" → POST /api/logbook.
  * Routing: /maintenance-logbook
  */

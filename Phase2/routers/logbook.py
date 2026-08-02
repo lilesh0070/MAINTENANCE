@@ -7,7 +7,7 @@ matching the physical TBDI/MAINT log-book format with these changes:
     Master, mes_machines).  Machine Name is auto-derived from Machine No.
   • Serial No is AUTO-GENERATED (running number) on save.
   • "Problem Reported / Found"  →  "Problem Observed by Maintenance".
-  • Spare split into: Spare Name · Model Number · CNMM Number · Quantity.
+  • Spare split into: Spare Name · Model Number · Spare ERP Number · Quantity.
 
 Stored in the SAME table `maintenance_logbook_db_history` (kept from before);
 the new columns are added idempotently, existing columns are reused.
