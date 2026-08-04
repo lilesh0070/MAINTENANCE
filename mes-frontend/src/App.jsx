@@ -18,6 +18,7 @@ import MaintenancePokaYoke   from "./pages/MaintenancePokaYoke";
 import PMPanel               from "./pages/PMPanel";
 import MaintenanceKPI        from "./pages/MaintenanceKPI";
 import MaintenanceOverview   from "./pages/MaintenanceOverview";
+import AndonSystem           from "./pages/AndonSystem";
 import MaintenanceBreakdown  from "./pages/MaintenanceBreakdown";
 import BDHistory             from "./pages/BDHistory";
 import BreakdownLogBook      from "./pages/BreakdownLogBook";
@@ -149,6 +150,11 @@ function AppRoutes() {
       {/* Maintenance Overview — management dashboard (KPI tiles + charts, our data). */}
       <Route path="/maintenance-overview" element={
         <Protected requiredAccess="maintenance-overview"><MaintenanceOverview /></Protected>
+      } />
+
+      {/* ANDON Management System — standalone module (config · live board · reports). */}
+      <Route path="/andon-system" element={
+        <Protected requiredAccess="andon-system"><AndonSystem /></Protected>
       } />
 
       {/* Maintenance KPI — financial-year headline cards (MTTR/MTBF/LTTR…). */}

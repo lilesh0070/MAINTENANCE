@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { createRoot } from "react-dom/client";
 import { Btn, api, fmtDuration, fmtDateTime } from "./shared";
 
 // One spare row — SAME shape the Log Book uses, so spare data is consistent
@@ -981,8 +982,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                   // Mount as transient overlay
                   const root = document.createElement("div");
                   document.body.appendChild(root);
-                  import("react-dom/client").then(({ createRoot }) => {
-                    const r = createRoot(root);
+                  const r = createRoot(root);
                     const seed = {
                       breakdown_id: ticket.id,
                       line_id:      ticket.line_id,
@@ -1004,7 +1004,6 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                         onSaved={close}
                       />
                     );
-                  });
                 });
               }} title="Request a deviation when the fix needs >24h">
                 ⚠ Request Deviation

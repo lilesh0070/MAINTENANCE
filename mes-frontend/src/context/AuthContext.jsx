@@ -159,6 +159,7 @@ export function AuthProvider({ children }) {
       if (slug === "maintenance") {
         return ["dashboard", "department-panel", "admin-maintenance",
                 "maintenance-overview",
+                "andon-system",
                 "maintenance-dashboard",
                 "maintenance-update-plan",
                 "maintenance-kpi", "maintenance-breakdown", "maintenance-breakdown-slip",

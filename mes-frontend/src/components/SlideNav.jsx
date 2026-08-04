@@ -71,6 +71,7 @@ export default function SlideNav() {
         section: "Maintenance",
         items: [
           { key: "maintenance-overview",    label: "Overview",             icon: "📈",                   path: "/maintenance-overview" },
+          { key: "andon-system",            label: "ANDON",                icon: "🚦",                   path: "/andon-system" },
           { key: "maintenance-update-plan", label: "Update Plan",           icon: "📝",                   path: "/maintenance-update-plan" },
           { key: "maintenance-dashboard",   label: "Maintenance Dashboard", icon: "/dashboard-icon.png",  iconImg: true, path: "/maintenance-dashboard" },
           { key: "maintenance-kpi",         label: "Maintenance KPI",       icon: "📊",                   path: "/maintenance-kpi" },
@@ -165,6 +166,13 @@ export default function SlideNav() {
           label: "Update Plan",
           icon:  "📝",
           path:  "/maintenance-update-plan",
+        });
+        // ANDON management module (its own sub-section).
+        workItems.unshift({
+          key:   "andon-system",
+          label: "ANDON",
+          icon:  "🚦",
+          path:  "/andon-system",
         });
         // "Overview" management dashboard sits at the very top.
         workItems.unshift({
