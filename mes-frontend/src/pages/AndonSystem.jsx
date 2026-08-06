@@ -17,6 +17,30 @@ import { useAuth } from "../context/AuthContext";
 const PRIORITIES = ["Critical", "High", "Normal", "Low"];
 const PRIO_COLOR = { Critical: "#dc2626", High: "#ea580c", Normal: "#2563eb", Low: "#64748b" };
 const prioColor = (p) => PRIO_COLOR[p] || "#2563eb";
+
+// Live board par har call ka apna rang — priority se nahi, DEPARTMENT se.
+// (Priority se rang lene par saare "Normal" wale ek jaise neele dikhte the.)
+// Plant ka fixed wiring: DO1 Maintenance · DO3 Toolroom · DO5 Quality ·
+// DO6 Material · DO7 Other Loss. Naam badla ho to naam se, warna DO index se.
+const DEPT_COLOR = {
+  maintenance: "#dc2626",   // laal
+  toolroom:    "#ea580c",   // narangi
+  quality:     "#7c3aed",   // baingani
+  material:    "#0d9488",   // teal
+  "other loss":"#2563eb",   // neela
+};
+const DO_COLOR = { 1:"#dc2626", 2:"#dc2626", 3:"#ea580c", 4:"#ea580c",
+                   5:"#7c3aed", 6:"#0d9488", 7:"#2563eb", 8:"#64748b" };
+// jo in dono me na mile uske liye stable fallback (naam ke hash se)
+const FALLBACK = ["#0891b2", "#c026d3", "#65a30d", "#e11d48", "#4f46e5", "#b45309"];
+const deptColor = (ev) => {
+  const key = String(ev?.department || ev?.display_name || "").trim().toLowerCase();
+  if (DEPT_COLOR[key]) return DEPT_COLOR[key];
+  if (DO_COLOR[ev?.do_index]) return DO_COLOR[ev.do_index];
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return FALLBACK[h % FALLBACK.length];
+};
 const fmtClock = (s) => {
   s = Math.max(0, Math.floor(s || 0));
   const p2 = (n) => String(n).padStart(2, "0");
@@ -374,9 +398,14 @@ export default function AndonSystem() {
                 Object.entries(eventsByLine).map(([line, evs]) => (
                   <div key={line} className="an-card" style={{ marginBottom:14 }}>
                     <div style={{ fontSize:13.5, fontWeight:800, color:"#0f172a", marginBottom:12 }}>📍 {line}</div>
-                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))", gap:12 }}>
+                    {/* Saare active calls EK hi line me. auto-fill wrap kar deta tha
+                        (5 calls => 4 + 1). Ab jitne calls utne hi columns, sab barabar
+                        chaudai me. Bahut zyada calls hon to line todne ke bajaye
+                        line andar hi horizontally scroll ho jayegi. */}
+                    <div style={{ display:"grid", gridTemplateColumns:`repeat(${evs.length},minmax(200px,1fr))`,
+                                  gap:12, overflowX:"auto", paddingBottom:2 }}>
                       {evs.map((ev) => {
-                        const c = prioColor(ev.priority);
+                        const c = deptColor(ev);            // card ka rang = department ka rang
                         const acked = !!ev.acknowledged_at;
                         return (
                           <div key={ev.id} style={{ border:`1px solid ${c}33`, borderLeft:`6px solid ${c}`, borderRadius:11,
@@ -385,8 +414,11 @@ export default function AndonSystem() {
                               <div style={{ fontSize:15.5, fontWeight:800, color:"#0f172a", lineHeight:1.2 }}>
                                 {ev.display_name || ev.department || `OUT${ev.do_index}`}
                               </div>
-                              <span style={{ fontSize:9.5, fontWeight:800, color:c, background:`${c}1a`, padding:"3px 8px",
+                              {(() => { const pc = prioColor(ev.priority);   // badge ka rang priority ka hi rahega
+                                return (
+                              <span style={{ fontSize:9.5, fontWeight:800, color:pc, background:`${pc}1a`, padding:"3px 8px",
                                              borderRadius:99, textTransform:"uppercase", whiteSpace:"nowrap" }}>{ev.priority || "Normal"}</span>
+                                ); })()}
                             </div>
                             {ev.department && ev.department !== ev.display_name &&
                               <div style={{ fontSize:11.5, color:"#64748b", marginTop:1 }}>{ev.department}</div>}
