@@ -31,9 +31,26 @@ REM --- launch FRONTEND in its own window ---
 echo Starting frontend (vite :9965)...
 start "MAINT-FRONTEND :9965" /D "%~dp0mes-frontend" cmd /k "npm run dev"
 
+REM --- backend ko uthne do, phir ANDON ka status dikhao ---
+echo.
+echo Waiting for backend + ESP to come up...
+ping -n 16 127.0.0.1 >nul 2>&1
+
 echo.
 echo ===================================================
-echo   Both services launched in separate windows.
+echo   STATUS
+echo ===================================================
+netstat -an | findstr /R /C:"[0:]:8892 .*LISTENING" >nul 2>&1
+if errorlevel 1 (echo   Backend  :8892   [X] nahi chala) else (echo   Backend  :8892   [OK])
+netstat -an | findstr /R /C:"[0:]:9000 .*LISTENING" >nul 2>&1
+if errorlevel 1 (echo   ANDON    :9000   [X] nahi chala) else (echo   ANDON    :9000   [OK] ESP ka intezaar)
+netstat -an | findstr ":9000" | findstr "ESTABLISHED" >nul 2>&1
+if errorlevel 1 (
+  echo   ESP juda         [..] abhi nahi - ESP har 3 sec me khud judta hai
+) else (
+  echo   ESP juda         [OK]
+  netstat -an | findstr ":9000" | findstr "ESTABLISHED"
+)
 echo.
 echo   Open in browser:  http://localhost:9965
 echo.
@@ -41,4 +58,4 @@ echo   To stop everything: run STOP.bat
 echo   (or just close the two new windows)
 echo ===================================================
 echo.
-timeout /t 3 /nobreak >nul
+ping -n 4 127.0.0.1 >nul 2>&1

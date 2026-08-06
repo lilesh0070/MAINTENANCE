@@ -214,6 +214,41 @@ def _tcp_apply_event(ip, device_id, obj):
         return False
 
 
+def _close_open_calls_on_boot(ip, device_id):
+    """Fresh power-on cleanup.  On boot the ESP forces every output OFF, so any
+    call still sitting OPEN in andon_events for this device is STALE — power was
+    cut mid-call and the OFF edge never arrived.  Close each one into history with
+    its elapsed duration (call-start → now) so it can't stay 'open' forever.
+
+    Only fired when the hello carries boot=1 (a real reboot).  A plain network
+    reconnect sends boot=0 and leaves live calls untouched."""
+    try:
+        with get_conn() as conn:
+            cur = dict_cursor(conn)
+            esp = _find_esp(cur, None, ip, device_id)
+            if not esp:
+                return
+            cur.execute("SELECT COUNT(*) AS n FROM andon_events WHERE esp_id=%s AND state='OPEN'",
+                        (esp["id"],))
+            n = (cur.fetchone() or {}).get("n") or 0
+            if not n:
+                return
+            cur.execute("""INSERT INTO andon_history
+                             (esp_id, do_index, department_id, zone, line, display_name, priority,
+                              started_at, ended_at, duration_seconds, response_seconds)
+                           SELECT esp_id, do_index, department_id, zone, line, display_name, priority,
+                                  started_at, NOW(),
+                                  EXTRACT(EPOCH FROM (NOW() - started_at))::int,
+                                  CASE WHEN acknowledged_at IS NOT NULL
+                                       THEN EXTRACT(EPOCH FROM (acknowledged_at - started_at))::int END
+                             FROM andon_events WHERE esp_id=%s AND state='OPEN'""", (esp["id"],))
+            cur.execute("DELETE FROM andon_events WHERE esp_id=%s AND state='OPEN'", (esp["id"],))
+            conn.commit()
+        print(f"[ANDON-TCP] ESP {esp['id']} rebooted (boot=1) → closed {n} stale open call(s)")
+    except Exception as e:
+        print(f"[ANDON-TCP] boot stale-close error: {e}")
+
+
 def _tcp_client(conn, addr):
     peer_ip = addr[0]
     device_id = None
@@ -245,6 +280,8 @@ def _tcp_client(conn, addr):
                     device_id = obj.get("id") or device_id
                     dev_ip = obj.get("ip") or dev_ip
                     last_seq = 0
+                    if _state_on(obj.get("boot")):   # fresh power-on → outputs all OFF → drop stale open calls
+                        _close_open_calls_on_boot(dev_ip or peer_ip, device_id)
                     continue
                 seq = obj.get("seq")
                 if seq is not None and seq <= last_seq:      # duplicate resend → re-ack, skip
