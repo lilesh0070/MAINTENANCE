@@ -15,6 +15,17 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 const PRIORITIES = ["Critical", "High", "Normal", "Low"];
+const PRIO_COLOR = { Critical: "#dc2626", High: "#ea580c", Normal: "#2563eb", Low: "#64748b" };
+const prioColor = (p) => PRIO_COLOR[p] || "#2563eb";
+const fmtClock = (s) => {
+  s = Math.max(0, Math.floor(s || 0));
+  const p2 = (n) => String(n).padStart(2, "0");
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return (h ? p2(h) + ":" : "") + p2(m) + ":" + p2(s % 60);
+};
+// DO2 acknowledges DO1 (Maintenance), DO4 acknowledges DO3 (Toolroom) — an ACK
+// output belongs to the SAME department as the call it responds to.
+const ACK_PARENT = { 2: 1, 4: 3 };
 
 export default function AndonSystem() {
   const { token, theme, user } = useAuth();
@@ -39,6 +50,9 @@ export default function AndonSystem() {
   const [master, setMaster]   = useState([]);       // flat mes_machines rows (zone_name/line_name/machine_no/machine_name)
   const [depts, setDepts]     = useState([]);
   const [esps, setEsps]       = useState([]);
+  const [events, setEvents]   = useState([]);       // live OPEN calls (the board)
+  const [evAt, setEvAt]       = useState(0);         // Date.now() at last /events fetch
+  const [, setTick]           = useState(0);         // 1s heartbeat so timers advance smoothly
 
   const load = useCallback(async () => {
     try {
@@ -56,6 +70,29 @@ export default function AndonSystem() {
     const id = setInterval(() => { api("/esp-devices").then((e) => setEsps(e || [])).catch(() => {}); }, 10000);
     return () => clearInterval(id);
   }, [token, api]);
+  // ── Live board: pull active calls every 2s while the board tab is open ──
+  useEffect(() => {
+    if (!token || tab !== "board") return;
+    let alive = true;
+    const pull = () => api("/events").then((e) => { if (alive) { setEvents(e || []); setEvAt(Date.now()); } }).catch(() => {});
+    pull();
+    const id = setInterval(pull, 2000);
+    return () => { alive = false; clearInterval(id); };
+  }, [token, tab, api]);
+  // 1s heartbeat so the running timers advance between the 2s polls
+  useEffect(() => {
+    if (tab !== "board") return;
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [tab]);
+  // elapsed = server value at fetch + wall-clock since fetch (timezone-proof)
+  const liveElapsed = (ev) => (ev.elapsed_seconds || 0) + (evAt ? Math.max(0, Math.floor((Date.now() - evAt) / 1000)) : 0);
+  // group active calls by the ESP's defined zone / line
+  const eventsByLine = useMemo(() => {
+    const g = {};
+    for (const ev of events) { const k = `${ev.zone || "—"} / ${ev.line || "—"}`; (g[k] = g[k] || []).push(ev); }
+    return g;
+  }, [events]);
   const wrap = async (fn, ok) => { try { await fn(); await load(); if (ok) flash(ok); } catch (e) { flash(String(e.message || e).slice(0, 140)); } };
 
   // ── Departments ──
@@ -117,7 +154,7 @@ export default function AndonSystem() {
   const deptUsedElsewhere = (i) => new Set(outRows.filter((_, j) => j !== i).map((r) => r.department_id).filter(Boolean));
   const onOutDept = (i, deptId) => {
     const d = depts.find((x) => x.id === deptId);
-    setOutRows((rs) => rs.map((r, j) => (j === i ? { ...r, department_id: deptId, display_name: d ? `${d.name} Call` : "" } : r)));
+    setOutRows((rs) => rs.map((r, j) => (j === i ? { ...r, department_id: deptId, display_name: d ? d.name : (r.display_name || "") } : r)));
   };
   const addOutput = () => {
     if (outRows.length >= 8) { flash("Max 8 outputs (ESP has DO1–DO8)"); return; }
@@ -126,7 +163,7 @@ export default function AndonSystem() {
     const used = new Set(outRows.map((r) => r.department_id).filter(Boolean));
     const free = depts.find((d) => !used.has(d.id));
     setOutRows((rs) => [...rs, { do_index: nd, department_id: free?.id || null,
-      display_name: free ? `${free.name} Call` : "", priority: "Normal", enabled: true }]);
+      display_name: free ? free.name : "", priority: "Normal", enabled: true }]);
   };
   const removeOutput = (i) => setOutRows((rs) => rs.filter((_, j) => j !== i));
 
@@ -286,56 +323,34 @@ export default function AndonSystem() {
                   </div>
 
                   <div className="an-card">
-                    <div className="an-row" style={{ marginBottom:12 }}>
-                      <b style={{ fontSize:14 }}>Output Mapping — {outFor.name}</b>
-                      <div style={{ marginLeft:"auto", display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
-                        <select className="an-in sm" value={outZone} onChange={(e) => pickOutTarget(e.target.value, "")}>
-                          <option value="">Default template (all ESPs)</option>
-                          {espZones.map((z) => <option key={z} value={z}>{z}</option>)}
-                        </select>
-                        {outZone && (
-                          <select className="an-in sm" value={outLine} onChange={(e) => pickOutTarget(outZone, e.target.value)}>
-                            <option value="">— select line —</option>
-                            {outLinesFor(outZone).map((l) => <option key={l} value={l}>{l}</option>)}
-                          </select>
-                        )}
-                        <button className="an-btn" onClick={saveOutputs} disabled={outFor.type === "none" || outFor.type === "pick"}>Save mapping</button>
-                      </div>
+                    <div className="an-row" style={{ marginBottom:6 }}>
+                      <b style={{ fontSize:14 }}>Output Mapping</b>
+                      <span style={{ marginLeft:"auto", fontSize:11.5, color:"#94a3b8" }}>Fixed plant scheme — same DO1–DO7 wiring for every ESP.</span>
                     </div>
-                    {outFor.type === "pick" ? (
-                      <div style={{ color:"#94a3b8", fontSize:13, padding:"18px 4px" }}>Select a <b>line</b> to map that ESP's outputs.</div>
-                    ) : outFor.type === "none" ? (
-                      <div style={{ color:"#b45309", fontSize:13, padding:"18px 4px" }}>No ESP is configured on <b>{outZone} / {outLine}</b>. Add one in <b>ESP Devices</b> first.</div>
-                    ) : (
-                    <>
                     <table className="an-tbl">
-                      <thead><tr><th style={{ width:90 }}>Output</th><th>Department</th><th style={{ width:44 }}></th></tr></thead>
+                      <thead><tr><th style={{ width:200 }}>Output</th><th>Department / role</th></tr></thead>
                       <tbody>
-                        {outRows.map((r, i) => {
-                          const used = deptUsedElsewhere(i);
+                        {outRows.map((r) => {
+                          const parentDo = ACK_PARENT[r.do_index];               // DO2→DO1, DO4→DO3
+                          const isAck = !!parentDo;
+                          const deptId = isAck ? outRows.find((x) => x.do_index === parentDo)?.department_id : r.department_id;
+                          const dept = depts.find((d) => d.id === deptId);
                           return (
                             <tr key={r.do_index}>
-                              <td style={{ fontWeight:800 }}>OUT{r.do_index}</td>
-                              <td>
-                                <select className="an-in" style={{ width:"100%", maxWidth:340 }} value={r.department_id || ""}
-                                        onChange={(e) => onOutDept(i, e.target.value ? Number(e.target.value) : null)}>
-                                  <option value="">— select —</option>
-                                  {depts.filter((d) => !used.has(d.id)).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                                </select>
+                              <td style={{ fontWeight:800 }}>
+                                {r.display_name || `OUT${r.do_index}`}
+                                <div style={{ fontSize:10.5, fontWeight:600, color:"#94a3b8" }}>OUT{r.do_index}</div>
                               </td>
-                              <td style={{ textAlign:"center" }}><button className="an-x" title="Remove this output" onClick={() => removeOutput(i)}>×</button></td>
+                              <td>
+                                <span style={{ fontWeight:700 }}>{dept ? dept.name : (r.display_name || "—")}</span>
+                                {isAck && <span style={{ fontSize:10.5, fontWeight:600, color:"#94a3b8", marginLeft:8 }}>⏱ response time</span>}
+                              </td>
                             </tr>
                           );
                         })}
-                        {!outRows.length && <tr><td colSpan={3} style={{ color:"#94a3b8" }}>No outputs — click “+ Add output”.</td></tr>}
+                        {!outRows.length && <tr><td colSpan={2} style={{ color:"#94a3b8" }}>Loading…</td></tr>}
                       </tbody>
                     </table>
-                    <div className="an-row" style={{ marginTop:12, justifyContent:"space-between" }}>
-                      <button className="an-btn gh" onClick={addOutput} disabled={outRows.length >= 8 || outRows.length >= depts.length}>+ Add output</button>
-                      <span style={{ fontSize:11.5, color:"#94a3b8" }}>Each department once · up to 8 outputs (ESP DO1–DO8) · default applies to every ESP.</span>
-                    </div>
-                    </>
-                    )}
                   </div>
                 </>
               )}
@@ -343,8 +358,57 @@ export default function AndonSystem() {
           )}
 
           {tab === "board" && (
-            <div className="an-panel"><div className="big">📟</div><h2>Live ANDON Board</h2>
-              <p>Real-time active calls + running timers, department / zone / line cards, today's downtime — over WebSocket from the ESP-polling engine. <b>Phase 3–4</b> (needs the ESP32 response format).</p></div>
+            <>
+              <div className="an-row" style={{ marginBottom:14, justifyContent:"space-between", alignItems:"center" }}>
+                <b style={{ fontSize:16, color:"#0f172a" }}>🚦 Live ANDON Board</b>
+                <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>
+                  <span style={{ display:"inline-block", width:8, height:8, borderRadius:99, background:"#16a34a", marginRight:6 }} />
+                  {events.length} active call{events.length === 1 ? "" : "s"} · auto-refresh 2s
+                </span>
+              </div>
+
+              {!events.length ? (
+                <div className="an-panel"><div className="big">✅</div><h2>All clear</h2>
+                  <p>No active ANDON calls right now. Press a button on the ESP — the call appears here on its defined line, with a running timer.</p></div>
+              ) : (
+                Object.entries(eventsByLine).map(([line, evs]) => (
+                  <div key={line} className="an-card" style={{ marginBottom:14 }}>
+                    <div style={{ fontSize:13.5, fontWeight:800, color:"#0f172a", marginBottom:12 }}>📍 {line}</div>
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))", gap:12 }}>
+                      {evs.map((ev) => {
+                        const c = prioColor(ev.priority);
+                        const acked = !!ev.acknowledged_at;
+                        return (
+                          <div key={ev.id} style={{ border:`1px solid ${c}33`, borderLeft:`6px solid ${c}`, borderRadius:11,
+                                                     padding:"12px 14px", background:`${c}0d` }}>
+                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
+                              <div style={{ fontSize:15.5, fontWeight:800, color:"#0f172a", lineHeight:1.2 }}>
+                                {ev.display_name || ev.department || `OUT${ev.do_index}`}
+                              </div>
+                              <span style={{ fontSize:9.5, fontWeight:800, color:c, background:`${c}1a`, padding:"3px 8px",
+                                             borderRadius:99, textTransform:"uppercase", whiteSpace:"nowrap" }}>{ev.priority || "Normal"}</span>
+                            </div>
+                            {ev.department && ev.department !== ev.display_name &&
+                              <div style={{ fontSize:11.5, color:"#64748b", marginTop:1 }}>{ev.department}</div>}
+                            <div style={{ fontSize:28, fontWeight:800, color:c, fontVariantNumeric:"tabular-nums", margin:"7px 0 3px" }}>
+                              {fmtClock(liveElapsed(ev))}
+                            </div>
+                            <div style={{ fontSize:11, color:"#94a3b8" }}>OUT{ev.do_index} · {ev.esp_name || "ESP"}</div>
+                            <div style={{ marginTop:7 }}>
+                              {acked
+                                ? <span style={{ fontSize:10.5, fontWeight:700, color:"#16a34a" }}>
+                                    ✓ Responded in {fmtClock((new Date(ev.acknowledged_at) - new Date(ev.started_at)) / 1000)}
+                                  </span>
+                                : <span style={{ fontSize:10.5, fontWeight:700, color:"#b45309" }}>● Waiting for response…</span>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
+            </>
           )}
           {tab === "reports" && (
             <div className="an-panel"><div className="big">📊</div><h2>Reports</h2>

@@ -39,6 +39,8 @@ POST            /ingest                     ESP pushes an output ON/OFF change (
 GET             /events                     live OPEN calls (running timer)
 GET             /history                    closed calls (duration / response)
 """
+import json
+import os
 import platform
 import socket
 import subprocess
@@ -152,6 +154,150 @@ def _start_poller():
         return
     _poller_started = True
     threading.Thread(target=_poll_loop, daemon=True, name="andon-esp-poller").start()
+
+
+# ── ESP raw-TCP ingest (the ESP32 firmware's NATIVE protocol) ────────
+# The ESP does NOT speak HTTP.  It opens a raw TCP connection to this server's
+# ANDON_TCP_PORT and streams newline-delimited JSON:
+#   hello : {"type":"hello","id":"ESP-01","zone":..,"line":..,"ip":..}
+#   event : {"seq":N,"id":"ESP-01","ch":1,"event":"ON","t_ms":..}
+#           {"seq":N,...,"event":"OFF","on_ms":..,"on_s":..}
+#           {"seq":N,...,"ch":2,"event":"ACK","of":1}
+# For EVERY event (it carries a seq) the server must reply {"ack":N}\n or the
+# ESP resends — so nothing is lost across a reconnect.  We ack only AFTER the
+# event is persisted (transient DB error → no ack → the ESP resends later).
+# ch == DO index (1..8): ON opens a call, OFF closes it (duration), ACK (ch2→
+# of1, ch4→of3) stamps the parent call's response time — the SAME lifecycle
+# _apply_state already implements for the HTTP /ingest path.
+_ANDON_TCP_PORT = int(os.getenv("ANDON_TCP_PORT", "9000") or 9000)
+_tcp_started = False
+
+
+def _tcp_apply_event(ip, device_id, obj):
+    """Persist one ESP event.  Returns True if handled (→ ack it), False on a
+    transient error (do NOT ack → the ESP will resend)."""
+    ev = obj.get("event")
+    ch = obj.get("ch")
+    if not ev or ch is None:
+        return True
+    try:
+        ch = int(ch)
+    except (TypeError, ValueError):
+        return True
+    if not (1 <= ch <= 8):
+        return True
+    try:
+        with get_conn() as conn:
+            cur = dict_cursor(conn)
+            esp = _find_esp(cur, None, ip, device_id)
+            if not esp:
+                print(f"[ANDON-TCP] unknown ESP ip={ip} id={device_id} — add it in ANDON config")
+                return True                      # can't map — ack anyway (avoid a resend storm)
+            if ev == "ON":
+                _apply_state(cur, esp, ch, True)
+            elif ev == "OFF":
+                dur = obj.get("on_s")            # ESP's hardware-measured ON duration
+                if dur is None and obj.get("on_ms") is not None:
+                    dur = obj["on_ms"] / 1000.0
+                _apply_state(cur, esp, ch, False,
+                             dur_override=(int(round(dur)) if dur is not None else None))
+            elif ev == "ACK":                    # ch 2/4 → _apply_state stamps the parent's response
+                _apply_state(cur, esp, ch, True)
+            else:
+                return True                      # unknown event kind — ack, ignore
+            conn.commit()
+        now = datetime.now().isoformat(timespec="seconds")
+        _ESP_STATUS[esp["id"]] = {"online": True, "checked": now, "last_seen": now}
+        return True
+    except Exception as e:
+        print(f"[ANDON-TCP] persist error (no ack → ESP resends): {e}")
+        return False
+
+
+def _tcp_client(conn, addr):
+    peer_ip = addr[0]
+    device_id = None
+    dev_ip = None            # the ESP's self-reported IP from its hello
+    last_seq = 0
+    buf = b""
+    conn.settimeout(2.0)
+    try:
+        while True:
+            try:
+                data = conn.recv(2048)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            if not data:                          # peer closed
+                break
+            buf += data
+            while b"\n" in buf:
+                raw, buf = buf.split(b"\n", 1)
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    obj = json.loads(raw.decode("utf-8", "replace"))
+                except Exception:
+                    continue
+                if obj.get("type") == "hello":    # identity — no seq, no ack
+                    device_id = obj.get("id") or device_id
+                    dev_ip = obj.get("ip") or dev_ip
+                    last_seq = 0
+                    continue
+                seq = obj.get("seq")
+                if seq is not None and seq <= last_seq:      # duplicate resend → re-ack, skip
+                    try:
+                        conn.sendall((json.dumps({"ack": seq}) + "\n").encode())
+                    except OSError:
+                        return
+                    continue
+                if _tcp_apply_event(dev_ip or peer_ip, device_id or obj.get("id"), obj):
+                    if seq is not None:
+                        try:
+                            conn.sendall((json.dumps({"ack": seq}) + "\n").encode())
+                        except OSError:
+                            return
+                        last_seq = seq
+    finally:
+        try:
+            conn.close()
+        except OSError:
+            pass
+
+
+def _tcp_server_loop():
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        srv.bind(("0.0.0.0", _ANDON_TCP_PORT))
+        srv.listen(32)
+    except OSError as e:
+        print(f"[ANDON-TCP] cannot bind :{_ANDON_TCP_PORT} — {e}")
+        return
+    print(f"[ANDON-TCP] listening on 0.0.0.0:{_ANDON_TCP_PORT} — ESP push ingest ready")
+    while True:
+        try:
+            conn, addr = srv.accept()
+        except OSError:
+            break
+        threading.Thread(target=_tcp_client, args=(conn, addr), daemon=True, name="andon-tcp-client").start()
+
+
+def _start_tcp_server():
+    global _tcp_started
+    if _tcp_started:
+        return
+    _tcp_started = True
+    threading.Thread(target=_tcp_server_loop, daemon=True, name="andon-tcp-server").start()
+
+
+def start_workers():
+    """Start the connectivity poller + the ESP raw-TCP ingest server — both
+    idempotent and DB-independent (safe to call at boot even if the DB is down)."""
+    _start_poller()
+    _start_tcp_server()
 
 
 def _ensure_tables():
@@ -273,9 +419,15 @@ def _ensure_tables():
                                  (esp_id, do_index, display_name, department_id, priority, enabled)
                                VALUES (NULL,%s,%s,%s,%s,TRUE)""",
                             (do_i, disp, dept_id.get(dept), prio))
+
+        # DO6 department is 'Material' (was briefly labelled 'Store').
+        # Idempotent self-heal (renames dept + the DO6 label if still 'Store').
+        cur.execute("""UPDATE andon_departments SET name='Material' WHERE name='Store'
+                        AND NOT EXISTS (SELECT 1 FROM andon_departments WHERE name='Material')""")
+        cur.execute("UPDATE andon_esp_output_mapping SET display_name='Material' WHERE display_name='Store'")
         conn.commit()
     _ensured = True
-    _start_poller()          # begin the ESP connectivity sweep
+    start_workers()          # connectivity sweep + ESP raw-TCP ingest server
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -601,14 +753,18 @@ def _resolve_output(cur, esp_id, do_index):
     return f"DO{do_index}", None, "Normal"
 
 
-def _apply_state(cur, esp, do_index, on):
+def _apply_state(cur, esp, do_index, on, dur_override=None):
     """Open (ON) or close (OFF) the call for one output — idempotent.
 
     DO2 / DO4 are acknowledgement pulses, not calls of their own:
       • DO2 ON = maintenance responded to the open DO1 call
       • DO4 ON = toolroom     responded to the open DO3 call
     Their ON edge stamps acknowledged_at on the parent call (→ response time =
-    call-ON → ACK-ON); they never open an event or accumulate a duration."""
+    call-ON → ACK-ON); they never open an event or accumulate a duration.
+
+    dur_override (seconds): on OFF, use this hardware-measured duration instead
+    of the server-computed one — so a call that was closed WHILE the ESP was
+    disconnected (event flushed later on reconnect) still gets its true length."""
     if do_index in _ACK_OF:
         if not on:
             return {"do_index": do_index, "action": "ack_off_ignored"}
@@ -648,11 +804,11 @@ def _apply_state(cur, esp, do_index, on):
                       started_at, ended_at, duration_seconds, response_seconds)
                    SELECT esp_id, do_index, department_id, zone, line, display_name, priority,
                           started_at, NOW(),
-                          EXTRACT(EPOCH FROM (NOW() - started_at))::int,
+                          COALESCE(%s, EXTRACT(EPOCH FROM (NOW() - started_at))::int),
                           CASE WHEN acknowledged_at IS NOT NULL
                                THEN EXTRACT(EPOCH FROM (acknowledged_at - started_at))::int END
                      FROM andon_events WHERE id=%s
-                   RETURNING id, duration_seconds""", (open_ev["id"],))
+                   RETURNING id, duration_seconds""", (dur_override, open_ev["id"]))
     hist = cur.fetchone()
     cur.execute("DELETE FROM andon_events WHERE id=%s", (open_ev["id"],))
     return {"do_index": do_index, "action": "closed",

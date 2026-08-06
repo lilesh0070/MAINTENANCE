@@ -241,6 +241,19 @@ def upsert_oee_alarm(body: _OEEAlarmCfg, admin=Depends(require_admin)):
     return {"ok": True}
 
 
+# ── ANDON workers ─────────────────────────────────────────────
+@app.on_event("startup")
+def start_andon_workers():
+    """ESP raw-TCP ingest (:9000) + connectivity poller.  Start at boot,
+    independent of the DB — event persistence retries once the DB is back, so
+    the ESP can connect and its queued events flush as soon as the DB returns."""
+    try:
+        from routers.andon import start_workers
+        start_workers()
+    except Exception as e:
+        print(f"[STARTUP] ANDON workers start failed: {e}")
+
+
 # ── Startup migrations ─────────────────────────────────────────
 @app.on_event("startup")
 def run_migrations():
@@ -271,6 +284,12 @@ def run_migrations():
         _ensure_logbook()
     except Exception as e:
         print(f"[STARTUP] Log Book table ensure failed: {e}")
+    # ANDON tables/scheme (idempotent) — also (re)starts the ESP ingest workers.
+    try:
+        from routers.andon import _ensure_tables as _ensure_andon
+        _ensure_andon()
+    except Exception as e:
+        print(f"[STARTUP] ANDON tables ensure failed: {e}")
     migrations = [
         "ALTER TABLE mes_lines ADD COLUMN IF NOT EXISTS current_shift_row_id INTEGER",
         "ALTER TABLE mes_lines ADD COLUMN IF NOT EXISTS ot_active_shift VARCHAR(10)",
