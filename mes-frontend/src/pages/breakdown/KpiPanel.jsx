@@ -209,7 +209,13 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, refreshKey }) {
                           const durSec = b.ended_at
                             ? Math.max(0, Math.floor((new Date(b.ended_at) - new Date(b.started_at)) / 1000))
                             : Math.max(0, Math.floor((Date.now() - new Date(b.started_at)) / 1000));
-                          const stColor = b.state === "OPEN" ? "#dc2626" : b.state === "RESOLVED" ? "#b45309" : "#16a34a";
+                          // AUTO slip (ANDON se) ke do hi haal hote hain:
+                          //   PENDING   → maintenance ne problem/action nahi bhara (amber)
+                          //   COMPLETED → bhar diya (hara)
+                          // Purane OPEN/RESOLVED/CLOSED bhi handle rakhe hain
+                          // taaki koi purana data ho to bhi theek dikhe.
+                          const pending = b.state === "PENDING" || b.state === "RESOLVED" || b.state === "OPEN";
+                          const stColor = b.state === "OPEN" ? "#dc2626" : pending ? "#b45309" : "#16a34a";
                           const over60 = durSec > 60 * 60;   // > 1 hour → blink (like ANDON)
                           return (
                             <tr key={b.id} style={{ borderBottom: "1px solid #f1f5f9",
@@ -236,13 +242,13 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, refreshKey }) {
                                            color: durSec > 30 * 60 ? "#dc2626" : "#334155" }}>{fmtDuration(durSec)}</td>
                               <td style={{ padding: "8px 12px", color: "#64748b", maxWidth: 260 }}>{b.reason || "—"}</td>
                               <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
-                                {b.state === "RESOLVED" && onFillSlip ? (
+                                {pending && onFillSlip ? (
                                   /* form pending → fill it here (View appears once filled) */
                                   <button onClick={() => onFillSlip(b.id)} style={{
                                     border: "none", background: "#dc2626", color: "#fff",
                                     borderRadius: 7, padding: "4px 12px", fontSize: 11.5, fontWeight: 800,
                                     cursor: "pointer", fontFamily: "inherit" }}>✏ Fill Slip</button>
-                                ) : b.state === "CLOSED" && onViewSlip ? (
+                                ) : onViewSlip ? (
                                   /* already filled → view the filled slip */
                                   <button onClick={() => onViewSlip(b.id)} style={{
                                     border: "1px solid #cbd5e1", background: "#fff", color: "#334155",

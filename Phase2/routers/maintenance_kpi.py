@@ -33,6 +33,23 @@ from datetime import datetime, timedelta, date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+
+# Dashboard ki zone-wise "Breakdown Slips" list ab AUTO slips se banti hai
+# (ANDON ke Maintenance call se), mes_breakdowns se nahi.
+_AUTO_SLIP_TBL = "mes_auto_breakdown_slip"
+
+
+def _stamp(d, t):
+    """Slip me date aur time alag columns me hain (`bd_start_date` +
+    `bd_start_time` = 'HH:MM').  Frontend ek timestamp expect karta hai,
+    isliye dono ko jod kar ISO bana dete hain."""
+    if not d:
+        return None
+    try:
+        hh, mm = (t or "00:00").split(":")[:2]
+        return datetime(d.year, d.month, d.day, int(hh), int(mm)).isoformat()
+    except Exception:
+        return datetime(d.year, d.month, d.day).isoformat()
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -127,32 +144,40 @@ def _load_targets(conn, line_id: Optional[int]) -> dict:
 
 def _compute(conn, start: datetime, end: datetime, line_id: Optional[int],
              zone_name: Optional[str] = None, line_name: Optional[str] = None) -> dict:
-    """Aggregate raw figures from mes_breakdowns over [start, end).
-    Optional zone_name / line_name filters (text, from the Machine Master)
-    resolve against the ticket's line/zone — line_name via mes_lines,
-    zone_name via the ticket's own zone_id or its line's zone."""
+    """Aggregate raw figures from the AUTO slips over [start, end).
+
+    2026-08-06: pehle ye `mes_breakdowns` (bahar ke collector ki table) se
+    ginta tha, jabki neeche ki slip list AUTO slips dikhati hai — isse cards
+    aur list ke numbers match hi nahi karte the.  Ab dono ek hi source se:
+    **`mes_auto_breakdown_slip`** (ANDON ke Maintenance call se bani slips).
+
+    Down-time slip ke `mc_down_time_minutes` se aata hai (wahi ANDON ka
+    start→OK ka hisaab), aur "pending closure" = jis slip me maintenance ne
+    abhi problem/action nahi bhara.  zone/line filter seedha slip ke apne
+    text columns par lagta hai (mes_lines/mes_zones ke JOIN ki zaroorat nahi)."""
     cur = dict_cursor(conn)
-    where = "started_at >= %s AND started_at < %s"
-    params: list = [start, end]
+    where = "s.bd_start_date >= %s::date AND s.bd_start_date <= %s::date"
+    params: list = [start.date(), (end - timedelta(seconds=1)).date()]
     if line_id is not None:
-        where += " AND line_id = %s"
+        # line_id sirf purane callers deten hain — use line ke NAAM me badlo
+        where += " AND s.line = (SELECT line_name FROM mes_lines WHERE id = %s)"
         params.append(line_id)
     if line_name:
-        where += " AND line_id IN (SELECT id FROM mes_lines WHERE line_name = %s)"
+        where += " AND s.line = %s"
         params.append(line_name)
     if zone_name:
-        where += (" AND COALESCE("
-                  "(SELECT z.zone_name FROM mes_zones z WHERE z.id = mes_breakdowns.zone_id),"
-                  "(SELECT z2.zone_name FROM mes_lines l JOIN mes_zones z2 ON z2.id = l.zone_id"
-                  "  WHERE l.id = mes_breakdowns.line_id)) = %s")
+        where += " AND s.zone = %s"
         params.append(zone_name)
 
     cur.execute(f"""
-        SELECT COUNT(*)                                                  AS bd_count,
-               SUM(EXTRACT(EPOCH FROM (ended_at - started_at)))           AS total_down_sec,
-               AVG(EXTRACT(EPOCH FROM (ended_at - started_at)))           AS avg_repair_sec,
-               COUNT(*) FILTER (WHERE state = 'RESOLVED')                 AS pending_closures
-          FROM mes_breakdowns
+        SELECT COUNT(*)                                            AS bd_count,
+               COALESCE(SUM(s.mc_down_time_minutes), 0) * 60       AS total_down_sec,
+               COALESCE(AVG(s.mc_down_time_minutes), 0) * 60       AS avg_repair_sec,
+               COUNT(*) FILTER (
+                   WHERE COALESCE(NULLIF(TRIM(s.action_taken_on_problem), ''), '') = ''
+                     AND COALESCE(NULLIF(TRIM(s.problem_observed_by_maintenance), ''), '') = ''
+               )                                                   AS pending_closures
+          FROM {_AUTO_SLIP_TBL} s
          WHERE {where}
     """, params)
     row = cur.fetchone() or {}
@@ -220,86 +245,105 @@ def _build_payload(conn, start: datetime, end: datetime,
             "verdict":   _verdict(val, t["target_value"], t["direction"]),
         })
 
-    # Resolve line / zone names so the UI can echo them in the export.
-    line_name = None
-    if line_id:
+    # Resolve line name so the UI can echo it in the export.
+    # AHEM: pehle yahan `line_name = None` bina shart ke chalta tha, jisse caller
+    # ka Line filter MIT jaata tha — cards (_compute upar chal chuka) filter
+    # maante the par neeche ke zone tiles aur slip list nahi.  Ab caller ka
+    # line_name jaisa hai waisa rehta hai; sirf line_id se naam nikaalte hain
+    # jab naam diya hi na gaya ho.
+    if line_id and not line_name:
         cur = dict_cursor(conn)
         cur.execute("SELECT line_name FROM mes_lines WHERE id = %s", (line_id,))
         r = cur.fetchone()
         line_name = r["line_name"] if r else None
 
-    # Zone-wise pending closures (RESOLVED tickets waiting for the closure
-    # form) in the same window — feeds the dashboard's Pending Breakdown
-    # zone sections.
-    zp_where = ["b.started_at >= %s", "b.started_at < %s", "b.state = 'RESOLVED'"]
-    zp_params: list = [start, end]
-    if line_id is not None:
-        zp_where.append("b.line_id = %s"); zp_params.append(line_id)
+    # Zone-wise PENDING slips (jinme maintenance ne abhi problem/action nahi
+    # bhara) — dashboard ke Pending Breakdown zone tiles ke liye.
+    # Ab AUTO slips se (pehle mes_breakdowns se aata tha, jo neeche ki list se
+    # match hi nahi karta tha).
+    zs_where = ["s.bd_start_date >= %s::date", "s.bd_start_date <= %s::date",
+                "COALESCE(NULLIF(TRIM(s.action_taken_on_problem), ''), '') = ''",
+                "COALESCE(NULLIF(TRIM(s.problem_observed_by_maintenance), ''), '') = ''"]
+    zs_params: list = [start.date(), (end - timedelta(seconds=1)).date()]
     if line_name:
-        zp_where.append("b.line_id IN (SELECT id FROM mes_lines WHERE line_name = %s)")
-        zp_params.append(line_name)
+        zs_where.append("s.line = %s"); zs_params.append(line_name)
     if zone_name:
-        zp_where.append("COALESCE(z.zone_name, zl.zone_name) = %s")
-        zp_params.append(zone_name)
-    # Zone resolution: the ticket's own zone_id, else the zone of its LINE
-    # (some slips are saved without zone_id but always carry line_id).
+        zs_where.append("s.zone = %s"); zs_params.append(zone_name)
     cur = dict_cursor(conn)
     cur.execute(f"""
-        SELECT COALESCE(z.zone_name, zl.zone_name, '(unzoned)') AS zone_name,
+        SELECT COALESCE(s.zone, '(unzoned)') AS zone_name,
                COUNT(*) AS pending
-          FROM mes_breakdowns b
-          LEFT JOIN mes_zones z  ON z.id  = b.zone_id
-          LEFT JOIN mes_lines l  ON l.id  = b.line_id
-          LEFT JOIN mes_zones zl ON zl.id = l.zone_id
-         WHERE {' AND '.join(zp_where)}
+          FROM {_AUTO_SLIP_TBL} s
+         WHERE {' AND '.join(zs_where)}
          GROUP BY 1 ORDER BY 2 DESC
-    """, zp_params)
+    """, zs_params)
     zone_pending = cur.fetchall()
 
-    # Per-zone TOTAL breakdowns (ALL states) — lets the dashboard tiles
-    # reconcile with the "Total Breakdowns" card (sum of tiles = total).
-    bd_where = ["b.started_at >= %s", "b.started_at < %s"]
-    bd_params: list = [start, end]
-    if line_id is not None:
-        bd_where.append("b.line_id = %s"); bd_params.append(line_id)
+    # Per-zone TOTAL slips (bhari + pending, dono) — taaki tiles ka jod
+    # "Total Breakdowns" card se mile.  Ye bhi ab AUTO slips se.
+    zt_where = ["s.bd_start_date >= %s::date", "s.bd_start_date <= %s::date"]
+    zt_params: list = [start.date(), (end - timedelta(seconds=1)).date()]
     if line_name:
-        bd_where.append("b.line_id IN (SELECT id FROM mes_lines WHERE line_name = %s)")
-        bd_params.append(line_name)
+        zt_where.append("s.line = %s"); zt_params.append(line_name)
     if zone_name:
-        bd_where.append("COALESCE(z.zone_name, zl.zone_name) = %s")
-        bd_params.append(zone_name)
+        zt_where.append("s.zone = %s"); zt_params.append(zone_name)
 
     cur.execute(f"""
-        SELECT COALESCE(z.zone_name, zl.zone_name, '(unzoned)') AS zone_name,
+        SELECT COALESCE(s.zone, '(unzoned)') AS zone_name,
                COUNT(*) AS total
-          FROM mes_breakdowns b
-          LEFT JOIN mes_zones z  ON z.id  = b.zone_id
-          LEFT JOIN mes_lines l  ON l.id  = b.line_id
-          LEFT JOIN mes_zones zl ON zl.id = l.zone_id
-         WHERE {' AND '.join(bd_where)}
+          FROM {_AUTO_SLIP_TBL} s
+         WHERE {' AND '.join(zt_where)}
          GROUP BY 1 ORDER BY 2 DESC
-    """, bd_params)
+    """, zt_params)
     zone_totals = cur.fetchall()
 
     # The individual breakdown "slips" in the window (one row per ticket) —
     # the dashboard lists these under a zone tile when it's clicked.
+    # 2026-08-06: ye list ab AUTO slips (`mes_auto_breakdown_slip`) se aati hai,
+    # `mes_breakdowns` se NAHI.  Slip ANDON ke Maintenance call se banti hai.
+    # Column ke naam wahi rakhe hain jo frontend padhta hai (zone_name /
+    # line_name / shift_name / started_at / ended_at / state / reason), taaki
+    # table ka format bilkul na badle.
+    #   state  : problem/action bhare nahi → PENDING, bhare hain → COMPLETED
+    #   reason : jo production ne likha ho, warna ek fixed label
+    sl_where = ["s.bd_start_date >= %s::date", "s.bd_start_date <= %s::date"]
+    sl_params: list = [start.date(), (end - timedelta(seconds=1)).date()]
+    if line_name:
+        sl_where.append("s.line = %s"); sl_params.append(line_name)
+    if zone_name:
+        sl_where.append("s.zone = %s"); sl_params.append(zone_name)
+
     cur.execute(f"""
-        SELECT b.id, b.serial_in_shift, b.shift_name, b.started_at, b.ended_at,
-               b.state, b.reason,
-               COALESCE(z.zone_name, zl.zone_name, '(unzoned)') AS zone_name,
-               l.line_name
-          FROM mes_breakdowns b
-          LEFT JOIN mes_zones z  ON z.id  = b.zone_id
-          LEFT JOIN mes_lines l  ON l.id  = b.line_id
-          LEFT JOIN mes_zones zl ON zl.id = l.zone_id
-         WHERE {' AND '.join(bd_where)}
-         ORDER BY b.started_at DESC
-    """, bd_params)
-    breakdowns = [dict(r) for r in cur.fetchall()]
-    for r in breakdowns:
-        for k in ("started_at", "ended_at"):
-            if r.get(k):
-                r[k] = r[k].isoformat()
+        SELECT s.id,
+               NULL::int                                   AS serial_in_shift,
+               s.shift                                     AS shift_name,
+               s.bd_start_date, s.bd_start_time,
+               s.bd_end_date,   s.bd_ok_time,
+               s.mc_down_time_minutes,
+               CASE WHEN COALESCE(NULLIF(TRIM(s.action_taken_on_problem), ''), '') = ''
+                     AND COALESCE(NULLIF(TRIM(s.problem_observed_by_maintenance), ''), '') = ''
+                    THEN 'PENDING' ELSE 'COMPLETED' END    AS state,
+               -- Reason: production ne kuch likha ho to wahi; warna batao ye
+               -- ANDON se apne aap bani hai.  POWER CUT wali slip par saaf
+               -- nishaan — uska OK time button se nahi, bijli jaane se bana
+               -- tha, isliye bharose ke laayak nahi.
+               CASE WHEN s.power_cut THEN
+                        '⚠ POWER CUT se band — OK time check karein'
+                    ELSE COALESCE(NULLIF(TRIM(s.problem_reported_by_production), ''),
+                                  'ANDON se auto-generated') END  AS reason,
+               COALESCE(s.zone, '(unzoned)')               AS zone_name,
+               s.line                                      AS line_name
+          FROM {_AUTO_SLIP_TBL} s
+         WHERE {' AND '.join(sl_where)}
+         ORDER BY s.bd_start_date DESC, s.bd_start_time DESC
+    """, sl_params)
+    breakdowns = []
+    for r in cur.fetchall():
+        r = dict(r)
+        # DATE + 'HH:MM' → ISO timestamp (frontend inhe todkar time dikhata hai)
+        r["started_at"] = _stamp(r.pop("bd_start_date"), r.pop("bd_start_time"))
+        r["ended_at"]   = _stamp(r.pop("bd_end_date"),   r.pop("bd_ok_time"))
+        breakdowns.append(r)
 
     return {
         "window":   {"label": window_label,

@@ -25,7 +25,7 @@
  * (via "+ Open Breakdown" button) — the wiring to existing status
  * detection comes when the Maintenance ↔ Quality flow is finalized.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { api, StatCard, fmtDuration } from "./breakdown/shared";
 import AndonTable from "./breakdown/AndonTable";
@@ -68,9 +68,11 @@ export default function MaintenanceDashboard() {
   // see "Dashboard" — they only ever land on their own.
   const titleLeft  = isAdmin ? "Maintenance " : "";
   const titleRight = "Dashboard";
-  const [active, setActive]       = useState([]);
-  const [recent, setRecent]       = useState([]);
-  const [stats,  setStats]        = useState({ zones: [], lines: [] });
+  // Is dashboard ka saara breakdown data ab ANDON se aata hai — `mes_breakdowns`
+  // wale purane states (active / recent / stats) hata diye, unka data kahin
+  // dikhta hi nahi tha.
+  const [andonRows, setAndonRows]   = useState([]);   // ANDON table ki rows
+  const [andonStats, setAndonStats] = useState({});   // 4 stat cards
   const [lines,  setLines]        = useState([]);  // kept so historical line lookups stay possible
   const [loading, setLoading]     = useState(true);
 
@@ -102,43 +104,25 @@ export default function MaintenanceDashboard() {
     else el.requestFullscreen?.();
   };
 
-  // Refresh ANDON + history + stats every 10s while the page is mounted.
+  // Har 10s refresh.
   //
-  // Two-fetch merge into `recent` (the id→full-ticket source the Pending-
-  // Breakdown slip list uses to open View/Fill Slip):
-  //   • /recent?days=2          → last 2 days of RESOLVED + CLOSED context
-  //   • /history?days=180&state=RESOLVED → ANY pending-closure ticket up
-  //                                         to 6 months old still awaiting
-  //                                         its closure form.
-  // The two lists are deduped by id and merged so the same ticket never
-  // appears twice.  (The standalone "Recent Breakdowns" table was removed —
-  // view/fill now happens from the zone slip list.)
+  // 2026-08-06: is dashboard ka saara breakdown-related data ab ANDON se aata
+  // hai.  `/api/breakdowns/*` ke purane fetches (active / recent / history /
+  // stats) hata diye — unka data ab kahin dikhta hi nahi tha:
+  //   • ANDON table  → /api/andon/dashboard (rows)
+  //   • 4 stat cards → /api/andon/dashboard (stats)
+  //   • zone slip list (KpiPanel) → AUTO slips, /api/maintenance-kpi/ se
+  //   • View/Fill Slip → /api/breakdown-slips/auto/{id}
   const reload = useCallback(async () => {
     try {
-      const [a, r, pending, s, l] = await Promise.all([
-        api.get("/api/breakdowns/active", token).catch(() => []),
-        api.get("/api/breakdowns/recent?days=2", token).catch(() => []),
-        api.get("/api/breakdowns/history?days=180&state=RESOLVED&limit=500", token).catch(() => ({ rows: [] })),
-        api.get("/api/breakdowns/stats?days=30", token).catch(() => ({ zones: [], lines: [] })),
+      const [l, andon] = await Promise.all([
         api.get("/api/lines/", token).catch(() => []),
+        // ANDON table + 4 stat cards — ESP ke asli calls se
+        api.get("/api/andon/dashboard", token).catch(() => ({})),
       ]);
-      setActive(Array.isArray(a) ? a : []);
-
-      // Merge recent (last 2 days, both RESOLVED + CLOSED) with all
-      // long-pending RESOLVED tickets (those still awaiting closure
-      // form).  Dedupe by id — pending may already be inside recent if
-      // it's young enough.  Sort by started_at descending.
-      const recentArr  = Array.isArray(r) ? r : [];
-      const pendArr    = (pending && Array.isArray(pending.rows)) ? pending.rows : [];
-      const byId       = new Map();
-      [...pendArr, ...recentArr].forEach(row => { if (row && row.id != null) byId.set(row.id, row); });
-      const merged = Array.from(byId.values()).sort((x, y) => {
-        const xs = x.started_at || ""; const ys = y.started_at || "";
-        return ys.localeCompare(xs);
-      });
-      setRecent(merged);
-
-      setStats(s || { zones: [], lines: [] });
+      // /api/andon/dashboard {rows, stats} deta hai
+      setAndonRows(Array.isArray(andon?.rows) ? andon.rows : []);
+      setAndonStats((andon && andon.stats) || {});
       setLines(Array.isArray(l) ? l : []);
     } catch {
       showToast("Failed to load dashboard", "err");
@@ -162,72 +146,54 @@ export default function MaintenanceDashboard() {
   // only manual step left is filling the closure form for a RESOLVED
   // ticket from the History table below.
 
-  // From the Pending-Breakdown zone slip list: "View Slip" opens that
-  // breakdown's BREAK DOWN SLIP.  The KpiPanel rows are lightweight, so we
-  // look the FULL ticket up by id in the active + recent (pending-closure)
-  // sets the dashboard already holds (recent includes every RESOLVED ticket
-  // still awaiting closure, up to 180 days).
-  const ticketById = useMemo(() => {
-    const m = new Map();
-    [...active, ...recent].forEach((t) => { if (t && t.id != null) m.set(t.id, t); });
-    return m;
-  }, [active, recent]);
-  const onViewSlip = (id) => {
-    const t = ticketById.get(id);
-    if (t) setClosureModal({ ticket: t, mode: "view", phase: "maintenance" });
-    else showToast("Slip not loaded yet — hit refresh (↻) and try again", "err");
+  // Zone-wise list ki slips ab AUTO slips hain (ANDON ke Maintenance call se).
+  // Wo `mes_breakdowns` ke tickets NAHI hain, isliye unhe server se uthate hain
+  // — backend wahi `ticket` shape deta hai jo form samajhta hai.
+  const openAutoSlip = async (id, mode) => {
+    try {
+      const t = await api.get(`/api/breakdown-slips/auto/${id}`, token);
+      setClosureModal({ ticket: t, mode, phase: "maintenance" });
+    } catch (e) {
+      showToast(e.message || "Slip khul nahi payi", "err");
+    }
   };
-  // Pending (RESOLVED) slip → open the closure form in FILL mode so it can be
-  // filled right here (same as the Recent-Breakdowns "Fill Closure Form").
-  const onFillSlip = (id) => {
-    const t = ticketById.get(id);
-    if (t) setClosureModal({ ticket: t, mode: "fill", phase: "maintenance" });
-    else showToast("Slip not loaded yet — hit refresh (↻) and try again", "err");
-  };
+  const onViewSlip = (id) => openAutoSlip(id, "view");
+  // Pending slip → form FILL mode me khulega; save usi slip row par hoga.
+  const onFillSlip = (id) => openAutoSlip(id, "fill");
 
   // Bumped after a closure save so the zone slip list refetches — the just-
   // filled slip flips RESOLVED → CLOSED and its button becomes "View Slip".
   const [slipRefreshKey, setSlipRefreshKey] = useState(0);
 
-  // ClosureFormModal calls back with (slice, phase) — slice is just the
-  // half the user filled.  Production phase POSTs to /production-fill;
-  // maintenance phase POSTs to /close (which also flips state to CLOSED).
+  // ClosureFormModal (slice, phase) wapas deta hai — slice sirf wahi half hai
+  // jo user ne bhara.  Is dashboard ki saari slips AUTO hain (ANDON se), to
+  // save hamesha usi slip ki row par jaata hai.  Purana breakdown-ticket wala
+  // raasta (/production-fill + /close) hata diya — wo yahan se ab kabhi chalta
+  // hi nahi tha.
   const onSubmitClosure = async (slice, phase, prodExtra) => {
     try {
       const id = closureModal.ticket.id;
-      if (phase === "production") {
-        await api.post(`/api/breakdowns/${id}/production-fill`,
-                       { production_data: slice }, token);
-        showToast("Production half saved ✓");
-      } else {
-        // Maintenance fill saves both halves: maintenance_data + the
-        // Production-half fields the user edited (production_data).
-        await api.post(`/api/breakdowns/${id}/close`,
-                       { maintenance_data: slice,
-                         production_data: prodExtra || undefined }, token);
-        showToast("Slip saved ✓");
-      }
+      await api.post(`/api/breakdown-slips/auto/${id}/fill`,
+                     { maintenance_data: phase === "maintenance" ? slice : undefined,
+                       production_data:  phase === "production" ? slice : (prodExtra || undefined) },
+                     token);
+      showToast("Slip saved ✓");
       setClosureModal(null);
       reload();
-      setSlipRefreshKey((k) => k + 1);   // make the zone slip list refetch
+      setSlipRefreshKey((k) => k + 1);   // zone slip list refetch ho jaye
     } catch (e) {
       showToast(e.message || "Submit failed", "err");
       throw e;
     }
   };
 
-  // KPI tiles at top
-  const todayCount = recent.filter((r) => {
-    const d = new Date(r.started_at);
-    const t = new Date();
-    return d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate();
-  }).length;
-  const pendingClosure = recent.filter((r) => r.state === "RESOLVED").length;
-  const longestActive = active.reduce((max, r) => {
-    if (!r.started_at) return max;
-    const sec = Math.floor((Date.now() - new Date(r.started_at).getTime()) / 1000);
-    return sec > max ? sec : max;
-  }, 0);
+  // KPI tiles at top — ab ye chaaron ANDON (andon_system + andon_history) se
+  // aate hain, mes_breakdowns se NAHI.  Server hi ginti karta hai (stats), taaki
+  // "24 ghante" / "chalu" ki definition backend aur cards me ek jaisi rahe.
+  const andonActive   = andonStats.active   ?? 0;   // abhi chalu calls
+  const andonAwaiting = andonStats.awaiting ?? 0;   // chalu, par jawab nahi aaya
+  const andonToday    = andonStats.today    ?? 0;   // pichhle 24h ke calls
+  const longestActive = andonStats.longest_seconds ?? 0;
 
   return (
     <TvFit designWidth={1280} bg="#f8fafc">
@@ -291,13 +257,13 @@ export default function MaintenanceDashboard() {
                 {/* left column: stat tiles + ANDON */}
                 <div style={{ flex: "1 1 620px", minWidth: 0 }}>
                   <div className="md-tiles">
-                    <StatCard label="Active breakdowns"  value={active.length}              color={active.length ? "#dc2626" : "#16a34a"}/>
-                    <StatCard label="Today (24h)"        value={todayCount}                 color="#1e40af"/>
-                    <StatCard label="Pending closure"    value={pendingClosure}             color="#b45309" sub="Resolved but form pending"/>
+                    <StatCard label="Active calls"       value={andonActive}                color={andonActive ? "#dc2626" : "#16a34a"}/>
+                    <StatCard label="Today"              value={andonToday}                 color="#1e40af" sub="7 AM – 6:30 AM (plant day)"/>
+                    <StatCard label="Awaiting response"  value={andonAwaiting}              color="#b45309" sub="Call open, no ack yet"/>
                     <StatCard label="Longest active"     value={fmtDuration(longestActive)} color="#7c3aed"/>
                   </div>
                   <AndonTable
-                    rows={active}
+                    rows={andonRows}
                     fullscreenRef={andonRef}
                     isFullscreen={isFs}
                     toggleFullscreen={toggleFullscreen}

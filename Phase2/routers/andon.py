@@ -19,7 +19,7 @@ Tables (prefixed `andon_`):
   andon_esp_devices         id · name · ip · port · zone · line · enabled · poll_path
   andon_esp_output_mapping  esp_id (NULL = default) · do_index · display_name ·
                             department_id · priority · enabled
-  andon_events              live OPEN calls (running timer)
+  andon_system              live OPEN calls (running timer)
   andon_history             closed calls (duration / response time)
 
 Event model — PUSH, not poll:
@@ -46,7 +46,7 @@ import socket
 import subprocess
 import threading
 import time as _time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Union, Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -193,19 +193,30 @@ def _tcp_apply_event(ip, device_id, obj):
             if not esp:
                 print(f"[ANDON-TCP] unknown ESP ip={ip} id={device_id} — add it in ANDON config")
                 return True                      # can't map — ack anyway (avoid a resend storm)
+            res = None
             if ev == "ON":
                 _apply_state(cur, esp, ch, True)
             elif ev == "OFF":
                 dur = obj.get("on_s")            # ESP's hardware-measured ON duration
                 if dur is None and obj.get("on_ms") is not None:
                     dur = obj["on_ms"] / 1000.0
-                _apply_state(cur, esp, ch, False,
-                             dur_override=(int(round(dur)) if dur is not None else None))
+                res = _apply_state(cur, esp, ch, False,
+                                   dur_override=(int(round(dur)) if dur is not None else None))
             elif ev == "ACK":                    # ch 2/4 → _apply_state stamps the parent's response
-                _apply_state(cur, esp, ch, True)
+                res = _apply_state(cur, esp, ch, True)
             else:
                 return True                      # unknown event kind — ack, ignore
             conn.commit()
+        # AUTO breakdown slip — commit ke BAAD, apne alag connection par
+        # (best-effort).  Slip me kuch gadbad ho to bhi ANDON ka data save ho
+        # chuka hota hai aur ESP ko ack mil jaata hai (warna wo event baar-baar
+        # bhejta rehta).
+        #   ACK   → slip BAN jaati hai (response time milte hi)
+        #   CLOSE → usi slip me OK-time / down-time bhar jaate hain
+        if res and res.get("action") == "acknowledged" and res.get("event_id"):
+            auto_slip_on_ack(res["event_id"])
+        elif res and res.get("action") == "closed" and res.get("history_id"):
+            auto_slip_on_close(res.get("event_id"), res["history_id"])
         now = datetime.now().isoformat(timespec="seconds")
         _ESP_STATUS[esp["id"]] = {"online": True, "checked": now, "last_seen": now}
         return True
@@ -214,37 +225,232 @@ def _tcp_apply_event(ip, device_id, obj):
         return False
 
 
+def _shift_for_time(dt):
+    """Plant ka shift rule (user ne diya):
+         A  =  subah 07:00  se  shaam 06:00 PM se pehle tak
+         B  =  shaam 06:00 PM  se  agli subah 07:00 tak
+    User ne A ko 07:00–17:30 aur B ko 18:00–06:30 bataya tha. Beech me do chhote
+    gaps reh jaate the (17:30–18:00 aur 06:30–07:00) — unhe nazdeeki shift me
+    daal diya hai taaki koi bhi time bina shift ke na rahe."""
+    if dt is None:
+        return None
+    return "A" if 7 <= dt.hour < 18 else "B"
+
+
+def _hhmm(dt):
+    """Slip ke time columns VARCHAR(5) hain -> 'HH:MM'."""
+    return dt.strftime("%H:%M") if dt else None
+
+
+def _mins_between(a, b):
+    """a se b tak ke poore MINUTE (HH:MM level par, seconds gira kar).
+
+    Slip par time HH:MM me chhapta hai, isliye minute bhi wahin se ginte hain —
+    warna slip khud se ulta padta hai (jaise 09:08 → 09:09 dikhe par 0 min).
+    Poore date+time par ghatate hain, to raat 12 baje paar karne par bhi sahi."""
+    if not a or not b:
+        return None
+    d = int((b.replace(second=0, microsecond=0)
+             - a.replace(second=0, microsecond=0)).total_seconds() // 60)
+    return max(d, 0)
+
+
+def _is_maintenance(dept):
+    """Slip sirf MAINTENANCE ke call ki banti hai (Toolroom/Quality/Material/
+    Other Loss ki nahi)."""
+    return str(dept or "").strip().lower() == "maintenance"
+
+
+def _slip_fields(zone, line, started, received, ended, dur_seconds=None):
+    """Call ke waqt se slip ke khaane banao.
+
+    machine_no / machine_name JAAN-BUJH KE khali — ESP poori LINE par lagta hai,
+    kisi ek machine par nahi, to kaunsi machine kharab hui ye ANDON nahi jaanta.
+    Maintenance Fill Slip me us line ki machines me se khud chunta hai.
+    """
+    resp_min = _mins_between(started, received)
+    down_min = _mins_between(started, ended)
+    if down_min is None and dur_seconds is not None:
+        down_min = int(round(dur_seconds / 60.0))          # fallback
+    return {
+        "zone": zone, "line": line,
+        "machine_no": None, "machine_name": None,
+        "slip_date": started.date() if started else None,
+        "shift": _shift_for_time(started),
+        "bd_start_time":    _hhmm(started),
+        "bd_received_time": _hhmm(received),
+        "bd_ok_time":       _hhmm(ended),
+        "bd_start_date": started.date() if started else None,
+        "bd_end_date":   ended.date() if ended else None,
+        "mc_down_time_minutes":  down_min,
+        "response_time_minutes": resp_min,
+        "frequency": 1,
+        "problem_related_to": "maintenance",
+    }
+
+
+def _slip_insert(conn, event_id, flat, power_cut=False):
+    """Slip daalo aur use call se JOD do (`andon_event_id`).
+
+    `ON CONFLICT DO NOTHING` + unique index = ek call ki EK hi slip.  ESP event
+    dobara bheje, ACK do baar dabe, ya ack aur close ki race ho — duplicate slip
+    kabhi nahi banegi.  Return: nayi slip ka id, ya None (pehle se thi)."""
+    from routers.breakdown_slips import _COLS, _blank_to_none, AUTO_SLIP_TABLE
+    cols = list(_COLS) + ["andon_event_id", "power_cut"]
+    vals = [_blank_to_none(flat.get(c)) for c in _COLS] + [event_id, bool(power_cut)]
+    ph = ", ".join(["%s"] * len(cols))
+    cur = conn.cursor()
+    cur.execute(
+        f"INSERT INTO {AUTO_SLIP_TABLE} ({', '.join(cols)}) VALUES ({ph}) "
+        f"ON CONFLICT (andon_event_id) WHERE andon_event_id IS NOT NULL "
+        f"DO NOTHING RETURNING id", vals)
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+def auto_slip_on_ack(event_id):
+    """ACK aate hi — yani RESPONSE TIME milte hi — slip bana do.
+
+    Pehle slip call BAND hone par banti thi.  Ab acknowledge hote hi ban jaati
+    hai, isliye:
+      • maintenance ko slip turant dikh jaati hai (call chalu rehte hue bhi)
+      • beech me bijli chali jaye to bhi slip bach jaati hai
+    OK-time / down-time baad me `auto_slip_on_close()` bhar deta hai.
+
+    Best-effort: koi dikkat aaye to sirf log — ANDON ka data kabhi nahi rukta.
+    """
+    try:
+        from routers.breakdown_slips import _ensure_table
+        _ensure_table()
+        with get_conn() as conn:
+            cur = dict_cursor(conn)
+            cur.execute("""
+                SELECT e.id, e.zone, e.line, e.started_at, e.acknowledged_at,
+                       COALESCE(dep.name, e.display_name) AS dept
+                  FROM andon_system e
+                  LEFT JOIN andon_departments dep ON dep.id = e.department_id
+                 WHERE e.id = %s""", (event_id,))
+            e = cur.fetchone()
+            if not e or not _is_maintenance(e["dept"]):
+                return
+            flat = _slip_fields(e["zone"], e["line"],
+                                e["started_at"], e["acknowledged_at"], None)
+            new_id = _slip_insert(conn, event_id, flat)
+        if new_id:
+            print(f"[ANDON-SLIP] call {event_id} acknowledge hua → slip #{new_id} "
+                  f"({flat['zone']}/{flat['line']} {flat['bd_start_time']}"
+                  f"→recv {flat['bd_received_time']}, resp {flat['response_time_minutes']} min)")
+    except Exception as ex:
+        print(f"[ANDON-SLIP] ack par slip banane me dikkat (call {event_id}): {ex}")
+
+
+def auto_slip_on_close(event_id, history_id, power_cut=False):
+    """Call band hone par USI slip me OK-time / end-date / down-time bhar do.
+
+    Slip na mile to bana do — aisa tab hota hai jab acknowledge aaya hi na ho
+    (jaise bijli chali gayi aur call atka hua band hua).  Isse koi breakdown
+    bina slip ke nahi rehta.
+
+    `power_cut=True` par slip par nishaan lag jaata hai: call button se band
+    nahi hua tha, isliye uska OK-time bharose ke laayak nahi.
+    """
+    try:
+        from routers.breakdown_slips import _ensure_table, AUTO_SLIP_TABLE
+        _ensure_table()
+        with get_conn() as conn:
+            cur = dict_cursor(conn)
+            cur.execute("""
+                SELECT h.zone, h.line, h.started_at, h.ended_at,
+                       h.duration_seconds, h.response_seconds,
+                       COALESCE(dep.name, h.display_name) AS dept
+                  FROM andon_history h
+                  LEFT JOIN andon_departments dep ON dep.id = h.department_id
+                 WHERE h.id = %s""", (history_id,))
+            h = cur.fetchone()
+            if not h or not _is_maintenance(h["dept"]):
+                return
+            started, ended = h["started_at"], h["ended_at"]
+            received = (started + timedelta(seconds=int(h["response_seconds"]))
+                        if h["response_seconds"] is not None and started else None)
+            flat = _slip_fields(h["zone"], h["line"], started, received, ended,
+                                h["duration_seconds"])
+
+            # Pehle jodi hui slip ko poora karo.  Sirf CLOSE wale khaane
+            # chhedte hain — start/received/response jo ACK par bhare the wo
+            # waise ke waise rehte hain.  Aur agar maintenance ne slip already
+            # bhar di ho to bhi ye khaane safe hain (wo alag columns hain).
+            cur2 = conn.cursor()
+            cur2.execute(f"""
+                UPDATE {AUTO_SLIP_TABLE}
+                   SET bd_ok_time            = %s,
+                       bd_end_date           = %s,
+                       mc_down_time_minutes  = %s,
+                       power_cut             = %s
+                 WHERE andon_event_id = %s""",
+                (flat["bd_ok_time"], flat["bd_end_date"],
+                 flat["mc_down_time_minutes"], bool(power_cut), event_id))
+            if cur2.rowcount:
+                print(f"[ANDON-SLIP] call {event_id} band → slip poori hui "
+                      f"(ok {flat['bd_ok_time']}, down {flat['mc_down_time_minutes']} min"
+                      f"{', POWER CUT' if power_cut else ''})")
+                return
+            # Slip thi hi nahi (acknowledge aaya hi nahi tha) → ab bana do,
+            # taaki koi breakdown bina slip ke na rahe.
+            new_id = _slip_insert(conn, event_id, flat, power_cut=power_cut)
+        if new_id:
+            print(f"[ANDON-SLIP] call {event_id} bina acknowledge band hua → slip #{new_id}"
+                  f"{' (POWER CUT)' if power_cut else ''}")
+    except Exception as ex:
+        print(f"[ANDON-SLIP] close par slip update me dikkat (call {event_id}): {ex}")
+
+
 def _close_open_calls_on_boot(ip, device_id):
     """Fresh power-on cleanup.  On boot the ESP forces every output OFF, so any
-    call still sitting OPEN in andon_events for this device is STALE — power was
+    call still sitting OPEN in andon_system for this device is STALE — power was
     cut mid-call and the OFF edge never arrived.  Close each one into history with
     its elapsed duration (call-start → now) so it can't stay 'open' forever.
 
     Only fired when the hello carries boot=1 (a real reboot).  A plain network
-    reconnect sends boot=0 and leaves live calls untouched."""
+    reconnect sends boot=0 and leaves live calls untouched.
+
+    Slip ka hisaab: har call ALAG-ALAG band hota hai (pehle sab ek saath band
+    hote the) taaki har ek ki slip bhi poori ho sake —
+      • ACK aa chuka tha  → slip pehle se hai, usme OK-time bhar jaata hai
+      • ACK aaya hi nahi  → slip ab banti hai, taaki breakdown bina slip na rahe
+    Dono par `power_cut=True` ka nishaan lagta hai: call button se band nahi
+    hua tha, isliye uska OK-time bharose ke laayak nahi."""
     try:
+        closed = []                        # [(event_id, history_id), ...]
         with get_conn() as conn:
             cur = dict_cursor(conn)
             esp = _find_esp(cur, None, ip, device_id)
             if not esp:
                 return
-            cur.execute("SELECT COUNT(*) AS n FROM andon_events WHERE esp_id=%s AND state='OPEN'",
-                        (esp["id"],))
-            n = (cur.fetchone() or {}).get("n") or 0
-            if not n:
+            cur.execute("""SELECT id FROM andon_system
+                            WHERE esp_id=%s AND state='OPEN' ORDER BY id""", (esp["id"],))
+            open_ids = [r["id"] for r in cur.fetchall()]
+            if not open_ids:
                 return
-            cur.execute("""INSERT INTO andon_history
-                             (esp_id, do_index, department_id, zone, line, display_name, priority,
-                              started_at, ended_at, duration_seconds, response_seconds)
-                           SELECT esp_id, do_index, department_id, zone, line, display_name, priority,
-                                  started_at, NOW(),
-                                  EXTRACT(EPOCH FROM (NOW() - started_at))::int,
-                                  CASE WHEN acknowledged_at IS NOT NULL
-                                       THEN EXTRACT(EPOCH FROM (acknowledged_at - started_at))::int END
-                             FROM andon_events WHERE esp_id=%s AND state='OPEN'""", (esp["id"],))
-            cur.execute("DELETE FROM andon_events WHERE esp_id=%s AND state='OPEN'", (esp["id"],))
+            for ev_id in open_ids:
+                cur.execute("""INSERT INTO andon_history
+                                 (esp_id, do_index, department_id, zone, line, display_name, priority,
+                                  started_at, ended_at, duration_seconds, response_seconds)
+                               SELECT esp_id, do_index, department_id, zone, line, display_name, priority,
+                                      started_at, NOW(),
+                                      EXTRACT(EPOCH FROM (NOW() - started_at))::int,
+                                      CASE WHEN acknowledged_at IS NOT NULL
+                                           THEN EXTRACT(EPOCH FROM (acknowledged_at - started_at))::int END
+                                 FROM andon_system WHERE id=%s
+                               RETURNING id""", (ev_id,))
+                hist = cur.fetchone()
+                cur.execute("DELETE FROM andon_system WHERE id=%s", (ev_id,))
+                if hist:
+                    closed.append((ev_id, hist["id"]))
             conn.commit()
-        print(f"[ANDON-TCP] ESP {esp['id']} rebooted (boot=1) → closed {n} stale open call(s)")
+        print(f"[ANDON-TCP] ESP {esp['id']} rebooted (boot=1) → closed {len(closed)} stale open call(s)")
+        # Commit ke BAAD — slip ka kaam kabhi ANDON ka data na roke
+        for ev_id, hist_id in closed:
+            auto_slip_on_close(ev_id, hist_id, power_cut=True)
     except Exception as e:
         print(f"[ANDON-TCP] boot stale-close error: {e}")
 
@@ -384,8 +590,25 @@ def _ensure_tables():
             )""")
         cur.execute("""CREATE UNIQUE INDEX IF NOT EXISTS andon_output_default_uq
                        ON andon_esp_output_mapping (do_index) WHERE esp_id IS NULL""")
+        # ── MIGRATION: andon_events → andon_system ──────────────────────
+        # Live-calls table ka naam andon_events tha; ab andon_system hai.
+        # Purani install par use RENAME karo (data bacha rahe) — warna neeche
+        # ka CREATE IF NOT EXISTS ek naya KHALI andon_system bana deta aur
+        # purane chalu calls andon_events me phase reh jaate.
+        # Idempotent: dono me se jo bhi haalat ho, sahi natija deta hai.
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS andon_events (
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.tables
+                            WHERE table_schema='public' AND table_name='andon_events')
+                   AND NOT EXISTS (SELECT 1 FROM information_schema.tables
+                                    WHERE table_schema='public' AND table_name='andon_system')
+                THEN
+                    ALTER TABLE andon_events RENAME TO andon_system;
+                END IF;
+            END $$;""")
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS andon_system (
                 id            SERIAL PRIMARY KEY,
                 esp_id        INTEGER REFERENCES andon_esp_devices(id) ON DELETE CASCADE,
                 do_index      INTEGER,
@@ -417,7 +640,7 @@ def _ensure_tables():
             )""")
         # earlier builds stored zone_id/line_id (int FKs); the push model records
         # the zone/line NAME instead — add the text columns on old tables.
-        for _t in ("andon_events", "andon_history"):
+        for _t in ("andon_system", "andon_history"):
             cur.execute(f"ALTER TABLE {_t} ADD COLUMN IF NOT EXISTS zone VARCHAR(120)")
             cur.execute(f"ALTER TABLE {_t} ADD COLUMN IF NOT EXISTS line VARCHAR(120)")
 
@@ -735,7 +958,7 @@ def save_esp_outputs(eid: int, body: OutSave, user=Depends(get_current_user)):
 #  The ESP is the source of truth for output state: it POSTs here the moment an
 #  output turns ON, and again the moment it turns OFF.  The server does NOT poll
 #  the ESP for output state — it only reacts:
-#     ON  →  open a call in andon_events (timer starts)
+#     ON  →  open a call in andon_system (timer starts)
 #     OFF →  close it → move to andon_history with the elapsed duration
 #  No auth (an ESP32 has no JWT); the device is identified by esp_id / ip / name.
 class IngestIn(BaseModel):
@@ -806,20 +1029,20 @@ def _apply_state(cur, esp, do_index, on, dur_override=None):
         if not on:
             return {"do_index": do_index, "action": "ack_off_ignored"}
         parent = _ACK_OF[do_index]
-        cur.execute("""SELECT id, started_at FROM andon_events
+        cur.execute("""SELECT id, started_at FROM andon_system
                         WHERE esp_id=%s AND do_index=%s AND state='OPEN'
                               AND acknowledged_at IS NULL
                         ORDER BY id DESC LIMIT 1""", (esp["id"], parent))
         pe = cur.fetchone()
         if not pe:
             return {"do_index": do_index, "action": "ack_no_open_call", "parent_do": parent}
-        cur.execute("""UPDATE andon_events SET acknowledged_at=NOW() WHERE id=%s
+        cur.execute("""UPDATE andon_system SET acknowledged_at=NOW() WHERE id=%s
                         RETURNING EXTRACT(EPOCH FROM (NOW()-started_at))::int AS resp""", (pe["id"],))
         rr = cur.fetchone()
         return {"do_index": do_index, "action": "acknowledged", "parent_do": parent,
                 "event_id": pe["id"], "response_seconds": (rr["resp"] if rr else None)}
 
-    cur.execute("""SELECT id, started_at FROM andon_events
+    cur.execute("""SELECT id, started_at FROM andon_system
                     WHERE esp_id=%s AND do_index=%s AND state='OPEN'
                     ORDER BY id DESC LIMIT 1""", (esp["id"], do_index))
     open_ev = cur.fetchone()
@@ -827,7 +1050,7 @@ def _apply_state(cur, esp, do_index, on, dur_override=None):
         if open_ev:                                   # already open → duplicate ON, ignore
             return {"do_index": do_index, "action": "already_open", "event_id": open_ev["id"]}
         disp, dept_id, prio = _resolve_output(cur, esp["id"], do_index)
-        cur.execute("""INSERT INTO andon_events
+        cur.execute("""INSERT INTO andon_system
                          (esp_id, do_index, department_id, zone, line, display_name, priority, state, started_at)
                        VALUES (%s,%s,%s,%s,%s,%s,%s,'OPEN', NOW()) RETURNING id""",
                     (esp["id"], do_index, dept_id, esp.get("zone"), esp.get("line"), disp, prio))
@@ -844,11 +1067,15 @@ def _apply_state(cur, esp, do_index, on, dur_override=None):
                           COALESCE(%s, EXTRACT(EPOCH FROM (NOW() - started_at))::int),
                           CASE WHEN acknowledged_at IS NOT NULL
                                THEN EXTRACT(EPOCH FROM (acknowledged_at - started_at))::int END
-                     FROM andon_events WHERE id=%s
+                     FROM andon_system WHERE id=%s
                    RETURNING id, duration_seconds""", (dur_override, open_ev["id"]))
     hist = cur.fetchone()
-    cur.execute("DELETE FROM andon_events WHERE id=%s", (open_ev["id"],))
+    cur.execute("DELETE FROM andon_system WHERE id=%s", (open_ev["id"],))
     return {"do_index": do_index, "action": "closed",
+            # `event_id` = live-call ka id.  Slip isi se judi hoti hai (ACK par
+            # ban chuki hoti hai), isliye band hone par usi row me OK-time bhar
+            # paate hain — nayi slip nahi banti.
+            "event_id": open_ev["id"],
             "history_id": hist["id"], "duration_seconds": hist["duration_seconds"]}
 
 
@@ -877,6 +1104,16 @@ def ingest(body: IngestIn):
         else:
             raise HTTPException(400, "send do_index+state, or an outputs[] snapshot")
         conn.commit()
+    # AUTO breakdown slip — TCP path jaisa hi (commit ke baad, best-effort).
+    # ACK par slip banti hai, CLOSE par usi me OK-time bhar jaata hai.
+    # Maintenance wale call ki hi banti hai — check function ke andar hai.
+    for _r in results:
+        if not _r:
+            continue
+        if _r.get("action") == "acknowledged" and _r.get("event_id"):
+            auto_slip_on_ack(_r["event_id"])
+        elif _r.get("action") == "closed" and _r.get("history_id"):
+            auto_slip_on_close(_r.get("event_id"), _r["history_id"])
     # a pushing ESP is, by definition, connected — refresh its live status
     now = datetime.now().isoformat(timespec="seconds")
     _ESP_STATUS[esp["id"]] = {"online": True, "checked": now, "last_seen": now}
@@ -893,12 +1130,92 @@ def live_events(user=Depends(get_current_user)):
                               dep.name AS department, e.zone, e.line, e.display_name, e.priority,
                               e.started_at, e.acknowledged_at,
                               EXTRACT(EPOCH FROM (NOW() - e.started_at))::int AS elapsed_seconds
-                         FROM andon_events e
+                         FROM andon_system e
                          LEFT JOIN andon_esp_devices d   ON d.id  = e.esp_id
                          LEFT JOIN andon_departments dep ON dep.id = e.department_id
                         WHERE e.state='OPEN'
                         ORDER BY e.started_at""")
         return cur.fetchall()
+
+
+@router.get("/dashboard")
+def dashboard_board(user=Depends(get_current_user)):
+    """Maintenance Dashboard ke ANDON table ke liye — SIRF abhi chalu calls.
+
+    Dashboard pehle `/api/breakdowns/active` (mes_breakdowns) se data leta tha.
+    Ab wahi table ESP ke asli ANDON calls dikhata hai. Dikhne ka format wahi
+    purana hai, isliye yahan fields bhi wahi naam se bhejte hain jo
+    AndonTable.jsx padhta hai:
+        serial_in_shift → S.No       zone_name → Zone
+        line_name       → Line Name  started_at → Start Time + Duration
+    Table me sirf wahi call dikhta hai jo ABHI chal raha hai (button dabaya hua
+    hai) — band hote hi row apne aap hat jaati hai, duration live badhta rehta
+    hai. Band ho chuke calls Reports/History me dekhe jaate hain, dashboard par
+    nahi.
+
+    Return: {"rows": [...], "stats": {active, awaiting, today, longest_seconds}}
+    — stats dashboard ke 4 cards ke liye (`today` me band hue bhi ginte hain,
+    wo sirf ek ginti hai, table me unki row nahi aati).
+    """
+    _ensure_tables()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""
+            SELECT e.id, e.esp_id, d.name AS esp_name, e.do_index,
+                   dep.name AS department, e.display_name, e.priority,
+                   e.zone AS zone_name, e.line AS line_name,
+                   e.started_at, NULL::timestamp AS ended_at,
+                   NULL::int AS duration_seconds,
+                   CASE WHEN e.acknowledged_at IS NOT NULL
+                        THEN EXTRACT(EPOCH FROM (e.acknowledged_at - e.started_at))::int END
+                        AS response_seconds,
+                   TRUE AS is_live
+              FROM andon_system e
+              LEFT JOIN andon_esp_devices d   ON d.id   = e.esp_id
+              LEFT JOIN andon_departments dep ON dep.id = e.department_id
+             WHERE e.state='OPEN'                 -- SIRF chalu calls (band hue nahi)
+               -- Ye panel "MAINTENANCE ANDON" hai -> sirf Maintenance ke call.
+               -- Toolroom / Quality / Material / Other Loss yahan nahi aayenge
+               -- (wo ANDON System page ke Live Board par dikhte hain).
+               -- department mapping na ho to display_name se maan lo.
+               AND COALESCE(dep.name, e.display_name) ILIKE 'maintenance'
+             ORDER BY e.started_at                 -- sabse purana upar (sabse lamba chal raha)
+        """)
+        rows = cur.fetchall()
+
+        # Dashboard ke 4 stat cards — ye bhi ab ANDON se, mes_breakdowns se NAHI.
+        #   active   : abhi chalu calls
+        #   awaiting : chalu hai par abhi tak acknowledge nahi hua (jawab ka intezaar)
+        #   today    : IS PLANT-DIN ke calls (chalu + band, dono)
+        #   longest  : sabse lambe chalu call ka abhi tak ka time (seconds)
+        #
+        # PLANT-DIN = subah 07:00 se AGLE din subah 06:30 tak (A shift 07:00 se,
+        # B shift raat bhar chal kar 06:30 par khatam).  Isliye "aaj" ka matlab
+        # aadhi raat se nahi — warna raat wali B-shift do dino me bat jaati.
+        # Abhi 07:00 se pehle hain to hum ab bhi KAL wale plant-din me hain.
+        day_start = (
+            "CASE WHEN NOW()::time >= TIME '07:00' "
+            "     THEN CURRENT_DATE + TIME '07:00' "
+            "     ELSE (CURRENT_DATE - INTERVAL '1 day') + TIME '07:00' END")
+        day_end = f"(({day_start}) + INTERVAL '23 hours 30 minutes')"   # agle din 06:30
+        cur.execute(f"""
+            SELECT
+              (SELECT COUNT(*) FROM andon_system WHERE state='OPEN')            AS active,
+              (SELECT COUNT(*) FROM andon_system
+                 WHERE state='OPEN' AND acknowledged_at IS NULL)                AS awaiting,
+              (SELECT COUNT(*) FROM andon_system
+                 WHERE started_at >= ({day_start}) AND started_at < {day_end})
+            + (SELECT COUNT(*) FROM andon_history
+                 WHERE started_at >= ({day_start}) AND started_at < {day_end})  AS today,
+              COALESCE((SELECT MAX(EXTRACT(EPOCH FROM (NOW() - started_at))::int)
+                          FROM andon_system WHERE state='OPEN'), 0)             AS longest_seconds
+        """)
+        stats = dict(cur.fetchone() or {})
+
+    # S.No: list me position (ESP data me shift-wise serial hota hi nahi)
+    for i, r in enumerate(rows, 1):
+        r["serial_in_shift"] = i
+    return {"rows": rows, "stats": stats}
 
 
 @router.get("/history")

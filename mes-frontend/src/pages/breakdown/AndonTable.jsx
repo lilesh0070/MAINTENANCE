@@ -12,10 +12,17 @@ function AndonTable({ rows, fullscreenRef, isFullscreen, toggleFullscreen }) {
     return () => clearInterval(t);
   }, []);
 
+  // Call band ho chuka ho to uska jama hua time hi dikhao (badhta na rahe);
+  // chalu call ka time har second live badhta hai.
   const live = (r) => {
+    if (r.duration_seconds != null) return r.duration_seconds;
     if (!r.started_at) return 0;
     return Math.floor((Date.now() - new Date(r.started_at).getTime()) / 1000);
   };
+  // is_live sirf naye ANDON data me aata hai; purane data me hota hi nahi,
+  // isliye "field hai hi nahi" ko bhi chalu maano (purana behaviour na toote).
+  const isOpen = (r) => r.is_live !== false && r.ended_at == null;
+  const liveCount = rows.filter(isOpen).length;
 
   return (
     <div ref={fullscreenRef} style={{
@@ -34,14 +41,14 @@ function AndonTable({ rows, fullscreenRef, isFullscreen, toggleFullscreen }) {
         justifyContent: "space-between", gap: 10,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ fontSize: 22, animation: rows.length ? "blinkDot 1.2s infinite" : "none" }}>🔔</span>
+          <span style={{ fontSize: 22, animation: liveCount ? "blinkDot 1.2s infinite" : "none" }}>🔔</span>
           <div>
             <div style={{ fontFamily: "'Barlow Condensed',sans-serif",
                           fontSize: 22, fontWeight: 800, letterSpacing: ".02em" }}>
               MAINTENANCE ANDON
             </div>
             <div style={{ fontSize: 11, opacity: 0.9, fontWeight: 600 }}>
-              {rows.length === 0 ? "All lines running ✓" : `${rows.length} active breakdown${rows.length>1?"s":""}`}
+              {liveCount === 0 ? "All lines running ✓" : `${liveCount} active call${liveCount>1?"s":""}`}
             </div>
           </div>
         </div>
@@ -64,7 +71,7 @@ function AndonTable({ rows, fullscreenRef, isFullscreen, toggleFullscreen }) {
                          fontSize: isFullscreen ? "inherit" : 13 }}>
           <thead>
             <tr style={{ background: "#f8fafc" }}>
-              {["S.No", "Zone", "Line Name", "Start Time", "Duration"].map((h, i) => (
+              {["S.No", "Zone", "Line Name", "Start Time", "Response Time", "Duration"].map((h, i) => (
                 <th key={i} style={{
                   padding: isFullscreen ? "1.4vmin 1.6vmin" : "12px 16px",
                   textAlign: "left",
@@ -80,7 +87,7 @@ function AndonTable({ rows, fullscreenRef, isFullscreen, toggleFullscreen }) {
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={5} style={{ padding: isFullscreen ? "8vmin" : "60px 20px",
+                <td colSpan={6} style={{ padding: isFullscreen ? "8vmin" : "60px 20px",
                                             textAlign: "center", color: "#94a3b8",
                                             fontStyle: "italic",
                                             fontSize: isFullscreen ? "2vmin" : 14 }}>
@@ -88,7 +95,10 @@ function AndonTable({ rows, fullscreenRef, isFullscreen, toggleFullscreen }) {
                 </td>
               </tr>
             ) : rows.map((r) => {
-              const isRed = live(r) > 30*60;   // breakdown running > 30 min → urgent
+              // Laal sirf CHALU call ke liye (30 min se zyada = urgent).
+              // Band ho chuka call chahe kitna bhi lamba ho, ab urgent nahi.
+              const open  = isOpen(r);
+              const isRed = open && live(r) > 30*60;
               return (
               <tr key={r.id} style={{
                 borderBottom: "1px solid #f1f5f9",
@@ -134,11 +144,24 @@ function AndonTable({ rows, fullscreenRef, isFullscreen, toggleFullscreen }) {
                               fontFamily: "monospace", color: "#475569" }}>
                   {fmtClock(r.started_at)}
                 </td>
+                {/* RESPONSE TIME — call ON se acknowledge (OUT2) tak ka time.
+                    Abhi tak acknowledge nahi hua to "waiting…" dikhao. */}
+                <td style={{ padding: isFullscreen ? "1.4vmin 1.6vmin" : "12px 16px",
+                              fontFamily: "'Barlow Condensed',sans-serif",
+                              fontSize: isFullscreen ? "2vmin" : 16,
+                              fontWeight: 800,
+                              color: r.response_seconds != null ? "#16a34a" : "#b45309" }}>
+                  {r.response_seconds != null
+                    ? fmtDuration(r.response_seconds)
+                    : <span style={{ fontSize: isFullscreen ? "1.4vmin" : 11,
+                                     fontWeight: 700, fontFamily: "inherit" }}>● waiting…</span>}
+                </td>
                 <td style={{ padding: isFullscreen ? "1.4vmin 1.6vmin" : "12px 16px",
                               fontFamily: "'Barlow Condensed',sans-serif",
                               fontSize: isFullscreen ? "2.2vmin" : 18,
                               fontWeight: 800,
-                              color: isRed ? "#dc2626" : "#b45309" }}>
+                              // chalu = laal/amber (chal raha hai), band ho chuka = slate
+                              color: isRed ? "#dc2626" : (open ? "#b45309" : "#64748b") }}>
                   {fmtDuration(live(r))}
                 </td>
               </tr>

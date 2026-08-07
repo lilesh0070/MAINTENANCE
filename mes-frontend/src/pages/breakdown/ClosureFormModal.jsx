@@ -263,16 +263,19 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   // manual New-Slip flow saves to a standalone table and needs no line_id.
   const effLineId = ticket?.line_id ?? null;
 
-  // Manual mode: pull the whole Machine Master once (same source & row shape
-  // the app's other Zone/Line/Machine filters use) to drive the dropdowns.
+  // Machine Master (mes_machines) — HAR mode me chahiye.
+  // Pehle ye sirf manual (pickLine) mode me aata tha, isliye AUTO slip kholne
+  // par MACHINE NO. ka dropdown KHALI reh jaata tha aur uska bhara hua value
+  // (jaise YHB_SS_08) dikhta hi nahi tha.  Ab hamesha uthate hain — wahi source
+  // jo baaki saare Zone/Line/Machine filters use karte hain.
   useEffect(() => {
-    if (!pickLine || !token) return;
+    if (!token) return;
     let cancelled = false;
     api.get("/api/machines/", token)
       .then(rows => { if (!cancelled) setMasterRows(Array.isArray(rows) ? rows : []); })
       .catch(() => { if (!cancelled) setMasterRows([]); });
     return () => { cancelled = true; };
-  }, [pickLine, token]);
+  }, [token]);
 
   // Spare master (maintenance_spare) → Spare Name autocomplete + auto-fill.
   useEffect(() => {
@@ -320,14 +323,19 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                                .map(m => m.line_name).filter(Boolean))]
            .sort((a, b) => String(a).localeCompare(String(b))),
     [masterRows, data.zone]);
-  // Machine rows for the current (zone, line): master-filtered in manual mode,
-  // or the by-line list in the collector flow.  Feeds MACHINE NO. options and
-  // the MACHINE NAME auto-fill in both.
-  const machineRows = useMemo(
-    () => pickLine
-      ? masterRows.filter(m => m.zone_name === data.zone && m.line_name === data.line)
-      : machines,
-    [pickLine, masterRows, machines, data.zone, data.line]);
+  // Machine rows for the current (zone, line).  DONO mode me pehle Machine
+  // Master se banate hain — AUTO slip me zone/line master ki hi bhasha me
+  // aate hain (SEAT_SLIDER / YHB_SS), to seedha match ho jaata hai.  Manual
+  // mode me sirf master; collector wale purane flow me master khali nikle to
+  // by-line list par gir jaate hain.  Compare case/space-safe hai.
+  const machineRows = useMemo(() => {
+    const eq = (a, b) =>
+      String(a ?? "").trim().toUpperCase() === String(b ?? "").trim().toUpperCase();
+    const fromMaster = masterRows.filter(
+      m => eq(m.zone_name, data.zone) && eq(m.line_name, data.line));
+    if (pickLine) return fromMaster;
+    return fromMaster.length ? fromMaster : machines;
+  }, [pickLine, masterRows, machines, data.zone, data.line]);
 
   if (!ticket) return null;
 
@@ -394,8 +402,18 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   // Master, mes_machines).  Picking a Machine No. auto-fills the Machine Name
   // from the same master row.  No Serial No. needed.
   const onPickMachine = (mno) => {
+    // Galti se poori machine na mit jaye: agar list hi khali ho ya user ne
+    // "— select —" (khali) chun liya ho to kuch mat badlo.  Warna machine_no
+    // aur machine_name dono khali ho jaate the aur Submit band ho jaata tha.
+    if (!machineRows.length) return;
+    if (!String(mno || "").trim()) return;
     const hit = machineRows.find(m => String(m.machine_no) === String(mno));
-    setData(d => ({ ...d, machine_no: mno, machine_name: hit ? hit.machine_name : "" }));
+    setData(d => ({
+      ...d,
+      machine_no: mno,
+      // naam sirf tab badlo jab master me machine mili ho
+      machine_name: hit ? hit.machine_name : d.machine_name,
+    }));
   };
 
   // Manual mode: picking a ZONE resets the line + machine below it; picking a
@@ -974,7 +992,13 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
             {/* Maintenance can request a Deviation when the fix needs more
                 than 24h.  Available in maintenance fill / view modes; the
                 Quality user takes it from there. */}
-            {(isMaintenance || (readOnly && phase === "maintenance")) && ticket?.id && !pickLine && (
+            {/* AUTO slip par ye button NAHI dikhega: Deviation ka `breakdown_id`
+                `mes_breakdowns` ka id hota hai, jabki auto slip ka id apni alag
+                table ka hai — dono id-space alag hain, to bhejne par deviation
+                kisi anjaan purane breakdown se jud jaata.  Auto slip ke liye
+                deviation ka apna raasta banega. */}
+            {(isMaintenance || (readOnly && phase === "maintenance"))
+              && ticket?.id && !pickLine && !ticket?.auto_slip && (
               <Btn variant="ghost" onClick={() => {
                 // Lazy-load Deviation form so the closure modal stays small.
                 import("../DeviationForm").then(m => {
@@ -1241,7 +1265,12 @@ function BdsCell({ label, value, type = "text", readOnly, onChange, options, min
     <div className="bds-cell">
       <div className="bds-cell-label">{label} :-</div>
       <div className="bds-cell-input">
-        {options ? (
+        {/* KHALI list par dropdown mat banao.  Ek khali array bhi JS me "truthy"
+            hota hai, to pehle yahan bina option wala <select> ban jaata tha aur
+            uska saved value (jo kisi option se match nahi karta) BLANK dikhta
+            tha.  Ab list khali ho to saada input dikhata hai — value kabhi
+            gayab nahi hoti. */}
+        {options?.length ? (
           <select value={value || ""} disabled={readOnly}
                   onChange={(e) => onChange?.(e.target.value)}
                   style={{ width: "100%", border: "none", background: "transparent",
@@ -1252,7 +1281,10 @@ function BdsCell({ label, value, type = "text", readOnly, onChange, options, min
           </select>
         ) : (
           <input type={type}
-                 value={value || ""}
+                 /* `value || ""` likhne par ZERO bhi khali dikhta tha (0 JS me
+                    falsy hai) — isliye RESPONSE TIME / DOWN TIME me 0 min blank
+                    aata tha.  `??` sirf null/undefined par khali karta hai. */
+                 value={value ?? ""}
                  disabled={readOnly}
                  min={min}
                  onChange={(e) => onChange?.(e.target.value)}/>

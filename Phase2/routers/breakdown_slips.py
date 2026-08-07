@@ -8,19 +8,41 @@ Standalone storage for the MANUAL "Break Down Slip" (raised from the sidebar
   • Every slip field is stored as its own flat column in `mes_breakdown_data`.
   • No foreign key / link back to mes_breakdowns — fully decoupled.
 
+DO ALAG TABLES (kabhi mix nahi hote)
+------------------------------------
+  mes_breakdown_data       MANUAL slip — sirf yahan se aati hai (POST below)
+  mes_auto_breakdown_slip  AUTO slip — ANDON ke Maintenance call band hote hi
+                           banti hai (andon.py → _auto_slip_from_call).
+                           Structure dono ka bilkul same.
+
+AUTO ka data `mes_breakdown_data` me KABHI nahi jaata — `_insert_flat()` ka
+`table` argument ye pakka karta hai.
+
 Endpoint
 --------
-POST /api/breakdown-slips/   → insert one filled slip, returns {id}
-GET  /api/breakdown-slips/   → list (newest first) for a simple register view
+POST /api/breakdown-slips/            → insert one filled MANUAL slip → {id}
+GET  /api/breakdown-slips/            → MANUAL slips (newest first)
+GET  /api/breakdown-slips/auto/{id}   → ek AUTO slip, form ke `ticket` shape me
+POST /api/breakdown-slips/auto/{id}/fill → maintenance ne form bhara → USI row
+                                        me update (nayi row nahi banti)
 """
 from typing import Optional, List
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from database import get_conn, dict_cursor
 from auth import get_current_user
 
 router = APIRouter(prefix="/api/breakdown-slips", tags=["breakdown-slips"])
+
+# ── Do ALAG tables — kabhi mix nahi hote ──────────────────────────────────
+#   mes_breakdown_data       : MANUAL slip (sidebar → Breakdown Slip)
+#   mes_auto_breakdown_slip  : AUTO slip (breakdown close par mirror)
+# Structure dono ka bilkul same hai, bas source alag hai — isse manual aur
+# auto ka data kabhi aapas me nahi milta.
+MANUAL_SLIP_TABLE = "mes_breakdown_data"
+AUTO_SLIP_TABLE   = "mes_auto_breakdown_slip"
+_ALLOWED_SLIP_TABLES = {MANUAL_SLIP_TABLE, AUTO_SLIP_TABLE}
 
 _ensured = False
 
@@ -106,6 +128,55 @@ def _ensure_table():
         # Response time (Start→Received) + breakdown frequency (default 1).
         cur.execute("ALTER TABLE mes_breakdown_data ADD COLUMN IF NOT EXISTS response_time_minutes INTEGER")
         cur.execute("ALTER TABLE mes_breakdown_data ADD COLUMN IF NOT EXISTS frequency INTEGER DEFAULT 1")
+
+        # ── AUTO slip ki ALAG table ────────────────────────────────────────
+        # `mes_auto_breakdown_slip` — bilkul mes_breakdown_data jaisi hi, par
+        # ismein sirf AUTO (mirror) se bani slips jaati hain.  MANUAL slip
+        # hamesha mes_breakdown_data me hi jaati hai — dono kabhi nahi milte.
+        # LIKE ... se structure hu-ba-hu copy hota hai, isliye upar ke saare
+        # columns/ALTER apne aap is table me bhi aa jaate hain.
+        cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS {AUTO_SLIP_TABLE}
+                (LIKE mes_breakdown_data INCLUDING DEFAULTS INCLUDING CONSTRAINTS)
+        """)
+        # `LIKE ... INCLUDING DEFAULTS` id ka default bhi copy karta hai, jo
+        # mes_breakdown_data ke SEQUENCE ko point karta hai. Usse hata kar is
+        # table ko apna sequence do, warna dono ek hi counter share karengi.
+        cur.execute(f"CREATE SEQUENCE IF NOT EXISTS {AUTO_SLIP_TABLE}_id_seq OWNED BY {AUTO_SLIP_TABLE}.id")
+        cur.execute(f"ALTER TABLE {AUTO_SLIP_TABLE} ALTER COLUMN id SET DEFAULT nextval('{AUTO_SLIP_TABLE}_id_seq')")
+        cur.execute(f"""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                                WHERE conrelid = '{AUTO_SLIP_TABLE}'::regclass
+                                  AND contype = 'p')
+                THEN
+                    ALTER TABLE {AUTO_SLIP_TABLE} ADD PRIMARY KEY (id);
+                END IF;
+            END $$;
+        """)
+        # Purani auto-table (jo LIKE se pehle bani ho) me naye columns aa jaayen
+        for _c in ("spares JSONB",
+                   "response_time_minutes INTEGER",
+                   "frequency INTEGER DEFAULT 1"):
+            cur.execute(f"ALTER TABLE {AUTO_SLIP_TABLE} ADD COLUMN IF NOT EXISTS {_c}")
+
+        # ── AUTO slip ↔ ANDON call ka link ────────────────────────────────
+        # Slip ab call ke ACKNOWLEDGE hote hi ban jaati hai, aur call band hone
+        # par USI row me OK-time/down-time bhar jaate hain.  Isliye ek pakka
+        # link chahiye.  `andon_event_id` = us waqt ke live call (andon_system)
+        # ka id — call ke poore jeevan me nahi badalta.
+        #   UNIQUE index => ek call ki EK hi slip.  ESP event dobara bheje
+        #   (resend), ya ACK do baar dabe, ya close ke saath race ho — duplicate
+        #   slip kabhi nahi banegi.
+        # `power_cut` = call button se band nahi hua, bijli/reboot se band hua —
+        #   uske OK-time bharose ke laayak nahi, isliye nishaan.
+        cur.execute(f"ALTER TABLE {AUTO_SLIP_TABLE} ADD COLUMN IF NOT EXISTS andon_event_id INTEGER")
+        cur.execute(f"ALTER TABLE {AUTO_SLIP_TABLE} ADD COLUMN IF NOT EXISTS power_cut BOOLEAN DEFAULT FALSE")
+        cur.execute(f"""CREATE UNIQUE INDEX IF NOT EXISTS {AUTO_SLIP_TABLE}_call_uq
+                          ON {AUTO_SLIP_TABLE} (andon_event_id)
+                        WHERE andon_event_id IS NOT NULL""")
+
         conn.commit()
     _ensured = True
 
@@ -180,9 +251,15 @@ def _to_int(v):
         return None
 
 
-def _insert_flat(conn, flat: dict, user_id):
-    """INSERT one flat row into mes_breakdown_data; returns the new id.
-    The flat columns go in as-is; `spares` (a list) is stored as JSONB."""
+def _insert_flat(conn, flat: dict, user_id, table: str = MANUAL_SLIP_TABLE):
+    """INSERT one flat row into the given slip table; returns the new id.
+    The flat columns go in as-is; `spares` (a list) is stored as JSONB.
+
+    `table` default MANUAL hai — manual slip ka raasta bilkul pehle jaisa.
+    AUTO mirror `AUTO_SLIP_TABLE` pass karta hai, isliye auto ka data kabhi
+    mes_breakdown_data me nahi jaata."""
+    if table not in _ALLOWED_SLIP_TABLES:          # sirf ye do naam allowed
+        raise ValueError(f"unknown slip table: {table}")
     from psycopg2.extras import Json
     # drop completely-blank spare rows so an unused "Add" never persists
     spares = [s for s in (flat.get("spares") or [])
@@ -194,7 +271,7 @@ def _insert_flat(conn, flat: dict, user_id):
     ph = ", ".join(["%s"] * (len(_COLS) + 2))
     cur = conn.cursor()
     cur.execute(
-        f"INSERT INTO mes_breakdown_data ({cols_sql}) VALUES ({ph}) RETURNING id", vals,
+        f"INSERT INTO {table} ({cols_sql}) VALUES ({ph}) RETURNING id", vals,
     )
     return cur.fetchone()[0]
 
@@ -202,21 +279,49 @@ def _insert_flat(conn, flat: dict, user_id):
 def mirror_from_halves(conn, prod: dict, maint: dict, user_id,
                        started_at=None, ended_at=None):
     """Flatten a CLOSED breakdown's production + maintenance halves into a
-    standalone mes_breakdown_data row.  Called from the breakdown close flow so
-    AUTO (collector) breakdowns land in the new table too — a one-way copy of
-    the filled slip, with NO stored link back to mes_breakdowns.
+    standalone AUTO-slip row.  Called from the breakdown close flow — a one-way
+    copy of the filled slip, with NO stored link back to mes_breakdowns.
+
+    *** Ye row `mes_auto_breakdown_slip` me jaati hai, `mes_breakdown_data` me
+    KABHI NAHI.  Manual slip aur auto slip alag-alag tables me rehte hain,
+    chahe auto-mirror on ho ya off. ***
 
     started_at / ended_at (the collector-stamped timestamps) are used only as a
     FALLBACK to fill down-time minutes + the slip dates when the slip itself
     didn't carry them — so KPI aggregates stay accurate."""
     _ensure_table()
+    flat = _halves_to_flat(prod, maint)
+    # Fallbacks from the collector timestamps so KPI (down-time, date) stays
+    # accurate even when the slip fields were left blank.
+    if flat["mc_down_time_minutes"] is None and started_at and ended_at:
+        flat["mc_down_time_minutes"] = max(int(round((ended_at - started_at).total_seconds() / 60)), 0)
+    if not flat["bd_start_date"] and started_at:
+        flat["bd_start_date"] = started_at.date()
+    if not flat["slip_date"] and started_at:
+        flat["slip_date"] = started_at.date()
+    if not flat["bd_end_date"] and ended_at:
+        flat["bd_end_date"] = ended_at.date()
+    # AUTO slip -> ALAG table (mes_breakdown_data ko haath nahi lagta)
+    return _insert_flat(conn, flat, user_id, table=AUTO_SLIP_TABLE)
+
+
+def _halves_to_flat(prod: dict, maint: dict) -> dict:
+    """Form ke do halves (production + maintenance) → slip ke flat columns.
+
+    Ek hi jagah rakha hai taaki AUTO slip banate waqt aur baad me use FILL
+    karte waqt bilkul same mapping chale — do jagah alag logic na ho jaye."""
     prod = prod or {}
     maint = maint or {}
     prt = maint.get("problem_related_to") or {}
     top = maint.get("type_of_problem") or {}
-    flat = {
+    return {
         "zone": prod.get("zone"), "line": prod.get("line"),
-        "machine_no": prod.get("machine_no"), "machine_name": prod.get("machine_name"),
+        # Machine dono halves me hoti hai (form ke MAINT_FIELDS me bhi).  Sirf
+        # `prod` se lete the, to maintenance-only fill par ye NULL ho jaati thi
+        # aur ANDON ki bhari hui machine mit jaati thi.  Ab jis half me mile
+        # wahi le lo.
+        "machine_no":   prod.get("machine_no")   or maint.get("machine_no"),
+        "machine_name": prod.get("machine_name") or maint.get("machine_name"),
         "slip_date": prod.get("date"), "shift": prod.get("shift"),
         "line_leader_name": prod.get("line_leader_name"), "model_no": prod.get("model_no"),
         "machine_operator_name": prod.get("machine_operator_name"),
@@ -244,17 +349,6 @@ def mirror_from_halves(conn, prod: dict, maint: dict, user_id,
         "line_leader_operator_name": (maint.get("line_leader_operator") or {}).get("name"),
         "quality_engineer_name": (maint.get("quality_engineer") or {}).get("name"),
     }
-    # Fallbacks from the collector timestamps so KPI (down-time, date) stays
-    # accurate even when the slip fields were left blank.
-    if flat["mc_down_time_minutes"] is None and started_at and ended_at:
-        flat["mc_down_time_minutes"] = max(int(round((ended_at - started_at).total_seconds() / 60)), 0)
-    if not flat["bd_start_date"] and started_at:
-        flat["bd_start_date"] = started_at.date()
-    if not flat["slip_date"] and started_at:
-        flat["slip_date"] = started_at.date()
-    if not flat["bd_end_date"] and ended_at:
-        flat["bd_end_date"] = ended_at.date()
-    return _insert_flat(conn, flat, user_id)
 
 
 @router.post("/", status_code=201)
@@ -286,3 +380,179 @@ def list_slips(user=Depends(get_current_user)) -> List[dict]:
         cur = dict_cursor(conn)
         cur.execute("SELECT * FROM mes_breakdown_data ORDER BY id DESC LIMIT 1000")
         return cur.fetchall()
+
+
+# ════════════════════════════════════════════════════════════════════════
+#  AUTO slip (ANDON se bani) — padhna + bharna
+# ════════════════════════════════════════════════════════════════════════
+#  Dashboard ke zone-wise "Breakdown Slips" list me ab yehi slips aati hain.
+#  ANDON sirf time/machine wala hissa bharta hai; problem / action / spares
+#  maintenance yahan se bharta hai.  Sab kuch USI row me update hota hai —
+#  koi nayi row nahi banti, aur MANUAL table ko kabhi haath nahi lagta.
+
+def _slip_to_ticket(r: dict) -> dict:
+    """Slip row → wahi shape jo ClosureFormModal `ticket` me expect karta hai.
+    Mapping `_halves_to_flat()` ka ULTA hai, isliye jo bhara tha wahi wapas
+    form me dikhta hai."""
+    from datetime import datetime as _dt
+
+    def _stamp(d, t):
+        """DATE + 'HH:MM' → ISO timestamp (form inhe todkar dikhata hai)."""
+        if not d:
+            return None
+        try:
+            hh, mm = (t or "00:00").split(":")[:2]
+            return _dt(d.year, d.month, d.day, int(hh), int(mm)).isoformat()
+        except Exception:
+            return _dt(d.year, d.month, d.day).isoformat()
+
+    prt = r.get("problem_related_to")
+    return {
+        "id":        r["id"],
+        "auto_slip": True,                       # frontend isse pehchanta hai
+        "zone_name": r.get("zone"),
+        "line_name": r.get("line"),
+        "shift_name": r.get("shift"),
+        "started_at": _stamp(r.get("bd_start_date"), r.get("bd_start_time")),
+        "ended_at":   _stamp(r.get("bd_end_date"),   r.get("bd_ok_time")),
+        "duration_seconds": (r["mc_down_time_minutes"] * 60
+                             if r.get("mc_down_time_minutes") is not None else None),
+        "production_data": {
+            "zone": r.get("zone"), "line": r.get("line"),
+            "machine_no": r.get("machine_no"), "machine_name": r.get("machine_name"),
+            "date": r.get("slip_date"), "shift": r.get("shift"),
+            "line_leader_name": r.get("line_leader_name"),
+            "model_no": r.get("model_no"),
+            "machine_operator_name": r.get("machine_operator_name"),
+            "category": r.get("category"),
+            "bd_start_time": r.get("bd_start_time"),
+            "bd_received_time": r.get("bd_received_time"),
+            "bd_ok_time": r.get("bd_ok_time"),
+            "bd_start_date": r.get("bd_start_date"),
+            "bd_end_date": r.get("bd_end_date"),
+            "mc_down_time_minutes": r.get("mc_down_time_minutes"),
+            "response_time_minutes": r.get("response_time_minutes"),
+            "frequency": r.get("frequency"),
+            "problem_reported_by_production": r.get("problem_reported_by_production"),
+        },
+        "maintenance_data": {
+            "machine_no": r.get("machine_no"), "machine_name": r.get("machine_name"),
+            "problem_related_to": {"maintenance": prt == "maintenance",
+                                   "tool_room":   prt == "tool_room"},
+            "type_of_problem": {"electrical": bool(r.get("type_electrical")),
+                                "mechanical": bool(r.get("type_mechanical"))},
+            "problem_observed_by_maintenance": r.get("problem_observed_by_maintenance"),
+            "action_taken_on_problem": r.get("action_taken_on_problem"),
+            "spares_used": r.get("spares_used"),
+            "spares": r.get("spares") or [],
+            "bd_attended_by": r.get("bd_attended_by"),
+            "prepared_by":          {"name": r.get("prepared_by_name")},
+            "received_by":          {"name": r.get("received_by_name")},
+            "line_leader_operator": {"name": r.get("line_leader_operator_name")},
+            "quality_engineer":     {"name": r.get("quality_engineer_name")},
+        },
+    }
+
+
+class AutoSlipFill(BaseModel):
+    maintenance_data: Optional[dict] = None
+    production_data:  Optional[dict] = None
+
+
+@router.get("/auto/{sid}")
+def get_auto_slip(sid: int, user=Depends(get_current_user)) -> dict:
+    """Ek AUTO slip — form ke `ticket` shape me."""
+    _ensure_table()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute(f"SELECT * FROM {AUTO_SLIP_TABLE} WHERE id = %s", (sid,))
+        r = cur.fetchone()
+    if not r:
+        raise HTTPException(404, "auto slip not found")
+    return _slip_to_ticket(dict(r))
+
+
+@router.post("/auto/{sid}/fill")
+def fill_auto_slip(sid: int, body: AutoSlipFill, user=Depends(get_current_user)):
+    """Maintenance ne form bhara → USI row ko update karo (nayi row nahi).
+
+    Sirf wahi columns badalte hain jo form ne bheje.  Jo field form me aaya
+    hi nahi, uski purani value (jo ANDON ne bhari thi) waise hi rehti hai —
+    isliye time / machine kabhi khali nahi hote."""
+    _ensure_table()
+    flat = _halves_to_flat(body.production_data, body.maintenance_data)
+
+    sent_prod  = set((body.production_data  or {}).keys())
+    sent_maint = set((body.maintenance_data or {}).keys())
+    if not sent_prod and not sent_maint:          # form ne kuch bheja hi nahi
+        return {"ok": True, "id": sid, "updated": 0}
+
+    # Konsa flat column kis half ke kis field se banta hai
+    from_prod = {
+        "zone": "zone", "line": "line", "machine_no": "machine_no",
+        "machine_name": "machine_name", "slip_date": "date", "shift": "shift",
+        "line_leader_name": "line_leader_name", "model_no": "model_no",
+        "machine_operator_name": "machine_operator_name", "category": "category",
+        "bd_start_time": "bd_start_time", "bd_received_time": "bd_received_time",
+        "bd_ok_time": "bd_ok_time", "bd_start_date": "bd_start_date",
+        "bd_end_date": "bd_end_date", "mc_down_time_minutes": "mc_down_time_minutes",
+        "response_time_minutes": "response_time_minutes", "frequency": "frequency",
+        "problem_reported_by_production": "problem_reported_by_production",
+    }
+    from_maint = {
+        "machine_no": "machine_no", "machine_name": "machine_name",
+        "problem_related_to": "problem_related_to",
+        "type_electrical": "type_of_problem", "type_mechanical": "type_of_problem",
+        "problem_observed_by_maintenance": "problem_observed_by_maintenance",
+        "action_taken_on_problem": "action_taken_on_problem",
+        "spares_used": "spares_used", "spares": "spares",
+        "bd_attended_by": "bd_attended_by",
+        "prepared_by_name": "prepared_by", "received_by_name": "received_by",
+        "line_leader_operator_name": "line_leader_operator",
+        "quality_engineer_name": "quality_engineer",
+    }
+
+    from psycopg2.extras import Json
+    sets, vals = [], []
+    for col, value in flat.items():
+        came = ((col in from_prod  and from_prod[col]  in sent_prod) or
+                (col in from_maint and from_maint[col] in sent_maint))
+        if not came:
+            continue                              # form me tha hi nahi -> mat chhedo
+        if col == "spares":
+            keep = [s for s in (value or [])
+                    if isinstance(s, dict) and any(str(v or "").strip() for v in s.values())]
+            sets.append("spares = %s")
+            vals.append(Json(keep) if keep else None)
+        else:
+            sets.append(f"{col} = %s")
+            vals.append(_blank_to_none(value))
+    if not sets:
+        return {"ok": True, "id": sid, "updated": 0}
+
+    sets.append("submitted_by_user_id = %s")
+    vals.append(user.get("id") if isinstance(user, dict) else None)
+    sets.append("submitted_at = NOW()")
+    vals.append(sid)
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(f"UPDATE {AUTO_SLIP_TABLE} SET {', '.join(sets)} WHERE id = %s", vals)
+        if cur.rowcount == 0:
+            raise HTTPException(404, "auto slip not found")
+
+    # Spares master me bhi likh do (best-effort, manual slip jaisa hi)
+    try:
+        spares = (body.maintenance_data or {}).get("spares")
+        if spares:
+            from routers.maintenance_spare import record_usage
+            with get_conn() as sconn:
+                record_usage(sconn, "Auto Slip", {
+                    "zone": flat.get("zone"), "line": flat.get("line"),
+                    "machine_no": flat.get("machine_no"),
+                    "machine_name": flat.get("machine_name"),
+                    "used_date": flat.get("slip_date") or flat.get("bd_start_date"),
+                }, spares)
+    except Exception as e:
+        print(f"[SPARE-MASTER] record failed (auto slip {sid}): {e}")
+
+    return {"ok": True, "id": sid, "updated": len(sets)}

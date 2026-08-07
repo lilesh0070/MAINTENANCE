@@ -377,21 +377,19 @@ def close_breakdown(br_id: int, body: BreakdownClose,
         """, (br_id,))
         conn.commit()
 
-    # ── AUTO-MIRROR DISABLED (per request: for now ONLY the manual Break Down
-    # Slip writes to mes_breakdown_data; auto/collector closes do NOT). ────────
-    # To re-enable, un-comment the block below — it mirrors the closed slip into
-    # the standalone mes_breakdown_data table (best-effort, own transaction).
-    # try:
-    #     from routers.breakdown_slips import mirror_from_halves
-    #     prod = body.production_data if isinstance(body.production_data, dict) else {}
-    #     with get_conn() as mconn:
-    #         mc = mconn.cursor()
-    #         mc.execute("SELECT started_at, ended_at FROM mes_breakdowns WHERE id = %s", (br_id,))
-    #         r = mc.fetchone()
-    #         sa, ea = (r[0], r[1]) if r else (None, None)
-    #         mirror_from_halves(mconn, prod, payload, user["id"], started_at=sa, ended_at=ea)
-    # except Exception as e:
-    #     print(f"[BD-MIRROR] mes_breakdown_data mirror failed for br {br_id}: {e}")
+    # ── AUTO-MIRROR YAHAN SE BAND HAI (jaan-bujh kar) ────────────────────────
+    # 2026-08-06 (user ka faisla): AUTO slip ab **ANDON** se banti hai, breakdown
+    # close se NAHI.  Wajah — slip me jo times chahiye (BD start = ANDON call ON,
+    # Received = acknowledge button, OK = ANDON OFF) wo sirf ANDON ke paas hote
+    # hain; breakdown ticket me nahi.  Dono chalu rakhne se ek hi ghatna ki DO
+    # slips ban jaati.
+    #
+    # Ab slip yahan banti hai:  routers/andon.py → _auto_slip_from_call()
+    # (Maintenance ka ANDON call band hote hi, mes_auto_breakdown_slip me.)
+    #
+    # `breakdown_slips.mirror_from_halves()` ab kahin se call nahi hota, par
+    # rakha hua hai — kabhi breakdown-close se bhi slip chahiye to bas neeche
+    # wala purana block wapas laga dena (wo bhi AUTO_SLIP_TABLE me hi likhega).
 
     return {"ok": True}
 
