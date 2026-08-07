@@ -19,7 +19,7 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, refreshKey }) {
   const [err,     setErr]     = useState(null);
 
   // Machine Master List for the zone/line dropdowns (standing rule: all
-  // filters derive from mes_machines).
+  // filters derive from maintenance_machines).
   useEffect(() => {
     if (!token) return;
     api.get("/api/machines/", token).then((m) => setMaster(Array.isArray(m) ? m : [])).catch(() => setMaster([]));

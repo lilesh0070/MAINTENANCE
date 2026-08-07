@@ -256,14 +256,14 @@ class DmcDocFooter(BaseModel):
 @router.get("/machines")
 def dmc_machines(user=Depends(get_current_user)):
     """Zone / line / machine pickers — sourced from the MACHINE MASTER
-    (mes_machines), same as every other selector in the app.  Admin can pick
+    (maintenance_machines), same as every other selector in the app.  Admin can pick
     ANY master machine here (even one with zero DMC points yet) to start
     adding points."""
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("""
             SELECT zone_name AS zone, line_name AS line, machine_no, machine_name
-              FROM mes_machines
+              FROM maintenance_machines
              WHERE machine_no IS NOT NULL AND machine_no <> ''
              ORDER BY zone_name, line_name, machine_no
         """)

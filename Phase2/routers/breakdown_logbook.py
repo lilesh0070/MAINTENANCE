@@ -25,18 +25,18 @@ router = APIRouter(prefix="/api/breakdown-logbook", tags=["breakdown-logbook"])
 def _ensure_table() -> None:
     with get_conn() as conn:
         cur = conn.cursor()
-        # If this data previously lived in mes_breakdown_logbook, rename it to
+        # If this data previously lived in maintenance_logbook_db_history, rename it to
         # the new name (preserves every existing row).  Runs once; afterwards
         # the old table no longer exists so this is a cheap no-op.
         cur.execute("""
             DO $$
             BEGIN
               IF EXISTS (SELECT 1 FROM information_schema.tables
-                          WHERE table_name='mes_breakdown_logbook')
+                          WHERE table_name='maintenance_logbook_db_history')
                  AND NOT EXISTS (SELECT 1 FROM information_schema.tables
                           WHERE table_name='maintenance_logbook_db_history')
               THEN
-                ALTER TABLE mes_breakdown_logbook RENAME TO maintenance_logbook_db_history;
+                ALTER TABLE maintenance_logbook_db_history RENAME TO maintenance_logbook_db_history;
               END IF;
             END $$;
         """)
@@ -128,7 +128,7 @@ def list_entries(date: Optional[str] = Query(None, description="bd_date YYYY-MM-
         return cur.fetchall()
 
 
-# Both halves expose the FULL Manual-Break-Down-Slip (mes_breakdown_data) column
+# Both halves expose the FULL Manual-Break-Down-Slip (maintenance_breakdown_data) column
 # set, IN THE SAME ORDER, so UNION ALL lines up 1:1.  The Log Book table has only
 # a subset of these, so every slip-only column is returned as a typed NULL for
 # Log Book rows (they simply show blank in the History Card).  Numeric columns are
@@ -179,7 +179,7 @@ _COMBINED_SLIP = """
 @router.get("/combined")
 def list_combined(user=Depends(get_current_user)):
     """History Card source — MERGES the Log Book (maintenance_logbook_db_history)
-    AND the Manual Break Down Slip (mes_breakdown_data) into one unified list,
+    AND the Manual Break Down Slip (maintenance_breakdown_data) into one unified list,
     each row tagged by `source`.  The two tables now share the same core columns,
     so the halves line up 1:1 (down-time cast to text, dates coalesced)."""
     _ensure_table()
@@ -187,7 +187,7 @@ def list_combined(user=Depends(get_current_user)):
     _ensure_slip()
     sql = (f"SELECT {_COMBINED_LB} FROM maintenance_logbook_db_history "
            f"UNION ALL "
-           f"SELECT {_COMBINED_SLIP} FROM mes_breakdown_data "
+           f"SELECT {_COMBINED_SLIP} FROM maintenance_breakdown_data "
            f"ORDER BY ts DESC NULLS LAST, id DESC LIMIT 5000")
     with get_conn() as conn:
         cur = dict_cursor(conn)

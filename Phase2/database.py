@@ -24,7 +24,10 @@ from contextlib import contextmanager
 DB_CONFIG = {
     "host":     os.getenv("DB_HOST",     "192.168.30.15"),
     "port":     int(os.getenv("DB_PORT", "5432") or 5432),
-    "database": os.getenv("DB_NAME",     "energydb"),
+    # 2026-08-07 — default `energydb` se badal kar `maintenance_db`.  Agar
+    # kabhi .env na mile to app galti se production MES ki shared DB par
+    # nahi chala jayega.
+    "database": os.getenv("DB_NAME",     "maintenance_db"),
     "user":     os.getenv("DB_USER",     "postgres"),
     "password": os.getenv("DB_PASS",     ""),
     # 2026-06-14 — fail FAST when the DB is down so a request returns an error

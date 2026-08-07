@@ -68,9 +68,6 @@ export default function MaintenanceDashboard() {
   // see "Dashboard" — they only ever land on their own.
   const titleLeft  = isAdmin ? "Maintenance " : "";
   const titleRight = "Dashboard";
-  // Is dashboard ka saara breakdown data ab ANDON se aata hai — `mes_breakdowns`
-  // wale purane states (active / recent / stats) hata diye, unka data kahin
-  // dikhta hi nahi tha.
   const [andonRows, setAndonRows]   = useState([]);   // ANDON table ki rows
   const [andonStats, setAndonStats] = useState({});   // 4 stat cards
   const [lines,  setLines]        = useState([]);  // kept so historical line lookups stay possible
@@ -138,16 +135,6 @@ export default function MaintenanceDashboard() {
     return () => clearInterval(t);
   }, [reload]);
 
-  // Lines ka master EK BAAR — ye machine master se aata hai, har 2 second
-  // dobara maangne ka koi matlab nahi (pehle har chakkar me aata tha).
-  useEffect(() => {
-    let dead = false;
-    api.get("/api/lines/", token)
-      .then((l) => { if (!dead) setLines(Array.isArray(l) ? l : []); })
-      .catch(() => { if (!dead) setLines([]); });
-    return () => { dead = true; };
-  }, [token]);
-
   useEffect(() => {
     document.title = "Maintenance Dashboard";
   }, []);
@@ -157,9 +144,6 @@ export default function MaintenanceDashboard() {
   // only manual step left is filling the closure form for a RESOLVED
   // ticket from the History table below.
 
-  // Zone-wise list ki slips ab AUTO slips hain (ANDON ke Maintenance call se).
-  // Wo `mes_breakdowns` ke tickets NAHI hain, isliye unhe server se uthate hain
-  // — backend wahi `ticket` shape deta hai jo form samajhta hai.
   const openAutoSlip = async (id, mode) => {
     try {
       const t = await api.get(`/api/breakdown-slips/auto/${id}`, token);
@@ -218,9 +202,6 @@ export default function MaintenanceDashboard() {
     }
   };
 
-  // KPI tiles at top — ab ye chaaron ANDON (andon_system + andon_history) se
-  // aate hain, mes_breakdowns se NAHI.  Server hi ginti karta hai (stats), taaki
-  // "24 ghante" / "chalu" ki definition backend aur cards me ek jaisi rahe.
   const andonActive   = andonStats.active   ?? 0;   // abhi chalu calls
   const andonAwaiting = andonStats.awaiting ?? 0;   // chalu, par jawab nahi aaya
   const andonToday    = andonStats.today    ?? 0;   // pichhle 24h ke calls

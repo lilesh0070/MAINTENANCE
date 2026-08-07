@@ -6,7 +6,7 @@ workflow (the standalone "QPR register" page and its list/create/delete
 endpoints were removed on 2026-07-03).
 
 A QPR row is created by POST /api/capa-lb/start/{bd_id} (pre-filled from a
-≥60-minute breakdown in mes_breakdown_data, capa_status='OPEN').  The full
+≥60-minute breakdown in maintenance_breakdown_data, capa_status='OPEN').  The full
 sheet lives in the JSONB `payload`; saving it via PUT auto-sets
 capa_status='CLOSED', which closes the CAPA.
 
@@ -42,7 +42,7 @@ def _ensure_table() -> None:
             )
         """)
         # CAPA linkage: a QPR filed against a ≥60-min breakdown carries the
-        # source mes_breakdown_data row id + a capa_status (OPEN while being
+        # source maintenance_breakdown_data row id + a capa_status (OPEN while being
         # filled, CLOSED once saved).
         cur.execute("ALTER TABLE maintenance_qpr ADD COLUMN IF NOT EXISTS logbook_id INTEGER")
         cur.execute("ALTER TABLE maintenance_qpr ADD COLUMN IF NOT EXISTS capa_status VARCHAR(12)")

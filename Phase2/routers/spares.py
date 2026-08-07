@@ -148,7 +148,7 @@ def spare_filters(user=Depends(get_current_user)):
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("""SELECT zone_name, line_name, machine_no, machine_name
-                         FROM mes_machines
+                         FROM maintenance_machines
                         WHERE COALESCE(is_active, TRUE)
                         ORDER BY zone_name, line_name, serial_no NULLS LAST, machine_no""")
         machines = cur.fetchall()

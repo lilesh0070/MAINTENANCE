@@ -22,6 +22,15 @@ if not exist "%~dp0mes-frontend\node_modules" (
     pause
     exit /b 1
 )
+REM .env gitignored hai - nayi machine par ye file hoti hi nahi.  Bina iske
+REM backend chal to jaata hai par DB se jud nahi paata.  Yahin rok dete hain.
+if not exist "%~dp0Phase2\.env" (
+    echo   [ERROR] Phase2\.env missing.
+    echo           copy Phase2\.env.example Phase2\.env
+    echo           phir usme DB_PASS aur JWT_SECRET_KEY bhar dein.
+    pause
+    exit /b 1
+)
 
 REM --- launch BACKEND in its own window ---
 echo Starting backend (uvicorn :8892)...

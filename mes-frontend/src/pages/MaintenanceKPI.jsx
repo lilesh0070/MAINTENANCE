@@ -14,7 +14,7 @@
  *        – Total breakdown hours
  *
  * Data: GET /api/maintenance-kpi/summary?fy=YYYY-YY  (recomputed from
- * mes_breakdowns on every call) and GET /api/maintenance-kpi/financial-years.
+ * the filled slips on every call) and GET /api/maintenance-kpi/financial-years.
  *
  * Routing: /maintenance-kpi — gated to maintenance department users
  * (and admin) via canAccess('maintenance-kpi').
@@ -182,7 +182,7 @@ export default function MaintenanceKPI() {
   const [err, setErr]         = useState("");
   const [lastTick, setLastTick] = useState(null);
   // Filters — sourced from the Machine Master List (same as the Log Book)
-  const [master, setMaster]       = useState([]);   // flat mes_machines rows
+  const [master, setMaster]       = useState([]);   // flat maintenance_machines rows
   const [zoneName, setZoneName]   = useState("");
   const [lineName, setLineName]   = useState("");
   const [machineNo, setMachineNo] = useState("");
@@ -255,7 +255,7 @@ export default function MaintenanceKPI() {
       .catch(() => {});
   }, [token]);
 
-  // Filter options come from the Machine Master List (mes_machines) — the
+  // Filter options come from the Machine Master List (maintenance_machines) — the
   // single master for every filter across the app.
   useEffect(() => {
     if (!token) return;

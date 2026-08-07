@@ -165,7 +165,7 @@ export function AuthProvider({ children }) {
                 "maintenance-kpi", "maintenance-breakdown", "maintenance-breakdown-slip",
                 "skill-training",
                 "maintenance-historical", "maintenance-capa",
-                "maintenance-deviations", "maintenance-poka-yoke",
+                "maintenance-deviations",
                 "maintenance-logbook", "maintenance-history-card", "maintenance-pm",
                 "maintenance-machine-manual", "maintenance-machine-dmc",
                 "maintenance-daily-dmc", "maintenance-dmc-verify", "maintenance-dmc-weekly",

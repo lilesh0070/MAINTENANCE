@@ -1,7 +1,7 @@
 """
 routers/capa_logbook.py
 =======================
-CAPA driven directly by the Break Down Slip table (`mes_breakdown_data`) — the
+CAPA driven directly by the Break Down Slip table (`maintenance_breakdown_data`) — the
 SAME source the Maintenance-KPI / BD-History / BD-Analysis pages compute
 from, so the CAPA counts always reconcile with those pages.
 
@@ -13,7 +13,7 @@ Rule: every breakdown whose repair duration (mc_down_time_minutes, numeric) is
                             (maintenance_qpr.logbook_id = breakdown id,
                              capa_status = 'CLOSED').
 
-`maintenance_qpr.logbook_id` stores the **mes_breakdown_data id** (since
+`maintenance_qpr.logbook_id` stores the **maintenance_breakdown_data id** (since
 2026-07-03; it previously pointed at maintenance_logbook_db_history — the
 old open stubs were backed up to Phase2/qpr_capa_stubs_backup.csv and
 removed during the switch).
@@ -83,7 +83,7 @@ def summary(user=Depends(get_current_user)):
                    bd.mc_down_time_minutes                    AS solve_time_min,
                    bd.bd_attended_by                          AS attended_by,
                    q.qpr_id, q.qpr_no, q.capa_status
-              FROM mes_breakdown_data bd
+              FROM maintenance_breakdown_data bd
               LEFT JOIN LATERAL (
                    SELECT mq.id AS qpr_id, mq.qpr_no, mq.capa_status
                      FROM maintenance_qpr mq
@@ -130,7 +130,7 @@ def start_capa(bd_id: int, user=Depends(get_current_user)):
                                problem_observed_by_maintenance AS problem_maintenance,
                                machine_name, machine_no,
                                bd_attended_by AS attended_by
-                          FROM mes_breakdown_data WHERE id=%s AND {_MIN60}""", (bd_id,))
+                          FROM maintenance_breakdown_data WHERE id=%s AND {_MIN60}""", (bd_id,))
         bd = cur.fetchone()
         if not bd:
             raise HTTPException(404, "No ≥60-minute breakdown for this id")

@@ -6,14 +6,14 @@
  *
  *   • Filter bar — same as every other page (Financial Year · Month ·
  *     Zone · Line · Machine No · Machine Name from the Machine Master
- *     List `mes_machines`) PLUS an exact Date picker.
+ *     List `maintenance_machines`) PLUS an exact Date picker.
  *   • Slip list — every CLOSED (fully filled) breakdown slip in the
  *     window, ANY date — not just the Dashboard's last-2-days view.
  *     "View Slip" opens the same read-only BREAK DOWN SLIP modal the
  *     Dashboard uses.
  *
- * Data: GET /api/breakdowns/history?state=CLOSED  (mes_breakdowns —
- * where the slip form saves production/maintenance/closure JSONB).
+ * Data: GET /api/breakdowns/log  (maintenance_breakdown_data — jahan
+ * slip form production/maintenance/closure JSONB bharti hai).
  * Routing: /maintenance-historical
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -129,7 +129,7 @@ export default function MaintenanceHistorical() {
     if (win) { p.set("from_date", win.start); p.set("to_date", win.end); }
     else     { p.set("days", "730"); }
     setLoading(true);
-    api.get(`/api/breakdowns/history?${p.toString()}`, token)
+    api.get(`/api/breakdowns/log?${p.toString()}`, token)
       .then((d) => setRows(Array.isArray(d?.rows) ? d.rows : []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));

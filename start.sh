@@ -17,6 +17,18 @@ fi
 if [ ! -d "mes-frontend/node_modules" ]; then
   echo "  [ERROR] Frontend node_modules missing. Run ./install.sh first."; exit 1
 fi
+# .env gitignored hai — nayi machine par ye file hoti hi nahi.  Bina iske
+# backend chal to jaata hai par DB se jud nahi paata, aur error samajh nahi
+# aata.  Isliye yahin saaf-saaf rok dete hain.
+if [ ! -f "Phase2/.env" ]; then
+  echo "  [ERROR] Phase2/.env missing."
+  echo "          cp Phase2/.env.example Phase2/.env"
+  echo "          phir usme DB_PASS aur JWT_SECRET_KEY bhar dein."
+  exit 1
+fi
+if ! grep -qE '^DB_PASS=.+' Phase2/.env; then
+  echo "  [WARN] Phase2/.env me DB_PASS khali hai — DB connect nahi hoga."
+fi
 
 mkdir -p logs .run
 

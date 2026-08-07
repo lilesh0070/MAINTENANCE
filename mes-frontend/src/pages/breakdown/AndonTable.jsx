@@ -1,10 +1,35 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { Btn, fmtDuration, fmtClock } from "./shared";
 
 /* ════════════════════════════════════════════════════════════════════
  * 1) ANDON Live Table
  * ════════════════════════════════════════════════════════════════════ */
+// Dashboard par table itni hi rows tak badhta hai; usse zyada calls hon to
+// baaki SCROLL me chale jaate hain — card nahi badhta, warna neeche ka poora
+// layout niche khisak jaata hai.  Saari rows dekhni hon to Fullscreen.
+const MAX_ROWS = 7;
 function AndonTable({ rows, fullscreenRef, isFullscreen, toggleFullscreen }) {
+  // ── 7 row ke baad scroll ──────────────────────────────────────────
+  // Height ko fixed number se nahi baandh sakte: row ki oonchai content par
+  // badalti hai (jawab aaya hua row aur "waiting" wala row alag height ke
+  // hote hain, 52 se 77 px tak).  Isliye render ke baad ASLI rows naap kar
+  // pehli MAX_ROWS + header jitni height set karte hain — hamesha theek 7
+  // poori rows dikhti hain, aadhi row kabhi nahi.
+  const boxRef = useRef(null);
+  const [maxH, setMaxH] = useState(null);
+  useLayoutEffect(() => {
+    if (isFullscreen) { setMaxH(null); return; }          // fullscreen me koi cap nahi
+    const box = boxRef.current;
+    if (!box) return;
+    const trs = box.querySelectorAll("tbody tr");
+    if (trs.length <= MAX_ROWS) { setMaxH(null); return; } // sab waise hi dikh jaate hain
+    const head = box.querySelector("thead");
+    let h = head ? head.getBoundingClientRect().height : 0;
+    for (let i = 0; i < MAX_ROWS; i++) h += trs[i].getBoundingClientRect().height;
+    const next = Math.round(h);
+    setMaxH((cur) => (cur === next ? cur : next));         // bewajah re-render se bacho
+  }, [rows, isFullscreen]);
+
   // Tick at 1Hz so duration column stays live without re-fetch.
   const [, setNow] = useState(Date.now());
   useEffect(() => {
@@ -64,7 +89,12 @@ function AndonTable({ rows, fullscreenRef, isFullscreen, toggleFullscreen }) {
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto",
+      {/* Dashboard par table 7 row tak hi badhta hai; usse zyada calls hon to
+          baaki SCROLL me chale jaate hain.  Pehle card badhta hi jaata tha aur
+          poora layout bigad jaata tha.  Saari rows ek saath dekhni hon to
+          upar wala Fullscreen button hai — usme koi cap nahi lagti. */}
+      <div ref={boxRef} style={{ flex: 1, overflowY: "auto",
+                     ...(maxH ? { maxHeight: maxH } : {}),
                      fontSize: isFullscreen ? "1.6vmin" : 13,
                      padding: isFullscreen ? "1vmin 2vmin" : 0 }}>
         <table style={{ width: "100%", borderCollapse: "collapse",
@@ -80,6 +110,11 @@ function AndonTable({ rows, fullscreenRef, isFullscreen, toggleFullscreen }) {
                   textTransform: "uppercase", color: "#64748b",
                   borderBottom: "2px solid #e2e8f0",
                   whiteSpace: "nowrap",
+                  // 7 se zyada rows par table scroll hota hai — header upar
+                  // chipka rehta hai taaki column ke naam dikhte rahein.
+                  // background zaroori hai, warna rows header ke peeche se
+                  // jhalakti hain.
+                  position: "sticky", top: 0, zIndex: 1, background: "#f8fafc",
                 }}>{h}</th>
               ))}
             </tr>

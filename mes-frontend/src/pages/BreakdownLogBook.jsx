@@ -2,7 +2,7 @@
  * BreakdownLogBook.jsx  —  Maintenance Log Book (rebuilt 2026-07-07)
  * ───────────────────────────────────────────────────────────────────
  * Physical TBDI/MAINT log-book format with the requested changes:
- *   • Zone → Line → Machine No  (from the Machine Master, mes_machines);
+ *   • Zone → Line → Machine No  (from the Machine Master, maintenance_machines);
  *     Machine Name auto-fills from Machine No.
  *   • Serial No is AUTO-GENERATED on save (running number).
  *   • "Problem Reported / Found"  →  "Problem Observed by Maintenance".

@@ -10,10 +10,10 @@
  *   All Zones     → top ZONES
  *   zone selected → top LINES (of that zone)
  *   line selected → top MACHINES (machine_no of that line)
- * Filter options come from the Machine Master List (mes_machines).
+ * Filter options come from the Machine Master List (maintenance_machines).
  *
  * Data: GET /api/maintenance-kpi/breakdown-by?group=zone|line|machine
- *       (mes_breakdown_data — the same source as Pareto / BD Analysis).
+ *       (maintenance_breakdown_data — the same source as Pareto / BD Analysis).
  * Routing: /maintenance-breakdown/top-10
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -50,7 +50,7 @@ export default function TopBreakdowns() {
   const nav = useNavigate();
   // ── the single top filter bar (same as the other Breakdown pages) ──
   const [years, setYears]   = useState([]);
-  const [master, setMaster] = useState([]);   // Machine Master List rows (mes_machines)
+  const [master, setMaster] = useState([]);   // Machine Master List rows (maintenance_machines)
   const [fFy, setFFy]       = useState("");
   const [fMonth, setFMonth] = useState("");
   const [fZone, setFZone]   = useState("SEAT_SLIDER");   // default zone (user can switch to All / any other)

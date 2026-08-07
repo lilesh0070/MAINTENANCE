@@ -30,7 +30,7 @@ def _ensure_table() -> None:
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS mes_maintenance_logbook (
+            CREATE TABLE IF NOT EXISTS maintenance_logbook (
                 id                  SERIAL PRIMARY KEY,
                 record_date         DATE        NOT NULL,
                 shift               VARCHAR(8)  NOT NULL,
@@ -81,7 +81,7 @@ def get_sheet(
         cur.execute(
             "SELECT employees_present, employees_on_leave, total_working_hours, "
             "       total_over_time, total_down_time, rows, updated_by, updated_at "
-            "FROM mes_maintenance_logbook WHERE record_date=%s AND shift=%s",
+            "FROM maintenance_logbook WHERE record_date=%s AND shift=%s",
             (date, shift),
         )
         r = cur.fetchone()
@@ -119,7 +119,7 @@ def save_sheet(body: LogBookIn, user=Depends(get_current_user)):
         cur = conn.cursor()
         cur.execute(
             """
-            INSERT INTO mes_maintenance_logbook
+            INSERT INTO maintenance_logbook
                 (record_date, shift, employees_present, employees_on_leave,
                  total_working_hours, total_over_time, total_down_time,
                  rows, updated_by, updated_at)

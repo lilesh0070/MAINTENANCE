@@ -934,11 +934,11 @@ def yearly_schedule(fy: Optional[str] = Query(None, description="financial year,
                         WHERE year_label = %s
                         ORDER BY sort_order, id""", (fy,))
         rows = cur.fetchall()
-        # LIVE names from the Machine Master (mes_machines) — the schedule stores
+        # LIVE names from the Machine Master (maintenance_machines) — the schedule stores
         # its own copy, but zone / line / machine name are shown from the master
         # so a later master edit reflects here automatically.  Matched by code
         # (normalized); machine_code (the identity) is kept as-is.
-        cur.execute("SELECT machine_no, zone_name, line_name, machine_name FROM mes_machines")
+        cur.execute("SELECT machine_no, zone_name, line_name, machine_name FROM maintenance_machines")
         master = {_norm_code(r["machine_no"]): r for r in cur.fetchall()}
         for r in rows:
             m = master.get(_norm_code(r["machine_code"]))
@@ -1012,8 +1012,8 @@ def _ensure_fy_rows(cur, fy: str) -> None:
 
 
 def _sync_master_machines(cur, fy: str) -> None:
-    """Keep the yearly schedule in step with the Machine Master (mes_machines)
-    WITHOUT touching it: any machine present in mes_machines but not yet in this
+    """Keep the yearly schedule in step with the Machine Master (maintenance_machines)
+    WITHOUT touching it: any machine present in maintenance_machines but not yet in this
     FY's schedule is APPENDED at the END (sort_order after all existing rows)
     with a blank plan/actual/frequency.  Existing rows are never reordered,
     renumbered or edited — so the current sequence stays and nothing shifts up."""
@@ -1021,7 +1021,7 @@ def _sync_master_machines(cur, fy: str) -> None:
     have = {_norm_code(r["machine_code"]) for r in cur.fetchall()}
     cur.execute("SELECT COALESCE(MAX(sort_order),0) AS so FROM maintenance_yearly_pm_shedule WHERE year_label=%s", (fy,))
     so = cur.fetchone()["so"] or 0
-    cur.execute("SELECT machine_no, machine_name, zone_name, line_name FROM mes_machines "
+    cur.execute("SELECT machine_no, machine_name, zone_name, line_name FROM maintenance_machines "
                 "ORDER BY serial_no NULLS LAST, id")
     for m in cur.fetchall():
         code = m["machine_no"]

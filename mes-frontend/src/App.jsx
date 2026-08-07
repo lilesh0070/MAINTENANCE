@@ -14,7 +14,6 @@ import MaintenanceDashboard  from "./pages/MaintenanceDashboard";
 import MaintenanceHistorical from "./pages/MaintenanceHistorical";
 import MaintenanceCAPA       from "./pages/MaintenanceCAPA";
 import MaintenanceDeviations from "./pages/MaintenanceDeviations";
-import MaintenancePokaYoke   from "./pages/MaintenancePokaYoke";
 import PMPanel               from "./pages/PMPanel";
 import MaintenanceKPI        from "./pages/MaintenanceKPI";
 import MaintenanceOverview   from "./pages/MaintenanceOverview";
@@ -84,11 +83,6 @@ function RootRedirect() {
   return <Navigate to="/dashboard" replace />;
 }
 
-// ─── Breakdown Slip (direct sidebar entry) ──────────────────────────────────
-// Opens the blank Break Down Slip straight from the sidebar — no landing page
-// hop.  The slip saves to the standalone mes_breakdown_data table (NOT
-// mes_breakdowns), so it does NOT appear in BD History — on Save/Cancel we
-// simply return to the Breakdown landing page.
 function BreakdownSlipRoute() {
   const { token } = useAuth();
   const nav = useNavigate();
@@ -221,11 +215,6 @@ function AppRoutes() {
       {/* Maintenance Deviations — raise + track deviation requests. */}
       <Route path="/maintenance-deviations" element={
         <Protected requiredAccess="maintenance-deviations"><MaintenanceDeviations /></Protected>
-      } />
-
-      {/* Maintenance Poka Yoke — full technical drill-down. */}
-      <Route path="/maintenance-poka-yoke" element={
-        <Protected requiredAccess="maintenance-poka-yoke"><MaintenancePokaYoke /></Protected>
       } />
 
       {/* Machine Manual — pick a machine → view / upload its PDF manual. */}

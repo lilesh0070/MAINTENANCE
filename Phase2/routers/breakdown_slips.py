@@ -2,20 +2,17 @@
 routers/breakdown_slips.py
 ==========================
 Standalone storage for the MANUAL "Break Down Slip" (raised from the sidebar
-→ Breakdown Slip).  This is intentionally SEPARATE from mes_breakdowns:
 
-  • It does NOT touch mes_breakdowns / the collector / ANDON / KPI at all.
-  • Every slip field is stored as its own flat column in `mes_breakdown_data`.
-  • No foreign key / link back to mes_breakdowns — fully decoupled.
+  • Every slip field is stored as its own flat column in `maintenance_breakdown_data`.
 
 DO ALAG TABLES (kabhi mix nahi hote)
 ------------------------------------
-  mes_breakdown_data       MANUAL slip — sirf yahan se aati hai (POST below)
-  mes_auto_breakdown_slip  AUTO slip — ANDON ke Maintenance call band hote hi
+  maintenance_breakdown_data       MANUAL slip — sirf yahan se aati hai (POST below)
+  maintenance_auto_breakdown_slip  AUTO slip — ANDON ke Maintenance call band hote hi
                            banti hai (andon.py → _auto_slip_from_call).
                            Structure dono ka bilkul same.
 
-AUTO ka data `mes_breakdown_data` me KABHI nahi jaata — `_insert_flat()` ka
+AUTO ka data `maintenance_breakdown_data` me KABHI nahi jaata — `_insert_flat()` ka
 `table` argument ye pakka karta hai.
 
 Endpoint
@@ -36,19 +33,19 @@ from auth import get_current_user
 router = APIRouter(prefix="/api/breakdown-slips", tags=["breakdown-slips"])
 
 # ── Do ALAG tables — kabhi mix nahi hote ──────────────────────────────────
-#   mes_breakdown_data       : MANUAL slip (sidebar → Breakdown Slip)
-#   mes_auto_breakdown_slip  : AUTO slip (breakdown close par mirror)
+#   maintenance_breakdown_data       : MANUAL slip (sidebar → Breakdown Slip)
+#   maintenance_auto_breakdown_slip  : AUTO slip (breakdown close par mirror)
 # Structure dono ka bilkul same hai, bas source alag hai — isse manual aur
 # auto ka data kabhi aapas me nahi milta.
-MANUAL_SLIP_TABLE = "mes_breakdown_data"
-AUTO_SLIP_TABLE   = "mes_auto_breakdown_slip"
+MANUAL_SLIP_TABLE = "maintenance_breakdown_data"
+AUTO_SLIP_TABLE   = "maintenance_auto_breakdown_slip"
 _ALLOWED_SLIP_TABLES = {MANUAL_SLIP_TABLE, AUTO_SLIP_TABLE}
 
 _ensured = False
 
 
 def _ensure_table():
-    """Create mes_breakdown_data once (idempotent).  Called lazily on first use
+    """Create maintenance_breakdown_data once (idempotent).  Called lazily on first use
     so the app still boots when the DB is down."""
     global _ensured
     if _ensured:
@@ -56,7 +53,7 @@ def _ensure_table():
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS mes_breakdown_data (
+            CREATE TABLE IF NOT EXISTS maintenance_breakdown_data (
                 id                             SERIAL PRIMARY KEY,
                 -- Upper half (Production)
                 zone                           VARCHAR(60),
@@ -93,13 +90,6 @@ def _ensure_table():
                 submitted_at                   TIMESTAMP DEFAULT NOW()
             )
         """)
-        # NOTE: the old reporting view mes_breakdown_data_v has been REMOVED.
-        # KPI / History / Analysis / CAPA now read mes_breakdown_data DIRECTLY
-        # (breakdowns.py inlines the same column-alias mapping as _BD_SRC).
-        # Drop it FIRST — it depends on the `category` column, so the widen
-        # below would otherwise fail with "cannot alter type of a column used
-        # by a view" and abort this whole migration.
-        cur.execute("DROP VIEW IF EXISTS mes_breakdown_data_v")
         # 2026-07-28: actual_problem_observed renamed to
         # problem_observed_by_maintenance (to match the Log Book).  Guarded so
         # it runs once on an existing table; fresh tables already use the new
@@ -108,39 +98,39 @@ def _ensure_table():
             DO $$
             BEGIN
               IF EXISTS (SELECT 1 FROM information_schema.columns
-                          WHERE table_name='mes_breakdown_data'
+                          WHERE table_name='maintenance_breakdown_data'
                             AND column_name='actual_problem_observed')
                  AND NOT EXISTS (SELECT 1 FROM information_schema.columns
-                          WHERE table_name='mes_breakdown_data'
+                          WHERE table_name='maintenance_breakdown_data'
                             AND column_name='problem_observed_by_maintenance')
               THEN
-                ALTER TABLE mes_breakdown_data
+                ALTER TABLE maintenance_breakdown_data
                   RENAME COLUMN actual_problem_observed TO problem_observed_by_maintenance;
               END IF;
             END $$;
         """)
         # Legacy category values are descriptive ('Mechanical', 'PLC / Software'),
         # not just 'A'/'B'/'C' — widen an existing VARCHAR(1) column if present.
-        cur.execute("ALTER TABLE mes_breakdown_data ALTER COLUMN category TYPE VARCHAR(40)")
+        cur.execute("ALTER TABLE maintenance_breakdown_data ALTER COLUMN category TYPE VARCHAR(40)")
         # Repeatable Spare Details — full list stored as JSONB.  `spares_used`
         # (above) stays as a one-line text summary for the flat/legacy readers.
-        cur.execute("ALTER TABLE mes_breakdown_data ADD COLUMN IF NOT EXISTS spares JSONB")
+        cur.execute("ALTER TABLE maintenance_breakdown_data ADD COLUMN IF NOT EXISTS spares JSONB")
         # Response time (Start→Received) + breakdown frequency (default 1).
-        cur.execute("ALTER TABLE mes_breakdown_data ADD COLUMN IF NOT EXISTS response_time_minutes INTEGER")
-        cur.execute("ALTER TABLE mes_breakdown_data ADD COLUMN IF NOT EXISTS frequency INTEGER DEFAULT 1")
+        cur.execute("ALTER TABLE maintenance_breakdown_data ADD COLUMN IF NOT EXISTS response_time_minutes INTEGER")
+        cur.execute("ALTER TABLE maintenance_breakdown_data ADD COLUMN IF NOT EXISTS frequency INTEGER DEFAULT 1")
 
         # ── AUTO slip ki ALAG table ────────────────────────────────────────
-        # `mes_auto_breakdown_slip` — bilkul mes_breakdown_data jaisi hi, par
+        # `maintenance_auto_breakdown_slip` — bilkul maintenance_breakdown_data jaisi hi, par
         # ismein sirf AUTO (mirror) se bani slips jaati hain.  MANUAL slip
-        # hamesha mes_breakdown_data me hi jaati hai — dono kabhi nahi milte.
+        # hamesha maintenance_breakdown_data me hi jaati hai — dono kabhi nahi milte.
         # LIKE ... se structure hu-ba-hu copy hota hai, isliye upar ke saare
         # columns/ALTER apne aap is table me bhi aa jaate hain.
         cur.execute(f"""
             CREATE TABLE IF NOT EXISTS {AUTO_SLIP_TABLE}
-                (LIKE mes_breakdown_data INCLUDING DEFAULTS INCLUDING CONSTRAINTS)
+                (LIKE maintenance_breakdown_data INCLUDING DEFAULTS INCLUDING CONSTRAINTS)
         """)
         # `LIKE ... INCLUDING DEFAULTS` id ka default bhi copy karta hai, jo
-        # mes_breakdown_data ke SEQUENCE ko point karta hai. Usse hata kar is
+        # maintenance_breakdown_data ke SEQUENCE ko point karta hai. Usse hata kar is
         # table ko apna sequence do, warna dono ek hi counter share karengi.
         cur.execute(f"CREATE SEQUENCE IF NOT EXISTS {AUTO_SLIP_TABLE}_id_seq OWNED BY {AUTO_SLIP_TABLE}.id")
         cur.execute(f"ALTER TABLE {AUTO_SLIP_TABLE} ALTER COLUMN id SET DEFAULT nextval('{AUTO_SLIP_TABLE}_id_seq')")
@@ -257,7 +247,7 @@ def _insert_flat(conn, flat: dict, user_id, table: str = MANUAL_SLIP_TABLE):
 
     `table` default MANUAL hai — manual slip ka raasta bilkul pehle jaisa.
     AUTO mirror `AUTO_SLIP_TABLE` pass karta hai, isliye auto ka data kabhi
-    mes_breakdown_data me nahi jaata."""
+    maintenance_breakdown_data me nahi jaata."""
     if table not in _ALLOWED_SLIP_TABLES:          # sirf ye do naam allowed
         raise ValueError(f"unknown slip table: {table}")
     from psycopg2.extras import Json
@@ -280,9 +270,9 @@ def mirror_from_halves(conn, prod: dict, maint: dict, user_id,
                        started_at=None, ended_at=None):
     """Flatten a CLOSED breakdown's production + maintenance halves into a
     standalone AUTO-slip row.  Called from the breakdown close flow — a one-way
-    copy of the filled slip, with NO stored link back to mes_breakdowns.
+    copy of the filled slip.
 
-    *** Ye row `mes_auto_breakdown_slip` me jaati hai, `mes_breakdown_data` me
+    *** Ye row `maintenance_auto_breakdown_slip` me jaati hai, `maintenance_breakdown_data` me
     KABHI NAHI.  Manual slip aur auto slip alag-alag tables me rehte hain,
     chahe auto-mirror on ho ya off. ***
 
@@ -301,7 +291,7 @@ def mirror_from_halves(conn, prod: dict, maint: dict, user_id,
         flat["slip_date"] = started_at.date()
     if not flat["bd_end_date"] and ended_at:
         flat["bd_end_date"] = ended_at.date()
-    # AUTO slip -> ALAG table (mes_breakdown_data ko haath nahi lagta)
+    # AUTO slip -> ALAG table (maintenance_breakdown_data ko haath nahi lagta)
     return _insert_flat(conn, flat, user_id, table=AUTO_SLIP_TABLE)
 
 
@@ -353,7 +343,7 @@ def _halves_to_flat(prod: dict, maint: dict) -> dict:
 
 @router.post("/", status_code=201)
 def create_slip(body: BreakdownSlipIn, user=Depends(get_current_user)):
-    """Insert one filled (manual) Break Down Slip into mes_breakdown_data."""
+    """Insert one filled (manual) Break Down Slip into maintenance_breakdown_data."""
     _ensure_table()
     with get_conn() as conn:
         new_id = _insert_flat(conn, body.model_dump(), user["id"])
@@ -378,7 +368,7 @@ def list_slips(user=Depends(get_current_user)) -> List[dict]:
     _ensure_table()
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("SELECT * FROM mes_breakdown_data ORDER BY id DESC LIMIT 1000")
+        cur.execute("SELECT * FROM maintenance_breakdown_data ORDER BY id DESC LIMIT 1000")
         return cur.fetchall()
 
 

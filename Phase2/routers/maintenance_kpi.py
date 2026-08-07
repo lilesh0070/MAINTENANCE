@@ -1,7 +1,7 @@
 """
 routers/maintenance_kpi.py
 ==========================
-Maintenance KPI dashboard — auto-computed from mes_breakdowns over a
+Maintenance KPI dashboard — auto-computed from the filled slips over a
 selectable period (today / last 7d / 30d / custom range).  Compares each
 KPI to its admin-set target and returns a pass/fail flag.
 
@@ -34,9 +34,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-# Dashboard ki zone-wise "Breakdown Slips" list ab AUTO slips se banti hai
-# (ANDON ke Maintenance call se), mes_breakdowns se nahi.
-_AUTO_SLIP_TBL = "mes_auto_breakdown_slip"
+_AUTO_SLIP_TBL = "maintenance_auto_breakdown_slip"
 
 
 def _stamp(d, t):
@@ -112,56 +110,35 @@ def _resolve_window(period: Optional[str],
     return now - timedelta(days=7), now, "Last 7 days"
 
 
-def _load_targets(conn, line_id: Optional[int]) -> dict:
-    """Return {kpi_key: target_dict} — per-line override if exists, else
-    plant-wide row, else hard-coded default from KPI_DEFS."""
-    cur = dict_cursor(conn)
-    cur.execute("""
-        SELECT kpi_key, line_id, target_value, unit, direction, is_active
-          FROM mes_kpi_targets
-         WHERE is_active = TRUE
-           AND (line_id IS NULL OR line_id = %s)
-    """, (line_id,))
-    rows = cur.fetchall()
+def _targets() -> dict:
+    """{kpi_key: target} — Dashboard ke KPI card ka pass/fail target.
 
-    # Per-line override wins over plant-wide; build a two-pass map.
-    per_line, global_ = {}, {}
-    for r in rows:
-        (per_line if r["line_id"] is not None else global_)[r["kpi_key"]] = r
-
-    out = {}
-    for key, label, unit, direction, default in KPI_DEFS:
-        if key in per_line:
-            out[key] = per_line[key]
-        elif key in global_:
-            out[key] = global_[key]
-        else:
-            out[key] = {"kpi_key": key, "line_id": None,
-                        "target_value": default, "unit": unit,
-                        "direction": direction, "is_active": True}
-    return out
+    Zone / Line / Machine ke asli target `maintenance_kpi_target` me hain
+    (Admin Panel > KPI Targets) — wo Maintenance KPI page dikhata hai.
+    Dashboard ka card in saade default par chalta hai.
+    """
+    return {key: {"kpi_key": key, "line_id": None, "target_value": default,
+                  "unit": unit, "direction": direction, "is_active": True}
+            for key, label, unit, direction, default in KPI_DEFS}
 
 
 def _compute(conn, start: datetime, end: datetime, line_id: Optional[int],
              zone_name: Optional[str] = None, line_name: Optional[str] = None) -> dict:
     """Aggregate raw figures from the AUTO slips over [start, end).
 
-    2026-08-06: pehle ye `mes_breakdowns` (bahar ke collector ki table) se
-    ginta tha, jabki neeche ki slip list AUTO slips dikhati hai — isse cards
-    aur list ke numbers match hi nahi karte the.  Ab dono ek hi source se:
-    **`mes_auto_breakdown_slip`** (ANDON ke Maintenance call se bani slips).
+    Source: **`maintenance_auto_breakdown_slip`** — ANDON ke Maintenance call
+    se bani slips.  Upar ke stat cards aur neeche ki slip list, dono yahi se
+    aate hain, isliye unke numbers hamesha match karte hain.
 
     Down-time slip ke `mc_down_time_minutes` se aata hai (wahi ANDON ka
     start→OK ka hisaab), aur "pending closure" = jis slip me maintenance ne
     abhi problem/action nahi bhara.  zone/line filter seedha slip ke apne
-    text columns par lagta hai (mes_lines/mes_zones ke JOIN ki zaroorat nahi)."""
+    text columns par lagta hai — kisi JOIN ki zaroorat nahi."""
     cur = dict_cursor(conn)
     where = "s.bd_start_date >= %s::date AND s.bd_start_date <= %s::date"
     params: list = [start.date(), (end - timedelta(seconds=1)).date()]
     if line_id is not None:
-        # line_id sirf purane callers deten hain — use line ke NAAM me badlo
-        where += " AND s.line = (SELECT line_name FROM mes_lines WHERE id = %s)"
-        params.append(line_id)
+        pass
     if line_name:
         where += " AND s.line = %s"
         params.append(line_name)
@@ -229,7 +206,7 @@ def _build_payload(conn, start: datetime, end: datetime,
                    line_id: Optional[int], window_label: str,
                    zone_name: Optional[str] = None, line_name: Optional[str] = None) -> dict:
     raw     = _compute(conn, start, end, line_id, zone_name, line_name)
-    targets = _load_targets(conn, line_id)
+    targets = _targets()
 
     cards = []
     for key, label, unit, direction, _default in KPI_DEFS:
@@ -253,14 +230,10 @@ def _build_payload(conn, start: datetime, end: datetime,
     # jab naam diya hi na gaya ho.
     if line_id and not line_name:
         cur = dict_cursor(conn)
-        cur.execute("SELECT line_name FROM mes_lines WHERE id = %s", (line_id,))
+        cur.execute("SELECT NULL::text AS line_name")   # line ka master nahi hai
         r = cur.fetchone()
         line_name = r["line_name"] if r else None
 
-    # Zone-wise PENDING slips (jinme maintenance ne abhi problem/action nahi
-    # bhara) — dashboard ke Pending Breakdown zone tiles ke liye.
-    # Ab AUTO slips se (pehle mes_breakdowns se aata tha, jo neeche ki list se
-    # match hi nahi karta tha).
     zs_where = ["s.bd_start_date >= %s::date", "s.bd_start_date <= %s::date",
                 "COALESCE(NULLIF(TRIM(s.action_taken_on_problem), ''), '') = ''",
                 "COALESCE(NULLIF(TRIM(s.problem_observed_by_maintenance), ''), '') = ''"]
@@ -297,15 +270,6 @@ def _build_payload(conn, start: datetime, end: datetime,
     """, zt_params)
     zone_totals = cur.fetchall()
 
-    # The individual breakdown "slips" in the window (one row per ticket) —
-    # the dashboard lists these under a zone tile when it's clicked.
-    # 2026-08-06: ye list ab AUTO slips (`mes_auto_breakdown_slip`) se aati hai,
-    # `mes_breakdowns` se NAHI.  Slip ANDON ke Maintenance call se banti hai.
-    # Column ke naam wahi rakhe hain jo frontend padhta hai (zone_name /
-    # line_name / shift_name / started_at / ended_at / state / reason), taaki
-    # table ka format bilkul na badle.
-    #   state  : problem/action bhare nahi → PENDING, bhare hain → COMPLETED
-    #   reason : jo production ne likha ho, warna ek fixed label
     sl_where = ["s.bd_start_date >= %s::date", "s.bd_start_date <= %s::date"]
     sl_params: list = [start.date(), (end - timedelta(seconds=1)).date()]
     if line_name:
@@ -405,7 +369,7 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
     MTTR, MTBF, LTTR, breakdowns > 1 hour, total breakdown frequency,
     total breakdown hours.
 
-    Source: mes_breakdown_data — the maintenance breakdown register, which
+    Source: maintenance_breakdown_data — the maintenance breakdown register, which
     carries the per-slip repair time (mc_down_time_minutes) and breakdown date
     (bd_date).  Live — recomputed on every call."""
     now = datetime.utcnow()
@@ -419,7 +383,7 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
     eff_end = min(end, now)
     window_hours = max((eff_end - start).total_seconds() / 3600.0, 0.001)
 
-    # Source = mes_breakdown_data — the maintenance breakdown register (910
+    # Source = maintenance_breakdown_data — the maintenance breakdown register (910
     # rows).  Its zone / line / machine_no use the same Machine-
     # Master taxonomy as the master list, so the page's zone/line/machine
     # filters map straight onto those columns.  mc_down_time_minutes is a numeric
@@ -443,7 +407,7 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
                 COALESCE(AVG({st}), 0)                    AS avg_min,
                 COALESCE(MAX({st}), 0)                    AS max_min,
                 COUNT(*) FILTER (WHERE ({st}) > 60)       AS over_1hr
-              FROM mes_breakdown_data
+              FROM maintenance_breakdown_data
              WHERE {where}
         """, params)
         row = cur.fetchone() or {}
@@ -496,7 +460,7 @@ def fy_trend(fy:         Optional[str] = Query(None, description="e.g. 2025-26")
              machine_no: Optional[str] = Query(None),
              user=Depends(get_current_user)):
     """Month-by-month series (Apr → Mar, 12 buckets) for the same six
-    KPIs as /summary.  Source: mes_breakdown_data (the breakdown register),
+    KPIs as /summary.  Source: maintenance_breakdown_data (the breakdown register),
     filterable by zone/line/machine_no via its zone/line columns."""
     now = datetime.utcnow()
     if not fy:
@@ -523,7 +487,7 @@ def fy_trend(fy:         Optional[str] = Query(None, description="e.g. 2025-26")
                    COALESCE(AVG({st}), 0)                        AS avg_min,
                    COALESCE(MAX({st}), 0)                        AS max_min,
                    COUNT(*) FILTER (WHERE ({st}) > 60)           AS over_1hr
-              FROM mes_breakdown_data
+              FROM maintenance_breakdown_data
              WHERE {where}
              GROUP BY 1
         """, params)
@@ -585,7 +549,7 @@ def breakdown_by(group:        str = Query("zone", description="zone | line | ma
     """Grouped breakdown totals for the BD-Analysis drill-down charts:
     total breakdown FREQUENCY (count) and total breakdown HOURS
     (SUM(mc_down_time_minutes)/60) per zone / per line / per machine_no.
-    Source: mes_breakdown_data (same register as /summary & /trend).
+    Source: maintenance_breakdown_data (same register as /summary & /trend).
     Drill: no zone filter → group=zone; zone picked → group=line;
     line picked → group=machine."""
     col = {"zone": "zone", "line": "line", "machine": "machine_no"}.get(group)
@@ -621,7 +585,7 @@ def breakdown_by(group:        str = Query("zone", description="zone | line | ma
                    COUNT(*)                                     AS frequency,
                    ROUND(COALESCE(SUM({st}), 0) / 60.0, 2)      AS hours,
                    ROUND(COALESCE(SUM({st}), 0))                AS minutes
-              FROM mes_breakdown_data
+              FROM maintenance_breakdown_data
              WHERE {' AND '.join(where)}
              GROUP BY 1
              ORDER BY 1
@@ -637,7 +601,7 @@ def breakdown_by(group:        str = Query("zone", description="zone | line | ma
 @router.get("/filter-options")
 def filter_options(user=Depends(get_current_user)):
     """Distinct zone / line / machine combos actually present in
-    mes_breakdown_data — feeds the KPI & MTTR/MTBF filter dropdowns so the
+    maintenance_breakdown_data — feeds the KPI & MTTR/MTBF filter dropdowns so the
     options always match the data (instead of the machine master, whose
     taxonomy can drift from the register)."""
     with get_conn() as conn:
@@ -647,7 +611,7 @@ def filter_options(user=Depends(get_current_user)):
                             line  AS line_name,
                             machine_no,
                             machine_name
-              FROM mes_breakdown_data
+              FROM maintenance_breakdown_data
              WHERE zone IS NOT NULL AND zone <> ''
              ORDER BY 1, 2, 3
         """)
@@ -700,80 +664,3 @@ def export_csv(period:    Optional[str] = Query("7d"),
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
-
-
-# ── Targets CRUD (admin) ─────────────────────────────────────────────
-@router.get("/targets")
-def list_targets(user=Depends(get_current_user)):
-    with get_conn() as conn:
-        cur = dict_cursor(conn)
-        cur.execute("""
-            SELECT t.id, t.kpi_key, t.line_id, t.target_value, t.unit,
-                   t.direction, t.is_active, t.created_at, t.updated_at,
-                   l.line_name
-              FROM mes_kpi_targets t
-              LEFT JOIN mes_lines l ON l.id = t.line_id
-             ORDER BY t.kpi_key, t.line_id NULLS FIRST
-        """)
-        return cur.fetchall()
-
-
-@router.post("/targets", status_code=201)
-def create_target(body: TargetUpsert, admin=Depends(require_admin)):
-    if body.kpi_key not in {k for k, *_ in KPI_DEFS}:
-        raise HTTPException(400, f"Unknown kpi_key. Allowed: {[k for k, *_ in KPI_DEFS]}")
-    if body.direction not in ("higher", "lower"):
-        raise HTTPException(400, "direction must be 'higher' or 'lower'")
-    with get_conn() as conn:
-        cur = conn.cursor()
-        try:
-            cur.execute("""
-                INSERT INTO mes_kpi_targets
-                    (kpi_key, line_id, target_value, unit, direction, is_active)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (kpi_key, line_id) DO UPDATE
-                    SET target_value = EXCLUDED.target_value,
-                        unit         = EXCLUDED.unit,
-                        direction    = EXCLUDED.direction,
-                        is_active    = EXCLUDED.is_active,
-                        updated_at   = NOW()
-                RETURNING id
-            """, (body.kpi_key, body.line_id, body.target_value,
-                  body.unit, body.direction, body.is_active))
-            new_id = cur.fetchone()[0]
-            conn.commit()
-        except Exception as e:
-            conn.rollback()
-            raise HTTPException(400, f"Save failed: {e}")
-    return {"id": new_id}
-
-
-@router.put("/targets/{target_id}")
-def update_target(target_id: int, body: TargetUpsert,
-                  admin=Depends(require_admin)):
-    if body.direction not in ("higher", "lower"):
-        raise HTTPException(400, "direction must be 'higher' or 'lower'")
-    with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("""
-            UPDATE mes_kpi_targets
-               SET kpi_key=%s, line_id=%s, target_value=%s, unit=%s,
-                   direction=%s, is_active=%s, updated_at=NOW()
-             WHERE id=%s
-        """, (body.kpi_key, body.line_id, body.target_value, body.unit,
-              body.direction, body.is_active, target_id))
-        if cur.rowcount == 0:
-            raise HTTPException(404, "Target not found")
-        conn.commit()
-    return {"ok": True}
-
-
-@router.delete("/targets/{target_id}")
-def delete_target(target_id: int, admin=Depends(require_admin)):
-    with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("DELETE FROM mes_kpi_targets WHERE id=%s", (target_id,))
-        if cur.rowcount == 0:
-            raise HTTPException(404, "Target not found")
-        conn.commit()
-    return {"ok": True}

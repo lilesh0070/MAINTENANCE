@@ -8,54 +8,21 @@ import {
   PageHeading, Card, Pill, Btn, FF, Input, Select,
   Modal, ModalActions, Toast, EmptyState, Spinner, ExcelImportButton, useToast,
 } from "./admin/ui";
-import { PlantsPage, ZonesPage, LinesPage, StatusPage } from "./admin/masters";
-import { PokaYokePage, MailConfigPage, SensorHealthPage } from "./admin/pokayoke";
-import { UsersPage, MachinesPage, CameraListPage, DepartmentsPage } from "./admin/org";
-import { BreakdownMailsPage, KpiTargetsPage, CapaSettingsPage, NewRequestsPanel } from "./admin/mail-kpi";
-import {
-  PyManualsPage, BreakdownSlipThresholdPage, SystemMapPage, ReportsPage,
-  OEEAlarmPage, OperatorsPage, ProcessesPage, ManpowerConfigPage,
-  ADMIN_SECTIONS,
-} from "./admin/system";
+// mailconfig.jsx ab sirf Users page ke permission-constants ke liye zinda hai
+// (ROLE_PILL / PAGE_PERM_GROUPS / PERM_LEVELS — org.jsx unhe import karta hai).
+import { UsersPage } from "./admin/org";
+import { KpiTargetsPage } from "./admin/mail-kpi";
+import { ADMIN_SECTIONS } from "./admin/system";
 
 // Render a tab's body.  Centralised so AdminPanel and DepartmentPanel
 // stay perfectly in sync — DepartmentPanel re-uses this same dispatch.
 export function renderAdminTab(sectionKey, tabKey, props) {
   const t = props || {};
   switch (`${sectionKey}/${tabKey}`) {
-    // Production
-    case "production/plants":     return <PlantsPage   {...t} />;
-    case "production/zones":      return <ZonesPage    {...t} />;
-    case "production/lines":      return <LinesPage    {...t} />;
-    case "production/machines":   return <MachinesPage {...t} />;
-    case "production/status":     return <StatusPage   {...t} />;
-    case "production/hourlymail": return <MailConfigPage {...t} kindFilter={["hourly"]} />;
-    case "production/reports":    return <ReportsPage    {...t} />;
-    case "production/oeealarm":   return <OEEAlarmPage   {...t} />;
-    case "production/processes":  return <ProcessesPage  {...t} />;
-    case "production/manpowercfg": return <ManpowerConfigPage {...t} />;
-    // Maintenance — Sensor Health is reachable via Poka Yoke → Sensor
-    // Health sub-tab, intentionally NOT a top-level entry here.
-    case "maintenance/pokayoke":     return <PokaYokePage   {...t} />;
-    case "maintenance/pymanuals":    return <PyManualsPage  {...t} />;
-    case "maintenance/newrequests":  return <NewRequestsPanel {...t} />;
-    case "maintenance/pymail":       return <MailConfigPage {...t} kindFilter={["bypass","health"]} />;
-    case "maintenance/bdmail":       return <BreakdownMailsPage {...t} />;
-    // KPI Target is editable for everyone who can reach the Maintenance
-    // Panel (not just admins), so force write access on this tab even when
-    // the rest of the panel is read-only for the role.
     case "maintenance/kpitarget":    return <KpiTargetsPage  {...t} readOnly={false} />;
-    case "maintenance/capacfg":      return <CapaSettingsPage {...t} />;
-    case "maintenance/slipth":       return <BreakdownSlipThresholdPage {...t} />;
     case "maintenance/pmchecksheet": return <PMCheckSheetAdmin {...t} />;
     case "maintenance/machinedmc":   return <MachineDMCAdmin   {...t} />;
-    // Quality
-    case "quality/pyescalation":     return <BreakdownMailsPage {...t} />;
-    // Admin
-    case "admin/systemmap":   return <SystemMapPage   {...t} />;
-    case "admin/departments": return <DepartmentsPage {...t} />;
     case "admin/users":       return <UsersPage       {...t} />;
-    case "admin/operators":   return <OperatorsPage   {...t} />;
     default: return null;
   }
 }
@@ -77,23 +44,6 @@ function _QualityPlaceholder() {
   );
 }
 
-
-// Legacy ADMIN_TABS export (kept for any external import) — derived from
-// new sections so it stays in sync.  Order matches the original flat list.
-const ADMIN_TABS = [
-  { key: "plants",      label: "Plants",           icon: "⬡" },
-  { key: "zones",       label: "Zones",            icon: "◎" },
-  { key: "lines",       label: "Production Lines", icon: "⬡" },
-  { key: "machines",    label: "Machines",         icon: "⚙" },
-  { key: "pokayoke",    label: "Poka Yoke",        icon: "⚑" },
-  { key: "status",      label: "Status Schema",    icon: "◉" },
-  { key: "departments", label: "Departments",      icon: "🏛" },
-  { key: "users",       label: "Users",            icon: "👥" },
-  { key: "cameras",     label: "Camera List",      icon: "📷" },
-  { key: "mail",        label: "Mail Config",      icon: "📧" },
-  { key: "bdmail",      label: "Breakdown Mails",  icon: "🚨" },
-  { key: "kpitarget",   label: "KPI Targets",      icon: "🎯" },
-];
 
 // Inline shared CSS used by both AdminPanel (full-write) and DepartmentPanel
 // (read-only mirror).  Kept here so the two shells render identically.

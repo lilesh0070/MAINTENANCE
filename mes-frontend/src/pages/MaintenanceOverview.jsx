@@ -3,7 +3,7 @@
  * ───────────────────────────────────────────────────────────────────
  * "Overview" — Tool & Die Maintenance management dashboard.  Dark, at-a-glance
  * view built entirely from OUR data (no dummy numbers):
- *   • KPI tiles  ........ /api/maintenance-kpi/summary   (mes_breakdown_data)
+ *   • KPI tiles  ........ /api/maintenance-kpi/summary   (maintenance_breakdown_data)
  *   • Breakdown trend ... /api/maintenance-kpi/trend
  *   • By zone / machine . /api/maintenance-kpi/breakdown-by?group=zone|machine
  *   • CAPA .............. /api/capa-lb/summary
@@ -393,7 +393,7 @@ export default function MaintenanceOverview() {
           </div>
 
           <div style={{ fontSize: 11, color: "#475569", marginTop: 6 }}>
-            Live from mes_breakdown_data · maintenance_qpr · pm_schedule · maintenance_spare — auto-refresh 15s.
+            Live from maintenance_breakdown_data · maintenance_qpr · pm_schedule · maintenance_spare — auto-refresh 15s.
           </div>
         </div>
       </div>

@@ -3,7 +3,7 @@
  * ───────────────────────────────────────────────────────────────────
  * "ANDON" — standalone Industrial ANDON Management module (sidebar → ANDON).
  * Configured entirely from THIS UI (no source change to add an ESP / department).
- *   • Zone / Line come from the machine master (mes_machines), like every page.
+ *   • Zone / Line come from the machine master (maintenance_machines), like every page.
  *   • ESP32 devices: name · ip · port · zone · line · enable.
  *   • Departments: an editable list (Maintenance/Quality/Production/Store …).
  *   • Output mapping: DO1–DO8 → a department (+ display name / priority / enable),
@@ -80,7 +80,7 @@ export default function AndonSystem() {
   const [msg, setMsg] = useState("");
   const flash = (m) => { setMsg(m); setTimeout(() => setMsg(""), 2500); };
 
-  const [master, setMaster]   = useState([]);       // flat mes_machines rows (zone_name/line_name/machine_no/machine_name)
+  const [master, setMaster]   = useState([]);       // flat maintenance_machines rows (zone_name/line_name/machine_no/machine_name)
   const [depts, setDepts]     = useState([]);
   const [esps, setEsps]       = useState([]);
   const [events, setEvents]   = useState([]);       // live OPEN calls (the board)
@@ -309,7 +309,7 @@ export default function AndonSystem() {
                       {espEdit && <button className="an-btn gh" onClick={() => { setEspEdit(null); setEspForm(blankEsp); }}>Cancel</button>}
                       <button className="an-btn" disabled={!espForm.name.trim() || !espForm.ip.trim()} onClick={saveEsp}>{espEdit ? "Save" : "+ Add ESP"}</button>
                     </div>
-                    {!espZones.length && <div style={{ fontSize:12, color:"#b45309", marginTop:8 }}>No zones in the machine master (mes_machines) yet — zone/line/machine list is empty.</div>}
+                    {!espZones.length && <div style={{ fontSize:12, color:"#b45309", marginTop:8 }}>No zones in the machine master (maintenance_machines) yet — zone/line/machine list is empty.</div>}
                   </div>
                   <div className="an-card">
                     <b style={{ fontSize:14 }}>ESP Devices ({esps.length})</b>

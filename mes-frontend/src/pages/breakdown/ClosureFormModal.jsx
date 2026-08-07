@@ -18,7 +18,7 @@ const fmtErp = (raw) => {
 };
 
 // Manual slip (pickLine) — the ZONE dropdown is restricted to these zones only,
-// in this order.  Values must match the mes_machines master zone_name exactly.
+// in this order.  Values must match the maintenance_machines master zone_name exactly.
 // (Temporary allow-list — add/remove here to change what's offered.)
 const MANUAL_SLIP_ZONES = [
   "SEAT_SLIDER", "RECLINER", "PRESS_SHOP", "THIN_RECLINER", "LOOP_PIPE", "SUB_ASSEMBLY",
@@ -79,9 +79,9 @@ const diffMinsDT = (startDate, startHHMM, endDate, endHHMM) => {
  * filer wants to override.  Everything else is typed by the user.
  *
  * Submitted payload shape.  The collector-driven close stores it in
- * mes_breakdowns (production_data / maintenance_data); the manual New-Slip
- * (pickLine) flow instead flattens it into the standalone mes_breakdown_data
- * table and never touches mes_breakdowns:
+ * the auto slip (production_data / maintenance_data); the manual New-Slip
+ * (pickLine) flow instead flattens it into the standalone maintenance_breakdown_data
+ * table:
  *   {
  *     zone, line, machine_no, machine_name, date,
  *     shift, line_leader_name, model_no, machine_operator_name,
@@ -105,7 +105,7 @@ const diffMinsDT = (startDate, startHHMM, endDate, endHHMM) => {
  * Auto-fill behaviour:
  *   • ZONE / LINE / DATE / SHIFT / B/D times / Down time
  *     → from the breakdown record itself.
- *   • MACHINE NAME ← lookup in mes_machines by (zone, line, machine_no).
+ *   • MACHINE NAME ← lookup in maintenance_machines by (zone, line, machine_no).
  *     We pull the machine list once on open via
  *     /api/machines/by-line/{line_id} and match client-side, so typing
  *     is instantaneous and works offline of the lookup endpoint after
@@ -144,9 +144,31 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   // (Previously the collector-stamped times/dates were always-locked; they
   // are now editable + saved, defaulting to the collector's values.)
   const LOCKED_FIELDS = new Set([]);
+
+  // AUTO (ANDON se bani) slip ke wo khaane jo ESP ke ON / ACK / OFF se aate
+  // hain — yani hardware ka naapa hua sach.  Maintenance fill me poora form
+  // editable hota hai, isliye ye galti se badal jaate the (aur time/date
+  // badalte hi RESPONSE TIME + M/C DOWN TIME bhi dobara gine jaate the).
+  // AUTO slip me ab ye LOCK hain — na form me badal sakte hain, na save par
+  // bheje jaate hain.
+  //
+  // RESPONSE TIME / M/C DOWN TIME UI me pehle se read-only the, par form unhe
+  // apne aap se dobara gin kar bhej deta tha — power-cut wali slip me ANDON ka
+  // asli naapa hua downtime isse mit sakta tha.  Ab wo bhi nahi bheje jaate.
+  //
+  // MANUAL slip me KUCH NAHI badla — wahan koi ANDON source hi nahi hai, to
+  // `isAutoSlip` false rehta hai aur saare khaane pehle jaise editable hain.
+  const isAutoSlip = !!ticket?.auto_slip;
+  const AUTO_LOCKED_FIELDS = new Set([
+    "bd_start_date", "bd_end_date",                      // ON ki date / OFF ki date
+    "bd_start_time", "bd_received_time", "bd_ok_time",   // ON / ACK / OFF ka waqt
+    "response_time_minutes", "mc_down_time_minutes",     // inhi se gine gaye totals
+  ]);
+
   const fieldEditable = (key) => {
     if (readOnly) return false;
     if (LOCKED_FIELDS.has(key)) return false;   // collector-stamped times/dates stay locked
+    if (isAutoSlip && AUTO_LOCKED_FIELDS.has(key)) return false;  // ANDON ki date — na chhedo
     if (isProduction)  return PROD_FIELDS.has(key);
     // Maintenance-driven fill = the WHOLE slip is editable (both the upper
     // Production half + the Maintenance half), so a single user can fill it.
@@ -157,11 +179,6 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   const [data, setData] = useState({});
   const [saving, setSaving] = useState(false);
   const [machines, setMachines] = useState([]);  // [{serial_no, machine_no(code), machine_name}]
-  // Manual "New Break Down Slip" (opened blank from the sidebar): ZONE / LINE /
-  // MACHINE NO. / MACHINE NAME all come from the Machine Master (mes_machines)
-  // via /api/machines/ — the SAME source every other Zone/Line/Machine filter
-  // in the app uses.  The slip saves to the standalone mes_breakdown_data table,
-  // so no mes_lines.line_id is needed.
   const [masterRows, setMasterRows]     = useState([]);
   const [spareMaster, setSpareMaster]   = useState([]);   // spare picker (maintenance_spare)
 
@@ -193,8 +210,16 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
     const _sd  = prod.bd_start_date    ?? legacy.bd_start_date    ?? fmtDate(start);
     // Default END DATE to the START DATE (never blank) so the down-time is
     // always DATE-AWARE and END ≥ START holds from the start — the user just
-    // bumps END to the next day for an overnight breakdown.  (Both slips.)
-    const _ed  = prod.bd_end_date      ?? legacy.bd_end_date      ?? (fmtDate(end) || _sd);
+    // bumps END to the next day for an overnight breakdown.  (Manual slip.)
+    //
+    // AUTO slip me ye fallback NAHI lagta.  Slip ACK par ban jaati hai, us waqt
+    // call abhi chalu hoti hai aur `bd_end_date` DB me NULL hoti hai — fallback
+    // us khaane me START DATE ki nakal bhar deta tha.  Call band hote hi ANDON
+    // asli end date daal deta, aur user ko wahi "date apne aap badal gayi"
+    // dikhta tha.  Ab chalu call me khaana KHALI rehta hai (= abhi khatam nahi
+    // hua) aur band hone par sirf EK baar asli date aati hai.
+    const _ed  = prod.bd_end_date      ?? legacy.bd_end_date
+                 ?? (ticket.auto_slip ? "" : (fmtDate(end) || _sd));
 
     // Auto-locked timestamps always sourced from collector — never from
     // any saved blob — so they reflect the live record.
@@ -263,7 +288,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   // manual New-Slip flow saves to a standalone table and needs no line_id.
   const effLineId = ticket?.line_id ?? null;
 
-  // Machine Master (mes_machines) — HAR mode me chahiye.
+  // Machine Master (maintenance_machines) — HAR mode me chahiye.
   // Pehle ye sirf manual (pickLine) mode me aata tha, isliye AUTO slip kholne
   // par MACHINE NO. ka dropdown KHALI reh jaata tha aur uska bhara hua value
   // (jaise YHB_SS_08) dikhta hi nahi tha.  Ab hamesha uthate hain — wahi source
@@ -310,7 +335,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   }, [ticket?.line_id, token, pickLine]);
 
   // Manual (pickLine) dropdown option lists — all sourced from the Machine
-  // Master (mes_machines): distinct ZONE → LINE in that zone → MACHINE NO. for
+  // Master (maintenance_machines): distinct ZONE → LINE in that zone → MACHINE NO. for
   // that (zone, line).  MACHINE NAME auto-fills from the picked machine row.
   const zoneOptions = useMemo(() => {
     // Only the allow-listed zones that actually exist in the master, in the
@@ -399,7 +424,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   });
 
   // Machine No. is a dropdown of this (zone, line)'s machines (from the Machine
-  // Master, mes_machines).  Picking a Machine No. auto-fills the Machine Name
+  // Master, maintenance_machines).  Picking a Machine No. auto-fills the Machine Name
   // from the same master row.  No Serial No. needed.
   const onPickMachine = (mno) => {
     // Galti se poori machine na mit jaye: agar list hi khali ho ya user ne
@@ -479,8 +504,14 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
     try {
       // In the maintenance fill the whole slip is editable, so also send the
       // Production-half fields the user filled (saved into production_data).
+      // AUTO slip me B/D START/END DATE bheji hi nahi jaati — backend "jo form
+      // ne bheja wahi update karo" par chalta hai, to na bhejne ka matlab hai
+      // ANDON ki asli date row me jyon ki tyon rehti hai.  Ye sirf UI lock se
+      // zyada pukhta hai: call agar form khula hone ke DAURAAN band ho jaye, tab
+      // bhi form ki purani (khali/stale) date DB ki nayi date ko nahi mitaayegi.
       const prodExtra = isMaintenance
-        ? Object.fromEntries(Object.entries(data).filter(([k]) => PROD_FIELDS.has(k)))
+        ? Object.fromEntries(Object.entries(data).filter(
+            ([k]) => PROD_FIELDS.has(k) && !(isAutoSlip && AUTO_LOCKED_FIELDS.has(k))))
         : null;
       await onSave(subsetForPhase(), phase, prodExtra, effLineId);
     } finally { setSaving(false); }
@@ -711,7 +742,9 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
             <BdsCell label="MACHINE OPERATOR NAME"
                      value={data.machine_operator_name} readOnly={!fieldEditable("machine_operator_name")}
                      onChange={v => set("machine_operator_name", v)}/>
-            <BdsCell label="MACHINE NAME"
+            {/* wrap: lamba machine naam (jaise "E_Ring,Lighter protector Assy
+                & Pop Gun Riveter") input me kat jaata tha — ab poora dikhta hai */}
+            <BdsCell label="MACHINE NAME" wrap
                      value={data.machine_name}        readOnly
                      onChange={() => {}}/>
             <BdsCell label="MODEL NO."
@@ -745,7 +778,10 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
               SAME format for BOTH the manual (pickLine) and the auto/dashboard
               slip: auto RESPONSE TIME (Start→Received), auto DATE-AWARE M/C DOWN
               TIME (Start→OK), and a FREQUENCY field.  Any time/date change
-              re-computes the two auto totals via setTime / setStartDate. */}
+              re-computes the two auto totals via setTime / setStartDate.
+              AUTO (ANDON) slip me time + date dono LOCK hain (AUTO_LOCKED_FIELDS)
+              — wahan ye khaane ESP se aate hain, isliye kuch re-compute hi nahi
+              hota.  FREQUENCY dono slip me editable hai. */}
           <div className="bds-grid bds-grid-3">
             <BdsCell label="B/D START TIME" type="time"
                      value={data.bd_start_time}    readOnly={!fieldEditable("bd_start_time")}
@@ -915,9 +951,18 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                                list={k === "spare_name" ? "bds-spare-names" : undefined}
                                maxLength={k === "spare_cnmm_no" ? 8 : undefined}
                                placeholder={k === "spare_name" ? "Pick or type" : k === "spare_cnmm_no" ? "ABCD1234" : undefined}
+                               /* SPARE NAME / MODEL bhi BADE AKSHAR me (baaki
+                                  slip jaisa).  QUANTITY number hai aur ERP
+                                  number `fmtErp` me pehle se uppercase hota
+                                  hai, isliye unhe chhoda.  Spare ka master se
+                                  milaan case dekhe bina hota hai, to naam
+                                  uppercase karne se picker nahi bigadta. */
                                onChange={(e) => k === "spare_name"
-                                 ? onSpareName(i, e.target.value)
-                                 : setSpare(i, k, k === "spare_cnmm_no" ? fmtErp(e.target.value) : e.target.value)} />
+                                 ? onSpareName(i, e.target.value.toUpperCase())
+                                 : setSpare(i, k,
+                                     k === "spare_cnmm_no" ? fmtErp(e.target.value)
+                                   : k === "spare_qty"     ? e.target.value
+                                                           : e.target.value.toUpperCase())} />
                       </div>
                     ))}
                     {spEdit && (
@@ -969,9 +1014,10 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                     the JSONB blob, just no longer displayed). */}
                 <div className="bds-sign-line">
                   <span>NAME :-</span>
+                  {/* naam bhi BADE AKSHAR me — baaki slip jaisa hi */}
                   <input type="text" disabled={!fieldEditable(key)}
                          value={obj?.name || ""}
-                         onChange={e => setSub(key, "name", e.target.value)}/>
+                         onChange={e => setSub(key, "name", e.target.value.toUpperCase())}/>
                 </div>
               </div>
             ))}
@@ -993,7 +1039,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                 than 24h.  Available in maintenance fill / view modes; the
                 Quality user takes it from there. */}
             {/* AUTO slip par ye button NAHI dikhega: Deviation ka `breakdown_id`
-                `mes_breakdowns` ka id hota hai, jabki auto slip ka id apni alag
+                purane ticket ka id hota tha, jabki auto slip ka id apni alag
                 table ka hai — dono id-space alag hain, to bhejne par deviation
                 kisi anjaan purane breakdown se jud jaata.  Auto slip ke liye
                 deviation ka apna raasta banega. */}
@@ -1260,7 +1306,12 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
 }
 
 /* ── Single label+input cell (for the 3×3 header & time grids) ──── */
-function BdsCell({ label, value, type = "text", readOnly, onChange, options, min }) {
+function BdsCell({ label, value, type = "text", readOnly, onChange, options, min, wrap }) {
+  // Jahan LETTER type hote hain wahan sab kuch BADE AKSHAR me — slip ek
+  // official document hai, isliye ek jaisa dikhna chahiye.  Date / time /
+  // number par nahi lagate (unme akshar hote hi nahi, aur `toUpperCase`
+  // browser ke date-picker ki value bigaad sakta hai).
+  const up = (v) => (type === "text" && typeof v === "string" ? v.toUpperCase() : v);
   return (
     <div className="bds-cell">
       <div className="bds-cell-label">{label} :-</div>
@@ -1271,14 +1322,38 @@ function BdsCell({ label, value, type = "text", readOnly, onChange, options, min
             tha.  Ab list khali ho to saada input dikhata hai — value kabhi
             gayab nahi hoti. */}
         {options?.length ? (
+          /* `height:100%` + wahi padding jo input ka hai — warna dropdown apni
+             chhoti height le kar khaane me UPAR chipak jaata tha (chuni hui
+             machine upar dikhti thi).  Ab poora khaana bharta hai aur text
+             beech me aata hai. */
           <select value={value || ""} disabled={readOnly}
                   onChange={(e) => onChange?.(e.target.value)}
-                  style={{ width: "100%", border: "none", background: "transparent",
-                           font: "inherit", color: "inherit", outline: "none",
+                  style={{ width: "100%", height: "100%", minHeight: 34,
+                           padding: "6px 10px", boxSizing: "border-box",
+                           border: "none", background: "transparent",
+                           font: "inherit", fontSize: 12, fontWeight: 600,
+                           color: "#0f172a", outline: "none",
                            cursor: readOnly ? "default" : "pointer" }}>
             <option value="">— select —</option>
             {options.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
+        ) : wrap ? (
+          /* Lamba naam (jaise MACHINE NAME) <input> me kat jaata tha — input
+             text ko wrap nahi karta.  Read-only khaano ke liye saada div
+             dikhate hain jo apne aap agli line me chala jaata hai, to poora
+             naam dikhta hai.
+
+             `overflowWrap: anywhere` MAT lagana — wo min-content ko 1 akshar
+             tak gira deta hai, jisse ye flex khaana bahut patla ho jaata hai
+             aur naam 600+ px lambi patli column ban jaata hai.  `break-word`
+             min-content nahi badalta, isliye chaudai theek rehti hai aur naam
+             sirf 2-3 line me wrap hota hai. */
+          <div style={{ padding: "6px 10px", fontSize: 12, fontWeight: 600,
+                        color: "#0f172a", lineHeight: 1.35,
+                        whiteSpace: "normal", overflowWrap: "break-word",
+                        display: "flex", alignItems: "center", minHeight: 34 }}>
+            {value ?? ""}
+          </div>
         ) : (
           <input type={type}
                  /* `value || ""` likhne par ZERO bhi khali dikhta tha (0 JS me
@@ -1287,7 +1362,7 @@ function BdsCell({ label, value, type = "text", readOnly, onChange, options, min
                  value={value ?? ""}
                  disabled={readOnly}
                  min={min}
-                 onChange={(e) => onChange?.(e.target.value)}/>
+                 onChange={(e) => onChange?.(up(e.target.value))}/>
         )}
       </div>
     </div>
@@ -1300,10 +1375,12 @@ function BdsRow({ label, value, readOnly, onChange }) {
     <div className="bds-row">
       <div className="bds-row-label">{label}</div>
       <div className="bds-row-input">
+        {/* PROBLEM / ACTION TAKEN / ATTENDED BY — type karte hi BADE AKSHAR
+            me badal jaata hai, taaki poori slip ek jaisi dikhe. */}
         <textarea value={value || ""}
                   disabled={readOnly}
                   rows={2}
-                  onChange={(e) => onChange?.(e.target.value)}/>
+                  onChange={(e) => onChange?.(e.target.value.toUpperCase())}/>
       </div>
     </div>
   );

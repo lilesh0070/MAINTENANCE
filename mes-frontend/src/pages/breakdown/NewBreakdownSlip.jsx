@@ -7,8 +7,8 @@
  * (pickLine mode of ClosureFormModal).
  *
  * On Save the whole slip is stored as a STANDALONE row in
- * `mes_breakdown_data` (POST /api/breakdown-slips/).  This is fully
- * decoupled — it does NOT create an mes_breakdowns record, does not touch
+ * `maintenance_breakdown_data` (POST /api/breakdown-slips/).  This is fully
+ * decoupled — it does not touch
  * the collector / ANDON / BD History, and keeps no link back to them.
  * ─────────────────────────────────────────────────────────────────── */
 import { useState } from "react";

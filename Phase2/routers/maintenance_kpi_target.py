@@ -8,7 +8,7 @@ set by how deep the selection goes:
     LINE     →  zone_name + line_name
     MACHINE  →  zone_name + line_name + serial_no   (machine_no = code, snapshot)
 
-Zone / line / serial_no all come from the Machine Master List (mes_machines).
+Zone / line / serial_no all come from the Machine Master List (maintenance_machines).
 A machine is identified per line by its integer `serial_no`; `machine_no`
 holds the master's machine **code** (e.g. Y17_SS_01) as a display snapshot.
 Every row is keyed by a financial year (fy).

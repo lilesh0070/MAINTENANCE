@@ -4,7 +4,7 @@
  * Two tabs (both view + upload a PDF manual):
  *
  *   1. MACHINE MANUAL    — pick Zone → Line → Machine No / Machine Name
- *                          (all from the Machine Master `mes_machines`).
+ *                          (all from the Machine Master `maintenance_machines`).
  *   2. EQUIPMENT MANUAL  — search an equipment by Name + Model.
  *
  * From the Maintenance Panel an admin can upload/update the manual.
@@ -44,7 +44,7 @@ function Fld({ label, children }) {
 export default function MachineManual() {
   const { token, theme, user, isAdmin } = useAuth();
   const nav = useNavigate();
-  const [master, setMaster] = useState([]);   // Machine Master List (mes_machines)
+  const [master, setMaster] = useState([]);   // Machine Master List (maintenance_machines)
 
   const [mode, setMode] = useState("machine");   // "machine" | "equipment"
 

@@ -3,7 +3,7 @@
  * ───────────────────────────────────────────────────────────────────
  * CAPA (Corrective Action / Preventive Action) for Maintenance.
  *
- * Original page format — driven by the MES Breakdown Log (mes_breakdown_data,
+ * Original page format — driven by the MES Breakdown Log (maintenance_breakdown_data,
  * the SAME source as Maintenance KPI / BD History / BD Analysis):
  *   • KPI tiles (Open / Closed / Total CAPA)
  *   • Filter bar
@@ -90,7 +90,7 @@ export default function MaintenanceCAPA() {
     return () => window.removeEventListener("focus", h);
   }, [load]);
 
-  // FY list + Machine Master List (mes_machines — the single master for
+  // FY list + Machine Master List (maintenance_machines — the single master for
   // every filter across the app).
   const [master, setMaster] = useState([]);
   useEffect(() => {

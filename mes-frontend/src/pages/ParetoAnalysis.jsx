@@ -13,12 +13,12 @@
  *
  * Same filter bar as the other Breakdown pages (FY · Month · Zone ·
  * Line · Machine No · Machine Name — options from the Machine Master
- * List `mes_machines`).  Cumulative % is always computed over ALL the
+ * List `maintenance_machines`).  Cumulative % is always computed over ALL the
  * filtered machines, so "Top 20" ending at e.g. 74% reads as "these 20
  * machines cause 74% of the downtime".
  *
  * Data: GET /api/maintenance-kpi/breakdown-by?group=machine
- *       (mes_breakdown_data — the same source as Maintenance KPI).
+ *       (maintenance_breakdown_data — the same source as Maintenance KPI).
  * Routing: /maintenance-breakdown/pareto-analysis
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -62,7 +62,7 @@ export default function ParetoAnalysis() {
   const nav = useNavigate();
   // ── the single top filter bar (same as the other Breakdown pages) ──
   const [years, setYears]   = useState([]);
-  const [master, setMaster] = useState([]);   // Machine Master List rows (mes_machines)
+  const [master, setMaster] = useState([]);   // Machine Master List rows (maintenance_machines)
   const [fFy, setFFy]       = useState("");
   const [fMonth, setFMonth] = useState("");
   const [fZone, setFZone]   = useState("SEAT_SLIDER");   // default zone (user can switch to All / any other)

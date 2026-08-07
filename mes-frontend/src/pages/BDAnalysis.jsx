@@ -1,10 +1,10 @@
 /* ───────────────────────────────────────────────────────────────────
  * BDAnalysis.jsx
  * ───────────────────────────────────────────────────────────────────
- * "BD Analysis" — drill-down breakdown analysis over mes_breakdown_data.
+ * "BD Analysis" — drill-down breakdown analysis over maintenance_breakdown_data.
  *
  *   filter bar (FY · Month · Zone · Line · Machine No · Machine Name —
- *   options from the Machine Master List `mes_machines`)
+ *   options from the Machine Master List `maintenance_machines`)
  *      ↓
  *   2 metric buttons: TOTAL BREAKDOWN HOURS | TOTAL BREAKDOWN FREQUENCY
  *      ↓
@@ -14,7 +14,7 @@
  *      line selected      → MACHINE-wise (machine_no of that line;
  *                           picking a Machine No / Name highlights its bar)
  *
- * Data: GET /api/maintenance-kpi/breakdown-by (mes_breakdown_data).
+ * Data: GET /api/maintenance-kpi/breakdown-by (maintenance_breakdown_data).
  * Routing: /maintenance-breakdown/bd-analysis
  */
 import { useEffect, useMemo, useState } from "react";
@@ -58,7 +58,7 @@ export default function BDAnalysis() {
   const nav = useNavigate();
   // ── the single top filter bar ──
   const [years, setYears]   = useState([]);
-  const [master, setMaster] = useState([]);   // Machine Master List rows (mes_machines)
+  const [master, setMaster] = useState([]);   // Machine Master List rows (maintenance_machines)
   const [fFy, setFFy]       = useState("");
   const [fMonth, setFMonth] = useState("");
   const [fZone, setFZone]   = useState("");

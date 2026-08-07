@@ -84,7 +84,6 @@ export default function SlideNav() {
           { key: "maintenance-historical",  label: "Historical Data",       icon: "/historical-icon.png", iconImg: true, path: "/maintenance-historical" },
           { key: "maintenance-capa",        label: "CAPA",                  icon: "🛡",                   path: "/maintenance-capa" },
           { key: "maintenance-deviations",  label: "Deviations",            icon: "⚠",                    path: "/maintenance-deviations" },
-          { key: "maintenance-poka-yoke",   label: "Poka Yoke",             icon: "🔍",                   path: "/maintenance-poka-yoke" },
           { key: "maintenance-logbook",     label: "Log Book",              icon: "📒",                   path: "/maintenance-logbook" },
           { key: "maintenance-history-card", label: "History Card",         icon: "🗂",                   path: "/maintenance-history-card" },
           { key: "maintenance-pm",          label: "Preventive Maint.",     icon: "🛠",                   path: "/maintenance-pm" },
@@ -221,12 +220,6 @@ export default function SlideNav() {
           path:   "/maintenance-deviations",
         });
         workItems.push({
-          key:    "maintenance-poka-yoke",
-          label:  "Poka Yoke",
-          icon:   "🔍",
-          path:   "/maintenance-poka-yoke",
-        });
-        workItems.push({
           key:    "maintenance-logbook",
           label:  "Log Book",
           icon:   "📒",
@@ -321,7 +314,6 @@ export default function SlideNav() {
     if (path === "/maintenance-historical")  return location.pathname.startsWith("/maintenance-historical");
     if (path === "/maintenance-capa")        return location.pathname.startsWith("/maintenance-capa");
     if (path === "/maintenance-deviations")  return location.pathname.startsWith("/maintenance-deviations");
-    if (path === "/maintenance-poka-yoke")   return location.pathname.startsWith("/maintenance-poka-yoke");
     if (path === "/process-graphs")          return location.pathname.startsWith("/process-graphs");
     if (path === "/quality-dashboard")       return location.pathname.startsWith("/quality-dashboard");
     if (path === "/quality-deviations")      return location.pathname.startsWith("/quality-deviations");

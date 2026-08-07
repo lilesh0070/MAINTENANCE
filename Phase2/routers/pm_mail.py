@@ -25,7 +25,7 @@ from fastapi import APIRouter, Depends, Query
 
 from database import get_conn, dict_cursor
 from auth import get_current_user
-from routers.breakdown_mail import _send_email, _split_addrs
+from routers.mailer import _send_email, _split_addrs
 
 mail_router = APIRouter(prefix="/api/pm", tags=["pm-mail"])
 

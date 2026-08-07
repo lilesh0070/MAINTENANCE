@@ -3,7 +3,7 @@
  * ───────────────────────────────────────────────────────────────────
  * "History Card" — zone-wise machine history MERGED from BOTH the Log Book
  * (maintenance_logbook_db_history) and the Manual Break Down Slip
- * (mes_breakdown_data).  Pick a Zone tab to see every entry for that zone from
+ * (maintenance_breakdown_data).  Pick a Zone tab to see every entry for that zone from
  * both registers in one detailed table, tagged by Source, with search + filters.
  *
  * Source: /api/breakdown-logbook/combined (UNION of both tables).
@@ -49,7 +49,7 @@ function fyMonths(fy) {
   return out;
 }
 
-// Table columns (in order) — the FULL Manual Break Down Slip (mes_breakdown_data)
+// Table columns (in order) — the FULL Manual Break Down Slip (maintenance_breakdown_data)
 // column set.  Log Book rows only carry a subset; the slip-only columns come back
 // blank for them.  wrap = allow multi-line text; date = format YYYY-MM-DD.
 const COLS = [
@@ -112,7 +112,7 @@ export default function HistoryCard() {
   }, [token]);
   useEffect(() => { load(); }, [load]);
 
-  // FY list + Machine Master List (mes_machines — the single master for
+  // FY list + Machine Master List (maintenance_machines — the single master for
   // every filter across the app; zone tabs come from it too).
   const [master, setMaster] = useState([]);
   useEffect(() => {

@@ -6,7 +6,7 @@ UI (no source changes to add an ESP or a department).
 
 Design (per requirement):
   • Zone / Line are NOT stored here — they come from the machine master
-    (`mes_machines`), exactly like every other picker in the app.  An ESP just
+    (`maintenance_machines`), exactly like every other picker in the app.  An ESP just
     records the zone + line NAME it sits on.
   • Departments are a small editable list (Maintenance / Quality / Production /
     Store …) used by the output mapping; all time calculations are per-department.
@@ -31,7 +31,7 @@ Event model — PUSH, not poll:
 
 Endpoints (prefix /api/andon)
 -----------------------------
-GET             /masters                    distinct zone → lines from mes_machines
+GET             /masters                    distinct zone → lines from maintenance_machines
 GET/POST/PUT/DELETE  /departments · /esp-devices
 GET/PUT         /outputs/default            shared DO1–DO8 template
 GET/PUT         /esp-devices/{id}/outputs   this ESP's DO1–DO8 (default-filled)
@@ -562,9 +562,9 @@ def _ensure_tables():
                 name        VARCHAR(160) NOT NULL,
                 ip          VARCHAR(60)  NOT NULL,
                 port        INTEGER      DEFAULT 80,
-                zone         VARCHAR(120),          -- from mes_machines master
-                line         VARCHAR(120),          -- from mes_machines master
-                machine_no   VARCHAR(60),           -- from mes_machines master
+                zone         VARCHAR(120),          -- from maintenance_machines master
+                line         VARCHAR(120),          -- from maintenance_machines master
+                machine_no   VARCHAR(60),           -- from maintenance_machines master
                 machine_name VARCHAR(160),          -- auto-filled from machine_no
                 description  TEXT,
                 enabled      BOOLEAN DEFAULT TRUE,
@@ -708,15 +708,15 @@ def _ensure_tables():
 
 
 # ════════════════════════════════════════════════════════════════════
-#  MASTERS — zone / line come straight from mes_machines
+#  MASTERS — zone / line come straight from maintenance_machines
 # ════════════════════════════════════════════════════════════════════
 @router.get("/masters")
 def masters(user=Depends(get_current_user)):
-    """Distinct zone → lines from the machine master (mes_machines), so the ESP
+    """Distinct zone → lines from the machine master (maintenance_machines), so the ESP
     picker matches every other page in the app."""
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("""SELECT DISTINCT zone_name, line_name FROM mes_machines
+        cur.execute("""SELECT DISTINCT zone_name, line_name FROM maintenance_machines
                         WHERE COALESCE(is_active, TRUE) AND zone_name IS NOT NULL
                         ORDER BY zone_name, line_name""")
         rows = cur.fetchall()
@@ -1192,7 +1192,7 @@ def live_events(user=Depends(get_current_user)):
 def dashboard_board(user=Depends(get_current_user)):
     """Maintenance Dashboard ke ANDON table ke liye — SIRF abhi chalu calls.
 
-    Dashboard pehle `/api/breakdowns/active` (mes_breakdowns) se data leta tha.
+    Dashboard ka live data yahin se aata hai.
     Ab wahi table ESP ke asli ANDON calls dikhata hai. Dikhne ka format wahi
     purana hai, isliye yahan fields bhi wahi naam se bhejte hain jo
     AndonTable.jsx padhta hai:
@@ -1233,16 +1233,6 @@ def dashboard_board(user=Depends(get_current_user)):
         """)
         rows = cur.fetchall()
 
-        # Dashboard ke 4 stat cards — ye bhi ab ANDON se, mes_breakdowns se NAHI.
-        #   active   : abhi chalu calls
-        #   awaiting : chalu hai par abhi tak acknowledge nahi hua (jawab ka intezaar)
-        #   today    : IS PLANT-DIN ke calls (chalu + band, dono)
-        #   longest  : sabse lambe chalu call ka abhi tak ka time (seconds)
-        #
-        # PLANT-DIN = subah 07:00 se AGLE din subah 06:30 tak (A shift 07:00 se,
-        # B shift raat bhar chal kar 06:30 par khatam).  Isliye "aaj" ka matlab
-        # aadhi raat se nahi — warna raat wali B-shift do dino me bat jaati.
-        # Abhi 07:00 se pehle hain to hum ab bhi KAL wale plant-din me hain.
         day_start = (
             "CASE WHEN NOW()::time >= TIME '07:00' "
             "     THEN CURRENT_DATE + TIME '07:00' "

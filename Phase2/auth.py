@@ -98,7 +98,7 @@ def get_user_from_db(username: str) -> Optional[dict]:
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute(
-            "SELECT * FROM mes_admin WHERE username = %s",
+            "SELECT * FROM maintenance_users WHERE username = %s",
             (username,)
         )
         return cur.fetchone()
@@ -204,18 +204,18 @@ def login(form: OAuth2PasswordRequestForm = Depends()):
 
     # Update last_login + write AUTH_LOGIN audit row in one round-trip
     # 2026-05-18 — Operator audit-log spec: every successful login lands
-    # in mes_audit_log so the "every user · last login" top card on the
+    # in maintenance_audit_log so the "every user · last login" top card on the
     # Audit page and the per-user activity trail both work.  user_id +
     # username columns were added in the same release.
     with get_conn() as conn:
         c = conn.cursor()
         c.execute(
-            "UPDATE mes_admin SET last_login = NOW() WHERE username = %s",
+            "UPDATE maintenance_users SET last_login = NOW() WHERE username = %s",
             (form.username,)
         )
         try:
             c.execute(
-                """INSERT INTO mes_audit_log
+                """INSERT INTO maintenance_audit_log
                        (action, entity_type, entity_id, details,
                         user_id, username)
                    VALUES (%s, %s, %s, %s, %s, %s)""",
@@ -250,13 +250,13 @@ def change_password(
     new_hash = hash_password(body["new_password"])
     with get_conn() as conn:
         conn.cursor().execute(
-            "UPDATE mes_admin SET password_hash = %s WHERE username = %s",
+            "UPDATE maintenance_users SET password_hash = %s WHERE username = %s",
             (new_hash, user["username"])
         )
         # Audit-trail
         try:
             conn.cursor().execute(
-                """INSERT INTO mes_audit_log
+                """INSERT INTO maintenance_audit_log
                        (action, entity_type, entity_id, details,
                         user_id, username)
                    VALUES (%s, %s, %s, %s, %s, %s)""",
@@ -278,25 +278,14 @@ def me(user=Depends(get_current_user)):
     Also returns the explicit per-page permission map so AuthContext's
     canAccess() / canWrite() can honor admin-configured overrides
     without an extra round-trip on every page load."""
-    dept_id   = user.get("department_id")
-    dept_name = None
-    dept_slug = None
     permissions = {}    # { page_key: perm_level }
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        if dept_id:
-            cur.execute("SELECT name, slug FROM mes_departments WHERE id = %s",
-                        (dept_id,))
-            r = cur.fetchone()
-            if r:
-                dept_name = r["name"]
-                dept_slug = r["slug"]
-        # Permissions table may not exist yet — wrap in try/except so
-        # /me never blows up on a fresh install.
+        # Permissions table naye install par shayad na ho — /me kabhi na fate.
         try:
             cur.execute("""
                 SELECT page_key, perm_level
-                  FROM mes_user_page_permissions
+                  FROM maintenance_user_permissions
                  WHERE user_id = %s
             """, (user["id"],))
             for row in cur.fetchall():
@@ -307,9 +296,6 @@ def me(user=Depends(get_current_user)):
         "id":              user["id"],
         "username":        user["username"],
         "role":            user["role"],
-        "department_id":   dept_id,
-        "department_name": dept_name,
-        "department_slug": dept_slug,
         "last_login":      user["last_login"],
         "created_at":      user["created_at"],
         "permissions":     permissions,

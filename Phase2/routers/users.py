@@ -1,16 +1,21 @@
 """
 routers/users.py
 ================
-User management for MES platform (admin only).
+User management (admin only).
+
+Tables:
+  maintenance_users              login — username / password_hash / role
+  maintenance_user_permissions   per-page access (page_key -> perm_level)
 
 Roles:
   admin        — full power
-  plant_head   — admin-equivalent (same access as admin)
-  department   — generic department user; the specific department is
-                 stored in `department_id` (FK → mes_departments).
-                 The slide-nav and access checks key off of that row.
-  production   — production team user (read + import + historical)
-  operator     — line operator (dashboard only, with assigned lines)
+  plant_head   — admin-equivalent
+  production   — read + import + historical
+  operator     — line operator
+
+Kis user ko kaunsa page dikhega aur wo likh payega ya nahi, ye poori tarah
+`maintenance_user_permissions` tay karti hai — frontend ka `canAccess()` /
+`canWrite()` isi map par chalta hai (`/api/auth/me` se aata hai).
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,168 +27,80 @@ from auth import require_admin, hash_password
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
-
-VALID_ROLES = {"admin", "plant_head", "department", "production", "operator"}
+VALID_ROLES = {"admin", "plant_head", "production", "operator"}
 
 
 class UserCreate(BaseModel):
-    username:      str
-    password:      str
-    role:          str                       # see VALID_ROLES
-    department_id: Optional[int] = None      # required iff role == 'department'
+    username: str
+    password: str
+    role:     str = "production"
 
 
 class UserUpdate(BaseModel):
-    role:          Optional[str] = None
-    department_id: Optional[int] = None      # send to change; null clears it
+    role: Optional[str] = None
 
 
 def _validate_role(role: Optional[str]) -> None:
     if role is not None and role not in VALID_ROLES:
-        raise HTTPException(400, f"Invalid role. Must be one of: {sorted(VALID_ROLES)}")
-
-
-def _check_department_id(department_id: Optional[int]) -> None:
-    """If a department_id is supplied, make sure it actually exists."""
-    if department_id is None:
-        return
-    with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT 1 FROM mes_departments WHERE id = %s", (department_id,))
-        if cur.fetchone() is None:
-            raise HTTPException(400, f"department_id={department_id} does not exist")
+        raise HTTPException(400, f"role must be one of {sorted(VALID_ROLES)}")
 
 
 @router.get("/")
 def list_users(admin=Depends(require_admin)):
-    """List all users (admin only).  Joins department row so the UI can
-    render the department name + slug without an extra round-trip."""
+    """Saare users (admin only)."""
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("""
-            SELECT u.id, u.username, u.role, u.last_login, u.created_at,
-                   u.department_id,
-                   d.name AS department_name,
-                   d.slug AS department_slug
-              FROM mes_admin u
-              LEFT JOIN mes_departments d ON d.id = u.department_id
-             ORDER BY u.id
+            SELECT id, username, role, full_name, is_active, last_login, created_at
+              FROM maintenance_users
+             ORDER BY username
         """)
         return cur.fetchall()
 
 
 @router.post("/", status_code=201)
 def create_user(body: UserCreate, admin=Depends(require_admin)):
+    """Naya user banao."""
     _validate_role(body.role)
-    # `department_id` is meaningful only when role='department'.  Strip it
-    # for other roles so a stray value doesn't leak through.
-    dept_id = body.department_id if body.role == "department" else None
-    if body.role == "department" and dept_id is None:
-        raise HTTPException(400, "Department user must have department_id set")
-    _check_department_id(dept_id)
-
-    password_hash = hash_password(body.password)
     with get_conn() as conn:
-        cur = conn.cursor()
-        try:
-            cur.execute("""
-                INSERT INTO mes_admin (username, password_hash, role, department_id)
-                VALUES (%s, %s, %s, %s)
-                RETURNING id
-            """, (body.username, password_hash, body.role, dept_id))
-            user_id = cur.fetchone()[0]
-            conn.commit()
-        except Exception as e:
-            conn.rollback()
-            raise HTTPException(400, f"Create failed (username conflict?): {e}")
-    return {"id": user_id, "username": body.username, "role": body.role,
-            "department_id": dept_id}
+        cur = dict_cursor(conn)
+        cur.execute("SELECT 1 FROM maintenance_users WHERE username = %s", (body.username,))
+        if cur.fetchone():
+            raise HTTPException(400, "Username already exists")
+        cur.execute("""
+            INSERT INTO maintenance_users (username, password_hash, role)
+            VALUES (%s, %s, %s)
+            RETURNING id, username, role, is_active, created_at
+        """, (body.username, hash_password(body.password), body.role))
+        row = cur.fetchone()
+        conn.commit()
+        return row
 
 
 @router.put("/{user_id}/role")
-def update_user_role(user_id: int, body: UserUpdate,
-                     admin=Depends(require_admin)):
-    """Patch role and/or department_id.  Endpoint name kept as `/role`
-    for backward compatibility with existing AdminPanel calls."""
+def update_user_role(user_id: int, body: UserUpdate, admin=Depends(require_admin)):
+    """Role badlo.  (Naam `/role` hi rakha hai taaki AdminPanel ke purane
+    calls waise ke waise chalte rahein.)"""
     _validate_role(body.role)
-    if body.department_id is not None:
-        _check_department_id(body.department_id)
-
-    upd, params = [], []
-    new_role = body.role
-    if new_role is not None:
-        upd.append("role = %s"); params.append(new_role)
-
-    # If role is being changed (or already known) we enforce the dept-id
-    # constraint: 'department' role requires a dept; other roles must clear it.
-    # The caller can pass department_id explicitly to set it.
-    if body.department_id is not None or new_role is not None:
-        # Determine the resulting role to decide whether dept_id is meaningful.
-        with get_conn() as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT role FROM mes_admin WHERE id = %s", (user_id,))
-            row = cur.fetchone()
-            current_role = row[0] if row else None
-        effective_role = new_role or current_role
-        if effective_role == "department":
-            if body.department_id is None and new_role == "department":
-                raise HTTPException(400, "Switching a user to 'department' role requires department_id")
-            if body.department_id is not None:
-                upd.append("department_id = %s"); params.append(body.department_id)
-        else:
-            # Any non-department role → clear the dept link.
-            upd.append("department_id = NULL")
-
-    if not upd:
+    if body.role is None:
         return {"ok": True, "updated": False}
-    params.append(user_id)
     with get_conn() as conn:
-        conn.cursor().execute(
-            f"UPDATE mes_admin SET {', '.join(upd)} WHERE id = %s",
-            params,
-        )
+        cur = conn.cursor()
+        cur.execute("UPDATE maintenance_users SET role = %s WHERE id = %s", (body.role, user_id))
+        if cur.rowcount == 0:
+            raise HTTPException(404, "User not found")
         conn.commit()
     return {"ok": True, "updated": True}
 
 
 @router.delete("/{user_id}")
 def delete_user(user_id: int, admin=Depends(require_admin)):
-    """Delete a user (admin only)."""
+    """User hatao (admin only)."""
     with get_conn() as conn:
-        conn.cursor().execute("DELETE FROM mes_admin WHERE id = %s", (user_id,))
+        conn.cursor().execute("DELETE FROM maintenance_users WHERE id = %s", (user_id,))
         conn.commit()
     return {"ok": True}
 
-
-@router.get("/{user_id}/lines")
-def get_operator_lines(user_id: int, admin=Depends(require_admin)):
-    """Get lines assigned to an operator (admin only)."""
-    with get_conn() as conn:
-        cur = dict_cursor(conn)
-        cur.execute("""
-            SELECT line_id FROM mes_operator_lines WHERE admin_id = %s
-        """, (user_id,))
-        return [row["line_id"] for row in cur.fetchall()]
-
-
-@router.put("/{user_id}/lines")
-def set_operator_lines(user_id: int, line_ids: List[int], admin=Depends(require_admin)):
-    """Set assigned lines for an operator (admin only)."""
-    with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT role FROM mes_admin WHERE id = %s", (user_id,))
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(404, "User not found")
-        if row[0] != "operator":
-            raise HTTPException(400, "User is not an operator")
-
-        cur.execute("DELETE FROM mes_operator_lines WHERE admin_id = %s", (user_id,))
-        for line_id in line_ids:
-            cur.execute("INSERT INTO mes_operator_lines (admin_id, line_id) VALUES (%s, %s)",
-                        (user_id, line_id))
-        conn.commit()
-    return {"ok": True}
 
 
 # ═════════════════════════════════════════════════════════════════════
@@ -194,8 +111,8 @@ def set_operator_lines(user_id: int, line_ids: List[int], admin=Depends(require_
 # or full CRUD.
 #
 # Schema (auto-created on first call):
-#   mes_user_page_permissions
-#       user_id    FK → mes_admin
+#   maintenance_user_permissions
+#       user_id    FK → maintenance_users
 #       page_key   TEXT (matches the canAccess keys used by the frontend)
 #       perm_level 'none' | 'read' | 'full'
 #       updated_at
@@ -226,9 +143,9 @@ class UserPermissionBulk(BaseModel):
 def _ensure_perm_table(conn) -> None:
     cur = conn.cursor()
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS mes_user_page_permissions (
+        CREATE TABLE IF NOT EXISTS maintenance_user_permissions (
             user_id    INTEGER NOT NULL
-                       REFERENCES mes_admin(id) ON DELETE CASCADE,
+                       REFERENCES maintenance_users(id) ON DELETE CASCADE,
             page_key   TEXT    NOT NULL,
             perm_level TEXT    NOT NULL DEFAULT 'none',
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -247,7 +164,7 @@ def get_user_permissions(user_id: int, admin=Depends(require_admin)):
         cur = dict_cursor(conn)
         cur.execute("""
             SELECT page_key, perm_level
-              FROM mes_user_page_permissions
+              FROM maintenance_user_permissions
              WHERE user_id = %s
              ORDER BY page_key
         """, (user_id,))
@@ -273,11 +190,11 @@ def set_user_permissions(user_id: int,
         cur = conn.cursor()
 
         # Sanity: user must exist
-        cur.execute("SELECT 1 FROM mes_admin WHERE id = %s", (user_id,))
+        cur.execute("SELECT 1 FROM maintenance_users WHERE id = %s", (user_id,))
         if cur.fetchone() is None:
             raise HTTPException(404, "User not found")
 
-        cur.execute("DELETE FROM mes_user_page_permissions WHERE user_id = %s",
+        cur.execute("DELETE FROM maintenance_user_permissions WHERE user_id = %s",
                     (user_id,))
         seen = set()
         for p in body.permissions:
@@ -290,7 +207,7 @@ def set_user_permissions(user_id: int,
             # who explicitly chose 'none' wants the page HIDDEN even if
             # the role default would expose it.
             cur.execute("""
-                INSERT INTO mes_user_page_permissions
+                INSERT INTO maintenance_user_permissions
                     (user_id, page_key, perm_level)
                 VALUES (%s, %s, %s)
             """, (user_id, key, p.perm_level))

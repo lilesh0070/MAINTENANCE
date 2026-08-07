@@ -3,7 +3,7 @@
  * ───────────────────────────────────────────────────────────────────
  * "BD History" — read-only history of the Manual Break Down Slips, shown in
  * the same table format as the Log Book → List view.  Source:
- * /api/breakdowns/log (→ mes_breakdown_data, the table the Break Down Slip
+ * /api/breakdowns/log (→ maintenance_breakdown_data, the table the Break Down Slip
  * saves into).  This is a SEPARATE register from the Log Book / History Card
  * (those read maintenance_logbook_db_history).
  *
@@ -60,7 +60,7 @@ export default function BDHistory() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Source = mes_breakdown_data — the SAME table the Maintenance KPI /
+      // Source = maintenance_breakdown_data — the SAME table the Maintenance KPI /
       // MTTR-MTBF pages compute from, so counts always match.
       // Only the selected window is fetched (default: last 7 days) so the
       // page stays light on a continuously running site.
@@ -88,7 +88,7 @@ export default function BDHistory() {
   }, [token, period, fFy]);
   useEffect(() => { load(); }, [load]);
 
-  // FY list + Machine Master List (mes_machines — the single master for
+  // FY list + Machine Master List (maintenance_machines — the single master for
   // every filter across the app).
   const [master, setMaster] = useState([]);
   useEffect(() => {

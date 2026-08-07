@@ -4,7 +4,7 @@ routers/logbook.py
 Maintenance Log Book (rebuilt 2026-07-07) — one row per breakdown entry,
 matching the physical TBDI/MAINT log-book format with these changes:
   • Machine identity captured as Zone → Line → Machine No (from the Machine
-    Master, mes_machines).  Machine Name is auto-derived from Machine No.
+    Master, maintenance_machines).  Machine Name is auto-derived from Machine No.
   • Serial No is AUTO-GENERATED (running number) on save.
   • "Problem Reported / Found"  →  "Problem Observed by Maintenance".
   • Spare split into: Spare Name · Model Number · Spare ERP Number · Quantity.
