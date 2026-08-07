@@ -173,8 +173,28 @@ export default function MaintenanceDashboard() {
   const onFillSlip = (id) => openAutoSlip(id, "fill");
 
   // Bumped after a closure save so the zone slip list refetches — the just-
-  // filled slip flips RESOLVED → CLOSED and its button becomes "View Slip".
+  // filled slip flips PENDING → COMPLETED and its button becomes "View Slip".
   const [slipRefreshKey, setSlipRefreshKey] = useState(0);
+
+  // ── ANDON badle → slip list turant refresh ────────────────────────────
+  // Slip list (KpiPanel) apne aap har 20 sec par hi refresh hoti hai, kyunki
+  // uska endpoint bhari hai (~330 ms vs ANDON ke ~7 ms) — use 2 sec par nahi
+  // chala sakte.  Par ANDON ka data yahan har 2 sec aata hi hai, to jaise hi
+  // wahan kuch badle (call acknowledge hua = slip bani, ya call band hua =
+  // slip poori hui) hum KpiPanel ko turant refetch karwa dete hain.
+  // Natija: slip ~2 sec me dikh jaati hai, aur bhari query bewajah nahi chalti.
+  // Signature me id + "ack hua ya nahi" dono hain, isliye dono ghatnaayein
+  // pakdi jaati hain.
+  const andonSigRef = useRef(null);
+  useEffect(() => {
+    const sig = andonRows
+      .map((r) => `${r.id}:${r.response_seconds == null ? 0 : 1}`)
+      .join(",");
+    const prev = andonSigRef.current;
+    andonSigRef.current = sig;
+    if (prev === null) return;          // pehli load — refetch ki zaroorat nahi
+    if (prev !== sig) setSlipRefreshKey((k) => k + 1);
+  }, [andonRows]);
 
   // ClosureFormModal (slice, phase) wapas deta hai — slice sirf wahi half hai
   // jo user ne bhara.  Is dashboard ki saari slips AUTO hain (ANDON se), to

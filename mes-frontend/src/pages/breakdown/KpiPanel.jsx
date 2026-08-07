@@ -50,9 +50,13 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, refreshKey }) {
   }, [fDate, fZone, fLine, token, refreshKey]);   // refreshKey bump → refetch after a slip is filled
 
   useEffect(() => { reload(); }, [reload]);
-  // Refresh every 60 s — KPIs don't move every second so this is plenty.
+  // Fallback refresh.  Aam taur par ye intezaar karna hi nahi padta —
+  // Dashboard ANDON me kuch badalte hi `refreshKey` bump karke turant refetch
+  // karwa deta hai (slip ~2 sec me dikh jaati hai).  Ye 20 sec sirf tab kaam
+  // aata hai jab data kisi aur raaste se badle (manual slip, doosra user).
+  // 60 sec se ghata kar 20 kiya — 60 me "refresh karna pad raha hai" lagta tha.
   useEffect(() => {
-    const t = setInterval(reload, 60_000);
+    const t = setInterval(reload, 20_000);
     return () => clearInterval(t);
   }, [reload]);
 

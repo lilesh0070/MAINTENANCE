@@ -28,5 +28,10 @@ kill_port () {
 
 kill_port 8892 Backend
 kill_port 9965 Frontend
+# :9000 = ANDON ka TCP ingest (ESP yahan judta hai).  Aam taur par ye backend
+# ke usi process ka hai, to upar wale kill se hi chala jaata hai — par agar
+# kabhi wo process 8892 chhod kar sirf 9000 pakde rahe, to port block reh
+# jaata aur agli baar backend "address already in use" par mar jaata.
+kill_port 9000 "ANDON ingest"
 
-[ "$SILENT" = "silent" ] || echo "Done. Ports 8892 and 9965 are free."
+[ "$SILENT" = "silent" ] || echo "Done. Ports 8892, 9000 and 9965 are free."

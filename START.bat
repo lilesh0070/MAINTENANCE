@@ -31,10 +31,34 @@ REM --- launch FRONTEND in its own window ---
 echo Starting frontend (vite :9965)...
 start "MAINT-FRONTEND :9965" /D "%~dp0mes-frontend" cmd /k "npm run dev"
 
-REM --- backend ko uthne do, phir ANDON ka status dikhao ---
+REM --- backend ke ready hone ka INTEZAAR karo, phir status dikhao ---
+REM   Pehle yahan 15 second ka fixed wait tha.  Machine busy ho (ya DB slow ho)
+REM   to backend usse zyada le leta tha aur STATUS jhooti "[X] nahi chala"
+REM   dikha deta tha — jabki wo 2 second baad chalu ho jaata.  Ab har 2 sec
+REM   check karte hain, 60 second tak.  Jaldi ready ho gaya to jaldi aage.
 echo.
-echo Waiting for backend + ESP to come up...
-ping -n 16 127.0.0.1 >nul 2>&1
+echo Waiting for backend to come up...
+set /a _try=0
+:waitbackend
+netstat -an | findstr /R /C:"[0:]:8892 .*LISTENING" >nul 2>&1
+if not errorlevel 1 goto backendup
+set /a _try+=1
+if %_try% geq 30 goto backendup
+ping -n 3 127.0.0.1 >nul 2>&1
+goto waitbackend
+:backendup
+
+REM ESP har 3 sec me khud judta hai — use thoda mauka do (12 sec tak)
+echo Waiting for ESP to connect...
+set /a _try=0
+:waitesp
+netstat -an | findstr ":9000" | findstr "ESTABLISHED" >nul 2>&1
+if not errorlevel 1 goto espup
+set /a _try+=1
+if %_try% geq 6 goto espup
+ping -n 3 127.0.0.1 >nul 2>&1
+goto waitesp
+:espup
 
 echo.
 echo ===================================================
