@@ -61,7 +61,23 @@ export function StatCard({ label, value, sub, color = "#1e40af" }) {
   return (
     <div style={{
       background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12,
-      padding: "14px 18px", minWidth: 140, flex: "0 0 auto",
+      padding: "14px 18px",
+      // Pehle `flex: 0 0 auto` + minWidth 140 tha — card apne CONTENT jitna
+      // chaudा ho jaata tha aur sikudta hi nahi.  Jiska sub-text lamba (jaise
+      // "Call open, no ack yet") wo card mota ho jaata, aur thodi si sankri
+      // screen par chaaron ki chaudai jama ho kar jagah se zyada ho jaati —
+      // isliye 3 + 1 me lipat jaate the.  (Dev machine ki screen chaudi thi
+      // isliye wahan nahi dikhta tha, production par dikha.)
+      //
+      // Ab chaaron BARABAR jagah baant lete hain aur zaroorat par sikud jaate
+      // hain.  `border-box` isliye ki basis me padding+border bhi gine jaayein
+      // (content-box me 140 ka basis asal me 178px ban jaata tha, aur chaaron
+      // ko 754px chahiye hote the — production ke column se zyada).
+      // Ab: 4 x 130 + 3 x 14 gap = 562px — itni jagah me bhi ek line.
+      // Isse neeche (asli mobile) hi 2x2 me jaate hain, jo theek hai.
+      // `minWidth: 0` zaroori hai — warna flex item apne content se chhota
+      // nahi ho sakta aur sikudna bekaar ho jaata.
+      boxSizing: "border-box", flex: "1 1 130px", minWidth: 0,
       boxShadow: "0 1px 3px rgba(0,0,0,.04)",
     }}>
       <div style={{ fontSize: 10, color: "#64748b", fontWeight: 700,

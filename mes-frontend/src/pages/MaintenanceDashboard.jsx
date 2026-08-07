@@ -255,7 +255,16 @@ export default function MaintenanceDashboard() {
                          white-space:nowrap; }
         .md-user-pill b { color:#0f172a; font-weight:800; }
         .md-body { padding:28px 40px 0; max-width:1280px; margin:0 auto; }
-        .md-tiles { display:flex; gap:14px; flex-wrap:wrap; margin-bottom:18px; }
+        /* 4 stat cards.  Pehle flex-wrap tha, jismein jagah kam padte hi
+           3 + 1 ho jaata tha aur chautha card poori chaudai le leta tha
+           (production par yahi dikh raha tha).  Grid me chaaron ko barabar
+           hissa milta hai — desktop par HAMESHA ek line, aur asli chhoti
+           screen par saaf 2 x 2.  Beech ka bhadda 3+1 kabhi nahi hoga. */
+        .md-tiles { display:grid; grid-template-columns:repeat(4, minmax(0,1fr));
+                    gap:14px; margin-bottom:18px; }
+        @media (max-width: 560px) {
+          .md-tiles { grid-template-columns:repeat(2, minmax(0,1fr)); }
+        }
         .md-section { margin-bottom:22px; }
         .md-section h3 { margin:0 0 10px; font-family:'Barlow Condensed',sans-serif;
                           font-size:18px; font-weight:800; color:#0f172a;
