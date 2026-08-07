@@ -115,15 +115,12 @@ export default function MaintenanceDashboard() {
   //   • View/Fill Slip → /api/breakdown-slips/auto/{id}
   const reload = useCallback(async () => {
     try {
-      const [l, andon] = await Promise.all([
-        api.get("/api/lines/", token).catch(() => []),
-        // ANDON table + 4 stat cards — ESP ke asli calls se
-        api.get("/api/andon/dashboard", token).catch(() => ({})),
-      ]);
+      // Sirf ANDON ka data — ye har 2 second aata hai (neeche dekho), isliye
+      // ismein sirf wahi rakha hai jo sach me badalta rehta hai.
+      const andon = await api.get("/api/andon/dashboard", token).catch(() => ({}));
       // /api/andon/dashboard {rows, stats} deta hai
       setAndonRows(Array.isArray(andon?.rows) ? andon.rows : []);
       setAndonStats((andon && andon.stats) || {});
-      setLines(Array.isArray(l) ? l : []);
     } catch {
       showToast("Failed to load dashboard", "err");
     } finally {
@@ -131,11 +128,25 @@ export default function MaintenanceDashboard() {
     }
   }, [token]);
 
+  // ANDON ka data HAR 2 SECOND — button dabte hi dashboard par dikhna chahiye.
+  // Pehle 10 sec tha, isliye call aane me 5-10 second lag jaate the (ESP turant
+  // bhejta hai aur backend 7 ms me jawab deta hai — saari der yahin thi).
+  // 2 sec wahi hai jo ANDON System page ka Live Board use karta hai.
   useEffect(() => {
     reload();
-    const t = setInterval(reload, 10000);
+    const t = setInterval(reload, 2000);
     return () => clearInterval(t);
   }, [reload]);
+
+  // Lines ka master EK BAAR — ye machine master se aata hai, har 2 second
+  // dobara maangne ka koi matlab nahi (pehle har chakkar me aata tha).
+  useEffect(() => {
+    let dead = false;
+    api.get("/api/lines/", token)
+      .then((l) => { if (!dead) setLines(Array.isArray(l) ? l : []); })
+      .catch(() => { if (!dead) setLines([]); });
+    return () => { dead = true; };
+  }, [token]);
 
   useEffect(() => {
     document.title = "Maintenance Dashboard";

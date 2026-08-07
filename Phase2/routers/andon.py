@@ -572,6 +572,23 @@ def _ensure_tables():
                 created_at   TIMESTAMP DEFAULT NOW(),
                 updated_at   TIMESTAMP DEFAULT NOW()
             )""")
+        # ── EK IP / EK NAAM = EK HI ESP ────────────────────────────────────
+        # `_find_esp()` aane wale event ko IP se (phir naam se) device par
+        # bithata hai.  Do device ek hi IP par hon to koi bhi ek utha liya
+        # jaata hai — dono board ka data ek hi line par chadh jaata aur kisi ko
+        # pata bhi na chalta.  Ye DB-level rule aakhri suraksha hai: API/UI se
+        # bache to yahan se nahi bachega.
+        # Case/space ka farq na bane isliye LOWER(TRIM(...)) par index hai.
+        # Purane data me duplicate ho to index banega nahi — us soorat me
+        # backend chalta rahe (bas ek warning), warna app hi na khule.
+        for _ix, _expr in (("andon_esp_ip_uq",   "LOWER(TRIM(ip))"),
+                           ("andon_esp_name_uq", "LOWER(TRIM(name))")):
+            try:
+                cur.execute(f"""CREATE UNIQUE INDEX IF NOT EXISTS {_ix}
+                                  ON andon_esp_devices (({_expr}))""")
+            except Exception as _e:
+                conn.rollback()
+                print(f"[ANDON] {_ix} nahi ban paya (shayad purana duplicate data hai): {_e}")
         # earlier builds used zone_id/line_id FKs — move to plain master text fields
         cur.execute("ALTER TABLE andon_esp_devices ADD COLUMN IF NOT EXISTS zone VARCHAR(120)")
         cur.execute("ALTER TABLE andon_esp_devices ADD COLUMN IF NOT EXISTS line VARCHAR(120)")
@@ -809,6 +826,34 @@ def esp_status(user=Depends(get_current_user)):
     return _ESP_STATUS
 
 
+def _check_esp_unique(cur, ip, name, skip_id=None):
+    """Ek IP / ek naam par do ESP na ban sakein.
+
+    Event device par IP se bithaya jaata hai — do board ek hi IP par hon to
+    dono ka data ek hi line par chadh jayega aur kisi ko pata bhi nahi
+    chalega.  Isliye save se PEHLE rok dete hain, aur message me saaf batate
+    hain ki wo IP kis ESP ki hai (zone/line ke saath) — taaki galti turant
+    samajh aaye.  `skip_id` = edit karte waqt khud ko chhod do.
+    Compare case/space-safe hai (' 192.168.30.77 ' bhi wahi maana jayega).
+    """
+    for field, value, label in (("ip", ip, "IP"), ("name", name, "Naam")):
+        val = (value or "").strip()
+        if not val:
+            continue
+        cur.execute(f"""SELECT id, name, ip, zone, line FROM andon_esp_devices
+                         WHERE LOWER(TRIM({field})) = LOWER(%s)
+                           AND (%s::int IS NULL OR id <> %s)
+                         LIMIT 1""", (val, skip_id, skip_id))
+        hit = cur.fetchone()
+        if hit:
+            eid, ename, eip, ezone, eline = hit[0], hit[1], hit[2], hit[3], hit[4]
+            where = " · ".join(x for x in (ezone, eline) if x) or "zone/line set nahi"
+            raise HTTPException(409,
+                f"Ye {label} '{val}' pehle se ESP \"{ename}\" ki hai ({where}, IP {eip}). "
+                f"Ek {label} sirf EK hi ESP ko de sakte hain — "
+                f"{'doosra IP dijiye' if field == 'ip' else 'doosra naam dijiye'}.")
+
+
 @router.post("/esp-devices", status_code=201)
 def add_esp(body: EspIn, user=Depends(get_current_user)):
     _ensure_tables()
@@ -816,6 +861,7 @@ def add_esp(body: EspIn, user=Depends(get_current_user)):
         raise HTTPException(400, "name and ip are required")
     with get_conn() as conn:
         cur = conn.cursor()
+        _check_esp_unique(cur, body.ip, body.name)
         cur.execute("""INSERT INTO andon_esp_devices
                        (name, ip, port, zone, line, machine_no, machine_name, description, enabled, poll_path)
                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
@@ -830,8 +876,12 @@ def add_esp(body: EspIn, user=Depends(get_current_user)):
 @router.put("/esp-devices/{eid}")
 def edit_esp(eid: int, body: EspIn, user=Depends(get_current_user)):
     _ensure_tables()
+    if not (body.name or "").strip() or not (body.ip or "").strip():
+        raise HTTPException(400, "name and ip are required")
     with get_conn() as conn:
         cur = conn.cursor()
+        # Edit me bhi wahi rok — apne aap ko chhod kar (skip_id=eid)
+        _check_esp_unique(cur, body.ip, body.name, skip_id=eid)
         cur.execute("""UPDATE andon_esp_devices
                           SET name=%s, ip=%s, port=%s, zone=%s, line=%s, machine_no=%s, machine_name=%s,
                               description=%s, enabled=%s, poll_path=%s, updated_at=NOW()

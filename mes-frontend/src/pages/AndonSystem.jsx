@@ -62,7 +62,16 @@ export default function AndonSystem() {
       headers: { "Content-Type": "application/json",
                  ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },
     });
-    if (!r.ok) throw new Error((await r.text().catch(() => "")) || `HTTP ${r.status}`);
+    if (!r.ok) {
+      // FastAPI galti ko {"detail":"..."} me bhejta hai — seedha text dikhane
+      // par user ko JSON dikhta tha.  Yahan se saaf message nikal lete hain.
+      const raw = await r.text().catch(() => "");
+      let msg = raw;
+      try { const j = JSON.parse(raw); msg = j?.detail || raw; } catch { /* plain text */ }
+      const err = new Error(msg || `HTTP ${r.status}`);
+      err.status = r.status;            // 409 = takraav (duplicate IP/naam)
+      throw err;
+    }
     return r.status === 204 ? null : r.json();
   }, [token]);
 
@@ -117,7 +126,21 @@ export default function AndonSystem() {
     for (const ev of events) { const k = `${ev.zone || "—"} / ${ev.line || "—"}`; (g[k] = g[k] || []).push(ev); }
     return g;
   }, [events]);
-  const wrap = async (fn, ok) => { try { await fn(); await load(); if (ok) flash(ok); } catch (e) { flash(String(e.message || e).slice(0, 140)); } };
+  // Takraav (409) = wahi IP/naam kisi aur ESP ki hai.  Ye chhote toast me
+  // dabana theek nahi — galat IP par do board ka data ek jagah chala jayega
+  // aur pata bhi nahi chalega.  Isliye poora popup, jo khud gayab na ho.
+  const [alertBox, setAlertBox] = useState(null);   // { title, text }
+  const wrap = async (fn, ok) => {
+    try {
+      await fn();
+      await load();
+      if (ok) flash(ok);
+    } catch (e) {
+      const text = String(e?.message || e);
+      if (e?.status === 409) setAlertBox({ title: "Ye IP / naam pehle se use me hai", text });
+      else flash(text.slice(0, 140));
+    }
+  };
 
   // ── Departments ──
   const [dName, setDName] = useState("");
@@ -449,6 +472,43 @@ export default function AndonSystem() {
         </div>
       </div>
       {msg && <div className="an-msg">{msg}</div>}
+
+      {/* Takraav ka popup — IP/naam pehle se kisi aur ESP ki hai.
+          Jaan-bujh kar khud gayab NAHI hota: user ko padhna aur samajhna
+          zaroori hai, warna do board ka data ek hi line par chadh jayega. */}
+      {alertBox && (
+        <div onClick={() => setAlertBox(null)}
+             style={{ position:"fixed", inset:0, background:"rgba(15,23,42,.55)",
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                      zIndex:10000, padding:20 }}>
+          <div onClick={(e) => e.stopPropagation()}
+               style={{ background:"#fff", borderRadius:14, maxWidth:520, width:"100%",
+                        boxShadow:"0 24px 60px rgba(0,0,0,.35)", overflow:"hidden" }}>
+            <div style={{ background:"linear-gradient(135deg,#dc2626,#b91c1c)", color:"#fff",
+                          padding:"14px 20px", display:"flex", alignItems:"center", gap:12 }}>
+              <span style={{ fontSize:24 }}>⚠️</span>
+              <div style={{ fontSize:16, fontWeight:800 }}>{alertBox.title}</div>
+            </div>
+            <div style={{ padding:"18px 20px", fontSize:13.5, lineHeight:1.65, color:"#0f172a" }}>
+              {alertBox.text}
+              <div style={{ marginTop:14, padding:"10px 12px", background:"#fef2f2",
+                            border:"1px solid #fecaca", borderRadius:9,
+                            fontSize:12.5, color:"#991b1b" }}>
+                Ek IP sirf EK hi ESP ko de sakte hain. Do board ek hi IP par hon to
+                dono ka data ek hi line par chala jayega aur pata bhi nahi chalega.
+              </div>
+            </div>
+            <div style={{ padding:"0 20px 18px", textAlign:"right" }}>
+              <button onClick={() => setAlertBox(null)}
+                      style={{ border:"none", background:"#dc2626", color:"#fff",
+                               borderRadius:9, padding:"9px 22px", fontSize:13,
+                               fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>
+                Samajh gaya
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
