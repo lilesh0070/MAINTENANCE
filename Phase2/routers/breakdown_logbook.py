@@ -176,6 +176,31 @@ _COMBINED_SLIP = """
 """
 
 
+# Sunday / Daily plan → Log Book ke SAME output columns (aliasing se, table rename
+# ke bina).  Sirf DONE plans History Card me aate hain.  Column order _COMBINED_LB
+# se bilkul same rakhna zaroori hai (UNION 1:1).
+def _combined_plan_sql(source: str) -> str:
+    return f"""
+    '{source}'::text AS source,
+    id, NULL::int AS serial_no, NULL::text AS shift, zone_name AS zone, line_name AS line, machine_no, machine_name,
+    NULL::text AS model_no, NULL::text AS line_leader_name, NULL::text AS machine_operator_name,
+    plan_date AS bd_date, NULL::text AS category,
+    start_time AS bd_start_time, NULL::text AS bd_received_time,
+    NULL::text AS response_time_minutes,
+    end_time AS bd_ok_time, NULL::date AS bd_start_date, NULL::date AS bd_end_date,
+    duration_minutes::text AS mc_down_time_minutes,
+    NULL::text AS frequency,
+    NULL::text AS problem_reported_by_production,
+    NULL::text AS problem_related_to,
+    NULL::boolean AS type_electrical, NULL::boolean AS type_mechanical,
+    problem AS problem_observed_by_maintenance, work_done AS action_taken_on_problem,
+    spares_used, spares, done_by AS bd_attended_by,
+    NULL::text AS prepared_by_name, NULL::text AS received_by_name,
+    NULL::text AS line_leader_operator_name, NULL::text AS quality_engineer_name,
+    done_at AS ts
+"""
+
+
 @router.get("/combined")
 def list_combined(user=Depends(get_current_user)):
     """History Card source — MERGES the Log Book (maintenance_logbook_db_history)
@@ -184,10 +209,16 @@ def list_combined(user=Depends(get_current_user)):
     so the halves line up 1:1 (down-time cast to text, dates coalesced)."""
     _ensure_table()
     from routers.breakdown_slips import _ensure_table as _ensure_slip
-    _ensure_slip()
+    from routers.sunday_plan import _ensure_table as _ensure_sun
+    from routers.daily_plan import _ensure_table as _ensure_day
+    _ensure_slip(); _ensure_sun(); _ensure_day()
     sql = (f"SELECT {_COMBINED_LB} FROM maintenance_logbook_db_history "
            f"UNION ALL "
            f"SELECT {_COMBINED_SLIP} FROM maintenance_breakdown_data "
+           f"UNION ALL "
+           f"SELECT {_combined_plan_sql('Sunday Plan')} FROM maintenance_sunday_plan WHERE status='DONE' "
+           f"UNION ALL "
+           f"SELECT {_combined_plan_sql('Daily Plan')} FROM maintenance_daily_plan_work WHERE status='DONE' "
            f"ORDER BY ts DESC NULLS LAST, id DESC LIMIT 5000")
     with get_conn() as conn:
         cur = dict_cursor(conn)

@@ -13,6 +13,7 @@ import {
 import { UsersPage } from "./admin/org";
 import { KpiTargetsPage } from "./admin/mail-kpi";
 import { ADMIN_SECTIONS } from "./admin/system";
+import { SlipThresholdPage } from "./admin/slipthreshold";
 
 // Render a tab's body.  Centralised so AdminPanel and DepartmentPanel
 // stay perfectly in sync — DepartmentPanel re-uses this same dispatch.
@@ -20,6 +21,7 @@ export function renderAdminTab(sectionKey, tabKey, props) {
   const t = props || {};
   switch (`${sectionKey}/${tabKey}`) {
     case "maintenance/kpitarget":    return <KpiTargetsPage  {...t} readOnly={false} />;
+    case "maintenance/slipthreshold": return <SlipThresholdPage {...t} />;
     case "maintenance/pmchecksheet": return <PMCheckSheetAdmin {...t} />;
     case "maintenance/machinedmc":   return <MachineDMCAdmin   {...t} />;
     case "admin/users":       return <UsersPage       {...t} />;

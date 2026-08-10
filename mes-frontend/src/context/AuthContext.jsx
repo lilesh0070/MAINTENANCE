@@ -109,165 +109,24 @@ export function AuthProvider({ children }) {
     for (const k of AUTH_KEYS) ss.remove(k);
   };
 
-  // Role flags.  `plant_head` is admin-equivalent per spec — same powers as admin everywhere.
-  const isAdmin      = user?.role === "admin" || user?.role === "plant_head";
-  const isPlantHead  = user?.role === "plant_head";
-  const isDepartment = user?.role === "department";
-  const isProduction = user?.role === "production";
-  const isOperator   = user?.role === "operator";
+  // App admin-only — sirf ek user `admin` hai jise har page ka poora access
+  // hai.  (Pehle ke multi-role / per-page permission defaults hata diye.)
+  const isAdmin   = !!user;
+  const canAccess = () => true;
+  const canWrite  = () => true;
 
-  // ── Per-page permissions ────────────────────────────────────────
-  // Admin can override role defaults from Admin → Users → "Page
-  // Permissions".  Three explicit levels:
-  //   none  – page hidden / blocked even if role default would allow
-  //   read  – page visible; admin sub-panels render readOnly
-  //   full  – full CRUD access regardless of role
-  // If a page isn't listed in user.permissions, fall through to the
-  // role/department defaults below.
-  const explicitPerm = (page) => {
-    const p = user?.permissions?.[page];
-    if (p === "none" || p === "read" || p === "full") return p;
-    return null;
+  // Theme — admin ka universal blue (single-role app).
+  const themeKey = "blue";
+  const theme = {
+    accent: "#2563eb", accentDark: "#1e40af",
+    gradient: "linear-gradient(90deg,#1e40af,#2563eb,#60a5fa)",
+    soft: "rgba(30,64,175,.08)", key: themeKey,
   };
-
-  const canAccess = (page) => {
-    // Explicit override always wins
-    const ep = explicitPerm(page);
-    if (ep === "none") return false;
-    if (ep === "read" || ep === "full") return true;
-
-    // Role/department defaults (no explicit override)
-    if (isAdmin)      return true;     // admin + plant_head
-    if (isOperator)   return page === "dashboard";
-    if (isProduction) {
-      // Production user sees the same Production-side pages plus the
-      // Production config Panel — read-only.  They can READ Plants /
-      // Zones / Lines / Machines / Status / Hourly Mail but not edit;
-      // the read-only enforcement is handled inside AdminPanel itself.
-      // Audit Log is admin-only — intentionally NOT in this list.
-      return ["dashboard", "historical", "import", "settings",
-              "admin-production", "department-panel",
-              "process-graphs", "shift-allocation",
-              "store", "dispatch", "shift-calculator", "kanban", "anything-wrong", "five-s", "pdca"].includes(page);
-    }
-    if (isDepartment) {
-      // Per-department access lists.  Each department user gets read-only
-      // access to its own admin panel section (admin-maintenance /
-      // admin-quality) so they can READ Poka Yoke / Mail Settings /
-      // KPI Targets etc. without being able to mutate them.
-      const slug = (user?.departmentSlug || "").toLowerCase();
-      if (slug === "maintenance") {
-        return ["dashboard", "department-panel", "admin-maintenance",
-                "maintenance-overview",
-                "andon-system",
-                "maintenance-dashboard",
-                "maintenance-update-plan",
-                "maintenance-kpi", "maintenance-breakdown", "maintenance-breakdown-slip",
-                "skill-training",
-                "maintenance-historical", "maintenance-capa",
-                "maintenance-deviations",
-                "maintenance-logbook", "maintenance-history-card", "maintenance-pm",
-                "maintenance-machine-manual", "maintenance-machine-dmc",
-                "maintenance-daily-dmc", "maintenance-dmc-verify", "maintenance-dmc-weekly",
-                "maintenance-dmc-ng",
-                "maintenance-spare"].includes(page);
-      }
-      if (slug === "quality") {
-        // Quality dept user lands on QualityDashboard at /dashboard
-        // (DashboardForUser switch in App.jsx routes them there).
-        //   /quality-dashboard  → zone-tile health view (live PY status)
-        //   /quality-deviations → Deviation approvals + 4M Change Notes
-        //   /shift-allocation   → Quality has read-access so they can
-        //                          inspect allocations when an alert
-        //                          banner pops up; ack happens via the
-        //                          dashboard banner (see ManpowerAlertBanner).
-        return ["dashboard", "department-panel", "admin-quality",
-                "quality-dashboard", "quality-deviations",
-                "shift-allocation", "settings"].includes(page);
-      }
-      if (slug === "production") {
-        return ["dashboard", "department-panel", "admin-production",
-                "historical", "import", "settings",
-                "process-graphs", "shift-allocation",
-                "store", "dispatch", "shift-calculator", "kanban", "anything-wrong", "heijunka", "five-s", "pdca"].includes(page);
-      }
-      return ["dashboard", "historical", "import", "settings", "department-panel"].includes(page);
-    }
-    return false;
-  };
-
-  // canWrite(page) — does this user have FULL CRUD on the given page?
-  // Admin/plant_head always yes.  For everyone else:
-  //   • explicit 'full' permission → yes
-  //   • explicit 'read' / 'none'   → no (read-only or hidden)
-  //   • no explicit permission     → fall back to role-based default
-  //                                   (production user editing config
-  //                                   pages = read-only; etc.)
-  const canWrite = (page) => {
-    if (isAdmin) return true;
-    const ep = explicitPerm(page);
-    if (ep === "full") return true;
-    if (ep === "read" || ep === "none") return false;
-    // Shift Allocation is supervisor-facing — Production users + the
-    // Production dept get write access by default so they can run the
-    // daily allocation flow without an explicit per-user override.
-    if (page === "shift-allocation") {
-      if (isProduction) return true;
-      if (isDepartment && (user?.departmentSlug || "").toLowerCase() === "production") return true;
-    }
-    // No explicit perm — historical default: only admins write,
-    // department / production / operator users are read-only.
-    return false;
-  };
-
-  // ── Theme color (per-role) ─────────────────────────────────────────
-  // Production-default = blue, but each user's UI gets tinted by their
-  // role / department:
-  //   admin / plant_head      → blue   (universal — admin sees every
-  //                             page in blue regardless of which dept's
-  //                             page they're viewing)
-  //   department:maintenance  → red
-  //   department:quality      → yellow / amber
-  //   department:<other>      → blue (fallback until that dept's flow
-  //                             is finalised)
-  //   production              → green
-  //   operator                → blue
-  // The picked theme exposes both a single `accent` colour and a
-  // matching gradient — components consume via `theme` from useAuth().
-  const PALETTE = {
-    blue:   { accent: "#2563eb", accentDark: "#1e40af",
-              gradient: "linear-gradient(90deg,#1e40af,#2563eb,#60a5fa)",
-              soft: "rgba(30,64,175,.08)" },
-    red:    { accent: "#dc2626", accentDark: "#b91c1c",
-              gradient: "linear-gradient(90deg,#dc2626,#ea580c,#f59e0b)",
-              soft: "rgba(220,38,38,.08)" },
-    yellow: { accent: "#ca8a04", accentDark: "#a16207",
-              gradient: "linear-gradient(90deg,#a16207,#ca8a04,#fbbf24)",
-              soft: "rgba(202,138,4,.10)" },
-    green:  { accent: "#16a34a", accentDark: "#15803d",
-              gradient: "linear-gradient(90deg,#15803d,#16a34a,#4ade80)",
-              soft: "rgba(22,163,74,.08)" },
-  };
-  const themeKey = (() => {
-    // Admin + plant_head always blue (universal — they see every panel
-    // in blue regardless of which dept's section is currently shown).
-    if (isAdmin) return "blue";
-    if (isDepartment) {
-      const slug = (user?.departmentSlug || "").toLowerCase();
-      if (slug === "maintenance") return "red";
-      if (slug === "quality")     return "yellow";
-      if (slug === "production")  return "green";
-      return "blue";
-    }
-    if (isProduction) return "green";   // role='production' (legacy non-dept)
-    return "blue";
-  })();
-  const theme = { ...PALETTE[themeKey], key: themeKey };
 
   return (
     <AuthContext.Provider value={{
       token, user, loading, login, logout,
-      authHdr, isAdmin, isPlantHead, isDepartment, isProduction, isOperator,
+      authHdr, isAdmin,
       canAccess, canWrite, API,
       theme, themeKey,
     }}>

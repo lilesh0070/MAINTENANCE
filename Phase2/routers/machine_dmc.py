@@ -238,12 +238,26 @@ class DmcPointEdit(BaseModel):
     type:        Optional[str] = None
 
 
+class DmcStagedPoint(BaseModel):
+    """Ek staged (pending) naya point — rev bump ke saath hi commit hota hai."""
+    category:     Optional[str] = ""
+    s_no:         Optional[str] = ""
+    check_point:  str
+    criteria:     Optional[str] = ""
+    method:       Optional[str] = ""
+    resp:         Optional[str] = ""
+    freq:         Optional[str] = ""
+    type:         Optional[str] = ""
+    machine_name: Optional[str] = ""
+
+
 class DmcRevBump(BaseModel):
     zone:       str
     line:       str
     machine_no: str
     rev_no:     str
     rev_date:   str   # YYYY-MM-DD
+    new_points: List[DmcStagedPoint] = []   # staged adds — NEW rev par commit
 
 
 class DmcDocFooter(BaseModel):
@@ -431,7 +445,32 @@ def dmc_bump_rev(body: DmcRevBump, user=Depends(get_current_user)):
         cur.execute("""UPDATE machine_dmc SET rev_no = %s, rev_date = %s
                         WHERE machine_no = %s AND zone = %s AND line = %s""",
                     (str(new_rev), body.rev_date, body.machine_no, body.zone, body.line))
-    return {"ok": True, "old_rev": str(cur_raw), "new_rev": str(new_rev), "archived_points": archived}
+        # staged naye points ko NEW rev par commit karo (atomic — rev bump ke saath hi)
+        added = 0
+        if body.new_points:
+            cur.execute("""SELECT COALESCE(MAX(sort_order),0) AS so, COUNT(*) AS n, MAX(machine_name) AS mn
+                             FROM machine_dmc WHERE machine_no=%s AND zone=%s AND line=%s""",
+                        (body.machine_no, body.zone, body.line))
+            base = cur.fetchone() or {}
+            so_next = base.get("so") or 0
+            n_next  = base.get("n") or 0
+            mn_ctx  = base.get("mn") or ""
+            for pt in body.new_points:
+                if not (pt.check_point or "").strip():
+                    continue
+                so_next += 1; n_next += 1
+                s_no = pt.s_no.strip() if (pt.s_no and pt.s_no.strip()) else str(n_next)
+                cur.execute("""
+                    INSERT INTO machine_dmc
+                        (zone, line, machine_no, machine_name, s_no, category, check_point,
+                         criteria, method, resp, freq, type, rev_no, rev_date, sort_order)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (body.zone, body.line, body.machine_no, pt.machine_name or mn_ctx, s_no,
+                      pt.category or "", pt.check_point, pt.criteria or "", pt.method or "",
+                      pt.resp or "", pt.freq or "", pt.type or "", str(new_rev), body.rev_date, so_next))
+                added += 1
+    return {"ok": True, "old_rev": str(cur_raw), "new_rev": str(new_rev),
+            "archived_points": archived, "added_points": added}
 
 
 @router.get("/revs")

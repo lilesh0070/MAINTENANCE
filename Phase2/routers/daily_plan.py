@@ -17,7 +17,8 @@ PUT    /{id}/complete   Fill work_done + done_by → status DONE
 PUT    /{id}/reopen     Undo a completion (back to PENDING)
 DELETE /{id}        Remove a plan (wrong entry)
 """
-from typing import Optional
+import json
+from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -48,6 +49,10 @@ def _ensure_table() -> None:
                 created_at   TIMESTAMP DEFAULT NOW()
             )
         """)
+        for col, typ in (("start_time", "TEXT"), ("end_time", "TEXT"),
+                         ("duration_minutes", "INTEGER"),
+                         ("spares", "JSONB"), ("spares_used", "TEXT")):
+            cur.execute(f"ALTER TABLE maintenance_daily_plan_work ADD COLUMN IF NOT EXISTS {col} {typ}")
         conn.commit()
 
 
@@ -75,9 +80,38 @@ class SundayPlanCreate(BaseModel):
     problem:      str
 
 
+_SPARE_KEYS = ("spare_name", "spare_model_no", "spare_cnmm_no", "spare_qty")
+
+
+def _spare_summary(spares: list) -> Optional[str]:
+    parts = []
+    for s in spares or []:
+        name = str(s.get("spare_name") or "").strip()
+        if not name:
+            continue
+        extra = " / ".join(x for x in (str(s.get("spare_model_no") or "").strip(),
+                                       str(s.get("spare_cnmm_no") or "").strip()) if x)
+        qty = str(s.get("spare_qty") or "").strip()
+        parts.append(name + (f" ({extra})" if extra else "") + (f" QTY-{qty}" if qty else ""))
+    return " | ".join(parts) if parts else None
+
+
+def _mins_between(start: Optional[str], end: Optional[str]) -> Optional[int]:
+    try:
+        sh, sm = [int(x) for x in str(start).split(":")[:2]]
+        eh, em = [int(x) for x in str(end).split(":")[:2]]
+        d = (eh * 60 + em) - (sh * 60 + sm)
+        return d + 24 * 60 if d < 0 else d
+    except Exception:
+        return None
+
+
 class SundayPlanComplete(BaseModel):
-    work_done: str
-    done_by:   str
+    work_done:  str
+    done_by:    str
+    start_time: Optional[str] = None
+    end_time:   Optional[str] = None
+    spares:     Optional[List[dict]] = None
 
 
 @router.get("/")
@@ -140,16 +174,37 @@ def complete_plan(pid: int, body: SundayPlanComplete, user=Depends(get_current_u
         raise HTTPException(400, "work_done is required — what work was carried out?")
     if not body.done_by.strip():
         raise HTTPException(400, "done_by is required — who did the work?")
+    spares = [s for s in (body.spares or [])
+              if any(str(s.get(k) or "").strip() for k in _SPARE_KEYS)]
+    spares_used = _spare_summary(spares)
+    dur = _mins_between(body.start_time, body.end_time) if (body.start_time and body.end_time) else None
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""UPDATE maintenance_daily_plan_work
-                          SET status='DONE', work_done=%s, done_by=%s, done_at=NOW()
-                        WHERE id=%s""",
-                    (body.work_done.strip(), body.done_by.strip(), pid))
-        if cur.rowcount == 0:
+                          SET status='DONE', work_done=%s, done_by=%s, done_at=NOW(),
+                              start_time=%s, end_time=%s, duration_minutes=%s,
+                              spares=%s, spares_used=%s
+                        WHERE id=%s
+                    RETURNING zone_name, line_name, machine_no, machine_name, plan_date""",
+                    (body.work_done.strip(), body.done_by.strip(),
+                     (body.start_time or None), (body.end_time or None), dur,
+                     json.dumps(spares) if spares else None, spares_used, pid))
+        row = cur.fetchone()
+        if not row:
             raise HTTPException(404, "Plan not found")
         conn.commit()
-    return {"ok": True}
+    if spares:
+        try:
+            from routers.maintenance_spare import record_usage
+            with get_conn() as sconn:
+                record_usage(sconn, "Daily Plan", {
+                    "zone": row[0], "line": row[1], "machine_no": row[2],
+                    "machine_name": row[3],
+                    "used_date": row[4].isoformat() if row[4] else None,
+                }, spares)
+        except Exception as e:
+            print(f"[SPARE-MASTER] record failed (daily): {e}")
+    return {"ok": True, "duration_minutes": dur}
 
 
 @router.put("/{pid}/reopen")
@@ -158,7 +213,9 @@ def reopen_plan(pid: int, user=Depends(get_current_user)):
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""UPDATE maintenance_daily_plan_work
-                          SET status='PENDING', work_done=NULL, done_by=NULL, done_at=NULL
+                          SET status='PENDING', work_done=NULL, done_by=NULL, done_at=NULL,
+                              start_time=NULL, end_time=NULL, duration_minutes=NULL,
+                              spares=NULL, spares_used=NULL
                         WHERE id=%s""", (pid,))
         if cur.rowcount == 0:
             raise HTTPException(404, "Plan not found")

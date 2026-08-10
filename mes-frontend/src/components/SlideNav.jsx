@@ -13,28 +13,12 @@ import { useAuth } from "../context/AuthContext";
 // "Overview" + "Data" sections were merged into this single Production
 // section so the slide-nav reads as a clean role-grouped list.
 const NAV_ITEMS = [
-  // NOTE: this is a MAINTENANCE-only deployment — the only routes wired in
-  // App.jsx are /dashboard and the /maintenance-* set.  Nav items whose path
-  // has NO route were removed below (they used to fall through to the
-  // catch-all and silently re-open the dashboard).  When a Production /
-  // Store / Quality / Audit page is actually built, re-add its item here.
-  {
-    section: "Production",
-    items: [
-      { key: "dashboard",        label: "Dashboard",        icon: "/dashboard-icon.png",     iconImg: true, path: "/dashboard" },
-      // Removed — no route in App.jsx: Historical Data, Process Graphs,
-      // Shift Allocation, Shift Calculator, Anything Wrong?, 5S Audit,
-      // PDCA/A3, Import/Export.  (Kanban / Heijunka were already WIP-hidden.)
-    ],
-  },
-  // "Store / Dispatch" and "System / Audit Log" sections removed entirely —
-  // none of those routes exist yet.
+  // Maintenance-only deployment.  "Maintenance" section (saare maintenance
+  // pages) navItems ke andar inject hoti hai; yahan sirf Admin section hai.
   {
     section: "Admin",
     adminOnly: true,
     items: [
-      // Only the Maintenance panel is wired.  Production / Quality / the
-      // combined Admin panel have no route yet — removed until they do.
       { key: "admin-maintenance", label: "Maintenance Panel", icon: "🛠", path: "/admin/maintenance" },
     ],
   },
@@ -42,31 +26,15 @@ const NAV_ITEMS = [
 
 export default function SlideNav() {
   const [open, setOpen] = useState(false);
-  const { user, logout, canAccess, isAdmin, isDepartment, isProduction, theme } = useAuth();
+  const { user, logout, canAccess, isAdmin, theme } = useAuth();
   const navigate  = useNavigate();
   const location  = useLocation();
   const panelRef  = useRef(null);
 
-  // Build a per-render copy of NAV_ITEMS that injects extra sections
-  // depending on the role:
-  //
-  //   admin / plant_head : a "Maintenance" section is added so the
-  //                         admin can jump directly to the Maintenance
-  //                         Dashboard / Historical Data / CAPA without
-  //                         having to log in as a maintenance user.
-  //
-  //   department user    : a "{DeptName}" section is added with the
-  //                         pages relevant to that department.  For
-  //                         maintenance it carries the Panel + Historical
-  //                         + CAPA items.
-  //
-  //   anyone else        : the static NAV_ITEMS as-is.
+  // Admin-only app: NAV_ITEMS ke saath ek "Maintenance" section inject
+  // karte hain jisme saare maintenance pages hote hain.
   const navItems = (() => {
     if (isAdmin) {
-      // Reuse the SAME PNG icons Production uses so the two Dashboard /
-      // Historical entries read symmetrically — the role-based theme
-      // (red for maintenance dept, blue for admin) handles the visual
-      // distinction; the icons themselves stay consistent.
       const adminMaint = {
         section: "Maintenance",
         items: [
@@ -92,191 +60,9 @@ export default function SlideNav() {
           { key: "maintenance-spare",          label: "Spare",              icon: "🔩",                   path: "/maintenance-spare" },
         ],
       };
-      // Quality section removed for admin — /quality-dashboard,
-      // /quality-deviations and /comments-history have no route yet.
-      return [NAV_ITEMS[0], adminMaint, ...NAV_ITEMS.slice(1)];
+      return [adminMaint, ...NAV_ITEMS];
     }
-
-    // Production user (role='production', not a department) — gets the
-    // standard Production-side pages plus a read-only "Production Panel"
-    // entry that opens /admin/production with their green theme.
-    if (isProduction) {
-      const prodPanel = {
-        section: "Production Config",
-        items: [
-          { key: "admin-production", label: "Production Panel", icon: "🏭", path: "/admin/production" },
-        ],
-      };
-      // Inject the panel link right after the standard Production block
-      // so it reads as: Production / Production Config / System.
-      return [NAV_ITEMS[0], prodPanel, ...NAV_ITEMS.slice(1)];
-    }
-
-    if (!isDepartment || !user?.departmentName) return NAV_ITEMS;
-    const slug = (user?.departmentSlug || "").toLowerCase();
-
-    // Standard two-section layout for every department, mirroring the
-    // role='production' layout in the screenshot:
-    //
-    //   <DEPT>          ← work pages (Dashboard, Historical, CAPA…)
-    //     Dashboard
-    //     <slug-specific work entries>
-    //
-    //   <DEPT> CONFIG   ← read-only config panel (mirrors AdminPanel)
-    //     <Dept> Panel
-    //
-    //   SYSTEM          ← Audit Log only (Settings removed — it had no route)
-    //
-    // Production dept users (slug='production') get the static
-    // NAV_ITEMS[0] "Production" block instead of a custom work
-    // section, since that block already has Dashboard + Historical
-    // Data + Import/Export — exactly what they need.
-    const slugToAdminPath = {
-      maintenance: "/admin/maintenance",
-      quality:     "/admin/quality",
-      production:  "/admin/production",
-    };
-    const panelPath = slugToAdminPath[slug] || "/department-panel";
-    const panelKey  = slug ? `admin-${slug}` : "department-panel";
-    const panelIcon = slug === "production"  ? "🏭"
-                    : slug === "maintenance" ? "🛠"
-                    : slug === "quality"     ? "✓"
-                    : "🛠";
-
-    const isProductionDept = slug === "production";
-
-    // ── Work section ────────────────────────────────────────────
-    let workSection;
-    if (isProductionDept) {
-      // Production dept reuses the static Production block.
-      workSection = NAV_ITEMS[0];
-    } else {
-      const workItems = [{
-        key:     "dashboard",
-        label:   "Dashboard",
-        icon:    "/dashboard-icon.png",
-        iconImg: true,
-        path:    "/dashboard",
-      }];
-      if (slug === "maintenance") {
-        // "Update Plan" sits FIRST in the maintenance list (user request).
-        workItems.unshift({
-          key:   "maintenance-update-plan",
-          label: "Update Plan",
-          icon:  "📝",
-          path:  "/maintenance-update-plan",
-        });
-        // ANDON management module (its own sub-section).
-        workItems.unshift({
-          key:   "andon-system",
-          label: "ANDON",
-          icon:  "🚦",
-          path:  "/andon-system",
-        });
-        // "Overview" management dashboard sits at the very top.
-        workItems.unshift({
-          key:   "maintenance-overview",
-          label: "Overview",
-          icon:  "📈",
-          path:  "/maintenance-overview",
-        });
-        workItems.push({
-          key:   "maintenance-kpi",
-          label: "Maintenance KPI",
-          icon:  "📊",
-          path:  "/maintenance-kpi",
-        });
-        workItems.push({
-          key:   "maintenance-breakdown",
-          label: "Breakdown",
-          icon:  "🚨",
-          path:  "/maintenance-breakdown",
-        });
-        // "Breakdown Slip" sidebar item removed — opened from the Breakdown
-        // page's own button instead (was a duplicate).
-        workItems.push({
-          key:   "skill-training",
-          label: "Skill & Training",
-          icon:  "🎓",
-          path:  "/skill-training",
-        });
-        workItems.push({
-          key:     "maintenance-historical",
-          label:   "Historical Data",
-          icon:    "/historical-icon.png",
-          iconImg: true,
-          path:    "/maintenance-historical",
-        });
-        workItems.push({
-          key:    "maintenance-capa",
-          label:  "CAPA",
-          icon:   "🛡",
-          path:   "/maintenance-capa",
-        });
-        workItems.push({
-          key:    "maintenance-deviations",
-          label:  "Deviations",
-          icon:   "⚠",
-          path:   "/maintenance-deviations",
-        });
-        workItems.push({
-          key:    "maintenance-logbook",
-          label:  "Log Book",
-          icon:   "📒",
-          path:   "/maintenance-logbook",
-        });
-        workItems.push({
-          key:    "maintenance-history-card",
-          label:  "History Card",
-          icon:   "🗂",
-          path:   "/maintenance-history-card",
-        });
-        workItems.push({
-          key:    "maintenance-pm",
-          label:  "Preventive Maint.",
-          icon:   "🛠",
-          path:   "/maintenance-pm",
-        });
-        workItems.push({
-          key:    "maintenance-machine-manual",
-          label:  "Machine Manual",
-          icon:   "📖",
-          path:   "/maintenance-machine-manual",
-        });
-        workItems.push({
-          key:    "maintenance-machine-dmc",
-          label:  "Machine DMC",
-          icon:   "🏷",
-          path:   "/maintenance-machine-dmc",
-        });
-        workItems.push({
-          key:    "maintenance-spare",
-          label:  "Spare",
-          icon:   "🔩",
-          path:   "/maintenance-spare",
-        });
-      }
-      // Quality dept work items (Quality Deviation, Comments History,
-      // Shift Allocation) were removed — none of /quality-deviations,
-      // /comments-history or /shift-allocation has a route in App.jsx yet,
-      // so they only fell through to the catch-all.  Re-add each when its
-      // page is actually built.  The quality user keeps "Dashboard".
-      // Future dept work items go here as the workflow lands.
-      workSection = { section: user.departmentName, items: workItems };
-    }
-
-    // ── Config section ──────────────────────────────────────────
-    const configSection = {
-      section: `${user.departmentName} Config`,
-      items: [{
-        key:    panelKey,
-        label:  `${user.departmentName} Panel`,
-        icon:   panelIcon,
-        path:   panelPath,
-      }],
-    };
-
-    return [workSection, configSection, ...NAV_ITEMS.slice(1)];
+    return NAV_ITEMS;   // admin hamesha upar se return karta hai
   })();
 
   // Close on outside click

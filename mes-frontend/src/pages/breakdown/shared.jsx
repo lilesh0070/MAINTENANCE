@@ -31,6 +31,14 @@ export const api = {
     if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
     return r.json();
   },
+  async delete(path, token) {
+    const r = await fetch(API + path, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
+    return r.json();
+  },
 };
 
 /* ── Visual primitives ────────────────────────────────────────────── */

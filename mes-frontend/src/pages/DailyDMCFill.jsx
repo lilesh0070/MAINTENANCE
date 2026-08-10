@@ -267,7 +267,7 @@ export default function DailyDMCFill() {
         .ddf-body { padding:20px; max-width:1600px; margin:0 auto; }
       `}</style>
       <div className="ddf-root">
-        <div className="ddf-topbar"><div /><div className="ddf-title">📝 Daily <span>DMC Fill</span></div><div /></div>
+        <div className="ddf-topbar"><div /><div className="ddf-title">📝 Operator <span>DMC Fill</span></div><div /></div>
 
         <div className="ddf-body">
           <button onClick={() => navigate("/maintenance-machine-dmc")}
@@ -316,28 +316,15 @@ export default function DailyDMCFill() {
             )}
           </div>
 
-          {/* legend hint / locked notice */}
-          {mno && points.length > 0 && (dayLocked ? (
+          {/* locked notice (view-only dates) */}
+          {mno && points.length > 0 && dayLocked && (
             <div style={{ fontSize: 12.5, fontWeight: 700, color: "#b91c1c", background: "#fef2f2",
                           border: "1px solid #fecaca", borderRadius: 8, padding: "8px 12px", marginBottom: 10 }}>
               {dayStatus === "VERIFIED"
                 ? "✅ This date's DMC is verified by the supervisor and finally submitted — view-only."
                 : "⏳ This date's DMC is submitted by the operator and is waiting for the Production Supervisor to verify & sign (Machine DMC → Supervisor Verify). It is view-only here."}
             </div>
-          ) : (
-            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 10 }}>
-              Tip: <b>OK</b>-type points — click the cell to cycle&nbsp;
-              <b style={{ color: "#16a34a" }}>✓ OK</b> →&nbsp;
-              <b style={{ color: "#dc2626" }}>✗ Not OK</b> → blank.&nbsp;
-              <b>Value</b>-type points — type the actual <b style={{ color: "#1d4ed8" }}>numeric reading</b> in the cell.
-              Then fill the sign-offs and <b>Save</b>.
-              <div style={{ marginTop: 4, color: "#94a3b8" }}>
-                Only points <b>due today</b> are shown — <b>Daily</b> every day (all must be filled to Save);
-                <b> Weekly / 2-Weekly / Monthly</b> stay until marked OK once in their period (a ✗ keeps them coming next day).
-                Sign-off is by <b>code</b> — the operator must enter their code before Save.
-              </div>
-            </div>
-          ))}
+          )}
 
           {loading ? (
             <div style={{ background: "#fff", borderRadius: 12, padding: 40, textAlign: "center", color: "#64748b" }}>Loading…</div>
@@ -365,39 +352,51 @@ export default function DailyDMCFill() {
         </div>
       </div>
 
-      {/* Not-OK reason popup — opens at the clicked ✗ cell */}
+      {/* Not-OK reason popup — MANDATORY: reason bhare bina band nahi hota;
+          cancel karna ho to "Remove ✗" se cross hatao. */}
       {reasonPopup && (() => {
         const p = points.find((pt) => pt.id === reasonPopup.id);
         if (!p) return null;
         const rk = `${reasonPopup.id}_${reasonPopup.day}`;
+        const hasReason = (reasons[rk] || "").trim().length > 0;
         const close = () => setReasonPopup(null);
+        // ✗ poori tarah hatao (cross + reason dono) — NG cancel
+        const removeNg = () => {
+          setValues((s) => { const n = { ...s }; delete n[rk]; return n; });
+          setReasons((r) => { const n = { ...r }; delete n[rk]; return n; });
+          close();
+        };
         return (
           <>
-            <div onClick={close} style={{ position: "fixed", inset: 0, zIndex: 900 }} />
+            {/* overlay: reason bhara ho tabhi bahar-click se band, warna mandatory */}
+            <div onClick={() => { if (hasReason) close(); }} style={{ position: "fixed", inset: 0, zIndex: 900 }} />
             <div onClick={(e) => e.stopPropagation()}
                  style={{ position: "fixed", zIndex: 901, width: 320,
                           left: Math.max(12, Math.min(reasonPopup.x, window.innerWidth - 336)),
-                          top: Math.min(reasonPopup.y + 14, window.innerHeight - 210),
+                          top: Math.min(reasonPopup.y + 14, window.innerHeight - 240),
                           background: "#fff", borderRadius: 10, border: "1px solid #e2e8f0",
                           boxShadow: "0 12px 34px rgba(15,23,42,.28)", padding: 14 }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: "#b91c1c", marginBottom: 3 }}>✗ Not OK — reason</div>
               <div style={{ fontSize: 11.5, color: "#334155", marginBottom: 9 }}>#{p.s_no} · {p.check_point}</div>
               <textarea autoFocus rows={3} value={reasons[rk] || ""} placeholder="Why is this Not OK?"
                         onChange={(e) => onReason(reasonPopup.id, reasonPopup.day, e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); close(); } }}
+                        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (hasReason) close(); } }}
                         style={{ width: "100%", boxSizing: "border-box", borderRadius: 8, border: "1px solid #cbd5e1",
                                  padding: "7px 9px", fontSize: 12.5, fontFamily: "inherit", outline: "none", resize: "vertical" }} />
+              {!hasReason && (
+                <div style={{ fontSize: 11, color: "#b45309", marginTop: 6, lineHeight: 1.4 }}>
+                  Reason likhna zaroori hai — warna <b>Remove ✗</b> se cross hatayein.
+                </div>
+              )}
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 10 }}>
-                <button onClick={() => {
-                          setValues((s) => { const n = { ...s }; delete n[rk]; return n; });
-                          setReasons((r) => { const n = { ...r }; delete n[rk]; return n; });
-                          close();
-                        }}
+                <button onClick={removeNg}
                         style={{ padding: "6px 12px", borderRadius: 7, border: "1px solid #cbd5e1", background: "#fff",
                                  color: "#64748b", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Remove ✗</button>
-                <button onClick={close}
-                        style={{ padding: "6px 18px", borderRadius: 7, border: "none", background: "#dc2626",
-                                 color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>Done</button>
+                <button onClick={() => { if (hasReason) close(); }} disabled={!hasReason}
+                        style={{ padding: "6px 18px", borderRadius: 7, border: "none",
+                                 background: hasReason ? "#dc2626" : "#fca5a5", color: "#fff",
+                                 fontSize: 12, fontWeight: 800,
+                                 cursor: hasReason ? "pointer" : "not-allowed", opacity: hasReason ? 1 : 0.7 }}>Done</button>
               </div>
             </div>
           </>

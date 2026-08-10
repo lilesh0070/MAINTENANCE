@@ -6,7 +6,7 @@ import { Btn, api, todayLocalISO, fmtDuration, fmtClock } from "./shared";
  * 2.5) Maintenance KPI panel (auto-computed + target compare + CSV
  *      download).  Sits between History and Zone&Line Stats.
  * ════════════════════════════════════════════════════════════════════ */
-function KpiPanel({ token, lines, onViewSlip, onFillSlip, refreshKey }) {
+function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshKey }) {
   // Filters — same style as every other page: a Date (default TODAY, but
   // freely changeable) + Zone → Line cascade from the Machine Master.
   const [fDate,   setFDate]   = useState(todayLocalISO());
@@ -246,19 +246,28 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, refreshKey }) {
                                            color: durSec > 30 * 60 ? "#dc2626" : "#334155" }}>{fmtDuration(durSec)}</td>
                               <td style={{ padding: "8px 12px", color: "#64748b", maxWidth: 260 }}>{b.reason || "—"}</td>
                               <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
-                                {pending && onFillSlip ? (
-                                  /* form pending → fill it here (View appears once filled) */
-                                  <button onClick={() => onFillSlip(b.id)} style={{
-                                    border: "none", background: "#dc2626", color: "#fff",
-                                    borderRadius: 7, padding: "4px 12px", fontSize: 11.5, fontWeight: 800,
-                                    cursor: "pointer", fontFamily: "inherit" }}>✏ Fill Slip</button>
-                                ) : onViewSlip ? (
-                                  /* already filled → view the filled slip */
-                                  <button onClick={() => onViewSlip(b.id)} style={{
-                                    border: "1px solid #cbd5e1", background: "#fff", color: "#334155",
-                                    borderRadius: 7, padding: "4px 12px", fontSize: 11.5, fontWeight: 800,
-                                    cursor: "pointer", fontFamily: "inherit" }}>🧾 View Slip</button>
-                                ) : <span style={{ color: "#cbd5e1" }}>—</span>}
+                                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                  {pending && onFillSlip ? (
+                                    /* form pending → fill it here (View appears once filled) */
+                                    <button onClick={() => onFillSlip(b.id)} style={{
+                                      border: "none", background: "#dc2626", color: "#fff",
+                                      borderRadius: 7, padding: "4px 12px", fontSize: 11.5, fontWeight: 800,
+                                      cursor: "pointer", fontFamily: "inherit" }}>✏ Fill Slip</button>
+                                  ) : onViewSlip ? (
+                                    /* already filled → view the filled slip */
+                                    <button onClick={() => onViewSlip(b.id)} style={{
+                                      border: "1px solid #cbd5e1", background: "#fff", color: "#334155",
+                                      borderRadius: 7, padding: "4px 12px", fontSize: 11.5, fontWeight: 800,
+                                      cursor: "pointer", fontFamily: "inherit" }}>🧾 View Slip</button>
+                                  ) : <span style={{ color: "#cbd5e1" }}>—</span>}
+                                  {onDeleteSlip && (
+                                    /* auto-generated slip delete (admin) — galat/extra slip hatane ke liye */
+                                    <button onClick={() => onDeleteSlip(b.id)} title="Slip delete karo" style={{
+                                      border: "1px solid #fecaca", background: "#fff", color: "#dc2626",
+                                      borderRadius: 7, padding: "4px 10px", fontSize: 11.5, fontWeight: 800,
+                                      cursor: "pointer", fontFamily: "inherit" }}>🗑 Delete</button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           );

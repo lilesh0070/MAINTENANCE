@@ -28,7 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from database import get_conn, dict_cursor
-from auth import get_current_user
+from auth import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/breakdown-slips", tags=["breakdown-slips"])
 
@@ -460,6 +460,18 @@ def get_auto_slip(sid: int, user=Depends(get_current_user)) -> dict:
     if not r:
         raise HTTPException(404, "auto slip not found")
     return _slip_to_ticket(dict(r))
+
+
+@router.delete("/auto/{sid}")
+def delete_auto_slip(sid: int, admin=Depends(require_admin)):
+    """AUTO slip delete — galat/extra auto-generated slip hatane ke liye (admin-only)."""
+    _ensure_table()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(f"DELETE FROM {AUTO_SLIP_TABLE} WHERE id = %s", (sid,))
+        if cur.rowcount == 0:
+            raise HTTPException(404, "auto slip not found")
+    return {"ok": True, "deleted": sid}
 
 
 @router.post("/auto/{sid}/fill")

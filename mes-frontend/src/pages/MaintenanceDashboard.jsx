@@ -116,8 +116,21 @@ export default function MaintenanceDashboard() {
       // ismein sirf wahi rakha hai jo sach me badalta rehta hai.
       const andon = await api.get("/api/andon/dashboard", token).catch(() => ({}));
       // /api/andon/dashboard {rows, stats} deta hai
-      setAndonRows(Array.isArray(andon?.rows) ? andon.rows : []);
-      setAndonStats((andon && andon.stats) || {});
+      const rows  = Array.isArray(andon?.rows) ? andon.rows : [];
+      const stats = (andon && andon.stats) || {};
+      // Har 2 sec naya object setState karne se poora dashboard bewajah re-render
+      // hota tha, chahe kuch badla ho ya nahi.  Ab pehle JSON se milaate hain —
+      // agar data waisa hi hai to PURANA reference lauta dete hain, jisse React
+      // re-render hi skip kar deta hai.  (Live duration ka tick AndonTable ka
+      // apna 1-sec timer sambhalta hai, wo isse rukta nahi.)
+      setAndonRows((prev) => {
+        const a = JSON.stringify(prev), b = JSON.stringify(rows);
+        return a === b ? prev : rows;
+      });
+      setAndonStats((prev) => {
+        const a = JSON.stringify(prev), b = JSON.stringify(stats);
+        return a === b ? prev : stats;
+      });
     } catch {
       showToast("Failed to load dashboard", "err");
     } finally {
@@ -125,13 +138,13 @@ export default function MaintenanceDashboard() {
     }
   }, [token]);
 
-  // ANDON ka data HAR 2 SECOND — button dabte hi dashboard par dikhna chahiye.
-  // Pehle 10 sec tha, isliye call aane me 5-10 second lag jaate the (ESP turant
-  // bhejta hai aur backend 7 ms me jawab deta hai — saari der yahin thi).
-  // 2 sec wahi hai jo ANDON System page ka Live Board use karta hai.
+  // ANDON ka data HAR 1 SECOND — button dabte hi dashboard par dikhna chahiye.
+  // 2 sec par 1-2 sec ki chhoti call do refresh ke beech khul-band ho jaati thi
+  // aur dikhti hi nahi thi; 1 sec par pakad me aa jaati hai.  (Endpoint ~15ms ka
+  // hai + dedup se bewajah re-render nahi hota, to 1s poll par load na ke barabar.)
   useEffect(() => {
     reload();
-    const t = setInterval(reload, 2000);
+    const t = setInterval(reload, 1000);
     return () => clearInterval(t);
   }, [reload]);
 
@@ -155,6 +168,18 @@ export default function MaintenanceDashboard() {
   const onViewSlip = (id) => openAutoSlip(id, "view");
   // Pending slip → form FILL mode me khulega; save usi slip row par hoga.
   const onFillSlip = (id) => openAutoSlip(id, "fill");
+  // Galat/extra AUTO slip delete (admin) — confirm ke baad, list turant refresh.
+  const onDeleteSlip = async (id) => {
+    if (!window.confirm("Ye auto-generated slip delete kar dein? Wapas nahi aayegi.")) return;
+    try {
+      await api.delete(`/api/breakdown-slips/auto/${id}`, token);
+      showToast("Slip delete ho gayi ✓");
+      setSlipRefreshKey((k) => k + 1);
+      reload();
+    } catch (e) {
+      showToast(e.message || "Delete fail hui", "err");
+    }
+  };
 
   // Bumped after a closure save so the zone slip list refetches — the just-
   // filled slip flips PENDING → COMPLETED and its button becomes "View Slip".
@@ -297,7 +322,7 @@ export default function MaintenanceDashboard() {
               </div>
 
               <div className="md-section">
-                <KpiPanel token={token} lines={lines} onViewSlip={onViewSlip} onFillSlip={onFillSlip} refreshKey={slipRefreshKey} />
+                <KpiPanel token={token} lines={lines} onViewSlip={onViewSlip} onFillSlip={onFillSlip} onDeleteSlip={isAdmin ? onDeleteSlip : undefined} refreshKey={slipRefreshKey} />
               </div>
 
               {/* machine-no wise OPEN DMC NG points — grand total is the last row */}

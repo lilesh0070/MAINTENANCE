@@ -427,12 +427,13 @@ export default function MaintenanceHistorical() {
                     <th>#</th><th>Sunday</th><th>Zone</th><th>Line</th>
                     <th>M/C No</th><th>Machine</th><th>Problem / Work</th>
                     <th style={{ textAlign:"center" }}>Status</th><th>Action Taken</th><th>Done By</th>
+                    <th>Start</th><th>End</th><th>Total</th><th>Spares</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sunLoading && <tr><td colSpan={10} className="hd-empty">Loading…</td></tr>}
+                  {sunLoading && <tr><td colSpan={14} className="hd-empty">Loading…</td></tr>}
                   {!sunLoading && sunList.length === 0 &&
-                    <tr><td colSpan={10} className="hd-empty">No Sunday work for this filter.</td></tr>}
+                    <tr><td colSpan={14} className="hd-empty">No Sunday work for this filter.</td></tr>}
                   {!sunLoading && sunList.map((r, i) => (
                     <tr key={r.id}>
                       <td>{i + 1}</td>
@@ -451,6 +452,10 @@ export default function MaintenanceHistorical() {
                       </td>
                       <td style={{ maxWidth:220 }}>{r.status === "DONE" ? r.work_done : "—"}</td>
                       <td style={{ fontWeight:700, color:"#334155" }}>{r.status === "DONE" ? r.done_by : "—"}</td>
+                      <td style={{ fontFamily:"monospace", color:"#475569" }}>{r.start_time || "—"}</td>
+                      <td style={{ fontFamily:"monospace", color:"#475569" }}>{r.end_time || "—"}</td>
+                      <td style={{ fontWeight:700, color:"#334155" }}>{r.duration_minutes != null ? `${r.duration_minutes} min` : "—"}</td>
+                      <td style={{ maxWidth:200, color:"#64748b" }}>{r.spares_used || "—"}</td>
                     </tr>
                   ))}
                 </tbody>

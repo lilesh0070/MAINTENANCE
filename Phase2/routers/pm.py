@@ -182,12 +182,22 @@ class PointAdd(BaseModel):
     method: Optional[str] = ""
 
 
+class PmStagedPoint(BaseModel):
+    """Ek staged (pending) naya point — rev bump ke saath hi commit hota hai."""
+    s_no: Optional[str] = ""
+    check_point: str
+    judgement_standard: Optional[str] = ""
+    method: Optional[str] = ""
+    machine_name: Optional[str] = ""
+
+
 class RevBump(BaseModel):
     zone: str
     line: str
     machine_no: str
     rev_no: str                          # must be > current (numeric)
     rev_date: str                        # YYYY-MM-DD
+    new_points: List[PmStagedPoint] = [] # staged adds — NEW rev par commit
 
 
 @router.get("/check-point-revs")
@@ -300,9 +310,31 @@ def bump_check_point_rev(body: RevBump, user=Depends(get_current_user)):
                            SET rev_no=%s, rev_date=%s
                          WHERE zone=%s AND line=%s AND machine_no=%s""",
                      (str(new_rev), new_date, body.zone, body.line, body.machine_no))
+        # staged naye points ko NEW rev par commit karo (atomic — rev bump ke saath hi)
+        added = 0
+        if body.new_points:
+            cur.execute("""SELECT COALESCE(MAX(sort_order),0) so, COUNT(*) n, MAX(machine_name) mname
+                             FROM maintenance_pm_check_point WHERE zone=%s AND line=%s AND machine_no=%s""",
+                        (body.zone, body.line, body.machine_no))
+            base = cur.fetchone() or {}
+            so_next = int(base.get("so") or 0)
+            n_next  = int(base.get("n") or 0)
+            mn_ctx  = base.get("mname") or ""
+            for pt in body.new_points:
+                if not (pt.check_point or "").strip():
+                    continue
+                so_next += 1; n_next += 1
+                s_no = (pt.s_no or "").strip() or str(n_next)
+                cur2.execute("""INSERT INTO maintenance_pm_check_point
+                      (zone,line,machine_no,machine_name,s_no,check_point,judgement_standard,method,rev_no,rev_date,sort_order)
+                      VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (body.zone, body.line, body.machine_no, (pt.machine_name or mn_ctx), s_no,
+                     pt.check_point.strip(), (pt.judgement_standard or "").strip(),
+                     (pt.method or "").strip(), str(new_rev), new_date, so_next))
+                added += 1
         conn.commit()
     return {"ok": True, "old_rev": ctx["rev_no"], "new_rev": str(new_rev),
-            "archived_points": archived}
+            "archived_points": archived, "added_points": added}
 
 
 @router.get("/check-point-machines")

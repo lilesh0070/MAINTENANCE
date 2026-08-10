@@ -126,6 +126,7 @@ export default function MachineDMCAdmin({ toast, readOnly = false }) {
   const [busy, setBusy]     = useState(false);
   // add-point form
   const [add, setAdd] = useState(EMPTY_ADD);
+  const [pending, setPending] = useState([]);   // staged naye points — rev bump par hi commit
   // inline edit
   const [editId, setEditId]     = useState(null);
   const [editVals, setEditVals] = useState({});
@@ -209,16 +210,16 @@ export default function MachineDMCAdmin({ toast, readOnly = false }) {
   const isCurrent = !selRev || (revs.current && String(selRev) === String(revs.current.rev_no));
   const canEdit = !readOnly && isCurrent && !!mno;
 
-  const addPoint = async () => {
+  // Naya point SEEDHE save nahi hota — pehle "pending" me stage hota hai, aur
+  // rev bump (Update Revision) par hi commit hota hai.  Bina rev bump ke chhod
+  // do to (reload/page change par) ye hat jaata hai.
+  const addPoint = () => {
     if (!add.check_point.trim()) { say("Check point required", "err"); return; }
-    setBusy(true);
-    try {
-      await api(`/points`, { method: "POST", body: JSON.stringify({
-        zone, line, machine_no: mno, machine_name: mcSel?.machine_name || "", ...add }) });
-      setAdd(EMPTY_ADD); say("Point added ✓"); loadPoints(); loadRevs();
-    } catch (e) { say(String(e.message || e), "err"); }
-    finally { setBusy(false); }
+    setPending((ps) => [...ps, { ...add, machine_name: mcSel?.machine_name || "" }]);
+    setAdd(EMPTY_ADD);
+    say("Point staged — rev update karne par hi save hoga");
   };
+  const removePending = (i) => setPending((ps) => ps.filter((_, x) => x !== i));
 
   const startEdit = (p) => {
     setEditId(p.id);
@@ -247,13 +248,14 @@ export default function MachineDMCAdmin({ toast, readOnly = false }) {
     const nxt = parseInt(nrNo, 10);
     if (!nxt || nxt <= cur) { say(`New rev no. must be greater than the current rev (${revs.current?.rev_no || "—"})`, "err"); return; }
     if (!nrDate) { say("Pick a rev date", "err"); return; }
-    if (!window.confirm(`Update revision ${revs.current?.rev_no} → ${nxt}?\nThe current points will be archived under Rev ${revs.current?.rev_no}.`)) return;
+    const extra = pending.length ? `\n${pending.length} naya point is nayi rev me add hoga.` : "";
+    if (!window.confirm(`Update revision ${revs.current?.rev_no} → ${nxt}?\nCurrent points Rev ${revs.current?.rev_no} me archive honge.${extra}`)) return;
     setBusy(true);
     try {
       const r = await api(`/rev`, { method: "PUT", body: JSON.stringify({
-        zone, line, machine_no: mno, rev_no: String(nxt), rev_date: nrDate }) });
-      say(`Revision updated → Rev ${r.new_rev} ✓ (Rev ${r.old_rev} archived)`);
-      setNrNo(""); setSelRev(""); loadRevs(); loadPoints();
+        zone, line, machine_no: mno, rev_no: String(nxt), rev_date: nrDate, new_points: pending }) });
+      say(`Rev ${r.new_rev} ✓ — ${r.added_points || 0} naye point add, Rev ${r.old_rev} archived`);
+      setPending([]); setNrNo(""); setSelRev(""); loadRevs(); loadPoints();
     } catch (e) { say(String(e.message || e), "err"); }
     finally { setBusy(false); }
   };
@@ -426,6 +428,13 @@ export default function MachineDMCAdmin({ toast, readOnly = false }) {
           </div>
         )}
 
+        {canEdit && pending.length > 0 && (
+          <div style={{ ...card, borderLeft: "4px solid #d97706", background: "#fffbeb", color: "#92400e", fontSize: 12.5, fontWeight: 700, lineHeight: 1.5 }}>
+            ⚠ {pending.length} naya point <b>PENDING</b> hai — save karne ke liye upar <b>Update Revision</b> (naya rev no + date) dabao.
+            Rev bump kiye bina page chhoda / reload kiya to ye <b>hat jayenge</b>.
+          </div>
+        )}
+
         {!mno ? (
           <div style={{ ...card, textAlign: "center", color: "#64748b", padding: 40 }}>
             Select zone → line → machine to open its check points.
@@ -484,7 +493,26 @@ export default function MachineDMCAdmin({ toast, readOnly = false }) {
                       )}
                     </tr>
                   )))}
-                  {points.length === 0 && (
+                  {/* staged (pending) naye points — rev bump par commit honge */}
+                  {pending.map((p, i) => (
+                    <tr key={`pending-${i}`} style={{ background: "#fef9c3" }}>
+                      <td style={{ ...cellTxt, textAlign: "center", color: "#a16207", fontWeight: 800 }}>new</td>
+                      <td style={cellTxt}>{p.category}</td>
+                      <td style={cellTxt}>{p.check_point}
+                        <span style={{ fontSize: 9.5, fontWeight: 800, color: "#92400e", background: "#fde68a", borderRadius: 4, padding: "1px 5px", marginLeft: 5 }}>PENDING</span></td>
+                      <td style={cellTxt}>{p.criteria}</td>
+                      <td style={cellTxt}>{p.method}</td>
+                      <td style={{ ...cellTxt, textAlign: "center" }}>{p.resp}</td>
+                      <td style={{ ...cellTxt, textAlign: "center", fontWeight: 700 }}>{p.freq}</td>
+                      <td style={{ ...cellTxt, textAlign: "center" }}>{p.type}</td>
+                      {canEdit && (
+                        <td style={{ border: sb, textAlign: "center" }}>
+                          <button onClick={() => removePending(i)} style={iconBtn("#dc2626")} title="Remove from pending">🗑</button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                  {points.length === 0 && pending.length === 0 && (
                     <tr><td colSpan={colCount} style={{ border: sb, padding: 20, textAlign: "center", color: "#94a3b8", fontSize: 12 }}>No points.</td></tr>
                   )}
                   {/* add-point row */}

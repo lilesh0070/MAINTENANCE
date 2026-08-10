@@ -154,9 +154,9 @@ def get_current_user_optional(token: Optional[str] = Depends(oauth2_scheme_optio
 
 
 def require_admin(user: dict = Depends(get_current_user)):
-    """Dependency that raises 403 if user is not admin (or plant_head,
-    which is admin-equivalent per spec)."""
-    if user["role"] not in ("admin", "plant_head"):
+    """Dependency that raises 403 if the user is not admin.
+    App admin-only hai — admin hi eklauta role hai."""
+    if user["role"] != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin privileges required"

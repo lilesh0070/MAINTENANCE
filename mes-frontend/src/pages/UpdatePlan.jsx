@@ -183,17 +183,28 @@ const todayLocalISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+const EMPTY_SPARE = { spare_name: "", spare_model_no: "", spare_cnmm_no: "", spare_qty: "" };
+// HH:MM se HH:MM ka farak → "Xh Ym" (auto Total), end < start ho to agla din
+const durLabel = (start, end) => {
+  if (!start || !end) return "—";
+  const [sh, sm] = start.split(":").map(Number), [eh, em] = end.split(":").map(Number);
+  let d = (eh * 60 + em) - (sh * 60 + sm); if (d < 0) d += 24 * 60;
+  const h = Math.floor(d / 60), m = d % 60;
+  return (h ? `${h}h ` : "") + `${m}m` + `  (${d} min)`;
+};
 const SUNDAY_CFG = {
   api: "/api/sunday-plan", t1: "Sunday Plan", t2: "Work",
   sub: "Assign Sunday work · fill the action taken and by whom",
   dateLabel: "Sunday Date", listTitle: "🗓 Sunday Work Plans",
   defDate: nextSundayISO, range: false, dateCol: "Sunday",
+  timesSpares: true,   // Sunday par hi: Start/End time + auto Total + Spares (Log Book jaisa)
 };
 const DAILY_CFG = {
   api: "/api/daily-plan", t1: "Daily Work", t2: "Assign",
   sub: "Assign day-wise work · fill the action taken and by whom",
   dateLabel: "Work Date", listTitle: "📋 Daily Work Plans",
   defDate: todayLocalISO, range: true, dateCol: "Date",
+  timesSpares: true,   // Daily me bhi: Start/End time + auto Total + Spares (Log Book jaisa)
 };
 const SHUTDOWN_CFG = {
   api: "/api/shutdown-plan", t1: "Shutdown Plan", t2: "Work",
@@ -222,8 +233,28 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
   const [rTo, setRTo]       = useState("");
   const [busyId, setBusyId] = useState(null);
   const [fillId, setFillId] = useState(null);         // plan being completed
-  const [fill, setFill]     = useState({ work_done: "", done_by: "" });
+  const [fill, setFill]     = useState({ work_done: "", done_by: "", start_time: "", end_time: "", spare_used: "no", spares: [{ ...EMPTY_SPARE }] });
+  const [spareMaster, setSpareMaster] = useState([]);   // spare name picker (maintenance_spare)
   const [msg, setMsg]       = useState(null);
+  const blankFill = () => ({ work_done: "", done_by: "", start_time: "", end_time: "", spare_used: "no", spares: [{ ...EMPTY_SPARE }] });
+
+  // ── spares (repeatable, Log Book jaisa) — sirf cfg.timesSpares (Sunday) par ──
+  const setFillSpare = (i, k, v) => setFill((f) => ({
+    ...f, spares: (f.spares || []).map((s, idx) => idx === i ? { ...s, [k]: v } : s) }));
+  const addFillSpare = () => setFill((f) => ({ ...f, spares: [...(f.spares || []), { ...EMPTY_SPARE }] }));
+  const removeFillSpare = (i) => setFill((f) => ({
+    ...f, spares: (f.spares || []).length > 1 ? f.spares.filter((_, idx) => idx !== i) : [{ ...EMPTY_SPARE }] }));
+  // known spare chunne par model/ERP auto-fill (master se)
+  const onFillSpareName = (i, v) => setFill((f) => ({
+    ...f, spares: (f.spares || []).map((s, idx) => {
+      if (idx !== i) return s;
+      const name = v.toUpperCase();
+      const hit = spareMaster.find((m) => String(m.spare_name || "").toLowerCase() === String(v).trim().toLowerCase());
+      return hit ? { ...s, spare_name: name,
+                     spare_model_no: (hit.spare_model_no || s.spare_model_no || "").toUpperCase(),
+                     spare_cnmm_no:  (hit.spare_cnmm_no  || s.spare_cnmm_no  || "").toUpperCase() }
+                 : { ...s, spare_name: name };
+    }) }));
 
   const load = () => {
     const p = new URLSearchParams();
@@ -234,6 +265,8 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
   useEffect(() => {
     if (!token) return;
     api.get("/api/machines/", token).then((m) => setMaster(Array.isArray(m) ? m : [])).catch(() => setMaster([]));
+    if (cfg.timesSpares)
+      api.get("/api/maintenance-spare/", token).then((s) => setSpareMaster(Array.isArray(s) ? s : [])).catch(() => {});
   }, [token]);
   useEffect(() => {
     if (!token) return;
@@ -279,6 +312,11 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
       setMsg({ ok: false, text: "Fill BOTH — what work was done AND who did it." });
       return;
     }
+    if (cfg.timesSpares && fill.spare_used === "yes" &&
+        !(fill.spares || []).some((s) => String(s.spare_name || "").trim())) {
+      setMsg({ ok: false, text: "Spare Used = YES — kam se kam ek spare ka naam bharo (ya NO karo)." });
+      return;
+    }
     setBusyId(id); setMsg(null);
     try {
       const r = await fetch(`${cfg.api}/${id}/complete`, {
@@ -286,7 +324,7 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify(fill) });
       if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
-      setFillId(null); setFill({ work_done: "", done_by: "" });
+      setFillId(null); setFill(blankFill());
       setMsg({ ok: true, text: "✓ Updated — work recorded as DONE" });
       load();
     } catch (e) { setMsg({ ok: false, text: String(e.message || e).slice(0, 160) }); }
@@ -466,7 +504,7 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
                   </td>
                   <td style={{ borderBottom:"1px solid #eef2f7", padding:"9px 12px", whiteSpace:"nowrap" }}>
                     {r.status === "PENDING" ? (
-                      <button onClick={() => { setFillId(fillId === r.id ? null : r.id); setFill({ work_done:"", done_by:"" }); }}
+                      <button onClick={() => { setFillId(fillId === r.id ? null : r.id); setFill(blankFill()); }}
                               style={{ padding:"5px 14px", borderRadius:7, border:"none", background:"#16a34a",
                                        color:"#fff", cursor:"pointer", fontSize:11.5, fontWeight:800 }}>
                         {fillId === r.id ? "✕ Cancel" : "✔ Update Work"}
@@ -485,8 +523,24 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
                   <tr key={`fill-${r.id}`}>
                     <td colSpan={COLS} style={{ background:"#f8fafc", borderBottom:"1px solid #eef2f7", padding:"12px 16px" }}>
                       <div style={{ display:"flex", gap:12, flexWrap:"wrap", alignItems:"flex-end" }}>
+                        {cfg.timesSpares && (<>
+                          <Fld label="Start Time">
+                            <input type="time" style={{ ...selStyle, minWidth:120 }} value={fill.start_time}
+                                   onChange={(e) => setFill((f) => ({ ...f, start_time: e.target.value }))} />
+                          </Fld>
+                          <Fld label="End Time">
+                            <input type="time" style={{ ...selStyle, minWidth:120 }} value={fill.end_time}
+                                   onChange={(e) => setFill((f) => ({ ...f, end_time: e.target.value }))} />
+                          </Fld>
+                          <Fld label="Total (auto)">
+                            <div style={{ ...selStyle, minWidth:150, background:"#eef2ff", color:"#3730a3",
+                                          fontWeight:800, display:"flex", alignItems:"center" }}>
+                              {durLabel(fill.start_time, fill.end_time)}
+                            </div>
+                          </Fld>
+                        </>)}
                         <Fld label="Action Taken">
-                          <input style={{ ...selStyle, minWidth:360 }} value={fill.work_done}
+                          <input style={{ ...selStyle, minWidth:340 }} value={fill.work_done}
                                  placeholder="e.g. BELT ALIGNED, TENSION SET, GREASING DONE"
                                  onChange={(e) => setFill((f) => ({ ...f, work_done: e.target.value.toUpperCase() }))} />
                         </Fld>
@@ -495,6 +549,59 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
                                  placeholder="name(s)"
                                  onChange={(e) => setFill((f) => ({ ...f, done_by: e.target.value.toUpperCase() }))} />
                         </Fld>
+                      </div>
+                      {cfg.timesSpares && (
+                        <div style={{ marginTop:14 }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:16, marginBottom:8, flexWrap:"wrap" }}>
+                            <span style={{ fontSize:11.5, fontWeight:800, color:"#475569" }}>🔧 Spare Used ?</span>
+                            <label style={{ fontSize:12.5, fontWeight:700, cursor:"pointer" }}>
+                              <input type="radio" checked={fill.spare_used === "yes"}
+                                     onChange={() => setFill((f) => ({ ...f, spare_used: "yes",
+                                       spares: (f.spares && f.spares.length) ? f.spares : [{ ...EMPTY_SPARE }] }))} /> YES
+                            </label>
+                            <label style={{ fontSize:12.5, fontWeight:700, cursor:"pointer" }}>
+                              <input type="radio" checked={fill.spare_used !== "yes"}
+                                     onChange={() => setFill((f) => ({ ...f, spare_used: "no", spares: [{ ...EMPTY_SPARE }] }))} /> NO
+                            </label>
+                            {fill.spare_used === "yes" &&
+                              <span style={{ fontSize:11, color:"#b45309", fontWeight:700 }}>· spare details bharni zaroori hai</span>}
+                          </div>
+                          {fill.spare_used === "yes" && (<>
+                          <datalist id="sun-spare-names">
+                            {spareMaster.map((m, i) => <option key={i} value={m.spare_name} />)}
+                          </datalist>
+                          {(fill.spares || []).map((sp, i) => (
+                            <div key={i} style={{ display:"flex", gap:10, flexWrap:"wrap", alignItems:"flex-end",
+                                                  paddingTop: i ? 10 : 0, marginTop: i ? 10 : 0,
+                                                  borderTop: i ? "1px dashed #e2e8f0" : "none" }}>
+                              <Fld label={`Spare Name${fill.spares.length > 1 ? ` ${i + 1}` : ""}`}>
+                                <input list="sun-spare-names" placeholder="Pick or type a spare" style={{ ...selStyle, minWidth:220 }}
+                                       value={sp.spare_name} onChange={(e) => onFillSpareName(i, e.target.value)} />
+                              </Fld>
+                              <Fld label="Model Number">
+                                <input style={{ ...selStyle, minWidth:170 }}
+                                       value={sp.spare_model_no} onChange={(e) => setFillSpare(i, "spare_model_no", e.target.value.toUpperCase())} />
+                              </Fld>
+                              <Fld label="Spare ERP Number">
+                                <input maxLength={8} placeholder="ABCD1234" style={{ ...selStyle, minWidth:150 }}
+                                       value={sp.spare_cnmm_no} onChange={(e) => setFillSpare(i, "spare_cnmm_no", e.target.value.toUpperCase())} />
+                              </Fld>
+                              <Fld label="Quantity">
+                                <input type="number" style={{ ...selStyle, minWidth:110 }}
+                                       value={sp.spare_qty} onChange={(e) => setFillSpare(i, "spare_qty", e.target.value)} />
+                              </Fld>
+                              <button type="button" onClick={() => removeFillSpare(i)} title="Remove spare"
+                                      style={{ border:"1px solid #fecaca", background:"#fff", color:"#dc2626", borderRadius:8,
+                                               padding:"8px 11px", cursor:"pointer", fontWeight:800, fontSize:13, marginBottom:2 }}>🗑</button>
+                            </div>
+                          ))}
+                          <button type="button" onClick={addFillSpare}
+                                  style={{ border:"1px dashed #cbd5e1", background:"#fff", color:"#2563eb", borderRadius:7,
+                                           padding:"5px 12px", fontSize:12, fontWeight:700, cursor:"pointer" }}>+ Add spare</button>
+                          </>)}
+                        </div>
+                      )}
+                      <div style={{ marginTop:14 }}>
                         <button onClick={() => complete(r.id)} disabled={busyId === r.id}
                                 style={{ padding:"11px 24px", borderRadius:9, border:"none", cursor:"pointer",
                                          background:"#2563eb", color:"#fff", fontSize:13, fontWeight:800 }}>

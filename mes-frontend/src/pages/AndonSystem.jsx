@@ -10,7 +10,7 @@
  *     a shared default + per-ESP override.  Time calc (Phase 3) is per-department.
  * Backend: /api/andon/*.  Routing: /andon-system.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
@@ -28,9 +28,10 @@ const DEPT_COLOR = {
   quality:     "#7c3aed",   // baingani
   material:    "#0d9488",   // teal
   "other loss":"#2563eb",   // neela
+  "model setup":"#db2777",  // rose (DO8)
 };
 const DO_COLOR = { 1:"#dc2626", 2:"#dc2626", 3:"#ea580c", 4:"#ea580c",
-                   5:"#7c3aed", 6:"#0d9488", 7:"#2563eb", 8:"#64748b" };
+                   5:"#7c3aed", 6:"#0d9488", 7:"#2563eb", 8:"#db2777" };
 // jo in dono me na mile uske liye stable fallback (naam ke hash se)
 const FALLBACK = ["#0891b2", "#c026d3", "#65a30d", "#e11d48", "#4f46e5", "#b45309"];
 const deptColor = (ev) => {
@@ -84,8 +85,69 @@ export default function AndonSystem() {
   const [depts, setDepts]     = useState([]);
   const [esps, setEsps]       = useState([]);
   const [events, setEvents]   = useState([]);       // live OPEN calls (the board)
-  const [evAt, setEvAt]       = useState(0);         // Date.now() at last /events fetch
+  const [totals, setTotals]   = useState([]);        // aaj ka per-department total loss
   const [, setTick]           = useState(0);         // 1s heartbeat so timers advance smoothly
+  // Har chalu call ka "virtual start" (epoch ms) — EK BAAR anchor hota hai.
+  // Timer wall-clock se tick karta hai, isliye har second ek-ek badhta hai; 2s
+  // poll par dobara anchor NAHI hota, isliye number kabhi jhatka/peeche nahi
+  // jaata.  (Tab background me ho kar timer ruk jaye to drift 2s se upar jaata
+  // hai — tab hi dobara anchor kar dete hain, taaki wapas aane par sahi ho.)
+  const startRefs = useRef({});      // callId -> virtual start (ms)
+
+  // ── Department loss HISTORY (card par click → modal) ──────────────────
+  const [histDept, setHistDept] = useState(null);   // khuli history ka department (null = band)
+  const [histData, setHistData] = useState(null);   // {rows, total_loss_seconds, calls, show_response}
+  const [histLoad, setHistLoad] = useState(false);
+  const [histFrom, setHistFrom] = useState("");     // YYYY-MM-DD (plant-day start date)
+  const [histTo,   setHistTo]   = useState("");
+  const loadHistory = useCallback(async (dept, from, to) => {
+    setHistLoad(true);
+    try {
+      const q = new URLSearchParams({ department: dept });
+      if (from) q.set("from", from);
+      if (to)   q.set("to", to);
+      const d = await api(`/dept-history?${q.toString()}`);
+      setHistData(d || null);
+      setHistFrom(d?.from || ""); setHistTo(d?.to || "");
+    } catch (e) { flash(String(e.message || e).slice(0, 120)); setHistData(null); }
+    finally { setHistLoad(false); }
+  }, [api]);
+  const openHistory = (dept) => { setHistDept(dept); setHistData(null); loadHistory(dept); };
+
+  // ── Reports → TOTAL LOSS (union) ──────────────────────────────────────
+  // Sab department ke call-windows ko MERGE karke total plant-downtime.  Ek
+  // waqt par ek hi loss (overlap ek baar) — Maintenance chalu me Toolroom bhi
+  // dab jaye to bhi wo time ek hi baar gina jaata hai.  Backend: /total-loss.
+  const [tlData, setTlData] = useState(null);   // {total_loss_seconds, raw_sum_seconds, calls, from, to}
+  const [tlLoad, setTlLoad] = useState(false);
+  const [tlFrom, setTlFrom] = useState("");
+  const [tlTo,   setTlTo]   = useState("");
+  const loadTotalLoss = useCallback(async (from, to) => {
+    setTlLoad(true);
+    try {
+      const q = new URLSearchParams();
+      if (from) q.set("from", from);
+      if (to)   q.set("to", to);
+      const d = await api(`/total-loss${q.toString() ? "?" + q.toString() : ""}`);
+      setTlData(d || null);
+      setTlFrom(d?.from || ""); setTlTo(d?.to || "");
+    } catch (e) { flash(String(e.message || e).slice(0, 120)); setTlData(null); }
+    finally { setTlLoad(false); }
+  }, [api]);
+  // reports tab khulte hi aaj ka total; phir har 3s refresh taaki chalu calls
+  // (jinka end = abhi) ka loss live badhta rahe.  Sirf tabhi jab range aaj ho.
+  useEffect(() => {
+    if (!token || tab !== "reports") return;
+    let alive = true;
+    if (!tlData) loadTotalLoss();
+    const id = setInterval(() => {
+      const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
+      const n = new Date(); const d = new Date(n); if (n.getHours() < 7) d.setDate(d.getDate()-1);
+      const today = ymd(d);
+      if (alive && tlFrom === today && tlTo === today) loadTotalLoss(tlFrom, tlTo);
+    }, 3000);
+    return () => { alive = false; clearInterval(id); };
+  }, [token, tab, tlFrom, tlTo, tlData, loadTotalLoss]);
 
   const load = useCallback(async () => {
     try {
@@ -107,9 +169,36 @@ export default function AndonSystem() {
   useEffect(() => {
     if (!token || tab !== "board") return;
     let alive = true;
-    const pull = () => api("/events").then((e) => { if (alive) { setEvents(e || []); setEvAt(Date.now()); } }).catch(() => {});
+    const pull = () => {
+      api("/events").then((e) => {
+        if (!alive) return;
+        const list = Array.isArray(e) ? e : [];
+        const refs = startRefs.current;
+        const now = Date.now();
+        const live = new Set();
+        for (const ev of list) {
+          live.add(ev.id);
+          const srv = ev.elapsed_seconds || 0;
+          const anchored = refs[ev.id];
+          // pehli baar dikhi call → server ke elapsed se anchor karo (skew-free).
+          // pehle se anchored → chhodo, TAAKI number smooth chale — sirf tab
+          // dobara anchor karo jab humara hisaab server se 2 sec+ hat gaya ho
+          // (jaise tab background me ruk gaya tha).
+          if (anchored == null || Math.abs(Math.floor((now - anchored) / 1000) - srv) > 2) {
+            refs[ev.id] = now - srv * 1000;
+          }
+        }
+        for (const k of Object.keys(refs)) if (!live.has(Number(k))) delete refs[k];  // band calls bhulo
+        setEvents(list);
+      }).catch(() => {});
+      // aaj ka per-department total loss — upar ke cards ke liye (same poll)
+      api("/today-totals").then((t) => { if (alive) setTotals(t?.departments || []); }).catch(() => {});
+    };
     pull();
-    const id = setInterval(pull, 2000);
+    // 1s par — taaki chhoti (1-2 sec) button-tap bhi screen pakad le.  Pehle 2s
+    // tha, to 1-2s ki call do refresh ke beech khul-band ho jaati thi aur dikhti
+    // hi nahi thi.  (Endpoint ~20ms ka hai, to 1s poll par load na ke barabar.)
+    const id = setInterval(pull, 1000);
     return () => { alive = false; clearInterval(id); };
   }, [token, tab, api]);
   // 1s heartbeat so the running timers advance between the 2s polls
@@ -118,8 +207,14 @@ export default function AndonSystem() {
     const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
   }, [tab]);
-  // elapsed = server value at fetch + wall-clock since fetch (timezone-proof)
-  const liveElapsed = (ev) => (ev.elapsed_seconds || 0) + (evAt ? Math.max(0, Math.floor((Date.now() - evAt) / 1000)) : 0);
+  // elapsed = wall-clock since is call ka anchor.  Anchor server ke elapsed se
+  // bana tha (skew-free), aur poll par badalta nahi — isliye number har second
+  // ek-ek smooth badhta hai, jhatka nahi.
+  const liveElapsed = (ev) => {
+    const ref = startRefs.current[ev.id];
+    if (ref == null) return ev.elapsed_seconds || 0;   // abhi anchor nahi hua (pehla render)
+    return Math.max(0, Math.floor((Date.now() - ref) / 1000));
+  };
   // group active calls by the ESP's defined zone / line
   const eventsByLine = useMemo(() => {
     const g = {};
@@ -222,7 +317,6 @@ export default function AndonSystem() {
                   display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:40; }
         .an-top::after { content:''; position:absolute; bottom:0; left:0; right:0; height:2px; background:${theme?.gradient || accent}; }
         .an-ttl { font-size:20px; font-weight:800; color:#0f172a; } .an-ttl span { color:${accent}; }
-        .an-sub { font-size:11px; color:#94a3b8; margin-top:-2px; }
         .an-back,.an-btn { font-size:13px; font-weight:700; border-radius:8px; padding:8px 14px; cursor:pointer; border:1px solid #e2e8f0; }
         .an-back { color:#475569; background:#f1f5f9; }
         .an-btn { background:${accent}; color:#fff; border-color:${accent}; } .an-btn.gh { background:#fff; color:#334155; }
@@ -256,7 +350,6 @@ export default function AndonSystem() {
             <button className="an-back" onClick={() => nav("/dashboard")}>← Back</button>
             <div>
               <div className="an-ttl">🚦 ANDON <span>Management</span></div>
-              <div className="an-sub">ESP32-driven · zone/line from machine master · {esps.length} ESP · {depts.length} departments</div>
             </div>
           </div>
           {user?.username && <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
@@ -410,8 +503,46 @@ export default function AndonSystem() {
                 <b style={{ fontSize:16, color:"#0f172a" }}>🚦 Live ANDON Board</b>
                 <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>
                   <span style={{ display:"inline-block", width:8, height:8, borderRadius:99, background:"#16a34a", marginRight:6 }} />
-                  {events.length} active call{events.length === 1 ? "" : "s"} · auto-refresh 2s
+                  {events.length} active call{events.length === 1 ? "" : "s"} · auto-refresh 1s
                 </span>
+              </div>
+
+              {/* ── Aaj ka per-department TOTAL LOSS — chote cards (7AM–6:30AM plant day).
+                  band + chalu dono calls ka down-time; response yahan nahi. ── */}
+              <div style={{ display:"grid", gap:10, marginBottom:16,
+                            gridTemplateColumns:`repeat(${Math.max(totals.length,1)}, minmax(0,1fr))` }}>
+                {totals.map((t) => (
+                  <div key={t.department} onClick={() => openHistory(t.department)}
+                       title={`${t.department} ki poori history dekho`}
+                       style={{
+                        background:"#fff", border:"1px solid #e2e8f0", borderRadius:12,
+                        padding:"12px 14px", borderTop:`3px solid ${t.color || "#64748b"}`,
+                        boxShadow:"0 1px 3px rgba(0,0,0,.04)", cursor:"pointer",
+                        transition:"box-shadow .12s, transform .12s" }}
+                       onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,.10)"; e.currentTarget.style.transform = "translateY(-1px)"; }}
+                       onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,.04)"; e.currentTarget.style.transform = "none"; }}>
+                    <div style={{ fontSize:11, fontWeight:800, letterSpacing:".04em",
+                                  textTransform:"uppercase", color:"#64748b",
+                                  whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                      {t.department}
+                    </div>
+                    <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:26,
+                                  fontWeight:800, color:"#0f172a", lineHeight:1.15 }}>
+                      {/* band calls ka total (server) + is dept ke chalu calls ka
+                          SMOOTH elapsed — isliye card bhi har second tick karta hai */}
+                      {fmtClock(
+                        (t.closed_loss_seconds ?? t.total_loss_seconds ?? 0) +
+                        events.filter((ev) => ev.department === t.department)
+                              .reduce((s, ev) => s + liveElapsed(ev), 0)
+                      )}
+                    </div>
+                    <div style={{ fontSize:10.5, color:"#94a3b8", fontWeight:600,
+                                  display:"flex", justifyContent:"space-between", gap:6 }}>
+                      <span>total loss · {t.calls} call{t.calls === 1 ? "" : "s"}</span>
+                      <span style={{ color:"#94a3b8" }}>history ↗</span>
+                    </div>
+                  </div>
+                ))}
               </div>
 
               {!events.length ? (
@@ -465,13 +596,192 @@ export default function AndonSystem() {
               )}
             </>
           )}
-          {tab === "reports" && (
-            <div className="an-panel"><div className="big">📊</div><h2>Reports</h2>
-              <p>Filter ANDON history by date · zone · line · department · ESP → export Excel / PDF. <b>Phase 4</b>.</p></div>
-          )}
+          {tab === "reports" && (() => {
+            const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
+            const plantToday = () => { const n = new Date(); const d = new Date(n); if (n.getHours() < 7) d.setDate(d.getDate()-1); return ymd(d); };
+            const addDays = (s, n) => { if (!s) return plantToday(); const [y,m,dd] = s.split("-").map(Number); const dt = new Date(y, m-1, dd); dt.setDate(dt.getDate()+n); return ymd(dt); };
+            const sameRange = tlData && tlFrom === tlTo;
+            const overlap = tlData ? Math.max(0, (tlData.raw_sum_seconds || 0) - (tlData.total_loss_seconds || 0)) : 0;
+            return (
+            <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+              {/* Total Loss card */}
+              <div style={{ background:"#fff", border:"1px solid #e2e8f0", borderRadius:16,
+                            boxShadow:"0 1px 3px rgba(0,0,0,.06)", overflow:"hidden", maxWidth:640 }}>
+                {/* header + date filter */}
+                <div style={{ padding:"16px 20px", borderBottom:"1px solid #f1f5f9" }}>
+                  <div style={{ fontSize:16, fontWeight:800, color:"#0f172a" }}>Total Loss</div>
+                  <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", marginTop:12 }}>
+                    {[["Today", 0], ["Yesterday", -1]].map(([lbl, off]) => {
+                      const dt = addDays(plantToday(), off);
+                      const active = tlFrom === dt && tlTo === dt;
+                      return (
+                        <button key={lbl} onClick={() => loadTotalLoss(dt, dt)}
+                                style={{ border:"1px solid #cbd5e1", borderRadius:8, padding:"6px 12px",
+                                         fontWeight:700, fontSize:12.5, cursor:"pointer",
+                                         background: active ? "#1e40af" : "#fff",
+                                         color: active ? "#fff" : "#334155" }}>{lbl}</button>
+                      );
+                    })}
+                    <span style={{ color:"#cbd5e1" }}>|</span>
+                    <label style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>From
+                      <input type="date" value={tlFrom} onChange={(e) => setTlFrom(e.target.value)}
+                             style={{ marginLeft:6, padding:"5px 8px", border:"1px solid #cbd5e1", borderRadius:7, fontSize:12.5 }} />
+                    </label>
+                    <label style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>To
+                      <input type="date" value={tlTo} min={tlFrom} onChange={(e) => setTlTo(e.target.value)}
+                             style={{ marginLeft:6, padding:"5px 8px", border:"1px solid #cbd5e1", borderRadius:7, fontSize:12.5 }} />
+                    </label>
+                    <button onClick={() => loadTotalLoss(tlFrom, tlTo)}
+                            style={{ border:"none", background:"#1e40af", color:"#fff", borderRadius:8,
+                                     padding:"6px 14px", fontWeight:700, fontSize:12.5, cursor:"pointer" }}>View</button>
+                  </div>
+                </div>
+                {/* value */}
+                <div style={{ padding:"22px 20px" }}>
+                  {tlLoad && !tlData ? (
+                    <div style={{ color:"#94a3b8", fontSize:14 }}>Loading…</div>
+                  ) : (
+                    <>
+                      <div style={{ fontSize:12, color:"#64748b", fontWeight:700, letterSpacing:.3, textTransform:"uppercase" }}>
+                        {sameRange ? tlFrom : `${tlFrom} → ${tlTo}`}
+                      </div>
+                      <div style={{ fontSize:40, fontWeight:900, color:"#dc2626", lineHeight:1.1, marginTop:6,
+                                    fontVariantNumeric:"tabular-nums" }}>
+                        {fmtClock(tlData?.total_loss_seconds || 0)}
+                      </div>
+                      <div style={{ display:"flex", gap:22, flexWrap:"wrap", marginTop:14 }}>
+                        <div>
+                          <div style={{ fontSize:11, color:"#94a3b8", fontWeight:700, textTransform:"uppercase" }}>Total Calls</div>
+                          <div style={{ fontSize:18, fontWeight:800, color:"#0f172a" }}>{tlData?.calls ?? 0}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize:11, color:"#94a3b8", fontWeight:700, textTransform:"uppercase" }}>Raw Sum</div>
+                          <div style={{ fontSize:18, fontWeight:800, color:"#475569" }}>{fmtClock(tlData?.raw_sum_seconds || 0)}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize:11, color:"#94a3b8", fontWeight:700, textTransform:"uppercase" }}>Overlap Saved</div>
+                          <div style={{ fontSize:18, fontWeight:800, color:"#0d9488" }}>{fmtClock(overlap)}</div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+            );
+          })()}
         </div>
       </div>
       {msg && <div className="an-msg">{msg}</div>}
+
+      {/* ── Department loss HISTORY modal (card par click se) ────────────── */}
+      {histDept && (() => {
+        const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
+        const plantToday = () => { const n = new Date(); const d = new Date(n); if (n.getHours() < 7) d.setDate(d.getDate()-1); return ymd(d); };
+        const addDays = (s, n) => { if (!s) return plantToday(); const [y,m,dd] = s.split("-").map(Number); const dt = new Date(y, m-1, dd); dt.setDate(dt.getDate()+n); return ymd(dt); };
+        const showResp = histData?.show_response;
+        return (
+        <div onClick={() => setHistDept(null)}
+             style={{ position:"fixed", inset:0, background:"rgba(15,23,42,.55)",
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                      zIndex:1000, padding:20 }}>
+          <div onClick={(e) => e.stopPropagation()}
+               style={{ background:"#fff", borderRadius:16, width:"min(920px,96vw)",
+                        maxHeight:"88vh", display:"flex", flexDirection:"column",
+                        boxShadow:"0 20px 60px rgba(0,0,0,.35)", overflow:"hidden" }}>
+            {/* header */}
+            <div style={{ padding:"16px 20px", borderBottom:"1px solid #e2e8f0",
+                          display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <div>
+                <div style={{ fontSize:17, fontWeight:800, color:"#0f172a" }}>
+                  {histDept} — Loss History
+                </div>
+                <div style={{ fontSize:12, color:"#64748b" }}>
+                  zone · line · start–end · duration{showResp ? " · response" : ""}
+                </div>
+              </div>
+              <button onClick={() => setHistDept(null)}
+                      style={{ border:"none", background:"#f1f5f9", borderRadius:8, width:32, height:32,
+                               fontSize:18, cursor:"pointer", color:"#475569" }}>×</button>
+            </div>
+
+            {/* date filter */}
+            <div style={{ padding:"12px 20px", borderBottom:"1px solid #f1f5f9",
+                          display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+              {[["Today", 0], ["Yesterday", -1]].map(([lbl, off]) => {
+                const dt = addDays(plantToday(), off);
+                const active = histFrom === dt && histTo === dt;
+                return (
+                  <button key={lbl} onClick={() => loadHistory(histDept, dt, dt)}
+                          style={{ border:"1px solid #cbd5e1", borderRadius:8, padding:"6px 12px",
+                                   fontWeight:700, fontSize:12.5, cursor:"pointer",
+                                   background: active ? "#1e40af" : "#fff",
+                                   color: active ? "#fff" : "#334155" }}>{lbl}</button>
+                );
+              })}
+              <span style={{ color:"#cbd5e1" }}>|</span>
+              <label style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>From
+                <input type="date" value={histFrom} onChange={(e) => setHistFrom(e.target.value)}
+                       style={{ marginLeft:6, padding:"5px 8px", border:"1px solid #cbd5e1", borderRadius:7, fontSize:12.5 }} />
+              </label>
+              <label style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>To
+                <input type="date" value={histTo} min={histFrom} onChange={(e) => setHistTo(e.target.value)}
+                       style={{ marginLeft:6, padding:"5px 8px", border:"1px solid #cbd5e1", borderRadius:7, fontSize:12.5 }} />
+              </label>
+              <button onClick={() => loadHistory(histDept, histFrom, histTo)}
+                      style={{ border:"none", background:"#1e40af", color:"#fff", borderRadius:8,
+                               padding:"6px 14px", fontWeight:700, fontSize:12.5, cursor:"pointer" }}>View</button>
+              <div style={{ marginLeft:"auto", fontSize:12.5, color:"#0f172a", fontWeight:700 }}>
+                {histData ? `Total ${fmtClock(histData.total_loss_seconds)} · ${histData.calls} call${histData.calls===1?"":"s"}` : ""}
+              </div>
+            </div>
+
+            {/* table */}
+            <div style={{ overflow:"auto", padding:"0 4px" }}>
+              {histLoad ? (
+                <div style={{ padding:40, textAlign:"center", color:"#94a3b8" }}>Loading…</div>
+              ) : !histData || !histData.rows.length ? (
+                <div style={{ padding:40, textAlign:"center", color:"#94a3b8" }}>
+                  Is date range me {histDept} ki koi call nahi.
+                </div>
+              ) : (
+                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                  <thead>
+                    <tr style={{ background:"#f8fafc", position:"sticky", top:0 }}>
+                      {["Date","Zone","Line","Start","End","Duration (loss)", ...(showResp?["Response"]:[])].map((h) => (
+                        <th key={h} style={{ textAlign:"left", padding:"10px 14px", fontSize:10.5,
+                                             fontWeight:800, letterSpacing:".06em", textTransform:"uppercase",
+                                             color:"#64748b", borderBottom:"2px solid #e2e8f0", whiteSpace:"nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {histData.rows.map((r) => (
+                      <tr key={r.id} style={{ borderBottom:"1px solid #f1f5f9" }}>
+                        <td style={{ padding:"9px 14px", fontFamily:"monospace", color:"#475569" }}>{r.date}</td>
+                        <td style={{ padding:"9px 14px", fontWeight:600, color:"#0f172a" }}>{r.zone || "—"}</td>
+                        <td style={{ padding:"9px 14px", color:"#334155" }}>{r.line || "—"}</td>
+                        <td style={{ padding:"9px 14px", fontFamily:"monospace", color:"#475569" }}>{r.start_time || "—"}</td>
+                        <td style={{ padding:"9px 14px", fontFamily:"monospace", color:"#475569" }}>{r.end_time || "—"}</td>
+                        <td style={{ padding:"9px 14px", fontFamily:"'Barlow Condensed',sans-serif", fontSize:16, fontWeight:800, color:"#0f172a" }}>
+                          {fmtClock(r.duration_seconds)}
+                        </td>
+                        {showResp && (
+                          <td style={{ padding:"9px 14px", fontFamily:"'Barlow Condensed',sans-serif", fontSize:16, fontWeight:800,
+                                       color: r.response_seconds == null ? "#cbd5e1" : "#16a34a" }}>
+                            {r.response_seconds == null ? "—" : fmtClock(r.response_seconds)}
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+        );
+      })()}
 
       {/* Takraav ka popup — IP/naam pehle se kisi aur ESP ki hai.
           Jaan-bujh kar khud gayab NAHI hota: user ko padhna aur samajhna

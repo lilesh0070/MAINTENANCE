@@ -53,6 +53,7 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
   const [npCp, setNpCp]   = useState("");
   const [npJs, setNpJs]   = useState("");
   const [npMe, setNpMe]   = useState("");
+  const [pending, setPending] = useState([]);   // staged naye points — rev bump par hi commit
   // rev bump form
   const [nrNo, setNrNo]     = useState("");
   const [nrDate, setNrDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -152,18 +153,17 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
   const fyOpts = [...new Set(histSheets.map((s) => fyOf(s.pm_date)).filter(Boolean))].sort().reverse();
   const shownSheets = histFy ? histSheets.filter((s) => fyOf(s.pm_date) === histFy) : histSheets;
 
-  const addPoint = async () => {
+  // Naya point SEEDHE save nahi hota — pehle "pending" me stage hota hai, aur
+  // rev bump (Update Revision) par hi commit hota hai.  Bina rev bump ke chhod
+  // do to (reload/page change par) ye hat jaata hai.
+  const addPoint = () => {
     if (!npCp.trim()) { say("Check point required", "err"); return; }
-    setBusy(true);
-    try {
-      await api(`/check-points`, { method: "POST", body: JSON.stringify({
-        zone, line, machine_no: mno, machine_name: mcSel?.machine_name || "",
-        s_no: npSno, check_point: npCp, judgement_standard: npJs, method: npMe }) });
-      setNpSno(""); setNpCp(""); setNpJs(""); setNpMe("");
-      say("Point added ✓"); loadPoints(); loadRevs();
-    } catch (e) { say(String(e.message || e), "err"); }
-    finally { setBusy(false); }
+    setPending((ps) => [...ps, { s_no: npSno, check_point: npCp, judgement_standard: npJs,
+                                 method: npMe, machine_name: mcSel?.machine_name || "" }]);
+    setNpSno(""); setNpCp(""); setNpJs(""); setNpMe("");
+    say("Point staged — rev update karne par hi save hoga");
   };
+  const removePending = (i) => setPending((ps) => ps.filter((_, x) => x !== i));
 
   const delPoint = async (p) => {
     if (!window.confirm(`Delete point ${p.s_no}?\n"${(p.check_point || "").slice(0, 60)}"`)) return;
@@ -176,13 +176,14 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
     const nxt = parseInt(nrNo, 10);
     if (!nxt || nxt <= cur) { say(`New rev no. must be greater than the current rev (${revs.current?.rev_no || "—"})`, "err"); return; }
     if (!nrDate) { say("Pick a rev date", "err"); return; }
-    if (!window.confirm(`Update revision ${revs.current?.rev_no} → ${nxt}?\nThe current points will be archived under Rev ${revs.current?.rev_no}.`)) return;
+    const extra = pending.length ? `\n${pending.length} naya point is nayi rev me add hoga.` : "";
+    if (!window.confirm(`Update revision ${revs.current?.rev_no} → ${nxt}?\nCurrent points Rev ${revs.current?.rev_no} me archive honge.${extra}`)) return;
     setBusy(true);
     try {
       const r = await api(`/check-point-rev`, { method: "PUT", body: JSON.stringify({
-        zone, line, machine_no: mno, rev_no: String(nxt), rev_date: nrDate }) });
-      say(`Revision updated → Rev ${r.new_rev} ✓ (Rev ${r.old_rev} archived)`);
-      setNrNo(""); setSelRev(""); loadRevs(); loadPoints();
+        zone, line, machine_no: mno, rev_no: String(nxt), rev_date: nrDate, new_points: pending }) });
+      say(`Rev ${r.new_rev} ✓ — ${r.added_points || 0} naye point add, Rev ${r.old_rev} archived`);
+      setPending([]); setNrNo(""); setSelRev(""); loadRevs(); loadPoints();
     } catch (e) { say(String(e.message || e), "err"); }
     finally { setBusy(false); }
   };
@@ -306,6 +307,13 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
         </div>
       )}
 
+      {canEdit && pending.length > 0 && (
+        <div style={{ ...card, marginTop: 10, borderLeft: "4px solid #d97706", background: "#fffbeb", color: "#92400e", fontSize: 12.5, fontWeight: 700, lineHeight: 1.5 }}>
+          ⚠ {pending.length} naya point <b>PENDING</b> hai — save karne ke liye upar <b>Update Revision</b> (naya rev no + date) dabao.
+          Rev bump kiye bina page chhoda / reload kiya to ye <b>hat jayenge</b>.
+        </div>
+      )}
+
       {/* the sheet (points grid, same format) */}
       {!mno ? (
         <div style={{ ...card, textAlign: "center", color: "#64748b", padding: 40 }}>
@@ -375,7 +383,22 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
                     )}
                   </tr>
                 ))}
-                {points.length === 0 && (
+                {/* staged (pending) naye points — rev bump par commit honge */}
+                {pending.map((p, i) => (
+                  <tr key={`pending-${i}`} style={{ background: "#fef9c3" }}>
+                    <td style={{ border: sb, fontSize: 11, textAlign: "center", padding: "3px 5px", verticalAlign: "top", color: "#a16207", fontWeight: 800 }}>new</td>
+                    <td style={{ border: sb, fontSize: 11, padding: "3px 6px", verticalAlign: "top" }}>{p.check_point}
+                      <span style={{ fontSize: 9.5, fontWeight: 800, color: "#92400e", background: "#fde68a", borderRadius: 4, padding: "1px 5px", marginLeft: 5 }}>PENDING</span></td>
+                    <td style={{ border: sb, fontSize: 11, padding: "3px 6px", verticalAlign: "top" }}>{p.judgement_standard}</td>
+                    <td style={{ border: sb, fontSize: 11, padding: "3px 6px", verticalAlign: "top" }}>{p.method}</td>
+                    {canEdit && (
+                      <td style={{ border: sb, textAlign: "center" }}>
+                        <button onClick={() => removePending(i)} style={{ border: "none", background: "transparent", color: "#dc2626", cursor: "pointer", fontWeight: 800, fontSize: 14 }} title="Remove from pending">🗑</button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+                {points.length === 0 && pending.length === 0 && (
                   <tr><td colSpan={canEdit ? 5 : 4} style={{ border: sb, padding: 20, textAlign: "center", color: "#94a3b8", fontSize: 12 }}>No points.</td></tr>
                 )}
                 {/* add-point row */}

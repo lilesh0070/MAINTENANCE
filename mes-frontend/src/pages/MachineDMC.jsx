@@ -119,7 +119,7 @@ export default function MachineDMC() {
             <div style={{ display: "flex", gap: 16, flexWrap: "wrap", paddingTop: 8 }}>
               {bigBtn("📋", "DMC Format", "Blank format →", () => setView("format"))}
               {bigBtn("🔍", "Machine Check Sheet", "Select machine →", () => setView("machine"))}
-              {bigBtn("📝", "Daily DMC Fill", "Operator fills daily →", () => navigate("/maintenance-daily-dmc"))}
+              {bigBtn("📝", "Operator DMC Fill", "Operator fills daily →", () => navigate("/maintenance-daily-dmc"))}
               {bigBtn("✅", "Supervisor Verify", "Check & sign off →", () => navigate("/maintenance-dmc-verify"))}
               {bigBtn("🔧", "Maintenance Weekly", "Weekly sign off →", () => navigate("/maintenance-dmc-weekly"))}
               {bigBtn("✗", "DMC NG Point", "Action & close →", () => navigate("/maintenance-dmc-ng"))}

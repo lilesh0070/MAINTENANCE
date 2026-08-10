@@ -49,11 +49,11 @@ import time as _time
 from datetime import datetime, timedelta
 from typing import Optional, List, Union, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from database import get_conn, dict_cursor
-from auth import get_current_user
+from auth import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/andon", tags=["andon"])
 
@@ -61,10 +61,13 @@ _ensured = False
 
 # Seeded once so a fresh install is usable immediately.  Fixed plant scheme:
 #   DO1 Maintenance · DO2 Maintenance ACC · DO3 Toolroom · DO4 Tool ACC ·
-#   DO5 Quality · DO6 Material · DO7 Other Loss   — same wiring for every ESP.
-_DEFAULT_DEPTS = ["Maintenance", "Toolroom", "Quality", "Material", "Other Loss"]
+#   DO5 Quality · DO6 Material · DO7 Other Loss · DO8 Model Setup
+#   — same wiring for every ESP.
+_DEFAULT_DEPTS = ["Maintenance", "Toolroom", "Quality", "Material", "Other Loss", "Model Setup"]
 # Each real department maps to ONE output; DO2 / DO4 are acknowledgement pulses
 # (no department of their own) that only measure response time on DO1 / DO3.
+# 2026-08-10 — DO8 "Model Setup" jodi: kaam DO6/DO7 jaisa (plain toggle, ON→OFF
+# se duration/loss; koi ACK/response nahi).
 _DEFAULT_OUTPUTS = [
     (1, "Maintenance",     "Maintenance", "Critical"),
     (2, "Maintenance ACC", None,          "Critical"),   # ACK of DO1 → response time
@@ -73,6 +76,7 @@ _DEFAULT_OUTPUTS = [
     (5, "Quality",         "Quality",     "Normal"),
     (6, "Material",        "Material",    "Normal"),
     (7, "Other Loss",      "Other Loss",  "Normal"),
+    (8, "Model Setup",     "Model Setup", "Normal"),
 ]
 
 # DO2 / DO4 acknowledge DO1 / DO3: their ON edge stamps the parent call's
@@ -145,6 +149,10 @@ def _poll_loop():
                     _ESP_STATUS.pop(k, None)
         except Exception as e:
             print(f"[ANDON-POLL] {e}")
+        # Har cycle: khuli maintenance call jo threshold paar kar chuki ho uski
+        # slip bana do (isse slip 2-min mark par live dikhti hai — poller UI se
+        # nahi juda, isliye dashboard khula ho ya na ho, slip ban jaati hai).
+        _slip_threshold_sweep()
         _time.sleep(_CHECK_INTERVAL)
 
 
@@ -261,6 +269,41 @@ def _is_maintenance(dept):
     return str(dept or "").strip().lower() == "maintenance"
 
 
+# ── AUTO slip ka threshold (default 2 min) ───────────────────────────────
+# Slip tabhi banti hai jab maintenance call itne minute se ZYADA khuli rahe.
+# Config har call par DB se padhna mehnga hai, isliye 10 sec cache rakhte hain.
+_THRESH_CACHE = {"min": None, "at": 0.0}
+
+
+def _slip_threshold_min():
+    """maintenance_slip_config se threshold (minute).  Na mile to 2."""
+    now = _time.time()
+    if _THRESH_CACHE["min"] is not None and (now - _THRESH_CACHE["at"]) < 10:
+        return _THRESH_CACHE["min"]
+    val = 2
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT slip_threshold_min FROM maintenance_slip_config WHERE scope='GLOBAL'")
+            r = cur.fetchone()
+            if r and r[0] is not None:
+                val = int(r[0])
+    except Exception:
+        pass
+    _THRESH_CACHE["min"] = val
+    _THRESH_CACHE["at"]  = now
+    return val
+
+
+def _open_long_enough(started, upto):
+    """Call `started` se `upto` tak kam se kam threshold minute khuli rahi?
+    upto = abhi ka waqt (chalu call) ya ended_at (band call).  started/upto me
+    se koi None ho to False (bina time ke slip ka faisla nahi kar sakte)."""
+    if not started or not upto:
+        return False
+    return (upto - started).total_seconds() >= _slip_threshold_min() * 60
+
+
 def _slip_fields(zone, line, started, received, ended, dur_seconds=None):
     """Call ke waqt se slip ke khaane banao.
 
@@ -324,18 +367,48 @@ def auto_slip_on_ack(event_id):
         _ensure_table()
         with get_conn() as conn:
             cur = dict_cursor(conn)
+            # Threshold gate SQL me hi — `long_enough` = call threshold se
+            # zyada khuli rahi?  Ye check DB ki NOW() se hota hai (na ki app
+            # ki local clock se), kyunki started_at bhi DB ki clock se bani
+            # thi — dono ek hi ghadi, to app aur DB server ki clock me farak
+            # ho to bhi hisaab sahi rehta hai.
             cur.execute("""
                 SELECT e.id, e.zone, e.line, e.started_at, e.acknowledged_at,
-                       COALESCE(dep.name, e.display_name) AS dept
+                       COALESCE(dep.name, e.display_name) AS dept,
+                       (e.started_at <= NOW() - (%s * INTERVAL '1 minute')) AS long_enough
                   FROM andon_system e
                   LEFT JOIN andon_departments dep ON dep.id = e.department_id
-                 WHERE e.id = %s""", (event_id,))
+                 WHERE e.id = %s""", (_slip_threshold_min(), event_id))
             e = cur.fetchone()
             if not e or not _is_maintenance(e["dept"]):
+                return
+            # Call abhi tak threshold se KAM khuli hai to slip nahi banate.
+            # Jaise-jaise call khuli rahegi, poller ka sweep use threshold paar
+            # karte hi bana dega (ya close par, agar tab tak duration paar kar
+            # chuki ho).  ACK ka waqt andon_system me save ho chuka hai — slip
+            # baad me bhi bane to wahi asli response time uthati hai.
+            if not e["long_enough"]:
                 return
             flat = _slip_fields(e["zone"], e["line"],
                                 e["started_at"], e["acknowledged_at"], None)
             new_id = _slip_insert(conn, event_id, flat)
+            # Slip pehle se ho sakti hai — sweep ne ACK aane se PEHLE bana di ho
+            # (tab response khali thi).  Us haal me ab RESPONSE bhar dete hain.
+            # Sirf tab jab abhi khali ho — maintenance ki apni edit ya baad ki
+            # koi value overwrite na ho.
+            if not new_id:
+                from routers.breakdown_slips import AUTO_SLIP_TABLE
+                cur2 = conn.cursor()
+                cur2.execute(f"""
+                    UPDATE {AUTO_SLIP_TABLE}
+                       SET bd_received_time      = %s,
+                           response_time_minutes = %s
+                     WHERE andon_event_id = %s
+                       AND bd_received_time IS NULL""",
+                    (flat["bd_received_time"], flat["response_time_minutes"], event_id))
+                if cur2.rowcount:
+                    print(f"[ANDON-SLIP] call {event_id} ki slip me response bhara "
+                          f"(recv {flat['bd_received_time']}, resp {flat['response_time_minutes']} min)")
         if new_id:
             print(f"[ANDON-SLIP] call {event_id} acknowledge hua → slip #{new_id} "
                   f"({flat['zone']}/{flat['line']} {flat['bd_start_time']}"
@@ -394,14 +467,62 @@ def auto_slip_on_close(event_id, history_id, power_cut=False):
                       f"(ok {flat['bd_ok_time']}, down {flat['mc_down_time_minutes']} min"
                       f"{', POWER CUT' if power_cut else ''})")
                 return
-            # Slip thi hi nahi (acknowledge aaya hi nahi tha) → ab bana do,
-            # taaki koi breakdown bina slip ke na rahe.
+            # Slip thi hi nahi.  Ab banate hain SIRF tab jab poori breakdown
+            # threshold se lambi thi — chhoti breakdown (threshold se kam) ki
+            # koi slip nahi banti.  (Threshold se lambi thi par slip nahi bani
+            # thi, aisa tab hota hai jab ACK aaya hi na ho — jaise bijli chali
+            # gayi — ya call sweep se pehle hi band ho gayi.)
+            if not _open_long_enough(started, ended):
+                return
             new_id = _slip_insert(conn, event_id, flat, power_cut=power_cut)
         if new_id:
             print(f"[ANDON-SLIP] call {event_id} bina acknowledge band hua → slip #{new_id}"
                   f"{' (POWER CUT)' if power_cut else ''}")
     except Exception as ex:
         print(f"[ANDON-SLIP] close par slip update me dikkat (call {event_id}): {ex}")
+
+
+def _slip_threshold_sweep():
+    """Har khuli MAINTENANCE call jo threshold paar kar chuki hai par jiski abhi
+    tak slip nahi bani — uski slip AB bana do.  Isse slip 2-min mark par LIVE
+    dikh jaati hai (poller har baar ye chala kar dekhta hai).
+
+    Times asli hi rehte hain: bd_start = call ka started_at, response = ACK ka
+    acknowledged_at (agar aa chuka ho, warna khali — baad me ACK par bhar jaata
+    hai).  Sirf slip BANANE ka faisla threshold se hota hai, time se nahi.
+
+    Best-effort: koi dikkat aaye to sirf log, ANDON kabhi nahi rukta."""
+    try:
+        thr = _slip_threshold_min()
+        from routers.breakdown_slips import _ensure_table, AUTO_SLIP_TABLE
+        _ensure_table()
+        with get_conn() as conn:
+            cur = dict_cursor(conn)
+            # OPEN maintenance call, threshold paar, aur jiski slip abhi nahi hai
+            cur.execute(f"""
+                SELECT e.id, e.zone, e.line, e.started_at, e.acknowledged_at
+                  FROM andon_system e
+                  LEFT JOIN andon_departments dep ON dep.id = e.department_id
+                 WHERE e.state = 'OPEN'
+                   AND LOWER(TRIM(COALESCE(dep.name, e.display_name))) = 'maintenance'
+                   AND e.started_at IS NOT NULL
+                   AND e.started_at <= NOW() - (%s * INTERVAL '1 minute')
+                   AND NOT EXISTS (
+                        SELECT 1 FROM {AUTO_SLIP_TABLE} s
+                         WHERE s.andon_event_id = e.id)
+            """, (thr,))
+            due = cur.fetchall()
+            made = 0
+            for e in due:
+                flat = _slip_fields(e["zone"], e["line"],
+                                    e["started_at"], e["acknowledged_at"], None)
+                if _slip_insert(conn, e["id"], flat):
+                    made += 1
+        if made:
+            print(f"[ANDON-SLIP] threshold sweep → {made} slip bani "
+                  f"(call {thr} min se zyada khuli rahi)")
+    except Exception as ex:
+        print(f"[ANDON-SLIP] threshold sweep me dikkat: {ex}")
 
 
 def _close_open_calls_on_boot(ip, device_id):
@@ -549,6 +670,18 @@ def _ensure_tables():
         return
     with get_conn() as conn:
         cur = conn.cursor()
+        # AUTO breakdown slip ka THRESHOLD — slip tabhi banti hai jab maintenance
+        # call itne minute se zyada khuli rahe (chhoti breakdown ki slip nahi).
+        # Admin isse ANDON page se badal sakta hai; default 2 minute.
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS maintenance_slip_config (
+                scope               TEXT PRIMARY KEY DEFAULT 'GLOBAL',
+                slip_threshold_min  INTEGER NOT NULL DEFAULT 2,
+                updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )""")
+        cur.execute("""
+            INSERT INTO maintenance_slip_config (scope) VALUES ('GLOBAL')
+            ON CONFLICT (scope) DO NOTHING""")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS andon_departments (
                 id         SERIAL PRIMARY KEY,
@@ -702,6 +835,21 @@ def _ensure_tables():
         cur.execute("""UPDATE andon_departments SET name='Material' WHERE name='Store'
                         AND NOT EXISTS (SELECT 1 FROM andon_departments WHERE name='Material')""")
         cur.execute("UPDATE andon_esp_output_mapping SET display_name='Material' WHERE display_name='Store'")
+
+        # 2026-08-10 — DO8 "Model Setup" ensure.  Purane installs me DO1-7 the,
+        # DO8 nahi tha (seeding sirf khaali table par chalti hai).  Idempotent:
+        # department + default DO8 mapping jodo agar nahi hain.  Kaam DO6/DO7
+        # jaisa (plain toggle, department call).
+        cur.execute("INSERT INTO andon_departments (name, color) VALUES ('Model Setup', '#db2777') ON CONFLICT DO NOTHING")
+        cur.execute("UPDATE andon_departments SET color='#db2777' WHERE name='Model Setup' AND (color IS NULL OR color='#2563eb')")
+        cur.execute("SELECT id FROM andon_departments WHERE name='Model Setup'")
+        _msrow = cur.fetchone()
+        _ms_id = _msrow[0] if _msrow else None
+        cur.execute("SELECT 1 FROM andon_esp_output_mapping WHERE esp_id IS NULL AND do_index=8")
+        if not cur.fetchone():
+            cur.execute("""INSERT INTO andon_esp_output_mapping
+                             (esp_id, do_index, display_name, department_id, priority, enabled)
+                           VALUES (NULL, 8, 'Model Setup', %s, 'Normal', TRUE)""", (_ms_id,))
         conn.commit()
     _ensured = True
     start_workers()          # connectivity sweep + ESP raw-TCP ingest server
@@ -726,6 +874,46 @@ def masters(user=Depends(get_current_user)):
         if r["line_name"] and r["line_name"] not in tree[r["zone_name"]]:
             tree[r["zone_name"]].append(r["line_name"])
     return [{"zone": z, "lines": ls} for z, ls in tree.items()]
+
+
+# ════════════════════════════════════════════════════════════════════
+#  SLIP THRESHOLD  (AUTO breakdown slip tabhi bane jab call itni der khuli rahe)
+# ════════════════════════════════════════════════════════════════════
+class SlipThresholdIn(BaseModel):
+    slip_threshold_min: int
+
+
+@router.get("/slip-config")
+def get_slip_config(user=Depends(get_current_user)):
+    """Abhi ka AUTO-slip threshold (minute).  Default 2."""
+    _ensure_tables()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("SELECT slip_threshold_min, updated_at FROM maintenance_slip_config WHERE scope='GLOBAL'")
+        r = cur.fetchone()
+    return {"slip_threshold_min": int(r["slip_threshold_min"]) if r else 2,
+            "updated_at": r["updated_at"].isoformat() if r and r["updated_at"] else None}
+
+
+@router.put("/slip-config")
+def set_slip_config(body: SlipThresholdIn, admin=Depends(require_admin)):
+    """Admin: AUTO-slip threshold badlo (1..60 min me clamp).  Turant lag jaata
+    hai — cache 10 sec me apne aap refresh ho jaata hai."""
+    _ensure_tables()
+    mins = max(1, min(60, int(body.slip_threshold_min)))
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO maintenance_slip_config (scope, slip_threshold_min, updated_at)
+            VALUES ('GLOBAL', %s, NOW())
+            ON CONFLICT (scope) DO UPDATE
+               SET slip_threshold_min = EXCLUDED.slip_threshold_min,
+                   updated_at         = NOW()
+        """, (mins,))
+        conn.commit()
+    _THRESH_CACHE["min"] = mins        # cache turant update
+    _THRESH_CACHE["at"]  = _time.time()
+    return {"slip_threshold_min": mins}
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -1256,6 +1444,184 @@ def dashboard_board(user=Depends(get_current_user)):
     for i, r in enumerate(rows, 1):
         r["serial_in_shift"] = i
     return {"rows": rows, "stats": stats}
+
+
+@router.get("/today-totals")
+def today_totals(user=Depends(get_current_user)):
+    """Aaj ka (plant-day 7AM → agle din 6:30AM) HAR department ka TOTAL LOSS.
+
+    total_loss_seconds = us department ke aaj ke calls ka poora down-time —
+    band ho chuke calls (andon_history.duration_seconds) + abhi chalu calls ka
+    ab tak ka elapsed (NOW - started_at).  Response time yahan nahi (user ne
+    kaha "respoance rhne dena").  Har department dikhta hai, chahe aaj 0 hi ho.
+    """
+    _ensure_tables()
+    day_start = (
+        "(CASE WHEN NOW()::time >= TIME '07:00' "
+        "      THEN CURRENT_DATE + TIME '07:00' "
+        "      ELSE (CURRENT_DATE - INTERVAL '1 day') + TIME '07:00' END)")
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        # band ho chuke (aaj) — poora duration
+        cur.execute(f"""
+            SELECT COALESCE(dep.name, h.display_name) AS dept,
+                   COALESCE(SUM(h.duration_seconds), 0)::int AS secs,
+                   COUNT(*) AS calls
+              FROM andon_history h
+              LEFT JOIN andon_departments dep ON dep.id = h.department_id
+             WHERE h.started_at >= {day_start}
+             GROUP BY 1""")
+        closed = {r["dept"]: r for r in cur.fetchall()}
+        # abhi chalu — ab tak ka elapsed
+        cur.execute(f"""
+            SELECT COALESCE(dep.name, e.display_name) AS dept,
+                   COALESCE(SUM(EXTRACT(EPOCH FROM (NOW() - e.started_at)))::int, 0) AS secs,
+                   COUNT(*) AS calls
+              FROM andon_system e
+              LEFT JOIN andon_departments dep ON dep.id = e.department_id
+             WHERE e.state = 'OPEN' AND e.started_at >= {day_start}
+             GROUP BY 1""")
+        openc = {r["dept"]: r for r in cur.fetchall()}
+        # saare departments (config wale) — 0 hone par bhi card dikhe
+        cur.execute("SELECT name, color FROM andon_departments ORDER BY id")
+        depts = cur.fetchall()
+
+    out = []
+    for d in depts:
+        nm = d["name"]
+        c = closed.get(nm, {}); o = openc.get(nm, {})
+        out.append({
+            "department": nm,
+            "color": d["color"],
+            # closed_loss_seconds = band ho chuke calls ka total (BADALTA NAHI).
+            # Frontend ise base rakh kar chalu calls ka apna smooth timer jod deta
+            # hai, taaki card ka number bhi har SECOND ek-ek karke bade (2 sec ke
+            # poll par jhatka na lage).  total_loss_seconds sirf fallback ke liye.
+            "closed_loss_seconds": int(c.get("secs", 0)),
+            "total_loss_seconds":  int(c.get("secs", 0)) + int(o.get("secs", 0)),
+            "calls": int(c.get("calls", 0)) + int(o.get("calls", 0)),
+        })
+    return {"departments": out}
+
+
+@router.get("/total-loss")
+def total_loss(frm: Optional[str] = Query(None, alias="from"),
+               to:  Optional[str] = None,
+               user=Depends(get_current_user)):
+    """LINE ka TOTAL LOSS — jitni der line down rahi (chahe kitne bhi department
+    ne button dabaya ho).
+
+    Ahem baat: OVERLAP ek hi baar ginte hain.  Jaise Maintenance 10:00–10:05 aur
+    Tool Room 10:03–10:08 dabaye — line 10:00 se 10:08 tak down thi = 8 min
+    (5+5=10 NAHI).  Ek waqt par ek hi loss.  Iske liye SAARE calls ke time-window
+    ko MERGE (union) karke jodte hain.
+
+    Date plant-day se (D subah 7:00 → agle din 6:30), from/to na do to aaj.
+    Band + chalu dono calls ginate hain (chalu ka end = abhi).
+    """
+    _ensure_tables()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT (CASE WHEN NOW()::time >= TIME '07:00' THEN CURRENT_DATE
+                                    ELSE CURRENT_DATE - INTERVAL '1 day' END)::date AS d""")
+        today_pd = cur.fetchone()["d"].isoformat()
+        f = frm or today_pd
+        t = to or f
+        # window: from-date 07:00 se (to-date + 1 din) 06:30
+        cur.execute("""
+            SELECT started_at AS s, ended_at AS e FROM andon_history
+             WHERE started_at >= (%s::date + TIME '07:00')
+               AND started_at <  ((%s::date + INTERVAL '1 day') + TIME '06:30')
+               AND ended_at IS NOT NULL
+            UNION ALL
+            SELECT started_at AS s, NOW()::timestamp AS e FROM andon_system
+             WHERE state='OPEN'
+               AND started_at >= (%s::date + TIME '07:00')
+               AND started_at <  ((%s::date + INTERVAL '1 day') + TIME '06:30')
+        """, (f, t, f, t))
+        rows = cur.fetchall()
+
+    # intervals ko waqt se sort karke MERGE karo (union) — overlap ek baar
+    ivals = sorted(((r["s"], r["e"]) for r in rows if r["s"] and r["e"] and r["e"] > r["s"]),
+                   key=lambda x: x[0])
+    union_sec = 0
+    raw_sec = 0
+    cur_s = cur_e = None
+    for s, e in ivals:
+        raw_sec += (e - s).total_seconds()
+        if cur_e is None:
+            cur_s, cur_e = s, e
+        elif s <= cur_e:                       # overlap ya laga hua → merge
+            if e > cur_e:
+                cur_e = e
+        else:                                  # gap → pichhla band karo
+            union_sec += (cur_e - cur_s).total_seconds()
+            cur_s, cur_e = s, e
+    if cur_e is not None:
+        union_sec += (cur_e - cur_s).total_seconds()
+
+    return {"from": f, "to": t,
+            "total_loss_seconds": int(round(union_sec)),   # UNION (overlap ek baar) — asli line down time
+            "raw_sum_seconds":    int(round(raw_sec)),      # saade jod (overlap do baar) — reference
+            "calls": len(ivals)}
+
+
+@router.get("/dept-history")
+def dept_history(department: str,
+                 frm: Optional[str] = Query(None, alias="from"),
+                 to:  Optional[str] = None,
+                 user=Depends(get_current_user)):
+    """Ek department ki call HISTORY — card par click karke khulti hai.
+
+    Date PLANT-DAY se: chuni hui date D ka matlab D subah 7:00 se agle din 6:30
+    tak (wahi window jo cards use karte hain).  from/to na do to aaj ka plant-day.
+    Har row: date, zone, line, start-time, end-time, duration (loss), aur
+    response (jo Maintenance/Toolroom me hi aata hai — unhi ke ACK output hote
+    hain).  Sirf BAND ho chuke calls (andon_history) — chalu call band hone par
+    yahan aayega.
+    """
+    _ensure_tables()
+    # aaj ka plant-day date (agar abhi 7 baje se pehle hai to kal ki date)
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT (CASE WHEN NOW()::time >= TIME '07:00' THEN CURRENT_DATE
+                                    ELSE CURRENT_DATE - INTERVAL '1 day' END)::date AS d""")
+        today_pd = cur.fetchone()["d"].isoformat()
+        f = frm or today_pd
+        t = to or f
+        # window: from-date 07:00  se  (to-date + 1 din) 06:30
+        cur.execute("""
+            SELECT h.id, h.zone, h.line, h.display_name,
+                   h.started_at, h.ended_at, h.duration_seconds, h.response_seconds
+              FROM andon_history h
+              LEFT JOIN andon_departments dep ON dep.id = h.department_id
+             WHERE LOWER(TRIM(COALESCE(dep.name, h.display_name))) = LOWER(TRIM(%s))
+               AND h.started_at >= (%s::date + TIME '07:00')
+               AND h.started_at <  ((%s::date + INTERVAL '1 day') + TIME '06:30')
+             ORDER BY h.started_at DESC
+        """, (department, f, t))
+        rows = cur.fetchall()
+
+    dept_l = department.strip().lower()
+    show_response = dept_l in ("maintenance", "toolroom", "tool room")
+    out = []
+    total = 0
+    for r in rows:
+        st, en = r["started_at"], r["ended_at"]
+        dur = r["duration_seconds"] or 0
+        total += dur
+        out.append({
+            "id": r["id"],
+            "date":       st.date().isoformat() if st else None,
+            "zone":       r["zone"], "line": r["line"],
+            "start_time": st.strftime("%H:%M:%S") if st else None,
+            "end_time":   en.strftime("%H:%M:%S") if en else None,
+            "duration_seconds": dur,
+            "response_seconds": r["response_seconds"] if show_response else None,
+        })
+    return {"department": department, "from": f, "to": t,
+            "show_response": show_response,
+            "total_loss_seconds": total, "calls": len(out), "rows": out}
 
 
 @router.get("/history")
