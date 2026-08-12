@@ -34,6 +34,8 @@ import OrganisationChart     from "./pages/OrganisationChart";
 import SkillUpgradation      from "./pages/SkillUpgradation";
 import MachineManual         from "./pages/MachineManual";
 import MachineDMC            from "./pages/MachineDMC";
+import PlcIntegration       from "./pages/PlcIntegration";
+import PlcConfigure         from "./pages/PlcConfigure";
 import DailyDMCFill          from "./pages/DailyDMCFill";
 import DMCSupervisorVerify   from "./pages/DMCSupervisorVerify";
 import DMCMaintenanceVerify  from "./pages/DMCMaintenanceVerify";
@@ -69,6 +71,17 @@ function Protected({ children, requiredAccess, bare = false }) {
   if (!token) return <Navigate to="/login" state={{ from: location }} replace />;
 
   if (requiredAccess && !canAccess(requiredAccess)) {
+    // "dashboard" hi fallback target hai — agar wahi allowed nahi to redirect
+    // loop na ho: friendly "no access" dikhao (sidebar ke saath, taaki jo
+    // pages user ko mile hain unpar wo jaa sake).
+    if (requiredAccess === "dashboard") {
+      return <Layout><div style={{ padding: 48, textAlign: "center", color: "#64748b" }}>
+        <div style={{ fontSize: 44, marginBottom: 12 }}>🔒</div>
+        <h2 style={{ color: "#0f172a", margin: "0 0 8px" }}>Koi page assign nahi</h2>
+        <p style={{ maxWidth: 460, margin: "0 auto" }}>Aapko abhi koi page assign nahi hua. Admin se apne pages
+          assign karwayein (Maintenance Panel → Admin → Users). Jo pages milenge wo left sidebar me dikhenge.</p>
+      </div></Layout>;
+    }
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -223,6 +236,13 @@ function AppRoutes() {
       } />
       <Route path="/maintenance-machine-dmc" element={
         <Protected requiredAccess="maintenance-machine-dmc"><MachineDMC /></Protected>
+      } />
+      {/* PLC Integration — Mitsubishi Q / FX5U connect + device read/write. */}
+      <Route path="/maintenance-plc" element={
+        <Protected requiredAccess="maintenance-plc"><PlcIntegration /></Protected>
+      } />
+      <Route path="/maintenance-plc/:pid" element={
+        <Protected requiredAccess="maintenance-plc"><PlcConfigure /></Protected>
       } />
       {/* Daily DMC Fill — operator fills the monthly DMC check sheet. */}
       <Route path="/maintenance-daily-dmc" element={

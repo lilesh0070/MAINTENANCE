@@ -1,11 +1,10 @@
 """
 auth.py
 =======
-JWT-based authentication with role support (admin, production, operator,
-department, plant_head).  `plant_head` has the same permissions as
-admin.  `department` is a generic "department user" — at click-time the
-frontend asks which department (Maintenance / Quality / Production)
-they're acting as.
+JWT-based authentication.  Roles = ek designation ladder — admin ·
+supervisor · engineer · senior_engineer · assistant_manager ·
+deputy_manager · senior_manager.  Sirf `admin` ke paas full access hai;
+baaki sab ko per-page permissions (maintenance_user_permissions) milti hain.
 
 To change JWT secret → edit SECRET_KEY
 To change token expiry → edit TOKEN_EXPIRE_HOURS

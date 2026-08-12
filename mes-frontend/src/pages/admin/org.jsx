@@ -7,7 +7,7 @@ import {
   Modal, ModalActions, Toast, EmptyState, Spinner, ExcelImportButton,
   inputStyle,
 } from "./ui";
-import { PAGE_PERM_GROUPS, PERM_LEVELS, ROLE_PILL } from "./mailconfig";
+import { PAGE_PERM_GROUPS, PERM_LEVELS, ROLE_PILL, ROLE_OPTIONS } from "./mailconfig";
 
 export function UsersPage({ toast, readOnly = false }) {
   const { token } = useAuth();
@@ -18,10 +18,12 @@ export function UsersPage({ toast, readOnly = false }) {
   const [modal,       setModal]       = useState(false);
   const [assignModal, setAssignModal] = useState(null);
   const [form,        setForm]        = useState({
-    username:"", password:"", role:"production", department_id:"",
+    username:"", password:"", role:"", department_id:"",
   });
   const [saving,      setSaving]      = useState(false);
   const [selLines,    setSelLines]    = useState([]);
+  const [revealed,    setRevealed]    = useState(() => new Set());  // kin users ka password dikhana hai
+  const [showPw,      setShowPw]      = useState(false);            // add-form password visible?
 
   // Permission matrix state — opened when admin clicks "Permissions"
   // on a user row.  permModal=null means closed; otherwise it holds
@@ -44,22 +46,20 @@ export function UsersPage({ toast, readOnly = false }) {
   useEffect(() => { load(); }, [load]);
 
   const createUser = async () => {
-    if (!form.username||!form.password) { toast("Username and password required","err"); return; }
-    if (form.role === "department" && !form.department_id) {
-      toast("Pick a department for this user","err"); return;
+    const uname = form.username.trim();
+    if (!uname||!form.password) { toast("Username and password required","err"); return; }
+    if (!form.role) { toast("Role select karo","err"); return; }
+    // Duplicate username — frontend pe turant rok (backend bhi 400 deta hai).
+    if (users.some(u => (u.username||"").toLowerCase() === uname.toLowerCase())) {
+      toast("Ye username pehle se hai — dusra chuno","err"); return;
     }
     setSaving(true);
     try {
-      const body = {
-        username: form.username,
-        password: form.password,
-        role:     form.role,
-        department_id: form.role === "department" ? Number(form.department_id) : null,
-      };
+      const body = { username: uname, password: form.password, role: form.role };
       await api.post("/api/users/", body, token);
       toast("User created ✓");
       setModal(false);
-      setForm({ username:"", password:"", role:"production", department_id:"" });
+      setForm({ username:"", password:"", role:"", department_id:"" });
       load();
     }
     catch(e) { toast(e.message,"err"); }
@@ -71,6 +71,16 @@ export function UsersPage({ toast, readOnly = false }) {
     try { await api.delete(`/api/users/${u.id}`, token); toast("User deleted"); load(); }
     catch(e) { toast(e.message,"err"); }
   };
+
+  const resetPassword = async (u) => {
+    const pw = prompt(`New password for "${u.username}":`);
+    if (pw == null) return;                       // cancel dabaya
+    if (!pw.trim()) { toast("Password khaali nahi","err"); return; }
+    try { await api.put(`/api/users/${u.id}/password`, { password: pw }, token); toast("Password reset ✓"); load(); }
+    catch(e) { toast(e.message,"err"); }
+  };
+  const toggleReveal = (id) =>
+    setRevealed(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const patchUser = async (u, patch) => {
     try { await api.put(`/api/users/${u.id}/role`, patch, token); toast("Updated ✓"); load(); }
@@ -162,7 +172,7 @@ export function UsersPage({ toast, readOnly = false }) {
         {loading ? <Spinner /> : users.length===0 ? <EmptyState text="No users" /> : (
           <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
             <thead>
-              <tr>{["ID","Username","Role","Department","Last Login","Actions"].map(h=>(
+              <tr>{["ID","Username","Role","Password","Last Login","Actions"].map(h=>(
                 <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:10, fontWeight:700, letterSpacing:".08em", textTransform:"uppercase", color:"#64748b", borderBottom:"2px solid #e2e8f0" }}>{h}</th>
               ))}</tr>
             </thead>
@@ -180,33 +190,31 @@ export function UsersPage({ toast, readOnly = false }) {
                         <select value={u.role} onChange={e=>changeRole(u,e.target.value)}
                                 style={{ ...inputStyle, padding:"4px 8px", fontSize:12, width:"auto",
                                          ...(rp.bg ? { background: rp.bg, color: rp.fg, fontWeight:700 } : {}) }}>
-                          <option value="admin">Admin</option>
-                          <option value="plant_head">Plant Head</option>
-                          <option value="department">Department</option>
-                          <option value="production">Production</option>
-                          <option value="operator">Operator</option>
+                          {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                         </select>
                       )
                     }
                   </td>
                   <td style={{ padding:"12px 14px" }}>
-                    {u.role === "department" ? (
-                      <select value={u.department_id || ""}
-                              onChange={e => changeDept(u, e.target.value)}
-                              style={{ ...inputStyle, padding:"4px 8px", fontSize:11, width:"auto" }}>
-                        <option value="" disabled>— pick —</option>
-                        {departments.map(d => (
-                          <option key={d.id} value={d.id}>{d.name}</option>
-                        ))}
-                      </select>
+                    {u.password_plain ? (
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        <span style={{ fontFamily:"monospace", fontSize:13, color:"#0f172a",
+                                       letterSpacing: revealed.has(u.id) ? "normal" : "2px" }}>
+                          {revealed.has(u.id) ? u.password_plain : "••••••"}
+                        </span>
+                        <button onClick={()=>toggleReveal(u.id)} title={revealed.has(u.id)?"Hide":"Show"}
+                                style={{ border:"none", background:"transparent", cursor:"pointer", fontSize:14, padding:0, lineHeight:1 }}>
+                          {revealed.has(u.id) ? "🙈" : "👁"}
+                        </button>
+                      </div>
                     ) : (
-                      <span style={{ color:"#cbd5e1" }}>—</span>
+                      <span style={{ color:"#cbd5e1", fontStyle:"italic", fontSize:12 }}>Reset PW se set karo</span>
                     )}
                   </td>
                   <td style={{ padding:"12px 14px", fontFamily:"monospace", fontSize:11, color:"#64748b" }}>{u.last_login?new Date(u.last_login).toLocaleString("en-IN"):"Never"}</td>
                   <td style={{ padding:"12px 14px" }}>
                     <div style={{ display:"flex", gap:8 }}>
-                      {u.role==="operator" && <Btn size="sm" onClick={()=>openAssign(u)}>Assign Lines</Btn>}
+                      <Btn size="sm" onClick={()=>resetPassword(u)}>Reset PW</Btn>
                       {u.username!=="admin" && <Btn size="sm" onClick={()=>openPerms(u)}>Permissions</Btn>}
                       {u.username!=="admin" && <Btn size="sm" variant="danger" onClick={()=>deleteUser(u)}>Delete</Btn>}
                     </div>
@@ -220,15 +228,26 @@ export function UsersPage({ toast, readOnly = false }) {
 
       <Modal open={modal} onClose={()=>setModal(false)} title="Add User">
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-          <FF label="Username *"><Input value={form.username} onChange={e=>setForm(f=>({...f,username:e.target.value}))} placeholder="login id"/></FF>
-          <FF label="Password *"><Input type="password" value={form.password} onChange={e=>setForm(f=>({...f,password:e.target.value}))} placeholder="password"/></FF>
+          <FF label="Username *"><Input value={form.username} onChange={e=>setForm(f=>({...f,username:e.target.value}))} placeholder="login id"
+                                        name="mes-new-username" autoComplete="off" /></FF>
+          <FF label="Password *">
+            <div style={{ position:"relative" }}>
+              <Input type={showPw?"text":"password"} value={form.password}
+                     onChange={e=>setForm(f=>({...f,password:e.target.value}))} placeholder="password"
+                     name="mes-new-password" autoComplete="new-password" />
+              <button type="button" onClick={()=>setShowPw(v=>!v)} title={showPw?"Hide":"Show"}
+                      style={{ position:"absolute", right:8, top:"50%", transform:"translateY(-50%)",
+                               border:"none", background:"transparent", cursor:"pointer", fontSize:15, lineHeight:1 }}>
+                {showPw?"🙈":"👁"}
+              </button>
+            </div>
+          </FF>
           <FF label="Role *">
             <Select value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value, department_id:""}))}>
-              <option value="production">Production</option>
-              <option value="operator">Operator</option>
-              <option value="department">Department</option>
-              <option value="plant_head">Plant Head (admin-equivalent)</option>
-              <option value="admin">Admin</option>
+              <option value="" disabled>— Select role —</option>
+              {/* Admin yahan nahi — naya user galti se admin na ban jaye.  Zaroorat ho
+                  to user banao phir table me role dropdown se Admin kar do. */}
+              {ROLE_OPTIONS.filter(r => r.value !== "admin").map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
             </Select>
           </FF>
           {form.role === "department" && (

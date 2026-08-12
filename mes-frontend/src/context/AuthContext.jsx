@@ -109,11 +109,21 @@ export function AuthProvider({ children }) {
     for (const k of AUTH_KEYS) ss.remove(k);
   };
 
-  // App admin-only — sirf ek user `admin` hai jise har page ka poora access
-  // hai.  (Pehle ke multi-role / per-page permission defaults hata diye.)
-  const isAdmin   = !!user;
-  const canAccess = () => true;
-  const canWrite  = () => true;
+  // Sirf `admin` → sab pages ka poora access.  Baaki designations
+  // (supervisor … senior manager) ko SIRF woh pages dikhte hain jo admin ne
+  // "User Access" me di hain (maintenance_user_permissions → /me →
+  // user.permissions, page_key → level).
+  const isAdmin = user?.role === "admin";
+  const canAccess = (page) => {
+    if (!user) return false;
+    if (isAdmin) return true;
+    const p = user?.permissions?.[page];
+    return p === "read" || p === "full";     // 'none' ya missing → chhupa
+  };
+  const canWrite = (page) => {
+    if (isAdmin) return true;
+    return user?.permissions?.[page] === "full";
+  };
 
   // Theme — admin ka universal blue (single-role app).
   const themeKey = "blue";

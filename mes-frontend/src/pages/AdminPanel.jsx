@@ -24,7 +24,8 @@ export function renderAdminTab(sectionKey, tabKey, props) {
     case "maintenance/slipthreshold": return <SlipThresholdPage {...t} />;
     case "maintenance/pmchecksheet": return <PMCheckSheetAdmin {...t} />;
     case "maintenance/machinedmc":   return <MachineDMCAdmin   {...t} />;
-    case "admin/users":       return <UsersPage       {...t} />;
+    case "admin/users":
+    case "maintenance/users": return <UsersPage       {...t} />;
     default: return null;
   }
 }
@@ -108,11 +109,19 @@ export const ADMIN_PANEL_CSS = `
 export function AdminShell({
   title,
   accent = "#1e40af",
-  sections = ADMIN_SECTIONS,
+  sections: rawSections = ADMIN_SECTIONS,
   readOnly = false,
   rightTopbar = null,
 }) {
+  const { isAdmin } = useAuth();
   const [showToast, toastEl] = useToast();
+
+  // adminOnly tabs (jaise "Users & Access") sirf admin ko dikhte hain.  Agar
+  // koi non-admin ko "Maintenance Panel" grant ho jaye, tab bhi user-management
+  // tab hidden rahe — warna wo khud ko admin bana sakta tha (privilege hole).
+  const sections = rawSections.map(s => ({
+    ...s, tabs: s.tabs.filter(t => !t.adminOnly || isAdmin),
+  }));
 
   // URL hash format: #<section>/<tab> e.g. "#maintenance/pokayoke"
   const parseHash = () => {
@@ -239,10 +248,12 @@ export function AdminShell({
 // `editable` forces full-write for everyone who can reach this panel (not
 // just admins).  Used by the Maintenance Panel so department maintenance
 // users can edit, while Production / Quality stay read-only for non-admins.
-function _RoleScopedShell({ title, sectionKey, page, editable = false }) {
-  const { theme, isAdmin } = useAuth();
+function _RoleScopedShell({ title, sectionKey, page, editable = false, accessKey }) {
+  const { theme, isAdmin, canWrite } = useAuth();
   const sec = ADMIN_SECTIONS.filter(s => s.key === sectionKey);
-  const readOnly = editable ? false : !isAdmin;
+  // editable panel (Maintenance): admin → full edit; jis non-admin ko panel
+  // grant hua uski level (full=edit, read=read-only).  Baaki panels: non-admin read-only.
+  const readOnly = editable ? (!isAdmin && !(accessKey && canWrite(accessKey))) : !isAdmin;
   return (
     <>
       <AdminShell
@@ -267,7 +278,7 @@ export function ProductionAdminPanel() {
   return <_RoleScopedShell title="Production Panel"  sectionKey="production"  page="ProductionAdminPanel" />;
 }
 export function MaintenanceAdminPanel() {
-  return <_RoleScopedShell title="Maintenance Panel" sectionKey="maintenance" page="MaintenanceAdminPanel" editable />;
+  return <_RoleScopedShell title="Maintenance Panel" sectionKey="maintenance" page="MaintenanceAdminPanel" editable accessKey="admin-maintenance" />;
 }
 export function QualityAdminPanel() {
   return <_RoleScopedShell title="Quality Panel"     sectionKey="quality"     page="QualityAdminPanel" />;

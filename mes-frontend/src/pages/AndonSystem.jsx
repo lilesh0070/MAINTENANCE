@@ -552,20 +552,22 @@ export default function AndonSystem() {
                 Object.entries(eventsByLine).map(([line, evs]) => (
                   <div key={line} className="an-card" style={{ marginBottom:14 }}>
                     <div style={{ fontSize:13.5, fontWeight:800, color:"#0f172a", marginBottom:12 }}>📍 {line}</div>
-                    {/* Saare active calls EK hi line me. auto-fill wrap kar deta tha
-                        (5 calls => 4 + 1). Ab jitne calls utne hi columns, sab barabar
-                        chaudai me. Bahut zyada calls hon to line todne ke bajaye
-                        line andar hi horizontally scroll ho jayegi. */}
-                    <div style={{ display:"grid", gridTemplateColumns:`repeat(${evs.length},minmax(200px,1fr))`,
-                                  gap:12, overflowX:"auto", paddingBottom:2 }}>
+                    {/* Saare active calls EK hi row me — jitne calls utne columns, sab
+                        BARABAR chaudai me aur screen ke hisab se apne aap shrink.  minmax(0,1fr)
+                        se scroll nahi hoti (5 ho ya 8, sab fit).  Har card ek container hai,
+                        andar ke fonts card ki chaudai (cqi) se scale hote hain. */}
+                    <div style={{ display:"grid", gridTemplateColumns:`repeat(${evs.length},minmax(0,1fr))`,
+                                  gap:10, paddingBottom:2 }}>
                       {evs.map((ev) => {
                         const c = deptColor(ev);            // card ka rang = department ka rang
                         const acked = !!ev.acknowledged_at;
                         return (
-                          <div key={ev.id} style={{ border:`1px solid ${c}33`, borderLeft:`6px solid ${c}`, borderRadius:11,
-                                                     padding:"12px 14px", background:`${c}0d` }}>
-                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
-                              <div style={{ fontSize:15.5, fontWeight:800, color:"#0f172a", lineHeight:1.2 }}>
+                          <div key={ev.id} style={{ border:`1px solid ${c}33`, borderLeft:`5px solid ${c}`, borderRadius:11,
+                                                     padding:"11px 13px", background:`${c}0d`, minWidth:0,
+                                                     containerType:"inline-size", overflow:"hidden" }}>
+                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:6 }}>
+                              <div style={{ fontSize:"clamp(12px,9cqi,15.5px)", fontWeight:800, color:"#0f172a",
+                                            lineHeight:1.2, minWidth:0, overflowWrap:"anywhere" }}>
                                 {ev.display_name || ev.department || `OUT${ev.do_index}`}
                               </div>
                               {(() => { const pc = prioColor(ev.priority);   // badge ka rang priority ka hi rahega
@@ -575,12 +577,15 @@ export default function AndonSystem() {
                                 ); })()}
                             </div>
                             {ev.department && ev.department !== ev.display_name &&
-                              <div style={{ fontSize:11.5, color:"#64748b", marginTop:1 }}>{ev.department}</div>}
-                            <div style={{ fontSize:28, fontWeight:800, color:c, fontVariantNumeric:"tabular-nums", margin:"7px 0 3px" }}>
+                              <div style={{ fontSize:11.5, color:"#64748b", marginTop:1, whiteSpace:"nowrap",
+                                            overflow:"hidden", textOverflow:"ellipsis" }}>{ev.department}</div>}
+                            <div style={{ fontSize:"clamp(20px,17cqi,28px)", fontWeight:800, color:c,
+                                          fontVariantNumeric:"tabular-nums", margin:"7px 0 3px" }}>
                               {fmtClock(liveElapsed(ev))}
                             </div>
-                            <div style={{ fontSize:11, color:"#94a3b8" }}>OUT{ev.do_index} · {ev.esp_name || "ESP"}</div>
-                            <div style={{ marginTop:7 }}>
+                            <div style={{ fontSize:10.5, color:"#94a3b8", whiteSpace:"nowrap", overflow:"hidden",
+                                          textOverflow:"ellipsis" }}>OUT{ev.do_index} · {ev.esp_name || "ESP"}</div>
+                            <div style={{ marginTop:7, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
                               {acked
                                 ? <span style={{ fontSize:10.5, fontWeight:700, color:"#16a34a" }}>
                                     ✓ Responded in {fmtClock((new Date(ev.acknowledged_at) - new Date(ev.started_at)) / 1000)}

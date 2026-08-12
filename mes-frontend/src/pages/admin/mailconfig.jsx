@@ -15,12 +15,27 @@ import {
 } from "./ui";
 
 // ─── USERS PAGE ───────────────────────────────────────────────
+// Roles = ek designation-ladder.  Sirf `admin` ke paas full access hai;
+// baaki sab (supervisor … senior manager) ko admin per-page permissions
+// deta hai (Permissions button).  ROLE_OPTIONS = dropdown ka single source.
+export const ROLE_OPTIONS = [
+  { value: "admin",             label: "Admin" },
+  { value: "supervisor",        label: "Supervisor" },
+  { value: "engineer",          label: "Engineer" },
+  { value: "senior_engineer",   label: "Senior Engineer" },
+  { value: "assistant_manager", label: "Assistant Manager" },
+  { value: "deputy_manager",    label: "Deputy Manager" },
+  { value: "senior_manager",    label: "Senior Manager" },
+];
+
 export const ROLE_PILL = {
-  admin:      { bg:"rgba(30,64,175,.10)",  fg:"#1e40af" },
-  plant_head: { bg:"rgba(30,64,175,.10)",  fg:"#1e40af" },
-  department: { bg:"rgba(220,38,38,.10)",  fg:"#dc2626" },
-  production: { bg:"rgba(22,163,74,.10)",  fg:"#16a34a" },
-  operator:   { bg:"rgba(124,58,237,.10)", fg:"#6d28d9" },
+  admin:             { bg:"rgba(30,64,175,.10)",  fg:"#1e40af" },
+  supervisor:        { bg:"rgba(13,148,136,.10)", fg:"#0d9488" },
+  engineer:          { bg:"rgba(22,163,74,.10)",  fg:"#16a34a" },
+  senior_engineer:   { bg:"rgba(5,150,105,.12)",  fg:"#047857" },
+  assistant_manager: { bg:"rgba(124,58,237,.10)", fg:"#6d28d9" },
+  deputy_manager:    { bg:"rgba(79,70,229,.10)",  fg:"#4f46e5" },
+  senior_manager:    { bg:"rgba(217,119,6,.12)",  fg:"#b45309" },
 };
 
 // Master list of pages admins can grant per-user permissions on.
@@ -28,33 +43,38 @@ export const ROLE_PILL = {
 // match the canAccess() keys in AuthContext.jsx so explicit overrides
 // resolve correctly.
 export const PAGE_PERM_GROUPS = [
-  { group: "Production", items: [
-    { key: "dashboard",         label: "Production Dashboard" },
-    { key: "historical",        label: "Historical Data" },
-    { key: "import",            label: "Import / Export" },
-    { key: "process-graphs",    label: "Process Graphs" },
-    { key: "admin-production",  label: "Admin → Production Panel" },
+  { group: "Maintenance — Pages", items: [
+    { key: "dashboard",                  label: "Dashboard (home / landing)" },
+    { key: "maintenance-overview",       label: "Overview" },
+    { key: "andon-system",               label: "ANDON" },
+    { key: "maintenance-update-plan",    label: "Update Plan" },
+    { key: "maintenance-dashboard",      label: "Maintenance Dashboard" },
+    { key: "maintenance-kpi",            label: "Maintenance KPI" },
+    { key: "maintenance-breakdown",      label: "Breakdown" },
+    { key: "skill-training",             label: "Skill & Training" },
+    { key: "maintenance-historical",     label: "Historical Data" },
+    { key: "maintenance-capa",           label: "CAPA" },
+    { key: "maintenance-deviations",     label: "Deviations" },
+    { key: "maintenance-logbook",        label: "Log Book" },
+    { key: "maintenance-history-card",   label: "History Card" },
+    { key: "maintenance-pm",             label: "Preventive Maint." },
+    { key: "maintenance-machine-manual", label: "Machine Manual" },
+    { key: "maintenance-machine-dmc",    label: "Machine DMC" },
+    { key: "maintenance-spare",          label: "Spare" },
+    { key: "maintenance-plc",            label: "PLC Integration" },
   ]},
-  { group: "Maintenance", items: [
-    { key: "maintenance-dashboard",  label: "Maintenance Dashboard" },
-    { key: "maintenance-historical", label: "Maintenance Historical Data" },
-    { key: "maintenance-capa",       label: "Maintenance CAPA" },
-    { key: "maintenance-deviations", label: "Maintenance Deviations" },
-    { key: "maintenance-poka-yoke",  label: "Maintenance Poka Yoke" },
-    { key: "maintenance-logbook",    label: "Maintenance Log Book" },
-    { key: "maintenance-pm",         label: "Preventive Maintenance" },
-    { key: "admin-maintenance",      label: "Admin → Maintenance Panel" },
+  { group: "Machine DMC — Sub-pages", items: [
+    { key: "maintenance-daily-dmc",  label: "Operator DMC Fill" },
+    { key: "maintenance-dmc-verify", label: "Supervisor Verify" },
+    { key: "maintenance-dmc-weekly", label: "Maintenance Weekly" },
+    { key: "maintenance-dmc-ng",     label: "DMC NG Point" },
   ]},
-  { group: "Quality", items: [
-    { key: "quality-dashboard",  label: "Quality Dashboard" },
-    { key: "quality-deviations", label: "Quality Deviation" },
-    { key: "admin-quality",      label: "Admin → Quality Panel" },
-  ]},
-  { group: "System", items: [
-    { key: "department-panel",   label: "Department Panel" },
-    { key: "settings",           label: "Settings" },
-    { key: "audit",              label: "Audit Log" },
-    { key: "admin",              label: "Admin Core (System Map / Departments / Users)" },
+  // Admin config panel.  Grant se sidebar me "Maintenance Panel" dikhega
+  // (KPI Targets / Slip Threshold / PM Check Sheet / Machine DMC config).
+  // NOTE: iske andar "Users & Access" tab HAMESHA admin-only rehta hai —
+  // grant milne par bhi non-admin ko user-management nahi dikhta.
+  { group: "Admin Panel", items: [
+    { key: "admin-maintenance", label: "Maintenance Panel (config — Users tab admin-only)" },
   ]},
 ];
 

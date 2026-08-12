@@ -16,8 +16,10 @@ const NAV_ITEMS = [
   // Maintenance-only deployment.  "Maintenance" section (saare maintenance
   // pages) navItems ke andar inject hoti hai; yahan sirf Admin section hai.
   {
+    // adminOnly hata diya — ab "Maintenance Panel" `canAccess("admin-maintenance")`
+    // se filter hota hai: admin ko hamesha, aur jis non-admin ko admin ne grant
+    // kiya usko bhi dikhta hai.  (Users & Access tab andar admin-only hi rehta hai.)
     section: "Admin",
-    adminOnly: true,
     items: [
       { key: "admin-maintenance", label: "Maintenance Panel", icon: "🛠", path: "/admin/maintenance" },
     ],
@@ -58,11 +60,38 @@ export default function SlideNav() {
           { key: "maintenance-machine-manual", label: "Machine Manual",     icon: "📖",                   path: "/maintenance-machine-manual" },
           { key: "maintenance-machine-dmc",    label: "Machine DMC",        icon: "🏷",                   path: "/maintenance-machine-dmc" },
           { key: "maintenance-spare",          label: "Spare",              icon: "🔩",                   path: "/maintenance-spare" },
+          { key: "maintenance-plc",            label: "PLC Integration",    icon: "🔌",                   path: "/maintenance-plc" },
         ],
       };
       return [adminMaint, ...NAV_ITEMS];
     }
-    return NAV_ITEMS;   // admin hamesha upar se return karta hai
+    // Non-admin (supervisor/engineer/…) ko bhi poori Maintenance section milti
+    // hai — har item `canAccess(item.key)` se filter hota hai (line ~252), to
+    // sirf granted pages hi dikhte hain.  Pehle ye `if (isAdmin)` ke andar tha
+    // jisse non-admin ko koi maintenance page hi nahi milta tha (bug).
+    const adminMaint = {
+      section: "Maintenance",
+      items: [
+        { key: "maintenance-overview",    label: "Overview",             icon: "📈",                   path: "/maintenance-overview" },
+        { key: "andon-system",            label: "ANDON",                icon: "🚦",                   path: "/andon-system" },
+        { key: "maintenance-update-plan", label: "Update Plan",           icon: "📝",                   path: "/maintenance-update-plan" },
+        { key: "maintenance-dashboard",   label: "Maintenance Dashboard", icon: "/dashboard-icon.png",  iconImg: true, path: "/maintenance-dashboard" },
+        { key: "maintenance-kpi",         label: "Maintenance KPI",       icon: "📊",                   path: "/maintenance-kpi" },
+        { key: "maintenance-breakdown",   label: "Breakdown",             icon: "🚨",                   path: "/maintenance-breakdown" },
+        { key: "skill-training",          label: "Skill & Training",      icon: "🎓",                   path: "/skill-training" },
+        { key: "maintenance-historical",  label: "Historical Data",       icon: "/historical-icon.png", iconImg: true, path: "/maintenance-historical" },
+        { key: "maintenance-capa",        label: "CAPA",                  icon: "🛡",                   path: "/maintenance-capa" },
+        { key: "maintenance-deviations",  label: "Deviations",            icon: "⚠",                    path: "/maintenance-deviations" },
+        { key: "maintenance-logbook",     label: "Log Book",              icon: "📒",                   path: "/maintenance-logbook" },
+        { key: "maintenance-history-card", label: "History Card",         icon: "🗂",                   path: "/maintenance-history-card" },
+        { key: "maintenance-pm",          label: "Preventive Maint.",     icon: "🛠",                   path: "/maintenance-pm" },
+        { key: "maintenance-machine-manual", label: "Machine Manual",     icon: "📖",                   path: "/maintenance-machine-manual" },
+        { key: "maintenance-machine-dmc",    label: "Machine DMC",        icon: "🏷",                   path: "/maintenance-machine-dmc" },
+        { key: "maintenance-spare",          label: "Spare",              icon: "🔩",                   path: "/maintenance-spare" },
+        { key: "maintenance-plc",            label: "PLC Integration",    icon: "🔌",                   path: "/maintenance-plc" },
+      ],
+    };
+    return [adminMaint, ...NAV_ITEMS];
   })();
 
   // Close on outside click

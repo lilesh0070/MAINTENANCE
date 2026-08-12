@@ -61,7 +61,7 @@ _ensured = False
 
 # Seeded once so a fresh install is usable immediately.  Fixed plant scheme:
 #   DO1 Maintenance · DO2 Maintenance ACC · DO3 Toolroom · DO4 Tool ACC ·
-#   DO5 Quality · DO6 Material · DO7 Other Loss · DO8 Model Setup
+#   DO5 Quality · DO6 Material · DO7 Model Setup · DO8 Other Loss
 #   — same wiring for every ESP.
 _DEFAULT_DEPTS = ["Maintenance", "Toolroom", "Quality", "Material", "Other Loss", "Model Setup"]
 # Each real department maps to ONE output; DO2 / DO4 are acknowledgement pulses
@@ -75,8 +75,8 @@ _DEFAULT_OUTPUTS = [
     (4, "Tool ACC",        None,          "High"),        # ACK of DO3 → response time
     (5, "Quality",         "Quality",     "Normal"),
     (6, "Material",        "Material",    "Normal"),
-    (7, "Other Loss",      "Other Loss",  "Normal"),
-    (8, "Model Setup",     "Model Setup", "Normal"),
+    (7, "Model Setup",     "Model Setup", "Normal"),
+    (8, "Other Loss",      "Other Loss",  "Normal"),
 ]
 
 # DO2 / DO4 acknowledge DO1 / DO3: their ON edge stamps the parent call's

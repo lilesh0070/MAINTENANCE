@@ -7,11 +7,10 @@ Tables:
   maintenance_users              login — username / password_hash / role
   maintenance_user_permissions   per-page access (page_key -> perm_level)
 
-Roles:
-  admin        — full power
-  plant_head   — admin-equivalent
-  production   — read + import + historical
-  operator     — line operator
+Roles (designation ladder — sirf `admin` ke paas full power hai; baaki sab
+ko admin per-page permissions deta hai):
+  admin · supervisor · engineer · senior_engineer ·
+  assistant_manager · deputy_manager · senior_manager
 
 Kis user ko kaunsa page dikhega aur wo likh payega ya nahi, ye poori tarah
 `maintenance_user_permissions` tay karti hai — frontend ka `canAccess()` /
@@ -27,13 +26,16 @@ from auth import require_admin, hash_password
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
-VALID_ROLES = {"admin", "plant_head", "production", "operator"}
+VALID_ROLES = {
+    "admin", "supervisor", "engineer", "senior_engineer",
+    "assistant_manager", "deputy_manager", "senior_manager",
+}
 
 
 class UserCreate(BaseModel):
     username: str
     password: str
-    role:     str = "production"
+    role:     str = "engineer"
 
 
 class UserUpdate(BaseModel):
@@ -45,13 +47,29 @@ def _validate_role(role: Optional[str]) -> None:
         raise HTTPException(400, f"role must be one of {sorted(VALID_ROLES)}")
 
 
+def _ensure_pw_plain_col(conn) -> None:
+    """Admin ke liye password list me dikhana hai — hash se wapas nahi milta,
+    isliye plaintext ki ek copy `password_plain` me rakhte hain.  INTERNAL
+    admin-only tool; column admin auth ke peeche hi expose hoti hai.
+    Idempotent — column pehle se ho to kuch nahi karta."""
+    cur = conn.cursor()
+    cur.execute("ALTER TABLE maintenance_users ADD COLUMN IF NOT EXISTS password_plain TEXT")
+    conn.commit()
+
+
+class PasswordReset(BaseModel):
+    password: str
+
+
 @router.get("/")
 def list_users(admin=Depends(require_admin)):
-    """Saare users (admin only)."""
+    """Saare users (admin only) — password_plain samet (admin ko dikhane ke liye)."""
     with get_conn() as conn:
+        _ensure_pw_plain_col(conn)
         cur = dict_cursor(conn)
         cur.execute("""
-            SELECT id, username, role, full_name, is_active, last_login, created_at
+            SELECT id, username, role, full_name, is_active, last_login, created_at,
+                   password_plain
               FROM maintenance_users
              ORDER BY username
         """)
@@ -63,18 +81,37 @@ def create_user(body: UserCreate, admin=Depends(require_admin)):
     """Naya user banao."""
     _validate_role(body.role)
     with get_conn() as conn:
+        _ensure_pw_plain_col(conn)
         cur = dict_cursor(conn)
         cur.execute("SELECT 1 FROM maintenance_users WHERE username = %s", (body.username,))
         if cur.fetchone():
             raise HTTPException(400, "Username already exists")
         cur.execute("""
-            INSERT INTO maintenance_users (username, password_hash, role)
-            VALUES (%s, %s, %s)
+            INSERT INTO maintenance_users (username, password_hash, role, password_plain)
+            VALUES (%s, %s, %s, %s)
             RETURNING id, username, role, is_active, created_at
-        """, (body.username, hash_password(body.password), body.role))
+        """, (body.username, hash_password(body.password), body.role, body.password))
         row = cur.fetchone()
         conn.commit()
         return row
+
+
+@router.put("/{user_id}/password")
+def reset_user_password(user_id: int, body: PasswordReset, admin=Depends(require_admin)):
+    """Kisi user ka password reset karo (admin only) — hash + plaintext dono update."""
+    if not body.password:
+        raise HTTPException(400, "password required")
+    with get_conn() as conn:
+        _ensure_pw_plain_col(conn)
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE maintenance_users SET password_hash = %s, password_plain = %s WHERE id = %s",
+            (hash_password(body.password), body.password, user_id),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(404, "User not found")
+        conn.commit()
+    return {"ok": True}
 
 
 @router.put("/{user_id}/role")

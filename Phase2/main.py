@@ -59,6 +59,7 @@ from routers.machine_dmc      import router as machine_dmc_router
 from routers.breakdown_slips  import router as breakdown_slips_router
 from routers.breakdown_logbook import router as breakdown_logbook_router
 from routers.maintenance_spare import router as maintenance_spare_router
+from routers.plc              import router as plc_router
 from routers.andon           import router as andon_router
 
 # ── App ────────────────────────────────────────────────────────
@@ -139,6 +140,7 @@ app.include_router(machine_dmc_router)          # Machine DMC — daily check-sh
 app.include_router(breakdown_slips_router)      # Manual Break Down Slip → standalone maintenance_breakdown_data
 app.include_router(breakdown_logbook_router)    # Log Book + History Card (/combined merges slip + log book)
 app.include_router(maintenance_spare_router)    # Spare master (grows from slip + log-book spares)
+app.include_router(plc_router)                  # PLC Integration (Mitsubishi Q / FX5U via MC protocol)
 app.include_router(andon_router)                # ANDON Management module (standalone andon_* tables)
 
 
