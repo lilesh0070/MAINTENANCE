@@ -139,10 +139,14 @@ export function UsersPage({ toast, readOnly = false }) {
     setPermMap(p => ({ ...p, [page_key]: level }));
   };
 
+  // Group items + unke nested children ko ek flat list me (parent, phir sub-pages `_child` mark ke saath).
+  const flatItems = (items) => items.flatMap(it =>
+    it.children ? [it, ...it.children.map(c => ({ ...c, _child: true }))] : [it]);
+
   const setAllInGroup = (groupItems, level) => {
     setPermMap(p => {
       const n = { ...p };
-      for (const it of groupItems) n[it.key] = level;
+      for (const it of flatItems(groupItems)) n[it.key] = level;
       return n;
     });
   };
@@ -310,7 +314,7 @@ export function UsersPage({ toast, readOnly = false }) {
                     ))}
                   </div>
                 </div>
-                {g.items.map(it => {
+                {flatItems(g.items).map(it => {
                   const cur = permMap[it.key] || "none";
                   return (
                     <div key={it.key} style={{
@@ -318,11 +322,15 @@ export function UsersPage({ toast, readOnly = false }) {
                       gridTemplateColumns:"1fr auto auto auto",
                       gap:8, alignItems:"center",
                       padding:"6px 0",
+                      paddingLeft: it._child ? 26 : 0,
+                      background: it._child ? "#fbfcfe" : undefined,
                       borderBottom:"1px solid #f1f5f9",
                     }}>
                       <div>
-                        <div style={{ fontSize:13, fontWeight:600, color:"#0f172a" }}>
-                          {it.label}
+                        <div style={{ fontSize: it._child ? 12.5 : 13,
+                                       fontWeight: it._child ? 500 : 600,
+                                       color: it._child ? "#475569" : "#0f172a" }}>
+                          {it._child ? "└ " : ""}{it.label}
                         </div>
                         <div style={{ fontSize:10, color:"#94a3b8",
                                        fontFamily:"monospace" }}>

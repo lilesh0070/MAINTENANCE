@@ -59,15 +59,14 @@ export const PAGE_PERM_GROUPS = [
     { key: "maintenance-history-card",   label: "History Card" },
     { key: "maintenance-pm",             label: "Preventive Maint." },
     { key: "maintenance-machine-manual", label: "Machine Manual" },
-    { key: "maintenance-machine-dmc",    label: "Machine DMC" },
+    { key: "maintenance-machine-dmc",    label: "Machine DMC", children: [
+      { key: "maintenance-daily-dmc",  label: "Operator DMC Fill" },
+      { key: "maintenance-dmc-verify", label: "Supervisor Verify" },
+      { key: "maintenance-dmc-weekly", label: "Maintenance Weekly" },
+      { key: "maintenance-dmc-ng",     label: "DMC NG Point" },
+    ]},
     { key: "maintenance-spare",          label: "Spare" },
     { key: "maintenance-plc",            label: "PLC Integration" },
-  ]},
-  { group: "Machine DMC — Sub-pages", items: [
-    { key: "maintenance-daily-dmc",  label: "Operator DMC Fill" },
-    { key: "maintenance-dmc-verify", label: "Supervisor Verify" },
-    { key: "maintenance-dmc-weekly", label: "Maintenance Weekly" },
-    { key: "maintenance-dmc-ng",     label: "DMC NG Point" },
   ]},
   // Admin config panel.  Grant se sidebar me "Maintenance Panel" dikhega
   // (KPI Targets / Slip Threshold / PM Check Sheet / Machine DMC config).
