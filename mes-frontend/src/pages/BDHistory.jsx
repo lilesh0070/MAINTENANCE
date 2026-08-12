@@ -91,9 +91,17 @@ export default function BDHistory() {
   // FY list + Machine Master List (maintenance_machines — the single master for
   // every filter across the app).
   const [master, setMaster] = useState([]);
+  const booted = useRef(false);   // default the FY to the current one, once
   useEffect(() => {
     if (!token) return;
-    api.get("/api/maintenance-kpi/financial-years", token).then((y) => setYears(Array.isArray(y) ? y : [])).catch(() => setYears([]));
+    api.get("/api/maintenance-kpi/financial-years", token).then((y) => {
+      const list = Array.isArray(y) ? y : [];
+      setYears(list);
+      if (!booted.current && list.length) {
+        booted.current = true;
+        setFFy((list.find((v) => v.is_current) || list[list.length - 1]).fy);
+      }
+    }).catch(() => setYears([]));
     api.get("/api/machines/", token).then((m) => setMaster(Array.isArray(m) ? m : [])).catch(() => setMaster([]));
   }, [token]);
 

@@ -95,7 +95,12 @@ export default function MaintenanceHistorical() {
       setYears(list);
       if (!booted.current && list.length) {
         booted.current = true;
-        setFFy((list.find((v) => v.is_current) || list[0]).fy);
+        const cur = (list.find((v) => v.is_current) || list[0]).fy;
+        setFFy(cur);
+        // Month default = abhi ka current month (agar wo current FY me aata hai).
+        const now = new Date();
+        const cm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        if (fyMonths(cur).some((m) => m.value === cm)) setFMonth(cm);
       }
     }).catch(() => setYears([]));
     api.get("/api/machines/", token).then((m) => setMaster(Array.isArray(m) ? m : [])).catch(() => setMaster([]));
@@ -125,14 +130,18 @@ export default function MaintenanceHistorical() {
 
   useEffect(() => {
     if (!token) return;
+    // `ignore`: jab `win` badalta hai (jaise boot pe null → current-month window),
+    // purani in-flight request ka jawab naye ko overwrite na kare (race fix).
+    let ignore = false;
     const p = new URLSearchParams({ state: "CLOSED", limit: "2000" });
     if (win) { p.set("from_date", win.start); p.set("to_date", win.end); }
     else     { p.set("days", "730"); }
     setLoading(true);
     api.get(`/api/breakdowns/log?${p.toString()}`, token)
-      .then((d) => setRows(Array.isArray(d?.rows) ? d.rows : []))
-      .catch(() => setRows([]))
-      .finally(() => setLoading(false));
+      .then((d) => { if (!ignore) setRows(Array.isArray(d?.rows) ? d.rows : []); })
+      .catch(() => { if (!ignore) setRows([]); })
+      .finally(() => { if (!ignore) setLoading(false); });
+    return () => { ignore = true; };
   }, [token, win]);
 
   // filled PM check sheets (maintenance_pm_check_sheet_filled) + the sheet layout
@@ -142,26 +151,28 @@ export default function MaintenanceHistorical() {
   }, [token]);
   useEffect(() => {
     if (!token) return;
+    let ignore = false;   // race fix — same as breakdown-log effect above
     const p = new URLSearchParams();
     if (win) { p.set("date_from", win.start); p.set("date_to", win.end); }
     // only sheets that cleared the full chain (Team Member → Engineer → In-Charge)
     p.set("stage", "APPROVED");
     setPmLoading(true);
     api.get(`/api/pm/check-sheet-fills?${p.toString()}`, token)
-      .then((d) => setPmRows(Array.isArray(d?.rows) ? d.rows : []))
-      .catch(() => setPmRows([]))
-      .finally(() => setPmLoading(false));
+      .then((d) => { if (!ignore) setPmRows(Array.isArray(d?.rows) ? d.rows : []); })
+      .catch(() => { if (!ignore) setPmRows([]); })
+      .finally(() => { if (!ignore) setPmLoading(false); });
     // sunday plan work + daily work assign (same window on plan_date)
     setSunLoading(true);
     api.get(`/api/sunday-plan/?${p.toString()}`, token)
-      .then((d) => setSunRows(Array.isArray(d?.rows) ? d.rows : []))
-      .catch(() => setSunRows([]))
-      .finally(() => setSunLoading(false));
+      .then((d) => { if (!ignore) setSunRows(Array.isArray(d?.rows) ? d.rows : []); })
+      .catch(() => { if (!ignore) setSunRows([]); })
+      .finally(() => { if (!ignore) setSunLoading(false); });
     setDayLoading(true);
     api.get(`/api/daily-plan/?${p.toString()}`, token)
-      .then((d) => setDayRows(Array.isArray(d?.rows) ? d.rows : []))
-      .catch(() => setDayRows([]))
-      .finally(() => setDayLoading(false));
+      .then((d) => { if (!ignore) setDayRows(Array.isArray(d?.rows) ? d.rows : []); })
+      .catch(() => { if (!ignore) setDayRows([]); })
+      .finally(() => { if (!ignore) setDayLoading(false); });
+    return () => { ignore = true; };
   }, [token, win]);
 
   // Zone/Line/Machine matching is client-side (slip zone names like

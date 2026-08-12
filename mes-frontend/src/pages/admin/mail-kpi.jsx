@@ -24,6 +24,14 @@ const MKT_FYS = Array.from({ length: 41 }, (_, i) => {
   return `${y}-${y + 1}`;
 });
 
+// Default the FY selector to the CURRENT financial year (Apr–Mar), e.g. 2026-2027.
+const MKT_CURRENT_FY = (() => {
+  const d = new Date();
+  const y = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
+  return `${y}-${y + 1}`;
+})();
+const MKT_DEFAULT_FY = MKT_FYS.includes(MKT_CURRENT_FY) ? MKT_CURRENT_FY : MKT_FYS[0];
+
 // The six Maintenance KPI page metrics.
 const MKT_KPIS = [
   { key: "mttr_minutes",          label: "MTTR" },
@@ -53,7 +61,7 @@ export function KpiTargetsPage({ toast, readOnly = false }) {
   const [kpiFilter, setKpiFilter] = useState("mttr_minutes");
 
   const EMPTY = {
-    fy: MKT_FYS[0],
+    fy: MKT_DEFAULT_FY,
     zone_name: "", line_name: "", serial_no: "",
     kpi_key: MKT_KPIS[0].key, target_value: "",
   };

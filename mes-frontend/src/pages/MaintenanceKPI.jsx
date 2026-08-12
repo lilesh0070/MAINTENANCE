@@ -242,14 +242,18 @@ export default function MaintenanceKPI() {
     return targets[k];
   };
 
-  // Load the FY list once.  Keep the default at 2025-26 if present.
+  // Load the FY list once + default to the CURRENT financial year.
+  const bootedFy = useRef(false);
   useEffect(() => {
     if (!token) return;
     api.get("/api/maintenance-kpi/financial-years", token)
       .then((list) => {
         if (Array.isArray(list) && list.length) {
           setYears(list);
-          if (!list.some((y) => y.fy === "2025-26")) setFy(list[list.length - 1].fy);
+          if (!bootedFy.current) {
+            bootedFy.current = true;
+            setFy((list.find((y) => y.is_current) || list[list.length - 1]).fy);
+          }
         }
       })
       .catch(() => {});

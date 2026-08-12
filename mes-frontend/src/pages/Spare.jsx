@@ -18,7 +18,7 @@
  *
  * Routing: /maintenance-spare — canAccess('maintenance-spare').
  * ─────────────────────────────────────────────────────────────────── */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, LabelList,
@@ -71,9 +71,18 @@ export default function Spare() {
   const [fSrc, setFSrc]   = useState("");
   const [q, setQ]         = useState("");
 
+  const booted = useRef(false);   // default the FY to the current one, once
   useEffect(() => {
     if (!token) return;
-    api(`/filters`).then((d) => { setMachines(d.machines || []); setYears(d.years || []); })
+    api(`/filters`).then((d) => {
+      setMachines(d.machines || []);
+      const list = d.years || [];
+      setYears(list);
+      if (!booted.current && list.length) {
+        booted.current = true;
+        setFFy(list.includes(d.current_fy) ? d.current_fy : list[0]);
+      }
+    })
       .catch(() => { setMachines([]); setYears([]); });
   }, [api, token]);
 

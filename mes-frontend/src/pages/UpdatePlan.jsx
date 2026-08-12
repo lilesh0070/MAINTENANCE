@@ -647,8 +647,11 @@ function PreventiveYearlyPlan({ theme, user, nav, meta }) {
 
   useEffect(() => {
     if (!token) return;
+    const now = new Date();
+    const cy = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+    const curFy = `${cy}-${String(cy + 1).slice(-2)}`;   // current FY, Apr-anchored (e.g. "2026-27")
     api.get("/api/pm/yearly-plan-years", token)
-      .then((y) => { setYears(y); if (y.length) setFy(y[0]); })
+      .then((y) => { setYears(y); if (y.length) setFy(y.includes(curFy) ? curFy : y[0]); })
       .catch(() => setYears([]));
     api.get("/api/machines/", token).then((m) => setMaster(Array.isArray(m) ? m : [])).catch(() => setMaster([]));
   }, [token]);
