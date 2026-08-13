@@ -35,6 +35,13 @@ DB_CONFIG = {
     # login surface "Server not connected" promptly and the JSON write-buffer
     # detect the outage quickly.
     "connect_timeout": int(os.getenv("DB_CONNECT_TIMEOUT", "5") or 5),
+    # 2026-08-13 — koi transaction galti se khuli reh jaye ("idle in transaction")
+    # to 30s baad postgres khud us connection ko maar de.  Warna aisi atki
+    # connection apne locks pakde rehti hai aur naye backend ki startup migration
+    # (ALTER TABLE / CREATE INDEX) block ho jaati hai — backend "Waiting for
+    # application startup" par hang, login fail.  Poll ki transactions <1s hain,
+    # to normal kaam par koi asar nahi.  .env se override: DB_OPTIONS.
+    "options": os.getenv("DB_OPTIONS", "-c idle_in_transaction_session_timeout=30000"),
 }
 
 _pool = None
