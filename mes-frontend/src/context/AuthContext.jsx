@@ -147,6 +147,11 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
+    // best-effort AUTH_LOGOUT audit (JWT stateless — server-side session nahi).
+    // Token clear karne se PEHLE bhejo taaki request me abhi wala token jaye.
+    if (token) {
+      fetch(`${API}/api/auth/logout`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+    }
     setToken("");
     setUser(null);
     for (const k of AUTH_KEYS) ss.remove(k);

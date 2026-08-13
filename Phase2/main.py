@@ -569,6 +569,47 @@ def audit_users(user=Depends(get_current_user)):
         return cur.fetchall()
 
 
+@app.get("/api/audit/logins")
+def audit_logins(fy: str = "", month: str = "", date: str = "", username: str = "",
+                 user=Depends(get_current_user)):
+    """Login/Logout activity — kisne kab login kiya, kab logout.  Har AUTH_LOGIN
+    ko usi user ke agle AUTH_LOGOUT se pair karta hai (logout_at NULL = abhi tak
+    logout nahi hua).  Filters: fy(2026-27) · month(YYYY-MM) · date(YYYY-MM-DD) ·
+    username.  Sab optional, AND me lagte hain."""
+    where, params = ["l.action='AUTH_LOGIN'"], []
+    if fy:
+        try:
+            y = int(str(fy).split("-")[0])
+            where.append("l.created_at >= %s AND l.created_at < %s"); params += [f"{y}-04-01", f"{y + 1}-04-01"]
+        except Exception:
+            pass
+    if month:
+        where.append("to_char(l.created_at,'YYYY-MM') = %s"); params.append(month)
+    if date:
+        where.append("l.created_at::date = %s"); params.append(date)
+    if username:
+        where.append("l.username = %s"); params.append(username)
+    w = " AND ".join(where)
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute(f"""
+            SELECT l.username,
+                   (SELECT u.role FROM maintenance_users u WHERE u.username = l.username) AS role,
+                   l.created_at AS login_at,
+                   (SELECT MIN(o.created_at) FROM maintenance_audit_log o
+                     WHERE o.username = l.username AND o.action = 'AUTH_LOGOUT'
+                           AND o.created_at > l.created_at) AS logout_at
+              FROM maintenance_audit_log l
+             WHERE {w}
+             ORDER BY l.created_at DESC
+             LIMIT 500
+        """, params)
+        rows = cur.fetchall()
+        cur.execute("SELECT DISTINCT username FROM maintenance_audit_log WHERE action='AUTH_LOGIN' AND username IS NOT NULL ORDER BY username")
+        users = [r["username"] for r in cur.fetchall()]
+    return {"rows": rows, "users": users}
+
+
 # ── Ping check (TCP connect test for camera/device IPs) ──────
 @app.get("/api/ping")
 def ping_host(ip: str, port: int = 554):

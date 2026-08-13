@@ -15,6 +15,7 @@ export const ADMIN_SECTIONS = [
       // adminOnly: panel kisi non-admin ko grant ho jaye tab bhi user-management
       // sirf admin ko dikhe (AdminShell tab-filter isko hide karta hai).
       { key: "users",        label: "Users & Access", icon: "👥", adminOnly: true },
+      { key: "loginhistory", label: "Login History",  icon: "🔐", adminOnly: true },
     ],
   },
   {

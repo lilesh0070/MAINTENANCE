@@ -237,6 +237,23 @@ def login(form: OAuth2PasswordRequestForm = Depends()):
     )
 
 
+@auth_router.post("/logout")
+def logout(user=Depends(get_current_user)):
+    """AUTH_LOGOUT audit row.  JWT stateless hai (server-side session nahi) —
+    frontend logout par ye best-effort call karta hai sirf audit-trail ke liye,
+    taaki "kisne kab logout kiya" bhi maintenance_audit_log me aa jaye."""
+    try:
+        with get_conn() as conn:
+            conn.cursor().execute(
+                """INSERT INTO maintenance_audit_log
+                       (action, entity_type, entity_id, details, user_id, username)
+                   VALUES ('AUTH_LOGOUT', 'user', %s, %s, %s, %s)""",
+                (user["id"], f"role={user.get('role')}", user["id"], user["username"]))
+    except Exception as _exc:
+        print(f"[AUDIT] logout write failed: {_exc}")
+    return {"ok": True}
+
+
 @auth_router.post("/change-password")
 def change_password(
     body: dict,

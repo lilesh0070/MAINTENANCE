@@ -14,6 +14,7 @@ import { UsersPage } from "./admin/org";
 import { KpiTargetsPage } from "./admin/mail-kpi";
 import { ADMIN_SECTIONS } from "./admin/system";
 import { SlipThresholdPage } from "./admin/slipthreshold";
+import { LoginHistoryPage } from "./admin/loginhistory";
 
 // Render a tab's body.  Centralised so AdminPanel and DepartmentPanel
 // stay perfectly in sync — DepartmentPanel re-uses this same dispatch.
@@ -26,6 +27,7 @@ export function renderAdminTab(sectionKey, tabKey, props) {
     case "maintenance/machinedmc":   return <MachineDMCAdmin   {...t} />;
     case "admin/users":
     case "maintenance/users": return <UsersPage       {...t} />;
+    case "maintenance/loginhistory": return <LoginHistoryPage {...t} />;
     default: return null;
   }
 }
