@@ -179,19 +179,19 @@ function AppRoutes() {
       } />
       {/* Breakdown → BD History — read-only list of "Breakdown" entries. */}
       <Route path="/maintenance-breakdown/bd-history" element={
-        <Protected requiredAccess="maintenance-breakdown"><BDHistory /></Protected>
+        <Protected requiredAccess="maintenance-breakdown-history"><BDHistory /></Protected>
       } />
       {/* Breakdown → BD Analysis — auto-generated breakdown charts from the log book. */}
       <Route path="/maintenance-breakdown/bd-analysis" element={
-        <Protected requiredAccess="maintenance-breakdown"><BDAnalysis /></Protected>
+        <Protected requiredAccess="maintenance-breakdown-analysis"><BDAnalysis /></Protected>
       } />
       {/* Breakdown → Pareto Analysis — machine down-time Pareto (losses + CUMM%). */}
       <Route path="/maintenance-breakdown/pareto-analysis" element={
-        <Protected requiredAccess="maintenance-breakdown"><ParetoAnalysis /></Protected>
+        <Protected requiredAccess="maintenance-breakdown-pareto"><ParetoAnalysis /></Protected>
       } />
       {/* Breakdown → Top 10 BD — ranked worst offenders (same filter bar). */}
       <Route path="/maintenance-breakdown/top-10" element={
-        <Protected requiredAccess="maintenance-breakdown"><TopBreakdowns /></Protected>
+        <Protected requiredAccess="maintenance-breakdown-top10"><TopBreakdowns /></Protected>
       } />
       {/* CAPA → QPR sheet (full fillable format) — opened by "Start CAPA" /
           "View" on the CAPA page; the standalone QPR register was removed. */}
@@ -205,19 +205,19 @@ function AppRoutes() {
       } />
       {/* Skill & Training → OJT — On-the-Job Training record sheet. */}
       <Route path="/skill-training/ojt" element={
-        <Protected requiredAccess="skill-training"><OJT /></Protected>
+        <Protected requiredAccess="skill-ojt"><OJT /></Protected>
       } />
       {/* Skill & Training → Skill Matrix — maintenance flexibility chart. */}
       <Route path="/skill-training/skill-matrix" element={
-        <Protected requiredAccess="skill-training"><SkillMatrix /></Protected>
+        <Protected requiredAccess="skill-matrix"><SkillMatrix /></Protected>
       } />
       {/* Skill & Training → Organisation Chart — department org chart. */}
       <Route path="/skill-training/org-chart" element={
-        <Protected requiredAccess="skill-training"><OrganisationChart /></Protected>
+        <Protected requiredAccess="skill-org-chart"><OrganisationChart /></Protected>
       } />
       {/* Skill & Training → Skill Upgradation Plan — tooling training plan. */}
       <Route path="/skill-training/skill-upgradation" element={
-        <Protected requiredAccess="skill-training"><SkillUpgradation /></Protected>
+        <Protected requiredAccess="skill-upgradation"><SkillUpgradation /></Protected>
       } />
 
       {/* Maintenance CAPA — threshold breaches + 8D corrective/preventive. */}

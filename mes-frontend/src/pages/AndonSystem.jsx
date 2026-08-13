@@ -51,9 +51,12 @@ const fmtClock = (s) => {
 // DO2 acknowledges DO1 (Maintenance), DO4 acknowledges DO3 (Toolroom) — an ACK
 // output belongs to the SAME department as the call it responds to.
 const ACK_PARENT = { 2: 1, 4: 3 };
+// ANDON top tabs → per-tab permission sub-key (inherits the andon-system parent
+// unless a sub-key is explicitly set to None).
+const TAB_KEY = { board: "andon-board", config: "andon-config", reports: "andon-reports" };
 
 export default function AndonSystem() {
-  const { token, theme, user } = useAuth();
+  const { token, theme, user, canAccess } = useAuth();
   const nav = useNavigate();
   const accent = theme?.accent || "#dc2626";
 
@@ -80,6 +83,15 @@ export default function AndonSystem() {
   const [cfg, setCfg] = useState("esp");            // esp | outputs
   const [msg, setMsg] = useState("");
   const flash = (m) => { setMsg(m); setTimeout(() => setMsg(""), 2500); };
+
+  // Default/active tab ko accessible rakho: agar current tab ka access nahi
+  // (sub-key None), to board→config→reports me se pehle allowed tab par switch.
+  // Guard (early-return + firstOk !== tab) loop rokta hai.
+  useEffect(() => {
+    if (canAccess(TAB_KEY[tab])) return;
+    const firstOk = ["board", "config", "reports"].find((t) => canAccess(TAB_KEY[t]));
+    if (firstOk && firstOk !== tab) setTab(firstOk);
+  }, [tab, user]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const [master, setMaster]   = useState([]);       // flat maintenance_machines rows (zone_name/line_name/machine_no/machine_name)
   const [depts, setDepts]     = useState([]);
@@ -241,7 +253,7 @@ export default function AndonSystem() {
   const [dName, setDName] = useState("");
 
   // ── ESP form (zone / line from the machine master) ──
-  const blankEsp = { name: "", ip: "", port: 8080, zone: "", line: "", machine_no: "", machine_name: "", enabled: true };
+  const blankEsp = { name: "", ip: "", port: 5007, series: "Q", zone: "", line: "", machine_no: "", machine_name: "", enabled: true };
   const [espForm, setEspForm] = useState(blankEsp);
   const [espEdit, setEspEdit] = useState(null);
   // zone → line → machine cascade, all from the machine master (like every page)
@@ -252,15 +264,16 @@ export default function AndonSystem() {
     const m = master.find((x) => x.zone_name === espForm.zone && x.line_name === espForm.line && String(x.machine_no) === String(v));
     setEspForm((f) => ({ ...f, machine_no: v, machine_name: m?.machine_name || "" }));
   };
-  const startEspEdit = (e) => { setEspEdit(e.id); setEspForm({ ...blankEsp, ...e, zone: e.zone || "", line: e.line || "", machine_no: e.machine_no || "", machine_name: e.machine_name || "" }); setCfg("esp"); };
+  const startEspEdit = (e) => { setEspEdit(e.id); setEspForm({ ...blankEsp, ...e, series: e.series || "Q", zone: e.zone || "", line: e.line || "", machine_no: e.machine_no || "", machine_name: e.machine_name || "" }); setCfg("esp"); };
   const saveEsp = () => wrap(async () => {
     const body = { name: espForm.name, ip: espForm.ip, port: Number(espForm.port) || 80,
+                   series: espForm.series || "Q",
                    zone: espForm.zone || "", line: espForm.line || "", machine_no: espForm.machine_no || "",
                    machine_name: espForm.machine_name || "", enabled: espForm.enabled };
     if (espEdit) await api(`/esp-devices/${espEdit}`, { method: "PUT", body: JSON.stringify(body) });
     else await api("/esp-devices", { method: "POST", body: JSON.stringify(body) });
     setEspForm(blankEsp); setEspEdit(null);
-  }, espEdit ? "ESP updated" : "ESP added");
+  }, espEdit ? "PLC updated" : "PLC added");
 
   // ── Output mapping (default template OR a specific ESP) ──
   const [outFor, setOutFor] = useState({ type: "default", id: null, name: "Default template" });
@@ -288,7 +301,8 @@ export default function AndonSystem() {
   const setOut = (i, k, v) => setOutRows((rs) => rs.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
   const saveOutputs = () => wrap(async () => {
     const body = { rows: outRows.map((r) => ({ do_index: r.do_index, display_name: r.display_name,
-      department_id: r.department_id || null, priority: r.priority || "Normal", enabled: r.enabled !== false })) };
+      department_id: r.department_id || null, priority: r.priority || "Normal", enabled: r.enabled !== false,
+      bit_type: r.bit_type || "", bit_no: r.bit_no || "" })) };
     if (outFor.type === "default") await api("/outputs/default", { method: "PUT", body: JSON.stringify(body) });
     else await api(`/esp-devices/${outFor.id}/outputs`, { method: "PUT", body: JSON.stringify(body) });
   }, "Output mapping saved");
@@ -357,15 +371,17 @@ export default function AndonSystem() {
 
         <div className="an-body">
           <div className="an-tabs">
-            {[["board","Live Board"],["config","Configuration"],["reports","Reports"]].map(([k, l]) => (
+            {[["board","Live Board"],["config","Configuration"],["reports","Reports"]]
+              .filter(([k]) => canAccess(TAB_KEY[k]))
+              .map(([k, l]) => (
               <button key={k} className={`an-tab${tab === k ? " on" : ""}`} onClick={() => setTab(k)}>{l}</button>
             ))}
           </div>
 
-          {tab === "config" && (
+          {tab === "config" && canAccess("andon-config") && (
             <>
               <div className="an-ctabs">
-                {[["esp","ESP Devices"],["outputs","Outputs"]].map(([k, l]) => (
+                {[["esp","PLC Devices"],["outputs","Outputs"]].map(([k, l]) => (
                   <button key={k} className={`an-ctab${cfg === k ? " on" : ""}`} onClick={() => setCfg(k)}>{l}</button>
                 ))}
               </div>
@@ -374,7 +390,7 @@ export default function AndonSystem() {
               {cfg === "esp" && (
                 <>
                   <div className="an-card" style={{ marginBottom:14 }}>
-                    <b style={{ fontSize:14 }}>{espEdit ? "Edit ESP32" : "Add ESP32"}</b>
+                    <b style={{ fontSize:14 }}>{espEdit ? "Edit PLC" : "Add PLC"}</b>
                     <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginTop:12 }}>
                       <div><label className="an-lbl">Zone</label>
                         <select className="an-in" style={{ width:"100%" }} value={espForm.zone} onChange={(e) => setEspForm({ ...espForm, zone: e.target.value, line: "", machine_no: "", machine_name: "" })}>
@@ -390,29 +406,33 @@ export default function AndonSystem() {
                         </select>
                         {espForm.machine_name && <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>{espForm.machine_name}</div>}
                       </div>
-                      <div><label className="an-lbl">ESP IP Address</label><input className="an-in" style={{ width:"100%" }} value={espForm.ip} onChange={(e) => setEspForm({ ...espForm, ip: e.target.value })} placeholder="192.168.30.101" /></div>
-                      <div><label className="an-lbl">Port</label><input className="an-in" style={{ width:"100%" }} type="number" value={espForm.port} onChange={(e) => setEspForm({ ...espForm, port: e.target.value })} /></div>
+                      <div><label className="an-lbl">PLC IP</label><input className="an-in" style={{ width:"100%" }} value={espForm.ip} onChange={(e) => setEspForm({ ...espForm, ip: e.target.value })} placeholder="192.168.30.101" /></div>
+                      <div><label className="an-lbl">Port</label><input className="an-in" style={{ width:"100%" }} type="number" value={espForm.port} onChange={(e) => setEspForm({ ...espForm, port: e.target.value })} placeholder="5007" /></div>
+                      <div><label className="an-lbl">Series</label>
+                        <select className="an-in" style={{ width:"100%" }} value={espForm.series || "Q"} onChange={(e) => setEspForm({ ...espForm, series: e.target.value })}>
+                          {["Q","FX5U","iQ-R","L"].map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select></div>
                       <div><label className="an-lbl">Device Name</label><input className="an-in" style={{ width:"100%" }} value={espForm.name} onChange={(e) => setEspForm({ ...espForm, name: e.target.value })} placeholder="e.g. Zone A Line 1" /></div>
                     </div>
                     <div className="an-row" style={{ marginTop:12 }}>
                       <label style={{ fontSize:13, fontWeight:700, display:"flex", alignItems:"center", gap:6 }}>
-                        <input type="checkbox" checked={espForm.enabled} onChange={(e) => setEspForm({ ...espForm, enabled: e.target.checked })} /> Enabled (poll this ESP)
+                        <input type="checkbox" checked={espForm.enabled} onChange={(e) => setEspForm({ ...espForm, enabled: e.target.checked })} /> Enabled (poll this PLC)
                       </label>
                       <div style={{ marginLeft:"auto" }} />
                       {espEdit && <button className="an-btn gh" onClick={() => { setEspEdit(null); setEspForm(blankEsp); }}>Cancel</button>}
-                      <button className="an-btn" disabled={!espForm.name.trim() || !espForm.ip.trim()} onClick={saveEsp}>{espEdit ? "Save" : "+ Add ESP"}</button>
+                      <button className="an-btn" disabled={!espForm.name.trim() || !espForm.ip.trim()} onClick={saveEsp}>{espEdit ? "Save" : "+ Add PLC"}</button>
                     </div>
                     {!espZones.length && <div style={{ fontSize:12, color:"#b45309", marginTop:8 }}>No zones in the machine master (maintenance_machines) yet — zone/line/machine list is empty.</div>}
                   </div>
                   <div className="an-card">
-                    <b style={{ fontSize:14 }}>ESP Devices ({esps.length})</b>
+                    <b style={{ fontSize:14 }}>PLC Devices ({esps.length})</b>
                     <table className="an-tbl">
                       <thead><tr><th>Name</th><th>IP:Port</th><th>Zone / Line / M/C</th><th>Connection</th><th>Status</th><th></th></tr></thead>
                       <tbody>
                         {esps.map((e) => (
                           <tr key={e.id}>
                             <td style={{ fontWeight:600 }}>{e.name}</td>
-                            <td>{e.ip}:{e.port}</td>
+                            <td>{e.ip}:{e.port}{e.series && <span style={{ marginLeft:6, fontSize:10, fontWeight:700, color:"#64748b", background:"#f1f5f9", padding:"1px 6px", borderRadius:99 }}>{e.series}</span>}</td>
                             <td>{[e.zone, e.line, e.machine_no].filter(Boolean).join(" / ") || "—"}</td>
                             <td>
                               {!e.enabled ? <span style={{ color:"#94a3b8", fontSize:12 }}>— off —</span> : (
@@ -430,11 +450,11 @@ export default function AndonSystem() {
                             <td style={{ whiteSpace:"nowrap" }}>
                               <button className="an-btn gh sm" onClick={() => loadOutputs({ type:"esp", id:e.id, name:e.name })}>🔌 Outputs</button>{" "}
                               <button className="an-btn gh sm" onClick={() => startEspEdit(e)}>Edit</button>{" "}
-                              <button className="an-x" onClick={() => wrap(() => api(`/esp-devices/${e.id}`, { method:"DELETE" }), "ESP removed")}>×</button>
+                              <button className="an-x" onClick={() => wrap(() => api(`/esp-devices/${e.id}`, { method:"DELETE" }), "PLC removed")}>×</button>
                             </td>
                           </tr>
                         ))}
-                        {!esps.length && <tr><td colSpan={6} style={{ color:"#94a3b8" }}>No ESP devices yet.</td></tr>}
+                        {!esps.length && <tr><td colSpan={6} style={{ color:"#94a3b8" }}>No PLC devices yet.</td></tr>}
                       </tbody>
                     </table>
                   </div>
@@ -465,12 +485,13 @@ export default function AndonSystem() {
                   <div className="an-card">
                     <div className="an-row" style={{ marginBottom:6 }}>
                       <b style={{ fontSize:14 }}>Output Mapping</b>
-                      <span style={{ marginLeft:"auto", fontSize:11.5, color:"#94a3b8" }}>Fixed plant scheme — same DO1–DO7 wiring for every ESP.</span>
+                      {outFor?.name && <span style={{ fontSize:11.5, color:"#64748b", fontWeight:600 }}>· {outFor.name}</span>}
+                      <span style={{ marginLeft:"auto", fontSize:11.5, color:"#94a3b8" }}>PLC bit — 1=ON, 0=OFF. Department scheme fixed for every PLC.</span>
                     </div>
                     <table className="an-tbl">
-                      <thead><tr><th style={{ width:200 }}>Output</th><th>Department / role</th></tr></thead>
+                      <thead><tr><th style={{ width:200 }}>Output</th><th>Department / role</th><th style={{ width:120 }}>Bit Type</th><th style={{ width:130 }}>Bit No</th></tr></thead>
                       <tbody>
-                        {outRows.map((r) => {
+                        {outRows.map((r, i) => {
                           const parentDo = ACK_PARENT[r.do_index];               // DO2→DO1, DO4→DO3
                           const isAck = !!parentDo;
                           const deptId = isAck ? outRows.find((x) => x.do_index === parentDo)?.department_id : r.department_id;
@@ -485,19 +506,31 @@ export default function AndonSystem() {
                                 <span style={{ fontWeight:700 }}>{dept ? dept.name : (r.display_name || "—")}</span>
                                 {isAck && <span style={{ fontSize:10.5, fontWeight:600, color:"#94a3b8", marginLeft:8 }}>⏱ response time</span>}
                               </td>
+                              <td>
+                                <select className="an-in" style={{ width:"100%", padding:"6px 8px" }} value={r.bit_type || ""} onChange={(e) => setOut(i, "bit_type", e.target.value)}>
+                                  <option value="">—</option>
+                                  {["M","Y","X","L","D"].map((b) => <option key={b} value={b}>{b}</option>)}
+                                </select>
+                              </td>
+                              <td>
+                                <input className="an-in" style={{ width:"100%", padding:"6px 8px" }} value={r.bit_no || ""} onChange={(e) => setOut(i, "bit_no", e.target.value)} placeholder="e.g. 100" />
+                              </td>
                             </tr>
                           );
                         })}
-                        {!outRows.length && <tr><td colSpan={2} style={{ color:"#94a3b8" }}>Loading…</td></tr>}
+                        {!outRows.length && <tr><td colSpan={4} style={{ color:"#94a3b8" }}>Loading…</td></tr>}
                       </tbody>
                     </table>
+                    <div className="an-row" style={{ marginTop:12, justifyContent:"flex-end" }}>
+                      <button className="an-btn" onClick={saveOutputs}>Save bit mapping</button>
+                    </div>
                   </div>
                 </>
               )}
             </>
           )}
 
-          {tab === "board" && (
+          {tab === "board" && canAccess("andon-board") && (
             <>
               <div className="an-row" style={{ marginBottom:14, justifyContent:"space-between", alignItems:"center" }}>
                 <b style={{ fontSize:16, color:"#0f172a" }}>🚦 Live ANDON Board</b>
@@ -601,7 +634,7 @@ export default function AndonSystem() {
               )}
             </>
           )}
-          {tab === "reports" && (() => {
+          {tab === "reports" && canAccess("andon-reports") && (() => {
             const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
             const plantToday = () => { const n = new Date(); const d = new Date(n); if (n.getHours() < 7) d.setDate(d.getDate()-1); return ymd(d); };
             const addDays = (s, n) => { if (!s) return plantToday(); const [y,m,dd] = s.split("-").map(Number); const dt = new Date(y, m-1, dd); dt.setDate(dt.getDate()+n); return ymd(dt); };

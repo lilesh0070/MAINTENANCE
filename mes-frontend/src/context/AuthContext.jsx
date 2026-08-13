@@ -4,6 +4,48 @@ const AuthContext = createContext(null);
 
 const API = "";
 
+// Sub-page → parent page mapping.  Har sub-page ki apni permission key hai, PAR
+// agar admin ne us sub-key ko explicitly set NAHI kiya, to wo parent page ki
+// access inherit kar leta hai.  Isse "parent grant karo → saare sub-pages mil
+// jaayein" bhi chalta hai, aur kisi ek sub-page ko `none` set karke sirf usko
+// rok bhi sakte ho.  (canAccess / canWrite dono is map ko dekhte hain.)
+export const SUBPAGE_PARENT = {
+  // Machine DMC
+  "maintenance-daily-dmc":  "maintenance-machine-dmc",
+  "maintenance-dmc-verify": "maintenance-machine-dmc",
+  "maintenance-dmc-weekly": "maintenance-machine-dmc",
+  "maintenance-dmc-ng":     "maintenance-machine-dmc",
+  // Breakdown
+  "maintenance-breakdown-slip":     "maintenance-breakdown",
+  "maintenance-breakdown-history":  "maintenance-breakdown",
+  "maintenance-breakdown-analysis": "maintenance-breakdown",
+  "maintenance-breakdown-pareto":   "maintenance-breakdown",
+  "maintenance-breakdown-top10":    "maintenance-breakdown",
+  // Update Plan
+  "maintenance-plan-yearly":     "maintenance-update-plan",
+  "maintenance-plan-monthly":    "maintenance-update-plan",
+  "maintenance-plan-predictive": "maintenance-update-plan",
+  "maintenance-plan-sunday":     "maintenance-update-plan",
+  "maintenance-plan-shutdown":   "maintenance-update-plan",
+  "maintenance-plan-daily":      "maintenance-update-plan",
+  // ANDON
+  "andon-board":   "andon-system",
+  "andon-config":  "andon-system",
+  "andon-reports": "andon-system",
+  // Skill & Training
+  "skill-ojt":          "skill-training",
+  "skill-matrix":       "skill-training",
+  "skill-org-chart":    "skill-training",
+  "skill-upgradation":  "skill-training",
+  // Preventive Maintenance (PM Panel tabs)
+  "maintenance-pm-schedule":  "maintenance-pm",
+  "maintenance-pm-fill":      "maintenance-pm",
+  "maintenance-pm-engverify": "maintenance-pm",
+  "maintenance-pm-incverify": "maintenance-pm",
+  "maintenance-pm-format":    "maintenance-pm",
+  "maintenance-pm-yearly":    "maintenance-pm",
+};
+
 // ── Auth storage = sessionStorage (per-tab) ────────────────────────
 // Operator's policy: "har naya browser tab → fresh login mandatory.
 // URL-only access without id/password should NEVER reach a page."
@@ -118,11 +160,20 @@ export function AuthProvider({ children }) {
     if (!user) return false;
     if (isAdmin) return true;
     const p = user?.permissions?.[page];
-    return p === "read" || p === "full";     // 'none' ya missing → chhupa
+    if (p === "read" || p === "full") return true;
+    if (p === "none") return false;                    // explicit deny
+    const parent = SUBPAGE_PARENT[page];               // set nahi → sub-page ho to parent inherit
+    if (parent) return canAccess(parent);
+    return false;                                      // top-level page, set nahi → chhupa
   };
   const canWrite = (page) => {
     if (isAdmin) return true;
-    return user?.permissions?.[page] === "full";
+    const p = user?.permissions?.[page];
+    if (p === "full") return true;
+    if (p === "read" || p === "none") return false;
+    const parent = SUBPAGE_PARENT[page];
+    if (parent) return canWrite(parent);
+    return false;
   };
 
   // Theme — admin ka universal blue (single-role app).

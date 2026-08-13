@@ -104,20 +104,28 @@ def _ser(r: dict) -> dict:
 
 
 # ── PLC se connect (best-effort — real PLC network par hona chahiye) ──
-def _open(plc: dict):
-    """pymcprotocol se connect.  Fail ho to saaf message ke saath 400."""
-    try:
-        import pymcprotocol
-    except Exception:
-        raise HTTPException(500, "pymcprotocol library install nahi hai (pip install pymcprotocol)")
+def _connect(plc: dict, timer: int = 4):
+    """Core connect — mc object return karta hai ya PLAIN exception raise karta hai
+    (koi HTTPException nahi).  ANDON ka background poller isi ko reuse karta hai
+    (pure code me PLC connect ka ek hi jagah code rahe)."""
+    import pymcprotocol
     plctype = _PLCTYPE.get((plc.get("series") or "Q"), "Q")
     mc = pymcprotocol.Type3E(plctype=plctype)
-    mc.timer = 4   # ~1s units → ~4s timeout
+    mc.timer = timer   # ~1s units → ~4s timeout
+    mc.connect(plc["plc_ip"], int(plc["plc_port"]))
+    return mc
+
+
+def _open(plc: dict):
+    """pymcprotocol se connect.  Fail ho to saaf message ke saath 400 (request path)."""
     try:
-        mc.connect(plc["plc_ip"], int(plc["plc_port"]))
+        import pymcprotocol  # noqa: F401  (presence check)
+    except Exception:
+        raise HTTPException(500, "pymcprotocol library install nahi hai (pip install pymcprotocol)")
+    try:
+        return _connect(plc)
     except Exception as e:
         raise HTTPException(400, f"PLC connect fail ({plc['plc_ip']}:{plc['plc_port']}): {e}")
-    return mc
 
 
 def _read_one(mc, dtype: str, dno: str):

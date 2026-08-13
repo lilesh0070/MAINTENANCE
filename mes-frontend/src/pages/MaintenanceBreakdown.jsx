@@ -15,15 +15,15 @@ import { NewBreakdownSlip } from "./breakdown/NewBreakdownSlip";
 // The breakdown action buttons (label + icon).  `path` opens a dedicated
 // page; `action` runs an in-page handler (the blank slip launcher).
 const BUTTONS = [
-  { key: "new-slip",     label: "Breakdown Slip",        icon: "🧾", action: "new-slip" },
-  { key: "bd-history",   label: "BD History",            icon: "📜", path: "/maintenance-breakdown/bd-history" },
-  { key: "bd-analysis",  label: "BD Analysis",           icon: "📊", path: "/maintenance-breakdown/bd-analysis" },
-  { key: "pareto",       label: "Pareto Analysis",       icon: "📈", path: "/maintenance-breakdown/pareto-analysis" },
-  { key: "top-10",       label: "Top 10 BD",             icon: "🏆", path: "/maintenance-breakdown/top-10" },
+  { key: "new-slip",     permKey: "maintenance-breakdown-slip",     label: "Breakdown Slip",        icon: "🧾", action: "new-slip" },
+  { key: "bd-history",   permKey: "maintenance-breakdown-history",  label: "BD History",            icon: "📜", path: "/maintenance-breakdown/bd-history" },
+  { key: "bd-analysis",  permKey: "maintenance-breakdown-analysis", label: "BD Analysis",           icon: "📊", path: "/maintenance-breakdown/bd-analysis" },
+  { key: "pareto",       permKey: "maintenance-breakdown-pareto",   label: "Pareto Analysis",       icon: "📈", path: "/maintenance-breakdown/pareto-analysis" },
+  { key: "top-10",       permKey: "maintenance-breakdown-top10",    label: "Top 10 BD",             icon: "🏆", path: "/maintenance-breakdown/top-10" },
 ];
 
 export default function MaintenanceBreakdown() {
-  const { theme, user, token } = useAuth();
+  const { theme, user, token, canAccess } = useAuth();
   const nav = useNavigate();
   const [active, setActive] = useState(null);
   const [newSlip, setNewSlip] = useState(false);   // blank Break Down Slip launcher
@@ -93,7 +93,7 @@ export default function MaintenanceBreakdown() {
           <div className="bd-sub">Choose an action below.</div>
 
           <div className="bd-grid">
-            {BUTTONS.map((b) => (
+            {BUTTONS.filter((b) => canAccess(b.permKey)).map((b) => (
               <button key={b.key}
                       className={`bd-btn${active === b.key ? " active" : ""}`}
                       onClick={() => b.action === "new-slip" ? setNewSlip(true)

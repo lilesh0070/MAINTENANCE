@@ -14,14 +14,14 @@ import { useAuth } from "../context/AuthContext";
 // The Skill & Training action buttons (label + icon).  `path` (when set)
 // opens a dedicated page; the rest are placeholders until wired up.
 const BUTTONS = [
-  { key: "ojt",            label: "OJT",                   icon: "🎓", path: "/skill-training/ojt" },
-  { key: "skill-matrix",   label: "Skill Matrix",          icon: "🧮", path: "/skill-training/skill-matrix" },
-  { key: "org-chart",      label: "Organisation Chart",    icon: "🏢", path: "/skill-training/org-chart" },
-  { key: "skill-upgrade",  label: "Skill Upgradation Plan", icon: "📈", path: "/skill-training/skill-upgradation" },
+  { key: "ojt",            permKey: "skill-ojt",         label: "OJT",                   icon: "🎓", path: "/skill-training/ojt" },
+  { key: "skill-matrix",   permKey: "skill-matrix",      label: "Skill Matrix",          icon: "🧮", path: "/skill-training/skill-matrix" },
+  { key: "org-chart",      permKey: "skill-org-chart",   label: "Organisation Chart",    icon: "🏢", path: "/skill-training/org-chart" },
+  { key: "skill-upgrade",  permKey: "skill-upgradation", label: "Skill Upgradation Plan", icon: "📈", path: "/skill-training/skill-upgradation" },
 ];
 
 export default function SkillTraining() {
-  const { theme, user } = useAuth();
+  const { theme, user, canAccess } = useAuth();
   const nav = useNavigate();
   const [active, setActive] = useState(null);
 
@@ -89,7 +89,7 @@ export default function SkillTraining() {
           <div className="st-sub">Choose an action below.</div>
 
           <div className="st-grid">
-            {BUTTONS.map((b) => (
+            {BUTTONS.filter((b) => canAccess(b.permKey)).map((b) => (
               <button key={b.key}
                       className={`st-btn${active === b.key ? " active" : ""}`}
                       onClick={() => b.path ? nav(b.path) : setActive(b.key)}>

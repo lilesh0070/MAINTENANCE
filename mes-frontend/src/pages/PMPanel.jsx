@@ -28,9 +28,20 @@ const fmtErp = (raw) => {
   return out;
 };
 
+// PM tab (view) → permission key.  Har tab ki apni key; parent `maintenance-pm`
+// se inherit hoti hai (AuthContext.SUBPAGE_PARENT).
+const PM_TAB_KEY = {
+  schedule:  "maintenance-pm-schedule",
+  fillpend:  "maintenance-pm-fill",
+  engverify: "maintenance-pm-engverify",
+  incverify: "maintenance-pm-incverify",
+  format:    "maintenance-pm-format",
+  yearlypm:  "maintenance-pm-yearly",
+};
+const PM_TAB_ORDER = ["schedule", "fillpend", "engverify", "incverify", "format", "yearlypm"];
 
 export default function PMPanel() {
-  const { token } = useAuth();
+  const { token, canAccess, user } = useAuth();
 
   const api = useCallback(async (path, opts = {}) => {
     const r = await fetch(`/api/pm${path}`, {
@@ -44,6 +55,12 @@ export default function PMPanel() {
 
   // 'schedule' | 'fillpend' | 'engverify' | 'incverify' | 'format' | 'yearlypm'
   const [view,   setView]   = useState("schedule");
+  // Agar current tab ka access nahi, to pehle accessible tab par switch (no-loop guard).
+  useEffect(() => {
+    if (canAccess(PM_TAB_KEY[view])) return;
+    const firstOk = PM_TAB_ORDER.find((t) => canAccess(PM_TAB_KEY[t]));
+    if (firstOk && firstOk !== view) setView(firstOk);
+  }, [view, user]);   // eslint-disable-line react-hooks/exhaustive-deps
   const [month,  setMonth]  = useState(monthISO());
   const [busy,   setBusy]   = useState(false);
   const [msg,    setMsg]    = useState("");
@@ -736,7 +753,8 @@ export default function PMPanel() {
           {[["schedule","Schedule",0],["fillpend","🖊 Fill Check Sheets",retData?.total || 0],
             ["engverify","✅ Engineer Verify",verCounts.engineer],
             ["incverify","🏁 In-Charge Approve",verCounts.incharge],
-            ["format","Format",0],["yearlypm","Yearly PM Schedule",0]].map(([k,l,n]) => (
+            ["format","Format",0],["yearlypm","Yearly PM Schedule",0]]
+            .filter(([k]) => canAccess(PM_TAB_KEY[k])).map(([k,l,n]) => (
             <button key={k} onClick={()=>{ setView(k); setMsg(""); }} style={{
               padding:"5px 14px", borderRadius:6, border:"none", cursor:"pointer", fontWeight:700, fontSize:12,
               display:"inline-flex", alignItems:"center", gap:6,

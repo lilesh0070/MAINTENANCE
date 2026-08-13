@@ -657,10 +657,120 @@ def _start_tcp_server():
     threading.Thread(target=_tcp_server_loop, daemon=True, name="andon-tcp-server").start()
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# PLC MODE — ANDON ab ESP ki jagah Mitsubishi PLC se signal leta hai.
+# Har ~200ms har enabled PLC ka mapped bit padho: 1 → call ON (timer start),
+# 0 → OFF (stop).  Call/timer/history ka poora logic wahi `_apply_state` hai —
+# SEQUENCE bilkul same.  PLC connect+read ka code `routers.plc` se REUSE hota
+# hai (pure code me PLC ka ek hi jagah code rahe).
+# ═══════════════════════════════════════════════════════════════════════
+_PLC_POLL_INTERVAL = 0.2       # 200 ms — near real-time
+_PLC_RETRY_SECS    = 5         # offline PLC ko itni der baad dobara connect-try
+_plc_poller_started = False
+_PLC_CONN  = {}                # {dev_id: mc}  persistent MC-protocol connection
+_PLC_RETRY = {}                # {dev_id: monotonic ts — is se pehle reconnect na karo}
+
+
+def _plc_bits_for(dev_id):
+    """Us PLC ke output→bit mappings jinme bit set hai — [(do_index, bit_type, bit_no)]."""
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT do_index, bit_type, bit_no FROM andon_esp_output_mapping
+                        WHERE esp_id=%s AND COALESCE(bit_type,'')<>'' AND COALESCE(bit_no,'')<>''
+                        ORDER BY do_index""", (dev_id,))
+        return cur.fetchall()
+
+
+def _plc_drop(dev_id):
+    mc = _PLC_CONN.pop(dev_id, None)
+    if mc is not None:
+        try: mc.close()
+        except Exception: pass
+
+
+def _plc_poll_once(dev):
+    """Ek PLC read karke uske mapped bits par `_apply_state` chalao.
+    Return True = online (connect+read OK), False = offline."""
+    from routers.plc import _connect, _read_one, _reachable   # ek hi PLC code reuse
+    did = dev["id"]
+    mc = _PLC_CONN.get(did)
+    if mc is None:
+        if _time.monotonic() < _PLC_RETRY.get(did, 0):        # backoff
+            return False
+        port = dev.get("port") or 5007
+        if not _reachable(dev["ip"], port, timeout=0.4):      # fast probe — 4s block se bacho
+            _PLC_RETRY[did] = _time.monotonic() + _PLC_RETRY_SECS
+            return False
+        try:
+            mc = _connect({"series": dev.get("series") or "Q", "plc_ip": dev["ip"], "plc_port": port})
+            _PLC_CONN[did] = mc
+            _PLC_RETRY.pop(did, None)
+        except Exception:
+            _PLC_RETRY[did] = _time.monotonic() + _PLC_RETRY_SECS
+            return False
+    bits = _plc_bits_for(did)
+    if not bits:
+        return True                                           # connected, par koi bit mapped nahi
+    try:
+        with get_conn() as conn:
+            cur = dict_cursor(conn)
+            for b in bits:
+                val = _read_one(mc, b["bit_type"], b["bit_no"])
+                _apply_state(cur, dev, b["do_index"], val != 0)   # 1→ON, 0→OFF (idempotent level poll)
+            conn.commit()
+        return True
+    except Exception:
+        _plc_drop(did)                                        # connection tut gaya → reconnect
+        _PLC_RETRY[did] = _time.monotonic() + 1
+        return False
+
+
+def _plc_poll_loop():
+    n = 0
+    while True:
+        try:
+            _ensure_tables()          # schema (series/bit columns) ready — boot ordering fix
+            with get_conn() as conn:
+                cur = dict_cursor(conn)
+                cur.execute("""SELECT id, zone, line, machine_no, machine_name,
+                                      ip, port, series, enabled FROM andon_esp_devices""")
+                devs = cur.fetchall()
+            now = datetime.now().isoformat(timespec="seconds")
+            ids = set()
+            for dev in devs:
+                ids.add(dev["id"])
+                prev = _ESP_STATUS.get(dev["id"], {})
+                if not dev.get("enabled"):
+                    _ESP_STATUS[dev["id"]] = {"online": None, "checked": now, "last_seen": prev.get("last_seen")}
+                    _plc_drop(dev["id"])
+                    continue
+                ok = _plc_poll_once(dev)
+                _ESP_STATUS[dev["id"]] = {"online": ok, "checked": now,
+                                          "last_seen": now if ok else prev.get("last_seen")}
+            for k in list(_PLC_CONN.keys()):        # deleted PLC → connection band
+                if k not in ids: _plc_drop(k)
+            for k in list(_ESP_STATUS.keys()):
+                if k not in ids: _ESP_STATUS.pop(k, None)
+        except Exception as e:
+            print(f"[ANDON-PLC-POLL] {e}")
+        n += 1
+        if n % 60 == 0:                             # ~12s: lambi maintenance call ki auto-slip
+            try: _slip_threshold_sweep()
+            except Exception as e: print(f"[ANDON-SLIP] {e}")
+        _time.sleep(_PLC_POLL_INTERVAL)
+
+
+def _start_plc_poller():
+    global _plc_poller_started
+    if _plc_poller_started: return
+    _plc_poller_started = True
+    threading.Thread(target=_plc_poll_loop, daemon=True, name="andon-plc-poller").start()
+
+
 def start_workers():
-    """Start the connectivity poller + the ESP raw-TCP ingest server — both
-    idempotent and DB-independent (safe to call at boot even if the DB is down)."""
-    _start_poller()
+    """PLC bit-poller (ANDON ka naya signal source) + ESP raw-TCP ingest (dormant,
+    backward-compat).  Idempotent + DB-independent (boot par safe)."""
+    _start_plc_poller()
     _start_tcp_server()
 
 
@@ -727,6 +837,9 @@ def _ensure_tables():
         cur.execute("ALTER TABLE andon_esp_devices ADD COLUMN IF NOT EXISTS line VARCHAR(120)")
         cur.execute("ALTER TABLE andon_esp_devices ADD COLUMN IF NOT EXISTS machine_no VARCHAR(60)")
         cur.execute("ALTER TABLE andon_esp_devices ADD COLUMN IF NOT EXISTS machine_name VARCHAR(160)")
+        # ── PLC mode ── device ab ESP nahi, Mitsubishi PLC hai: `series` (MC-protocol
+        # plctype — Q/FX5U/iQ-R/L), IP=PLC IP, port=PLC MC port (default 5007).
+        cur.execute("ALTER TABLE andon_esp_devices ADD COLUMN IF NOT EXISTS series VARCHAR(20) DEFAULT 'Q'")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS andon_esp_output_mapping (
                 id            SERIAL PRIMARY KEY,
@@ -740,6 +853,11 @@ def _ensure_tables():
             )""")
         cur.execute("""CREATE UNIQUE INDEX IF NOT EXISTS andon_output_default_uq
                        ON andon_esp_output_mapping (do_index) WHERE esp_id IS NULL""")
+        # ── PLC bit mapping ── har output (do_index) ka PLC bit address:
+        # bit_type = M/Y/X/L/D… , bit_no = number.  PLC poll is bit ko padhta hai
+        # (1 → call ON/timer start, 0 → OFF/stop).  Per-ESP row me set hota hai.
+        cur.execute("ALTER TABLE andon_esp_output_mapping ADD COLUMN IF NOT EXISTS bit_type VARCHAR(4)")
+        cur.execute("ALTER TABLE andon_esp_output_mapping ADD COLUMN IF NOT EXISTS bit_no   VARCHAR(20)")
         # ── MIGRATION: andon_events → andon_system ──────────────────────
         # Live-calls table ka naam andon_events tha; ab andon_system hai.
         # Purani install par use RENAME karo (data bacha rahe) — warna neeche
@@ -979,7 +1097,8 @@ def del_department(did: int, user=Depends(get_current_user)):
 class EspIn(BaseModel):
     name: str
     ip: str
-    port: Optional[int] = 80
+    port: Optional[int] = 5007          # PLC MC-protocol port
+    series: Optional[str] = "Q"         # Q / FX5U / iQ-R / L
     zone: Optional[str] = ""
     line: Optional[str] = ""
     machine_no: Optional[str] = ""
@@ -994,7 +1113,7 @@ def list_esp(user=Depends(get_current_user)):
     _ensure_tables()
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("""SELECT id, name, ip, port, zone, line, machine_no, machine_name,
+        cur.execute("""SELECT id, name, ip, port, series, zone, line, machine_no, machine_name,
                               description, enabled, poll_path
                          FROM andon_esp_devices ORDER BY name""")
         rows = cur.fetchall()
@@ -1051,9 +1170,9 @@ def add_esp(body: EspIn, user=Depends(get_current_user)):
         cur = conn.cursor()
         _check_esp_unique(cur, body.ip, body.name)
         cur.execute("""INSERT INTO andon_esp_devices
-                       (name, ip, port, zone, line, machine_no, machine_name, description, enabled, poll_path)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-                    (body.name.strip(), body.ip.strip(), body.port or 80,
+                       (name, ip, port, series, zone, line, machine_no, machine_name, description, enabled, poll_path)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                    (body.name.strip(), body.ip.strip(), body.port or 5007, (body.series or "Q").strip() or "Q",
                      (body.zone or "").strip() or None, (body.line or "").strip() or None,
                      (body.machine_no or "").strip() or None, (body.machine_name or "").strip() or None,
                      body.description or "", body.enabled, (body.poll_path or "/status").strip()))
@@ -1071,10 +1190,10 @@ def edit_esp(eid: int, body: EspIn, user=Depends(get_current_user)):
         # Edit me bhi wahi rok — apne aap ko chhod kar (skip_id=eid)
         _check_esp_unique(cur, body.ip, body.name, skip_id=eid)
         cur.execute("""UPDATE andon_esp_devices
-                          SET name=%s, ip=%s, port=%s, zone=%s, line=%s, machine_no=%s, machine_name=%s,
+                          SET name=%s, ip=%s, port=%s, series=%s, zone=%s, line=%s, machine_no=%s, machine_name=%s,
                               description=%s, enabled=%s, poll_path=%s, updated_at=NOW()
                         WHERE id=%s""",
-                    (body.name.strip(), body.ip.strip(), body.port or 80,
+                    (body.name.strip(), body.ip.strip(), body.port or 5007, (body.series or "Q").strip() or "Q",
                      (body.zone or "").strip() or None, (body.line or "").strip() or None,
                      (body.machine_no or "").strip() or None, (body.machine_name or "").strip() or None,
                      body.description or "", body.enabled, (body.poll_path or "/status").strip(), eid))
@@ -1103,6 +1222,8 @@ class OutRow(BaseModel):
     department_id: Optional[int] = None
     priority: Optional[str] = "Normal"
     enabled: bool = True
+    bit_type: Optional[str] = ""       # PLC bit device — M/Y/X/L/D…
+    bit_no: Optional[str] = ""         # PLC bit number/address
 
 
 class OutSave(BaseModel):
@@ -1126,7 +1247,7 @@ def get_esp_outputs(eid: int, user=Depends(get_current_user)):
     _ensure_tables()
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("""SELECT do_index, display_name, department_id, priority, enabled
+        cur.execute("""SELECT do_index, display_name, department_id, priority, enabled, bit_type, bit_no
                          FROM andon_esp_output_mapping WHERE esp_id=%s ORDER BY do_index""", (eid,))
         own = cur.fetchall()
         if own:
@@ -1167,10 +1288,12 @@ def _replace_outputs(esp_id, rows):
             cur.execute("DELETE FROM andon_esp_output_mapping WHERE esp_id=%s", (esp_id,))
         for r in good:
             cur.execute("""INSERT INTO andon_esp_output_mapping
-                             (esp_id, do_index, display_name, department_id, priority, enabled)
-                           VALUES (%s,%s,%s,%s,%s,%s)""",
+                             (esp_id, do_index, display_name, department_id, priority, enabled, bit_type, bit_no)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (esp_id, r.do_index, (r.display_name or "").strip(), r.department_id,
-                         r.priority or "Normal", r.enabled))
+                         r.priority or "Normal", r.enabled,
+                         (getattr(r, "bit_type", "") or "").strip().upper() or None,
+                         (getattr(r, "bit_no", "") or "").strip() or None))
         conn.commit()
 
 
@@ -1238,16 +1361,23 @@ def _find_esp(cur, esp_id, ip, device):
 
 
 def _resolve_output(cur, esp_id, do_index):
-    """This ESP's mapping for the output, else the shared default → (name, dept, priority)."""
+    """Output ka (name, dept, priority).  Per-PLC row pehle, phir shared default.
+    Per-PLC row me department/name/priority MISSING (NULL) ho to default (dept
+    scheme) se bhar do — taaki user PLC par sirf BIT set kare to bhi call sahi
+    department se judi rahe."""
     cur.execute("""SELECT display_name, department_id, priority FROM andon_esp_output_mapping
                     WHERE esp_id=%s AND do_index=%s""", (esp_id, do_index))
     r = cur.fetchone()
+    cur.execute("""SELECT display_name, department_id, priority FROM andon_esp_output_mapping
+                    WHERE esp_id IS NULL AND do_index=%s""", (do_index,))
+    d = cur.fetchone()
     if not r:
-        cur.execute("""SELECT display_name, department_id, priority FROM andon_esp_output_mapping
-                        WHERE esp_id IS NULL AND do_index=%s""", (do_index,))
-        r = cur.fetchone()
+        r = d
     if r:
-        return (r["display_name"] or f"DO{do_index}"), r["department_id"], (r["priority"] or "Normal")
+        name = r["display_name"] or (d and d["display_name"]) or f"DO{do_index}"
+        dept = r["department_id"] if r["department_id"] is not None else (d and d["department_id"])
+        prio = r["priority"] or (d and d["priority"]) or "Normal"
+        return name, dept, prio
     return f"DO{do_index}", None, "Normal"
 
 

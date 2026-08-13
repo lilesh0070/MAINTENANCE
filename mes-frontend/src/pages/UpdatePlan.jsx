@@ -37,6 +37,18 @@ export const UP_SECTIONS = [
   { key: "daily-work",         label: "Daily Work Assign",       icon: "📋", desc: "Day-wise work assignment" },
 ];
 
+// section value (`:section` route param / UP_SECTIONS.key) → permission sub-key.
+// Used to gate the landing tiles and the per-section page.
+const SECTION_KEY = {
+  "preventive-yearly":  "maintenance-plan-yearly",
+  "preventive-monthly": "maintenance-plan-monthly",
+  "predictive":         "maintenance-plan-predictive",
+  "sunday":             "maintenance-plan-sunday",
+  "shutdown":           "maintenance-plan-shutdown",
+  "daily-work":         "maintenance-plan-daily",
+};
+const sectionKeyFor = (section) => SECTION_KEY[section];
+
 function PageShell({ theme, user, title, sub, children, onBack }) {
   return (
     <>
@@ -88,13 +100,13 @@ function PageShell({ theme, user, title, sub, children, onBack }) {
 }
 
 export default function UpdatePlan() {
-  const { theme, user } = useAuth();
+  const { theme, user, canAccess } = useAuth();
   const nav = useNavigate();
   return (
     <PageShell theme={theme} user={user}
                title={<>Update <span>Plan</span></>} sub="Maintenance work plans">
       <div className="up-grid">
-        {UP_SECTIONS.map((s) => (
+        {UP_SECTIONS.filter((s) => canAccess(sectionKeyFor(s.key))).map((s) => (
           <button key={s.key} className="up-tile" onClick={() => nav(`/maintenance-update-plan/${s.key}`)}>
             <span className="ico">{s.icon}</span>
             <span>
@@ -111,10 +123,26 @@ export default function UpdatePlan() {
 
 /* One plan section — preventive-yearly is live; the rest are placeholders. */
 export function UpdatePlanSection() {
-  const { theme, user } = useAuth();
+  const { theme, user, canAccess } = useAuth();
   const nav = useNavigate();
   const { section } = useParams();
   const s = UP_SECTIONS.find((x) => x.key === section) || { label: "Plan", icon: "📝", desc: "" };
+
+  // Per-section gate: parent grant inherits (canAccess), but a sub-key set to
+  // None hides just this section.
+  if (!canAccess(sectionKeyFor(section))) {
+    return (
+      <PageShell theme={theme} user={user}
+                 title={<>No <span>Access</span></>}
+                 sub={s.desc} onBack={() => nav("/maintenance-update-plan")}>
+        <div className="up-card" style={{ maxWidth:800, margin:"0 auto" }}>
+          <div className="ico">🔒</div>
+          <h3>{s.label}</h3>
+          <p>Aapko is section ka access nahi.</p>
+        </div>
+      </PageShell>
+    );
+  }
 
   if (section === "preventive-yearly") {
     return <PreventiveYearlyPlan theme={theme} user={user} nav={nav} meta={s} />;
