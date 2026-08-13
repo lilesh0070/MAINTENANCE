@@ -48,6 +48,7 @@ export const PAGE_PERM_GROUPS = [
     { key: "maintenance-overview",       label: "Overview" },
     { key: "andon-system",               label: "ANDON", children: [
       { key: "andon-board",   label: "Live Board" },
+      { key: "andon-faults",  label: "Fault History" },
       { key: "andon-config",  label: "Configuration" },
       { key: "andon-reports", label: "Reports" },
     ]},

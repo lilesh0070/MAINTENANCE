@@ -437,11 +437,11 @@ def _plc_drop(dev_id):
         except Exception: pass
 
 
-def _read_model_name(mc, plc_id, cur):
-    """Model-map ke register(s) ko live padho; jis row ki value match kare uska
-    model_name.  Match na ho / map khali ho to None.  (Assign → Model tab.)"""
-    cur.execute("""SELECT device_type, device_no, value, model_name
-                     FROM andon_model_map
+def _read_map_name(mc, plc_id, cur, table, name_col):
+    """Kisi map-table (model/fault) ke register(s) ko live padho; jis row ki value
+    match kare uska naam.  Match na ho / map khali ho to None.  (Assign → Model/Fault.)"""
+    cur.execute(f"""SELECT device_type, device_no, value, {name_col} AS nm
+                     FROM {table}
                     WHERE plc_id=%s AND COALESCE(device_type,'')<>''
                           AND COALESCE(device_no,'')<>'' AND value IS NOT NULL
                     ORDER BY id""", (plc_id,))
@@ -455,7 +455,7 @@ def _read_model_name(mc, plc_id, cur):
             try: live[key] = _read_one(mc, r["device_type"], r["device_no"])
             except Exception: live[key] = None
         if live[key] is not None and int(live[key]) == int(r["value"]):
-            return r["model_name"]
+            return r["nm"]
     return None
 
 
@@ -486,10 +486,12 @@ def _plc_poll_once(dev):
                             WHERE plc_id=%s AND COALESCE(bit_type,'')<>'' AND COALESCE(bit_no,'')<>''
                             ORDER BY do_index""", (did,))
             bits = [(b, _read_one(mc, b["bit_type"], b["bit_no"])) for b in cur.fetchall()]
-            # koi call ON ho to abhi ka model bhi padho — call OPEN hote hi store, slip me chala jaata hai
-            model = _read_model_name(mc, did, cur) if any(v != 0 for _, v in bits) else None
+            # koi call ON ho to abhi ka model + fault bhi padho — call OPEN hote hi store
+            any_on = any(v != 0 for _, v in bits)
+            model = _read_map_name(mc, did, cur, "andon_model_map", "model_name") if any_on else None
+            fault = _read_map_name(mc, did, cur, "andon_fault_map", "fault_name") if any_on else None
             for b, val in bits:
-                _apply_state(cur, dev, b["do_index"], val != 0, model=model)   # 1→ON, 0→OFF (idempotent)
+                _apply_state(cur, dev, b["do_index"], val != 0, model=model, fault=fault)   # 1→ON, 0→OFF
             conn.commit()
         return True
     except Exception:
@@ -733,6 +735,9 @@ def _ensure_tables():
         for _t in ("andon_system", "andon_history"):
             cur.execute(f"ALTER TABLE {_t} ADD COLUMN IF NOT EXISTS zone VARCHAR(120)")
             cur.execute(f"ALTER TABLE {_t} ADD COLUMN IF NOT EXISTS line VARCHAR(120)")
+            cur.execute(f"ALTER TABLE {_t} ADD COLUMN IF NOT EXISTS machine_no VARCHAR(60)")  # device se
+            cur.execute(f"ALTER TABLE {_t} ADD COLUMN IF NOT EXISTS model VARCHAR(120)")      # call-open pe capture -> slip model_no
+            cur.execute(f"ALTER TABLE {_t} ADD COLUMN IF NOT EXISTS fault VARCHAR(160)")      # Fault History ke liye
 
         # ── seed defaults ──
         cur.execute("SELECT COUNT(*) FROM andon_departments")
@@ -1201,6 +1206,65 @@ def save_plc_faults(eid: int, body: MapSave, user=Depends(get_current_user)):
     return {"ok": True}
 
 
+# ── FAULT HISTORY — kaunsa fault kitni baar (zone/line/machine/fault group + count) ──
+def _fy_range(fy):
+    """'2026-27' -> (Apr 1 us saal, agla Apr 1) — FY ka date range."""
+    try:
+        y = int(str(fy).split("-")[0])
+        return (f"{y}-04-01", f"{y + 1}-04-01")
+    except Exception:
+        return None
+
+
+@router.get("/fault-history")
+def fault_history(fy: str = "", month: str = "", date: str = "",
+                  zone: str = "", line: str = "", machine_no: str = "", fault: str = "",
+                  user=Depends(get_current_user)):
+    """Zone/Line/Machine/Fault ke hisaab se fault count — history (band call) + abhi ke
+    live OPEN call, dono.  Filters: fy(2026-27) · month(YYYY-MM) · date(YYYY-MM-DD) ·
+    zone · line · machine_no · fault.  Sab optional, AND me lagte hain."""
+    _ensure_tables()
+    where, params = ["started_at IS NOT NULL"], []
+    rng = _fy_range(fy) if fy else None
+    if rng:
+        where.append("started_at >= %s AND started_at < %s"); params += [rng[0], rng[1]]
+    if month:
+        where.append("to_char(started_at,'YYYY-MM') = %s"); params.append(month)
+    if date:
+        where.append("started_at::date = %s"); params.append(date)
+    for _col, _val in (("zone", zone), ("line", line), ("machine_no", machine_no)):
+        if _val:
+            where.append(f"{_col} = %s"); params.append(_val)
+    if fault:
+        where.append("COALESCE(NULLIF(fault,''),'(unspecified)') = %s"); params.append(fault)
+    w = " AND ".join(where)
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute(f"""
+            WITH allcalls AS (
+                SELECT zone, line, machine_no, fault, started_at FROM andon_history
+                UNION ALL
+                SELECT zone, line, machine_no, fault, started_at FROM andon_system
+            )
+            SELECT COALESCE(zone,'')       AS zone,
+                   COALESCE(line,'')       AS line,
+                   COALESCE(machine_no,'') AS machine_no,
+                   COALESCE(NULLIF(fault,''),'(unspecified)') AS fault,
+                   COUNT(*) AS total
+              FROM allcalls
+             WHERE {w}
+             GROUP BY 1, 2, 3, 4
+             ORDER BY total DESC, zone, line, machine_no
+        """, params)
+        rows = cur.fetchall()
+        cur.execute("""SELECT DISTINCT COALESCE(NULLIF(fault,''),'(unspecified)') AS fault
+                         FROM (SELECT fault FROM andon_history
+                               UNION ALL SELECT fault FROM andon_system) t
+                        ORDER BY 1""")
+        faults = [r["fault"] for r in cur.fetchall()]
+    return {"rows": rows, "faults": faults}
+
+
 # ════════════════════════════════════════════════════════════════════
 #  CALL LIFECYCLE  (the PLC poll applies each output's ON/OFF here)
 # ════════════════════════════════════════════════════════════════════
@@ -1232,7 +1296,7 @@ def _resolve_output(cur, plc_id, do_index):
     return f"DO{do_index}", None, "Normal"
 
 
-def _apply_state(cur, dev, do_index, on, dur_override=None, model=None):
+def _apply_state(cur, dev, do_index, on, dur_override=None, model=None, fault=None):
     """Open (ON) or close (OFF) the call for one output — idempotent.
 
     DO2 / DO4 are acknowledgement pulses, not calls of their own:
@@ -1270,18 +1334,18 @@ def _apply_state(cur, dev, do_index, on, dur_override=None, model=None):
             return {"do_index": do_index, "action": "already_open", "event_id": open_ev["id"]}
         disp, dept_id, prio = _resolve_output(cur, dev["id"], do_index)
         cur.execute("""INSERT INTO andon_system
-                         (plc_id, do_index, department_id, zone, line, display_name, priority, model, state, started_at)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'OPEN', NOW()) RETURNING id""",
-                    (dev["id"], do_index, dept_id, dev.get("zone"), dev.get("line"), disp, prio, model))
+                         (plc_id, do_index, department_id, zone, line, machine_no, display_name, priority, model, fault, state, started_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'OPEN', NOW()) RETURNING id""",
+                    (dev["id"], do_index, dept_id, dev.get("zone"), dev.get("line"), dev.get("machine_no"), disp, prio, model, fault))
         return {"do_index": do_index, "action": "opened", "event_id": cur.fetchone()["id"],
                 "department_id": dept_id, "display_name": disp}
     # OFF ─────────────────────────────────────────────────────────────
     if not open_ev:                                   # OFF with no open call → nothing to close
         return {"do_index": do_index, "action": "not_open"}
     cur.execute("""INSERT INTO andon_history
-                     (plc_id, do_index, department_id, zone, line, display_name, priority,
+                     (plc_id, do_index, department_id, zone, line, machine_no, display_name, priority, model, fault,
                       started_at, ended_at, duration_seconds, response_seconds)
-                   SELECT plc_id, do_index, department_id, zone, line, display_name, priority,
+                   SELECT plc_id, do_index, department_id, zone, line, machine_no, display_name, priority, model, fault,
                           started_at, NOW(),
                           COALESCE(%s, EXTRACT(EPOCH FROM (NOW() - started_at))::int),
                           CASE WHEN acknowledged_at IS NOT NULL

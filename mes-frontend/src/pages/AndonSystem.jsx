@@ -53,7 +53,19 @@ const fmtClock = (s) => {
 const ACK_PARENT = { 2: 1, 4: 3 };
 // ANDON top tabs → per-tab permission sub-key (inherits the andon-system parent
 // unless a sub-key is explicitly set to None).
-const TAB_KEY = { board: "andon-board", config: "andon-config", reports: "andon-reports" };
+const TAB_KEY = { board: "andon-board", faults: "andon-faults", config: "andon-config", reports: "andon-reports" };
+
+// Fault History — FY ke 12 mahine (Apr..Mar)
+function fyMonthsList(fy) {
+  const y = parseInt(String(fy).split("-")[0], 10);
+  if (isNaN(y)) return [];
+  const MON = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const out = [];
+  for (let i = 0; i < 12; i++) { const mo = ((3 + i) % 12) + 1; const yr = mo >= 4 ? y : y + 1; out.push({ value: `${yr}-${String(mo).padStart(2, "0")}`, label: `${MON[mo]} ${yr}` }); }
+  return out;
+}
+const FH_LBL = { display: "flex", flexDirection: "column", gap: 3, fontSize: 10.5, fontWeight: 700, color: "#64748b" };
+const FH_SEL = { padding: "6px 8px", minWidth: 118 };
 
 export default function AndonSystem() {
   const { token, theme, user, canAccess } = useAuth();
@@ -286,6 +298,49 @@ export default function AndonSystem() {
     setOutRows(rows || []); setCfg("outputs");
   }, [api]);
   const outLinesFor = (z) => z ? [...new Set(master.filter((m) => m.zone_name === z).map((m) => m.line_name).filter(Boolean))].sort() : [];
+
+  // ── Fault History (live) — zone/line/machine/fault group + count ──
+  const [fhFy, setFhFy] = useState("");
+  const [fhMonth, setFhMonth] = useState("");
+  const [fhDate, setFhDate] = useState("");
+  const [fhZone, setFhZone] = useState("");
+  const [fhLine, setFhLine] = useState("");
+  const [fhMachine, setFhMachine] = useState("");
+  const [fhFault, setFhFault] = useState("");
+  const [fhRows, setFhRows] = useState([]);
+  const [fhFaultOpts, setFhFaultOpts] = useState([]);
+  const [fhYears, setFhYears] = useState([]);
+  const fhZones = useMemo(() => [...new Set(master.map((m) => m.zone_name).filter(Boolean))].sort(), [master]);
+  const fhLines = useMemo(() => [...new Set(master.filter((m) => !fhZone || m.zone_name === fhZone).map((m) => m.line_name).filter(Boolean))].sort(), [master, fhZone]);
+  const fhMachines = useMemo(() => [...new Set(master.filter((m) => (!fhZone || m.zone_name === fhZone) && (!fhLine || m.line_name === fhLine)).map((m) => m.machine_no).filter(Boolean))].sort(), [master, fhZone, fhLine]);
+  // FY list + default = current FY & current month
+  useEffect(() => {
+    if (!token) return;
+    fetch("/api/maintenance-kpi/financial-years", { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : [])).then((list) => {
+        const arr = Array.isArray(list) ? list : [];
+        setFhYears(arr);
+        const cur = arr.find((v) => v.is_current) || arr[0];
+        if (cur) {
+          setFhFy(cur.fy);
+          const now = new Date();
+          const cm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+          if (fyMonthsList(cur.fy).some((m) => m.value === cm)) setFhMonth(cm);
+        }
+      }).catch(() => {});
+  }, [token]);
+  const loadFaultHistory = useCallback(async () => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of [["fy", fhFy], ["month", fhMonth], ["date", fhDate], ["zone", fhZone], ["line", fhLine], ["machine_no", fhMachine], ["fault", fhFault]]) if (v) qs.set(k, v);
+    const d = await api(`/fault-history?${qs.toString()}`).catch(() => null);
+    if (d) { setFhRows(d.rows || []); setFhFaultOpts(d.faults || []); }
+  }, [api, fhFy, fhMonth, fhDate, fhZone, fhLine, fhMachine, fhFault]);
+  useEffect(() => {
+    if (!token || tab !== "faults") return;
+    loadFaultHistory();
+    const id = setInterval(loadFaultHistory, 3000);   // live refresh
+    return () => clearInterval(id);
+  }, [token, tab, loadFaultHistory]);
   // Output mapping target: no zone = the shared Default template; zone + line =
   // the PLC sitting on that zone/line (its own override).
   const pickOutTarget = (zone, line) => {
@@ -424,7 +479,7 @@ export default function AndonSystem() {
 
         <div className="an-body">
           <div className="an-tabs">
-            {[["board","Live Board"],["config","Configuration"],["reports","Reports"]]
+            {[["board","Live Board"],["faults","Fault History"],["config","Configuration"],["reports","Reports"]]
               .filter(([k]) => canAccess(TAB_KEY[k]))
               .map(([k, l]) => (
               <button key={k} className={`an-tab${tab === k ? " on" : ""}`} onClick={() => setTab(k)}>{l}</button>
@@ -701,6 +756,66 @@ export default function AndonSystem() {
                   </div>
                 ))
               )}
+            </>
+          )}
+          {tab === "faults" && canAccess("andon-faults") && (
+            <>
+              <div className="an-card" style={{ marginBottom:14 }}>
+                <div className="an-row" style={{ gap:10, flexWrap:"wrap", alignItems:"flex-end" }}>
+                  <label style={FH_LBL}>FY
+                    <select className="an-in" style={FH_SEL} value={fhFy} onChange={(e)=>{ setFhFy(e.target.value); setFhMonth(""); }}>
+                      <option value="">All</option>
+                      {fhYears.map((y)=><option key={y.fy} value={y.fy}>{y.label || y.fy}</option>)}
+                    </select></label>
+                  <label style={FH_LBL}>Month
+                    <select className="an-in" style={FH_SEL} value={fhMonth} onChange={(e)=>setFhMonth(e.target.value)}>
+                      <option value="">All</option>
+                      {fyMonthsList(fhFy).map((m)=><option key={m.value} value={m.value}>{m.label}</option>)}
+                    </select></label>
+                  <label style={FH_LBL}>Date
+                    <input type="date" className="an-in" style={FH_SEL} value={fhDate} onChange={(e)=>setFhDate(e.target.value)} /></label>
+                  <label style={FH_LBL}>Zone
+                    <select className="an-in" style={FH_SEL} value={fhZone} onChange={(e)=>{ setFhZone(e.target.value); setFhLine(""); setFhMachine(""); }}>
+                      <option value="">All</option>{fhZones.map((z)=><option key={z} value={z}>{z}</option>)}
+                    </select></label>
+                  <label style={FH_LBL}>Line
+                    <select className="an-in" style={FH_SEL} value={fhLine} onChange={(e)=>{ setFhLine(e.target.value); setFhMachine(""); }}>
+                      <option value="">All</option>{fhLines.map((l)=><option key={l} value={l}>{l}</option>)}
+                    </select></label>
+                  <label style={FH_LBL}>Machine
+                    <select className="an-in" style={FH_SEL} value={fhMachine} onChange={(e)=>setFhMachine(e.target.value)}>
+                      <option value="">All</option>{fhMachines.map((m)=><option key={m} value={m}>{m}</option>)}
+                    </select></label>
+                  <label style={FH_LBL}>Fault
+                    <select className="an-in" style={FH_SEL} value={fhFault} onChange={(e)=>setFhFault(e.target.value)}>
+                      <option value="">All</option>{fhFaultOpts.map((f)=><option key={f} value={f}>{f}</option>)}
+                    </select></label>
+                  <button className="an-btn gh sm" onClick={()=>{ setFhMonth(""); setFhDate(""); setFhZone(""); setFhLine(""); setFhMachine(""); setFhFault(""); }}>Reset</button>
+                </div>
+              </div>
+              <div className="an-card">
+                <div className="an-row" style={{ marginBottom:6 }}>
+                  <b style={{ fontSize:14 }}>Fault History</b>
+                  <span style={{ fontSize:10.5, fontWeight:800, color:"#16a34a" }}>● live</span>
+                  <span style={{ marginLeft:"auto", fontSize:11.5, color:"#94a3b8" }}>
+                    {fhRows.reduce((s,r)=>s+Number(r.total||0),0)} total · {fhRows.length} row{fhRows.length===1?"":"s"}
+                  </span>
+                </div>
+                <table className="an-tbl">
+                  <thead><tr><th style={{ width:40 }}>#</th><th>Zone</th><th>Line</th><th>Machine No</th><th>Fault Name</th><th style={{ width:90 }}>Total</th></tr></thead>
+                  <tbody>
+                    {fhRows.map((r,i)=>(
+                      <tr key={i}>
+                        <td style={{ color:"#94a3b8" }}>{i+1}</td>
+                        <td>{r.zone||"—"}</td><td>{r.line||"—"}</td><td>{r.machine_no||"—"}</td>
+                        <td style={{ fontWeight:700 }}>{r.fault}</td>
+                        <td><span className="an-chip" style={{ background:"#dbeafe", color:"#1d4ed8", fontWeight:800, padding:"2px 10px" }}>{r.total}</span></td>
+                      </tr>
+                    ))}
+                    {!fhRows.length && <tr><td colSpan={6} style={{ color:"#94a3b8" }}>Is range me koi fault record nahi.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
             </>
           )}
           {tab === "reports" && canAccess("andon-reports") && (() => {

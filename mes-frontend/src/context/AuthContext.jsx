@@ -30,6 +30,7 @@ export const SUBPAGE_PARENT = {
   "maintenance-plan-daily":      "maintenance-update-plan",
   // ANDON
   "andon-board":   "andon-system",
+  "andon-faults":  "andon-system",
   "andon-config":  "andon-system",
   "andon-reports": "andon-system",
   // Skill & Training
