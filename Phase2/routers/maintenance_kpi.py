@@ -161,30 +161,17 @@ def _compute(conn, start: datetime, end: datetime, line_id: Optional[int],
 
     bd_count        = int(row.get("bd_count") or 0)
     total_down_sec  = float(row.get("total_down_sec") or 0)
-    avg_repair_sec  = float(row.get("avg_repair_sec") or 0)
     pending         = int(row.get("pending_closures") or 0)
 
-    window_hours = max((end - start).total_seconds() / 3600.0, 0.001)
-
-    if bd_count > 0:
-        # Uptime = window - total downtime, divided across failures
-        uptime_hours = max(window_hours - total_down_sec / 3600.0, 0)
-        mtbf_hours   = round(uptime_hours / bd_count, 2)
-        mttr_minutes = round(avg_repair_sec / 60.0, 2)
-    else:
-        mtbf_hours   = round(window_hours, 2)  # zero failures → MTBF = full window
-        mttr_minutes = 0.0
-
-    if mtbf_hours > 0 or mttr_minutes > 0:
-        denom = mtbf_hours + (mttr_minutes / 60.0)
-        availability_pct = round((mtbf_hours / denom) * 100.0, 2) if denom > 0 else 100.0
-    else:
-        availability_pct = 100.0
-
+    # 2026-08-13 — MTTR / MTBF / Availability yahan (AUTO slip se) JAAN-BUJH KE
+    # NAHI banate.  Asli MTTR/MTBF `maintenance_breakdown_data` se aati hai
+    # (/summary · /trend).  Auto slip table sirf "Pending Breakdown" panel ke
+    # liye hai — pending count + downtime + slip list.  Teeno None => unke cards
+    # "na" dikhate hain, aur KpiPanel inhe use bhi nahi karta.
     return {
-        "mtbf_hours":         mtbf_hours,
-        "mttr_minutes":       mttr_minutes,
-        "availability_pct":   availability_pct,
+        "mtbf_hours":         None,
+        "mttr_minutes":       None,
+        "availability_pct":   None,
         "breakdowns_count":   bd_count,
         "total_downtime_min": round(total_down_sec / 60.0, 1),
         "pending_closures":   pending,
