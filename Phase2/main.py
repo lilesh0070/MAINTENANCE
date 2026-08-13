@@ -585,23 +585,17 @@ def ping_host(ip: str, port: int = 554):
         return {"ok": False, "ms": 0}
 
 
-# ── HTML pages ─────────────────────────────────────────────────
+# ── Backend root — sirf ek info line.  Asli UI frontend (:9965) par hai; ye
+# API server hai.  (Pehle yahan legacy admin.html/fullscreen.html serve hote
+# the — ab hata diye, koi bhi frontend/script unhe use nahi karta tha.)
 @app.get("/", response_class=HTMLResponse)
-def serve_admin():
-    path = os.path.join(os.path.dirname(__file__), "admin.html")
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read()
-    return HTMLResponse("<h2>Backend running — <a href='/docs'>API docs</a></h2>")
-
-
-@app.get("/fullscreen.html", response_class=HTMLResponse)
-def serve_fullscreen():
-    path = os.path.join(os.path.dirname(__file__), "fullscreen.html")
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read()
-    return HTMLResponse("Fullscreen page not found", status_code=404)
+def serve_root():
+    return HTMLResponse(
+        "<h2>Backend running</h2>"
+        "<p>Ye API server hai. App yahan: "
+        "<a href='http://localhost:9965'>http://localhost:9965</a> · "
+        "API docs: <a href='/docs'>/docs</a></p>"
+    )
 
 
 # ── AI Chat ────────────────────────────────────────────────────
