@@ -39,6 +39,20 @@ echo "  Installing backend requirements (can take a few minutes)..."
 ./.venv/bin/python -m pip install -r requirements.txt
 echo "  Backend dependencies installed."
 
+# Kuch distros par cryptography/psycopg2/bcrypt ke wheels nahi hote aur pip
+# beech me fail ho jaati hai — venv adhoora reh jaata hai aur start.sh me
+# backend chup-chaap import par mar jaata (port khulta hi nahi).  Yahin pakdo:
+echo "  Verifying backend imports..."
+if ! ./.venv/bin/python -c "import fastapi, uvicorn, pydantic, psycopg2, jose, passlib, dotenv" 2>/tmp/mes_impchk; then
+  echo "  [ERROR] Backend ke kuch modules import nahi ho rahe (pip install poora nahi hua):"
+  sed 's/^/      /' /tmp/mes_impchk 2>/dev/null || true
+  echo "      Ubuntu build tools chahiye ho sakte hain, phir install dobara:"
+  echo "        sudo apt install -y build-essential python3-dev libpq-dev libffi-dev"
+  echo "        ./install.sh"
+  exit 1
+fi
+echo "  Backend imports OK."
+
 # ----------------------- FRONTEND ----------------------
 echo "[2/2] Frontend (mes-frontend) — npm"
 cd ../mes-frontend

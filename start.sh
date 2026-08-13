@@ -74,8 +74,22 @@ echo ""
 echo "==================================================="
 echo "  STATUS"
 echo "==================================================="
-port_up 8892 && echo "  Backend  :8892   [OK]" || echo "  Backend  :8892   [X] nahi chala  (logs/backend.log dekho)"
-port_up 9965 && echo "  Frontend :9965   [OK]" || echo "  Frontend :9965   [X] nahi chala  (logs/frontend.log dekho)"
+if port_up 8892; then
+  echo "  Backend  :8892   [OK]"
+else
+  echo "  Backend  :8892   [X] nahi chala — asli error niche:"
+  echo "  ---- logs/backend.log (aakhri 25 lines) --------------------"
+  tail -n 25 logs/backend.log 2>/dev/null | sed 's/^/  | /' || echo "  | (log khali ya nahi bani)"
+  echo "  ------------------------------------------------------------"
+fi
+if port_up 9965; then
+  echo "  Frontend :9965   [OK]"
+else
+  echo "  Frontend :9965   [X] nahi chala — asli error niche:"
+  echo "  ---- logs/frontend.log (aakhri 20 lines) -------------------"
+  tail -n 20 logs/frontend.log 2>/dev/null | sed 's/^/  | /' || echo "  | (log khali ya nahi bani)"
+  echo "  ------------------------------------------------------------"
+fi
 echo ""
 echo "  Open in browser : http://localhost:9965"
 echo "  Logs            : logs/backend.log · logs/frontend.log"
