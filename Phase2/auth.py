@@ -12,6 +12,7 @@ To change token expiry → edit TOKEN_EXPIRE_HOURS
 
 import os
 import secrets
+import time
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -85,9 +86,12 @@ def hash_password(plain: str) -> str:
 
 
 def create_token(username: str, role: str, user_id: int) -> str:
-    expire = datetime.utcnow() + timedelta(hours=TOKEN_EXPIRE_HOURS)
+    now = datetime.utcnow()
+    expire = now + timedelta(hours=TOKEN_EXPIRE_HOURS)
     return jwt.encode(
-        {"sub": username, "exp": expire, "role": role, "id": user_id},
+        # `iat` (issued-at) zaroori hai — password badalne par is se purane token
+        # invalid ho jaate hain (get_current_user me pwd_changed_at se compare).
+        {"sub": username, "exp": expire, "iat": int(time.time()), "role": role, "id": user_id},
         SECRET_KEY,
         algorithm=ALGORITHM
     )
@@ -125,6 +129,18 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     user = get_user_from_db(username)
     if not user:
         raise creds_exc
+    # Password badalne par us se PEHLE bane SAB token turant invalid — user har
+    # device/tab se logout ho jaata hai.  JWT stateless hai isliye token ka `iat`
+    # ko user ke `pwd_changed_at` (unix-ts, password badalte hi set) se compare
+    # karte hain.  Token purana => 401 => frontend login par bhej deta hai.
+    pca = user.get("pwd_changed_at")
+    if pca is not None:
+        iat = payload.get("iat")
+        if iat is None or int(iat) < int(pca):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Password badal gaya hai — dobara login karein",
+                headers={"WWW-Authenticate": "Bearer"})
     return dict(user)
 
 
@@ -266,8 +282,11 @@ def change_password(
     new_hash = hash_password(body["new_password"])
     with get_conn() as conn:
         conn.cursor().execute(
-            "UPDATE maintenance_users SET password_hash = %s WHERE username = %s",
-            (new_hash, user["username"])
+            # pwd_changed_at = ABHI ka app-clock unix-ts (wahi jo token iat use karta
+            # hai) — DB clock skew se bachne ko DB NOW() nahi.
+            "UPDATE maintenance_users SET password_hash = %s, pwd_changed_at = %s "
+            "WHERE username = %s",
+            (new_hash, int(time.time()), user["username"])
         )
         # Audit-trail
         try:

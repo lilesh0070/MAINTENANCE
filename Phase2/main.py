@@ -224,6 +224,9 @@ def run_migrations():
             created_at     TIMESTAMP    NOT NULL DEFAULT NOW()
         )
         """,
+        # password badalne par us se purane sab token invalid ho jaayein — is
+        # column me unix-ts (UTC seconds) set hota hai jab bhi password badle.
+        "ALTER TABLE maintenance_users ADD COLUMN IF NOT EXISTS pwd_changed_at BIGINT",
         """
         CREATE TABLE IF NOT EXISTS maintenance_user_permissions (
             id          SERIAL PRIMARY KEY,

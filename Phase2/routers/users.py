@@ -17,6 +17,7 @@ Kis user ko kaunsa page dikhega aur wo likh payega ya nahi, ye poori tarah
 `canWrite()` isi map par chalta hai (`/api/auth/me` se aata hai).
 """
 
+import time
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
@@ -105,8 +106,12 @@ def reset_user_password(user_id: int, body: PasswordReset, admin=Depends(require
         _ensure_pw_plain_col(conn)
         cur = conn.cursor()
         cur.execute(
-            "UPDATE maintenance_users SET password_hash = %s, password_plain = %s WHERE id = %s",
-            (hash_password(body.password), body.password, user_id),
+            # pwd_changed_at = ABHI ka app-clock unix-ts (wahi clock jo token iat use
+            # karta hai; DB skew se bachne ko DB NOW() nahi) => is user ke sab purane
+            # token invalid => wo jaha jaha login hai wahan se logout (agli req 401).
+            "UPDATE maintenance_users SET password_hash = %s, password_plain = %s, "
+            "pwd_changed_at = %s WHERE id = %s",
+            (hash_password(body.password), body.password, int(time.time()), user_id),
         )
         if cur.rowcount == 0:
             raise HTTPException(404, "User not found")
