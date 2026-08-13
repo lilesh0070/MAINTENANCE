@@ -114,6 +114,28 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false));
   }, []);
 
+  // ── Force-logout / password-change detect karo (har 30s) ──
+  // JWT stateless hai: admin kisi ko force-logout kare (ya password badle) to
+  // token server par TURANT invalid ho jaata hai, par is browser ko tab tak
+  // pata nahi chalta jab tak wo koi request na kare.  Isliye har 30s `/me` se
+  // token validate karte hain — 401 aate hi yahin se session clear + login page.
+  useEffect(() => {
+    if (!token) return;
+    const check = () => {
+      fetch(`${API}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => {
+          if (r.status === 401) {                 // token invalid (force-logout / pw change)
+            setToken(""); setUser(null);
+            for (const k of AUTH_KEYS) ss.remove(k);
+            if (typeof window !== "undefined" && window.location) window.location.replace("/login");
+          }
+        })
+        .catch(() => {});                          // network error → ignore (offline etc.)
+    };
+    const id = setInterval(check, 30000);
+    return () => clearInterval(id);
+  }, [token]);
+
   const login = async (username, password) => {
     const fd = new FormData();
     fd.append("username", username);
