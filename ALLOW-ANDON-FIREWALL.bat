@@ -1,39 +1,25 @@
 @echo off
 REM ===================================================================
-REM   MES ANDON — Firewall allow (ek baar chalao, ADMIN se)
-REM   Is PC (192.168.30.11) par TCP port 9000 inbound allow karta hai
-REM   taaki ANDON ke ESP32 boards is backend se connect ho sakein.
-REM   Right-click is file par -> "Run as administrator"
+REM   MES ANDON - Firewall (ab kuch karne ki zaroorat NAHI)
+REM
+REM   ANDON ab Mitsubishi PLC se OUTBOUND (MC-protocol) connect karta hai:
+REM   backend khud PLC se jud kar uske bits padhta hai.  Koi device is PC
+REM   par INBOUND connect nahi karta, isliye port 9000 (ya koi bhi inbound
+REM   firewall rule) ki ab zaroorat NAHI hai.
+REM
+REM   (Pehle ESP32 raw-TCP :9000 par INBOUND aata tha - wo hata diya gaya.)
 REM ===================================================================
-title MES ANDON - Firewall Setup (port 9000)
+title MES ANDON - Firewall (no inbound rule needed)
 
-REM --- Admin check ---
-net session >nul 2>&1
-if errorlevel 1 (
-  echo.
-  echo   [!] Ye ADMIN se chalana hai.
-  echo       Is file par right-click -^> "Run as administrator"
-  echo.
-  pause
-  exit /b 1
-)
+echo.
+echo   ANDON ab OUTBOUND PLC connection use karta hai (MC-protocol).
+echo   Is PC par koi inbound port kholne ki zaroorat NAHI hai.
+echo.
+echo   Backend ko LAN se kholna ho to sirf 8892 (HTTP) allow karein -
+echo   uske liye ANDON-FIREWALL-ON.bat hai.
+echo.
 
-echo Purana rule (agar ho) hata raha hoon...
+REM Purana ESP wala inbound rule (agar bana ho) hata dete hain - ab bekaar hai.
 netsh advfirewall firewall delete rule name="MES-ANDON-9000" >nul 2>&1
 
-echo Naya inbound rule add kar raha hoon (TCP 9000)...
-netsh advfirewall firewall add rule name="MES-ANDON-9000" dir=in action=allow protocol=TCP localport=9000
-
-if errorlevel 1 (
-  echo.
-  echo   [X] Rule add nahi hua.
-) else (
-  echo.
-  echo   [OK] Ho gaya. Ab port 9000 par ESP is backend se jud sakte hain.
-  echo        ESP on karo -^> Andon page par data aane lagega.
-  echo.
-  echo   Check: neeche ESP judne par ESTABLISHED dikhega
-  netsh advfirewall firewall show rule name="MES-ANDON-9000" | findstr /I "Rule LocalPort Action Enabled"
-)
-echo.
 pause

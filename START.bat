@@ -57,33 +57,12 @@ ping -n 3 127.0.0.1 >nul 2>&1
 goto waitbackend
 :backendup
 
-REM ESP har 3 sec me khud judta hai — use thoda mauka do (12 sec tak)
-echo Waiting for ESP to connect...
-set /a _try=0
-:waitesp
-netstat -an | findstr ":9000" | findstr "ESTABLISHED" >nul 2>&1
-if not errorlevel 1 goto espup
-set /a _try+=1
-if %_try% geq 6 goto espup
-ping -n 3 127.0.0.1 >nul 2>&1
-goto waitesp
-:espup
-
 echo.
 echo ===================================================
 echo   STATUS
 echo ===================================================
 netstat -an | findstr /R /C:"[0:]:8892 .*LISTENING" >nul 2>&1
 if errorlevel 1 (echo   Backend  :8892   [X] nahi chala) else (echo   Backend  :8892   [OK])
-netstat -an | findstr /R /C:"[0:]:9000 .*LISTENING" >nul 2>&1
-if errorlevel 1 (echo   ANDON    :9000   [X] nahi chala) else (echo   ANDON    :9000   [OK] ESP ka intezaar)
-netstat -an | findstr ":9000" | findstr "ESTABLISHED" >nul 2>&1
-if errorlevel 1 (
-  echo   ESP juda         [..] abhi nahi - ESP har 3 sec me khud judta hai
-) else (
-  echo   ESP juda         [OK]
-  netstat -an | findstr ":9000" | findstr "ESTABLISHED"
-)
 echo.
 echo   Open in browser:  http://localhost:9965
 echo.

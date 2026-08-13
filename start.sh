@@ -44,7 +44,7 @@ echo "Starting frontend (vite :9965)..."
     > logs/frontend.log 2>&1 &
 echo $! > .run/frontend.pid
 
-# ── Backend + ESP ko uthne do, phir STATUS dikhao ──────────────────
+# ── Backend ko uthne do, phir STATUS dikhao ──────────────────
 # (START.bat jaisa hi — taaki Windows aur Linux dono par ek jaisa dikhe)
 # Port khula hai ya nahi — Ubuntu par `ss` default aata hai; na ho to
 # netstat, phir lsof par gir jaate hain (install.sh lsof mangwati hai).
@@ -59,14 +59,6 @@ port_up () {
   fi
   return 1
 }
-# ANDON ka koi ESP juda hua hai? (:9000 par ESTABLISHED connection)
-esp_line () {
-  if command -v ss >/dev/null 2>&1; then
-    ss -tn state established 2>/dev/null | grep -E "[:.]9000[[:space:]]" | head -1
-  elif command -v netstat >/dev/null 2>&1; then
-    netstat -tn 2>/dev/null | grep ESTABLISHED | grep -E "[:.]9000[[:space:]]" | head -1
-  fi
-}
 
 # Backend ke READY hone ka intezaar (fixed sleep nahi).  Machine/DB slow ho to
 # backend 15 sec se zyada le leta tha aur STATUS jhooti "[X] nahi chala" deti
@@ -78,27 +70,12 @@ for _i in $(seq 1 30); do
   sleep 2
 done
 
-# ESP har 3 sec me khud judta hai — 12 sec ka mauka
-echo "Waiting for ESP to connect..."
-for _i in $(seq 1 6); do
-  [ -n "$(esp_line || true)" ] && break
-  sleep 2
-done
-
 echo ""
 echo "==================================================="
 echo "  STATUS"
 echo "==================================================="
 port_up 8892 && echo "  Backend  :8892   [OK]" || echo "  Backend  :8892   [X] nahi chala  (logs/backend.log dekho)"
-port_up 9000 && echo "  ANDON    :9000   [OK] ESP ka intezaar" || echo "  ANDON    :9000   [X] nahi chala"
 port_up 9965 && echo "  Frontend :9965   [OK]" || echo "  Frontend :9965   [X] nahi chala  (logs/frontend.log dekho)"
-_esp="$(esp_line || true)"
-if [ -n "${_esp:-}" ]; then
-  echo "  ESP juda         [OK]"
-  echo "    $_esp"
-else
-  echo "  ESP juda         [..] abhi nahi - ESP har 3 sec me khud judta hai"
-fi
 echo ""
 echo "  Open in browser : http://localhost:9965"
 echo "  Logs            : logs/backend.log · logs/frontend.log"

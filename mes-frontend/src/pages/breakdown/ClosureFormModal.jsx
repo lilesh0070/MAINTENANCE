@@ -145,7 +145,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   // are now editable + saved, defaulting to the collector's values.)
   const LOCKED_FIELDS = new Set([]);
 
-  // AUTO (ANDON se bani) slip ke wo khaane jo ESP ke ON / ACK / OFF se aate
+  // AUTO (ANDON se bani) slip ke wo khaane jo PLC ke ON / ACK / OFF se aate
   // hain — yani hardware ka naapa hua sach.  Maintenance fill me poora form
   // editable hota hai, isliye ye galti se badal jaate the (aur time/date
   // badalte hi RESPONSE TIME + M/C DOWN TIME bhi dobara gine jaate the).
@@ -780,7 +780,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
               TIME (Start→OK), and a FREQUENCY field.  Any time/date change
               re-computes the two auto totals via setTime / setStartDate.
               AUTO (ANDON) slip me time + date dono LOCK hain (AUTO_LOCKED_FIELDS)
-              — wahan ye khaane ESP se aate hain, isliye kuch re-compute hi nahi
+              — wahan ye khaane PLC se aate hain, isliye kuch re-compute hi nahi
               hota.  FREQUENCY dono slip me editable hai. */}
           <div className="bds-grid bds-grid-3">
             <BdsCell label="B/D START TIME" type="time"
@@ -1088,7 +1088,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                 {saving
                    ? "Submitting…"
                    : isProduction  ? "Submit Production Half"
-                   : isMaintenance ? "Submit Maintenance Half"
+                   : isMaintenance ? "Submit"
                                    : "Submit"}
               </Btn>
             )}

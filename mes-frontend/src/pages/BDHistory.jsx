@@ -99,7 +99,12 @@ export default function BDHistory() {
       setYears(list);
       if (!booted.current && list.length) {
         booted.current = true;
-        setFFy((list.find((v) => v.is_current) || list[list.length - 1]).fy);
+        const cur = (list.find((v) => v.is_current) || list[list.length - 1]).fy;
+        setFFy(cur);
+        // Month default = abhi ka current month (agar wo current FY me aata ho).
+        const now = new Date();
+        const cm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        if (fyMonths(cur).some((m) => m.value === cm)) setFMonth(cm);
       }
     }).catch(() => setYears([]));
     api.get("/api/machines/", token).then((m) => setMaster(Array.isArray(m) ? m : [])).catch(() => setMaster([]));

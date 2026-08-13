@@ -3,7 +3,7 @@
 Maintenance department ka standalone system — ANDON, Breakdown Slip, PM, Machine DMC,
 Spare, Skill & Training, KPI.
 
-**Ports:** Backend `8892` · Frontend `9965` · ANDON ESP ingest `9000`
+**Ports:** Backend `8892` · Frontend `9965`
 **Database:** PostgreSQL — `maintenance_db` (apni alag DB, kisi aur system se saanjhi nahi)
 
 ---
@@ -41,7 +41,7 @@ Band karne ke liye: `STOP.bat` (Windows) ya `./stop.sh` (Linux)
 
 | Module | Kaam |
 |---|---|
-| **ANDON** | ESP32 (raw-TCP `:9000`) se live breakdown call — ON / acknowledge / OFF |
+| **ANDON** | Mitsubishi PLC (MC-protocol, outbound poll) se live breakdown call — ON / acknowledge / OFF |
 | **Breakdown Slip** | ANDON se **auto** slip, aur manual slip — dono ka register + history |
 | **PM** | Yearly PM schedule (week-wise plan/actual) + fillable check sheet |
 | **Machine DMC** | Daily machine check — operator fill → supervisor verify → weekly → NG point |
@@ -107,11 +107,14 @@ print('admin bana diya')"
 
 ---
 
-## ESP32 (ANDON)
+## PLC (ANDON)
 
-ESP32-S3-POE-ETH board raw TCP par `:9000` pe newline-JSON bhejta hai
-(seq/ack ke saath, taaki koi event chhoot na jaye).  Har ESP ka IP
-`andon_esp_devices` me register hota hai — Admin se ANDON Management page par.
+ANDON ab Mitsubishi PLC se signal leta hai.  Backend har enabled PLC se
+OUTBOUND (MC-protocol) connect karke uske mapped bits padhta hai (~100 ms):
+bit 1 → call ON (timer chalu), bit 0 → OFF (band → history, duration ke saath).
+Kuch bhi is PC par INBOUND nahi aata, isliye koi inbound port / firewall rule
+nahi chahiye.
 
-Ek IP / ek naam sirf ek hi ESP ko mil sakta hai; dobara dene par saaf error
-aata hai.
+Har PLC ka IP `andon_esp_devices` me register hota hai — Admin se ANDON
+Management page par.  Ek IP / ek naam sirf ek hi PLC ko mil sakta hai; dobara
+dene par saaf error aata hai.

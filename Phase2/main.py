@@ -168,9 +168,9 @@ from pydantic import BaseModel as _BM_oee
 
 @app.on_event("startup")
 def start_andon_workers():
-    """ESP raw-TCP ingest (:9000) + connectivity poller.  Start at boot,
-    independent of the DB — event persistence retries once the DB is back, so
-    the ESP can connect and its queued events flush as soon as the DB returns."""
+    """ANDON PLC bit-poller.  Start at boot, independent of the DB — the poller
+    connects OUT to each PLC and applies bit changes; persistence retries once
+    the DB is back."""
     try:
         from routers.andon import start_workers
         start_workers()
@@ -207,7 +207,7 @@ def run_migrations():
         _ensure_logbook()
     except Exception as e:
         print(f"[STARTUP] Log Book table ensure failed: {e}")
-    # ANDON tables/scheme (idempotent) — also (re)starts the ESP ingest workers.
+    # ANDON tables/scheme (idempotent) — also (re)starts the PLC poller.
     try:
         from routers.andon import _ensure_tables as _ensure_andon
         _ensure_andon()

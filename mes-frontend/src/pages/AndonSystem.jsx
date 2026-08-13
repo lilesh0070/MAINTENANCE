@@ -2,12 +2,12 @@
  * AndonSystem.jsx
  * ───────────────────────────────────────────────────────────────────
  * "ANDON" — standalone Industrial ANDON Management module (sidebar → ANDON).
- * Configured entirely from THIS UI (no source change to add an ESP / department).
+ * Configured entirely from THIS UI (no source change to add a PLC / department).
  *   • Zone / Line come from the machine master (maintenance_machines), like every page.
- *   • ESP32 devices: name · ip · port · zone · line · enable.
+ *   • PLC devices: name · ip · port · zone · line · enable.
  *   • Departments: an editable list (Maintenance/Quality/Production/Store …).
  *   • Output mapping: DO1–DO8 → a department (+ display name / priority / enable),
- *     a shared default + per-ESP override.  Time calc (Phase 3) is per-department.
+ *     a shared default + per-PLC override.  Time calc (Phase 3) is per-department.
  * Backend: /api/andon/*.  Routing: /andon-system.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -80,7 +80,7 @@ export default function AndonSystem() {
   }, [token]);
 
   const [tab, setTab] = useState("config");
-  const [cfg, setCfg] = useState("esp");            // esp | outputs
+  const [cfg, setCfg] = useState("plc");            // plc | outputs
   const [msg, setMsg] = useState("");
   const flash = (m) => { setMsg(m); setTimeout(() => setMsg(""), 2500); };
 
@@ -95,7 +95,7 @@ export default function AndonSystem() {
 
   const [master, setMaster]   = useState([]);       // flat maintenance_machines rows (zone_name/line_name/machine_no/machine_name)
   const [depts, setDepts]     = useState([]);
-  const [esps, setEsps]       = useState([]);
+  const [plcs, setPlcs]       = useState([]);
   const [events, setEvents]   = useState([]);       // live OPEN calls (the board)
   const [totals, setTotals]   = useState([]);        // aaj ka per-department total loss
   const [, setTick]           = useState(0);         // 1s heartbeat so timers advance smoothly
@@ -165,19 +165,19 @@ export default function AndonSystem() {
     try {
       const [mc, d, e] = await Promise.all([
         fetch("/api/machines/", { headers: { Authorization: `Bearer ${token}` } }).then((r) => (r.ok ? r.json() : [])).catch(() => []),
-        api("/departments").catch(() => []), api("/esp-devices").catch(() => []),
+        api("/departments").catch(() => []), api("/plc-devices").catch(() => []),
       ]);
-      setMaster(Array.isArray(mc) ? mc : []); setDepts(d || []); setEsps(e || []);
+      setMaster(Array.isArray(mc) ? mc : []); setDepts(d || []); setPlcs(e || []);
     } catch (err) { flash(String(err.message || err).slice(0, 120)); }
   }, [api, token]);
   useEffect(() => { if (token) load(); }, [token, load]);
-  // live ESP connectivity — re-poll the list every 10s so the green/red dots update
+  // live PLC connectivity — re-poll the list every 10s so the green/red dots update
   useEffect(() => {
     if (!token) return;
-    const id = setInterval(() => { api("/esp-devices").then((e) => setEsps(e || [])).catch(() => {}); }, 10000);
+    const id = setInterval(() => { api("/plc-devices").then((e) => setPlcs(e || [])).catch(() => {}); }, 10000);
     return () => clearInterval(id);
   }, [token, api]);
-  // ── Live board: pull active calls every 2s while the board tab is open ──
+  // ── Live board: pull active calls every 300ms while the board tab is open ──
   useEffect(() => {
     if (!token || tab !== "board") return;
     let alive = true;
@@ -207,13 +207,13 @@ export default function AndonSystem() {
       api("/today-totals").then((t) => { if (alive) setTotals(t?.departments || []); }).catch(() => {});
     };
     pull();
-    // 1s par — taaki chhoti (1-2 sec) button-tap bhi screen pakad le.  Pehle 2s
-    // tha, to 1-2s ki call do refresh ke beech khul-band ho jaati thi aur dikhti
-    // hi nahi thi.  (Endpoint ~20ms ka hai, to 1s poll par load na ke barabar.)
-    const id = setInterval(pull, 1000);
+    // 300ms par — PLC bit press karte hi call turant screen pe aaye (backend poll
+    // ab 100ms hai; UI 1s tha to ~1s dikhaई-delay aata tha).  Endpoint ~20ms ka
+    // hai, to 300ms poll par bhi load na ke barabar.
+    const id = setInterval(pull, 300);
     return () => { alive = false; clearInterval(id); };
   }, [token, tab, api]);
-  // 1s heartbeat so the running timers advance between the 2s polls
+  // 1s heartbeat so the running timers advance between the 300ms polls
   useEffect(() => {
     if (tab !== "board") return;
     const id = setInterval(() => setTick((t) => t + 1), 1000);
@@ -227,13 +227,13 @@ export default function AndonSystem() {
     if (ref == null) return ev.elapsed_seconds || 0;   // abhi anchor nahi hua (pehla render)
     return Math.max(0, Math.floor((Date.now() - ref) / 1000));
   };
-  // group active calls by the ESP's defined zone / line
+  // group active calls by the PLC's defined zone / line
   const eventsByLine = useMemo(() => {
     const g = {};
     for (const ev of events) { const k = `${ev.zone || "—"} / ${ev.line || "—"}`; (g[k] = g[k] || []).push(ev); }
     return g;
   }, [events]);
-  // Takraav (409) = wahi IP/naam kisi aur ESP ki hai.  Ye chhote toast me
+  // Takraav (409) = wahi IP/naam kisi aur PLC ki hai.  Ye chhote toast me
   // dabana theek nahi — galat IP par do board ka data ek jagah chala jayega
   // aur pata bhi nahi chalega.  Isliye poora popup, jo khud gayab na ho.
   const [alertBox, setAlertBox] = useState(null);   // { title, text }
@@ -252,49 +252,49 @@ export default function AndonSystem() {
   // ── Departments ──
   const [dName, setDName] = useState("");
 
-  // ── ESP form (zone / line from the machine master) ──
-  const blankEsp = { name: "", ip: "", port: 5007, series: "Q", zone: "", line: "", machine_no: "", machine_name: "", enabled: true };
-  const [espForm, setEspForm] = useState(blankEsp);
-  const [espEdit, setEspEdit] = useState(null);
+  // ── PLC form (zone / line from the machine master) ──
+  const blankPlc = { name: "", ip: "", port: 5007, series: "Q", zone: "", line: "", machine_no: "", machine_name: "", enabled: true };
+  const [plcForm, setPlcForm] = useState(blankPlc);
+  const [plcEdit, setPlcEdit] = useState(null);
   // zone → line → machine cascade, all from the machine master (like every page)
-  const espZones    = useMemo(() => [...new Set(master.map((m) => m.zone_name).filter(Boolean))].sort(), [master]);
-  const espLines    = useMemo(() => espForm.zone ? [...new Set(master.filter((m) => m.zone_name === espForm.zone).map((m) => m.line_name).filter(Boolean))].sort() : [], [master, espForm.zone]);
-  const espMachines = useMemo(() => (espForm.zone && espForm.line) ? [...new Set(master.filter((m) => m.zone_name === espForm.zone && m.line_name === espForm.line).map((m) => m.machine_no).filter(Boolean))].sort() : [], [master, espForm.zone, espForm.line]);
-  const onEspMachine = (v) => {
-    const m = master.find((x) => x.zone_name === espForm.zone && x.line_name === espForm.line && String(x.machine_no) === String(v));
-    setEspForm((f) => ({ ...f, machine_no: v, machine_name: m?.machine_name || "" }));
+  const plcZones    = useMemo(() => [...new Set(master.map((m) => m.zone_name).filter(Boolean))].sort(), [master]);
+  const plcLines    = useMemo(() => plcForm.zone ? [...new Set(master.filter((m) => m.zone_name === plcForm.zone).map((m) => m.line_name).filter(Boolean))].sort() : [], [master, plcForm.zone]);
+  const plcMachines = useMemo(() => (plcForm.zone && plcForm.line) ? [...new Set(master.filter((m) => m.zone_name === plcForm.zone && m.line_name === plcForm.line).map((m) => m.machine_no).filter(Boolean))].sort() : [], [master, plcForm.zone, plcForm.line]);
+  const onPlcMachine = (v) => {
+    const m = master.find((x) => x.zone_name === plcForm.zone && x.line_name === plcForm.line && String(x.machine_no) === String(v));
+    setPlcForm((f) => ({ ...f, machine_no: v, machine_name: m?.machine_name || "" }));
   };
-  const startEspEdit = (e) => { setEspEdit(e.id); setEspForm({ ...blankEsp, ...e, series: e.series || "Q", zone: e.zone || "", line: e.line || "", machine_no: e.machine_no || "", machine_name: e.machine_name || "" }); setCfg("esp"); };
-  const saveEsp = () => wrap(async () => {
-    const body = { name: espForm.name, ip: espForm.ip, port: Number(espForm.port) || 80,
-                   series: espForm.series || "Q",
-                   zone: espForm.zone || "", line: espForm.line || "", machine_no: espForm.machine_no || "",
-                   machine_name: espForm.machine_name || "", enabled: espForm.enabled };
-    if (espEdit) await api(`/esp-devices/${espEdit}`, { method: "PUT", body: JSON.stringify(body) });
-    else await api("/esp-devices", { method: "POST", body: JSON.stringify(body) });
-    setEspForm(blankEsp); setEspEdit(null);
-  }, espEdit ? "PLC updated" : "PLC added");
+  const startPlcEdit = (e) => { setPlcEdit(e.id); setPlcForm({ ...blankPlc, ...e, series: e.series || "Q", zone: e.zone || "", line: e.line || "", machine_no: e.machine_no || "", machine_name: e.machine_name || "" }); setCfg("plc"); };
+  const savePlc = () => wrap(async () => {
+    const body = { name: plcForm.name, ip: plcForm.ip, port: Number(plcForm.port) || 80,
+                   series: plcForm.series || "Q",
+                   zone: plcForm.zone || "", line: plcForm.line || "", machine_no: plcForm.machine_no || "",
+                   machine_name: plcForm.machine_name || "", enabled: plcForm.enabled };
+    if (plcEdit) await api(`/plc-devices/${plcEdit}`, { method: "PUT", body: JSON.stringify(body) });
+    else await api("/plc-devices", { method: "POST", body: JSON.stringify(body) });
+    setPlcForm(blankPlc); setPlcEdit(null);
+  }, plcEdit ? "PLC updated" : "PLC added");
 
-  // ── Output mapping (default template OR a specific ESP) ──
+  // ── Output mapping (default template OR a specific PLC) ──
   const [outFor, setOutFor] = useState({ type: "default", id: null, name: "Default template" });
   const [outRows, setOutRows] = useState([]);
   const [outZone, setOutZone] = useState("");
   const [outLine, setOutLine] = useState("");
   const loadOutputs = useCallback(async (target) => {
     setOutFor(target);
-    const rows = target.type === "default" ? await api("/outputs/default") : await api(`/esp-devices/${target.id}/outputs`);
+    const rows = target.type === "default" ? await api("/outputs/default") : await api(`/plc-devices/${target.id}/outputs`);
     setOutRows(rows || []); setCfg("outputs");
   }, [api]);
   const outLinesFor = (z) => z ? [...new Set(master.filter((m) => m.zone_name === z).map((m) => m.line_name).filter(Boolean))].sort() : [];
   // Output mapping target: no zone = the shared Default template; zone + line =
-  // the ESP sitting on that zone/line (its own override).
+  // the PLC sitting on that zone/line (its own override).
   const pickOutTarget = (zone, line) => {
     setOutZone(zone); setOutLine(line);
     if (!zone) { loadOutputs({ type: "default", id: null, name: "Default template" }); return; }
     if (zone && line) {
-      const e = esps.find((x) => x.zone === zone && x.line === line);
-      if (e) loadOutputs({ type: "esp", id: e.id, name: `${e.name} — ${zone} / ${line}` });
-      else { setOutFor({ type: "none", id: null, name: `No ESP on ${zone} / ${line}` }); setOutRows([]); }
+      const e = plcs.find((x) => x.zone === zone && x.line === line);
+      if (e) loadOutputs({ type: "plc", id: e.id, name: `${e.name} — ${zone} / ${line}` });
+      else { setOutFor({ type: "none", id: null, name: `No PLC on ${zone} / ${line}` }); setOutRows([]); }
     } else { setOutFor({ type: "pick", id: null, name: "Select a line" }); setOutRows([]); }
   };
   useEffect(() => { if (token && cfg === "outputs" && !outRows.length) loadOutputs({ type: "default", id: null, name: "Default template" }); /* eslint-disable-next-line */ }, [cfg, token]);
@@ -304,7 +304,7 @@ export default function AndonSystem() {
       department_id: r.department_id || null, priority: r.priority || "Normal", enabled: r.enabled !== false,
       bit_type: r.bit_type || "", bit_no: r.bit_no || "" })) };
     if (outFor.type === "default") await api("/outputs/default", { method: "PUT", body: JSON.stringify(body) });
-    else await api(`/esp-devices/${outFor.id}/outputs`, { method: "PUT", body: JSON.stringify(body) });
+    else await api(`/plc-devices/${outFor.id}/outputs`, { method: "PUT", body: JSON.stringify(body) });
   }, "Output mapping saved");
   // each department appears ONCE — its dropdown excludes departments used by other rows
   const deptUsedElsewhere = (i) => new Set(outRows.filter((_, j) => j !== i).map((r) => r.department_id).filter(Boolean));
@@ -313,7 +313,7 @@ export default function AndonSystem() {
     setOutRows((rs) => rs.map((r, j) => (j === i ? { ...r, department_id: deptId, display_name: d ? d.name : (r.display_name || "") } : r)));
   };
   const addOutput = () => {
-    if (outRows.length >= 8) { flash("Max 8 outputs (ESP has DO1–DO8)"); return; }
+    if (outRows.length >= 8) { flash("Max 8 outputs (DO1–DO8)"); return; }
     const usedDo = new Set(outRows.map((r) => r.do_index));
     let nd = 1; while (usedDo.has(nd) && nd < 8) nd++;
     const used = new Set(outRows.map((r) => r.department_id).filter(Boolean));
@@ -381,55 +381,55 @@ export default function AndonSystem() {
           {tab === "config" && canAccess("andon-config") && (
             <>
               <div className="an-ctabs">
-                {[["esp","PLC Devices"],["outputs","Outputs"]].map(([k, l]) => (
+                {[["plc","PLC Devices"],["outputs","Outputs"]].map(([k, l]) => (
                   <button key={k} className={`an-ctab${cfg === k ? " on" : ""}`} onClick={() => setCfg(k)}>{l}</button>
                 ))}
               </div>
 
-              {/* ── ESP DEVICES ── */}
-              {cfg === "esp" && (
+              {/* ── PLC DEVICES ── */}
+              {cfg === "plc" && (
                 <>
                   <div className="an-card" style={{ marginBottom:14 }}>
-                    <b style={{ fontSize:14 }}>{espEdit ? "Edit PLC" : "Add PLC"}</b>
+                    <b style={{ fontSize:14 }}>{plcEdit ? "Edit PLC" : "Add PLC"}</b>
                     <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginTop:12 }}>
                       <div><label className="an-lbl">Zone</label>
-                        <select className="an-in" style={{ width:"100%" }} value={espForm.zone} onChange={(e) => setEspForm({ ...espForm, zone: e.target.value, line: "", machine_no: "", machine_name: "" })}>
-                          <option value="">— select —</option>{espZones.map((z) => <option key={z} value={z}>{z}</option>)}
+                        <select className="an-in" style={{ width:"100%" }} value={plcForm.zone} onChange={(e) => setPlcForm({ ...plcForm, zone: e.target.value, line: "", machine_no: "", machine_name: "" })}>
+                          <option value="">— select —</option>{plcZones.map((z) => <option key={z} value={z}>{z}</option>)}
                         </select></div>
                       <div><label className="an-lbl">Line</label>
-                        <select className="an-in" style={{ width:"100%" }} value={espForm.line} disabled={!espForm.zone} onChange={(e) => setEspForm({ ...espForm, line: e.target.value, machine_no: "", machine_name: "" })}>
-                          <option value="">— select —</option>{espLines.map((l) => <option key={l} value={l}>{l}</option>)}
+                        <select className="an-in" style={{ width:"100%" }} value={plcForm.line} disabled={!plcForm.zone} onChange={(e) => setPlcForm({ ...plcForm, line: e.target.value, machine_no: "", machine_name: "" })}>
+                          <option value="">— select —</option>{plcLines.map((l) => <option key={l} value={l}>{l}</option>)}
                         </select></div>
                       <div><label className="an-lbl">Machine No</label>
-                        <select className="an-in" style={{ width:"100%" }} value={espForm.machine_no} disabled={!espForm.line} onChange={(e) => onEspMachine(e.target.value)}>
-                          <option value="">— select —</option>{espMachines.map((mc) => <option key={mc} value={mc}>{mc}</option>)}
+                        <select className="an-in" style={{ width:"100%" }} value={plcForm.machine_no} disabled={!plcForm.line} onChange={(e) => onPlcMachine(e.target.value)}>
+                          <option value="">— select —</option>{plcMachines.map((mc) => <option key={mc} value={mc}>{mc}</option>)}
                         </select>
-                        {espForm.machine_name && <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>{espForm.machine_name}</div>}
+                        {plcForm.machine_name && <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>{plcForm.machine_name}</div>}
                       </div>
-                      <div><label className="an-lbl">PLC IP</label><input className="an-in" style={{ width:"100%" }} value={espForm.ip} onChange={(e) => setEspForm({ ...espForm, ip: e.target.value })} placeholder="192.168.30.101" /></div>
-                      <div><label className="an-lbl">Port</label><input className="an-in" style={{ width:"100%" }} type="number" value={espForm.port} onChange={(e) => setEspForm({ ...espForm, port: e.target.value })} placeholder="5007" /></div>
+                      <div><label className="an-lbl">PLC IP</label><input className="an-in" style={{ width:"100%" }} value={plcForm.ip} onChange={(e) => setPlcForm({ ...plcForm, ip: e.target.value })} placeholder="192.168.30.101" /></div>
+                      <div><label className="an-lbl">Port</label><input className="an-in" style={{ width:"100%" }} type="number" value={plcForm.port} onChange={(e) => setPlcForm({ ...plcForm, port: e.target.value })} placeholder="5007" /></div>
                       <div><label className="an-lbl">Series</label>
-                        <select className="an-in" style={{ width:"100%" }} value={espForm.series || "Q"} onChange={(e) => setEspForm({ ...espForm, series: e.target.value })}>
+                        <select className="an-in" style={{ width:"100%" }} value={plcForm.series || "Q"} onChange={(e) => setPlcForm({ ...plcForm, series: e.target.value })}>
                           {["Q","FX5U","iQ-R","L"].map((s) => <option key={s} value={s}>{s}</option>)}
                         </select></div>
-                      <div><label className="an-lbl">Device Name</label><input className="an-in" style={{ width:"100%" }} value={espForm.name} onChange={(e) => setEspForm({ ...espForm, name: e.target.value })} placeholder="e.g. Zone A Line 1" /></div>
+                      <div><label className="an-lbl">Device Name</label><input className="an-in" style={{ width:"100%" }} value={plcForm.name} onChange={(e) => setPlcForm({ ...plcForm, name: e.target.value })} placeholder="e.g. Zone A Line 1" /></div>
                     </div>
                     <div className="an-row" style={{ marginTop:12 }}>
                       <label style={{ fontSize:13, fontWeight:700, display:"flex", alignItems:"center", gap:6 }}>
-                        <input type="checkbox" checked={espForm.enabled} onChange={(e) => setEspForm({ ...espForm, enabled: e.target.checked })} /> Enabled (poll this PLC)
+                        <input type="checkbox" checked={plcForm.enabled} onChange={(e) => setPlcForm({ ...plcForm, enabled: e.target.checked })} /> Enabled (poll this PLC)
                       </label>
                       <div style={{ marginLeft:"auto" }} />
-                      {espEdit && <button className="an-btn gh" onClick={() => { setEspEdit(null); setEspForm(blankEsp); }}>Cancel</button>}
-                      <button className="an-btn" disabled={!espForm.name.trim() || !espForm.ip.trim()} onClick={saveEsp}>{espEdit ? "Save" : "+ Add PLC"}</button>
+                      {plcEdit && <button className="an-btn gh" onClick={() => { setPlcEdit(null); setPlcForm(blankPlc); }}>Cancel</button>}
+                      <button className="an-btn" disabled={!plcForm.name.trim() || !plcForm.ip.trim()} onClick={savePlc}>{plcEdit ? "Save" : "+ Add PLC"}</button>
                     </div>
-                    {!espZones.length && <div style={{ fontSize:12, color:"#b45309", marginTop:8 }}>No zones in the machine master (maintenance_machines) yet — zone/line/machine list is empty.</div>}
+                    {!plcZones.length && <div style={{ fontSize:12, color:"#b45309", marginTop:8 }}>No zones in the machine master (maintenance_machines) yet — zone/line/machine list is empty.</div>}
                   </div>
                   <div className="an-card">
-                    <b style={{ fontSize:14 }}>PLC Devices ({esps.length})</b>
+                    <b style={{ fontSize:14 }}>PLC Devices ({plcs.length})</b>
                     <table className="an-tbl">
                       <thead><tr><th>Name</th><th>IP:Port</th><th>Zone / Line / M/C</th><th>Connection</th><th>Status</th><th></th></tr></thead>
                       <tbody>
-                        {esps.map((e) => (
+                        {plcs.map((e) => (
                           <tr key={e.id}>
                             <td style={{ fontWeight:600 }}>{e.name}</td>
                             <td>{e.ip}:{e.port}{e.series && <span style={{ marginLeft:6, fontSize:10, fontWeight:700, color:"#64748b", background:"#f1f5f9", padding:"1px 6px", borderRadius:99 }}>{e.series}</span>}</td>
@@ -448,13 +448,13 @@ export default function AndonSystem() {
                             </td>
                             <td><span className="an-chip" style={{ padding:"2px 9px", background: e.enabled ? "#dcfce7" : "#fee2e2", color: e.enabled ? "#16a34a" : "#dc2626" }}>{e.enabled ? "Enabled" : "Disabled"}</span></td>
                             <td style={{ whiteSpace:"nowrap" }}>
-                              <button className="an-btn gh sm" onClick={() => loadOutputs({ type:"esp", id:e.id, name:e.name })}>🔌 Outputs</button>{" "}
-                              <button className="an-btn gh sm" onClick={() => startEspEdit(e)}>Edit</button>{" "}
-                              <button className="an-x" onClick={() => wrap(() => api(`/esp-devices/${e.id}`, { method:"DELETE" }), "PLC removed")}>×</button>
+                              <button className="an-btn gh sm" onClick={() => loadOutputs({ type:"plc", id:e.id, name:e.name })}>🔌 Outputs</button>{" "}
+                              <button className="an-btn gh sm" onClick={() => startPlcEdit(e)}>Edit</button>{" "}
+                              <button className="an-x" onClick={() => wrap(() => api(`/plc-devices/${e.id}`, { method:"DELETE" }), "PLC removed")}>×</button>
                             </td>
                           </tr>
                         ))}
-                        {!esps.length && <tr><td colSpan={6} style={{ color:"#94a3b8" }}>No PLC devices yet.</td></tr>}
+                        {!plcs.length && <tr><td colSpan={6} style={{ color:"#94a3b8" }}>No PLC devices yet.</td></tr>}
                       </tbody>
                     </table>
                   </div>
@@ -536,7 +536,7 @@ export default function AndonSystem() {
                 <b style={{ fontSize:16, color:"#0f172a" }}>🚦 Live ANDON Board</b>
                 <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>
                   <span style={{ display:"inline-block", width:8, height:8, borderRadius:99, background:"#16a34a", marginRight:6 }} />
-                  {events.length} active call{events.length === 1 ? "" : "s"} · auto-refresh 1s
+                  {events.length} active call{events.length === 1 ? "" : "s"} · auto-refresh 0.3s
                 </span>
               </div>
 
@@ -580,7 +580,7 @@ export default function AndonSystem() {
 
               {!events.length ? (
                 <div className="an-panel"><div className="big">✅</div><h2>All clear</h2>
-                  <p>No active ANDON calls right now. Press a button on the ESP — the call appears here on its defined line, with a running timer.</p></div>
+                  <p>No active ANDON calls right now. Press a button on the PLC — the call appears here on its defined line, with a running timer.</p></div>
               ) : (
                 Object.entries(eventsByLine).map(([line, evs]) => (
                   <div key={line} className="an-card" style={{ marginBottom:14 }}>
@@ -617,7 +617,7 @@ export default function AndonSystem() {
                               {fmtClock(liveElapsed(ev))}
                             </div>
                             <div style={{ fontSize:10.5, color:"#94a3b8", whiteSpace:"nowrap", overflow:"hidden",
-                                          textOverflow:"ellipsis" }}>OUT{ev.do_index} · {ev.esp_name || "ESP"}</div>
+                                          textOverflow:"ellipsis" }}>OUT{ev.do_index} · {ev.plc_name || "PLC"}</div>
                             <div style={{ marginTop:7, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
                               {acked
                                 ? <span style={{ fontSize:10.5, fontWeight:700, color:"#16a34a" }}>
@@ -821,7 +821,7 @@ export default function AndonSystem() {
         );
       })()}
 
-      {/* Takraav ka popup — IP/naam pehle se kisi aur ESP ki hai.
+      {/* Takraav ka popup — IP/naam pehle se kisi aur PLC ki hai.
           Jaan-bujh kar khud gayab NAHI hota: user ko padhna aur samajhna
           zaroori hai, warna do board ka data ek hi line par chadh jayega. */}
       {alertBox && (
@@ -842,7 +842,7 @@ export default function AndonSystem() {
               <div style={{ marginTop:14, padding:"10px 12px", background:"#fef2f2",
                             border:"1px solid #fecaca", borderRadius:9,
                             fontSize:12.5, color:"#991b1b" }}>
-                Ek IP sirf EK hi ESP ko de sakte hain. Do board ek hi IP par hon to
+                Ek IP sirf EK hi PLC ko de sakte hain. Do board ek hi IP par hon to
                 dono ka data ek hi line par chala jayega aur pata bhi nahi chalega.
               </div>
             </div>

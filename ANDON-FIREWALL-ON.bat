@@ -1,17 +1,16 @@
 @echo off
 REM ===================================================================
-REM   MES ANDON - Firewall wapas ON, par ESP ka connection na toote
+REM   MES ANDON - Firewall wapas ON (backend LAN se khule)
 REM   Right-click is file par -> "Run as administrator"
 REM
 REM   Ye kya karta hai:
 REM     1) Backend python ke liye inbound ALLOW rule
-REM     2) TCP 9000 (ANDON ESP) allow
-REM     3) TCP 8892 (backend HTTP) allow
-REM     4) Purani galti se bani BLOCK rules hataata hai (ye ALLOW rules
+REM     2) TCP 8892 (backend HTTP) allow
+REM     3) Purani galti se bani BLOCK rules hataata hai (ye ALLOW rules
 REM        ko harati hain - Windows me BLOCK hamesha ALLOW se upar hai)
-REM     5) Firewall wapas ON
+REM     4) Firewall wapas ON
 REM ===================================================================
-title MES ANDON - Firewall ON (ESP connection safe)
+title MES ANDON - Firewall ON
 
 REM  "auto" argument = START.bat se chali hai -> aakhir me pause mat karo
 set "AUTO=%~1"
@@ -29,22 +28,17 @@ if errorlevel 1 (
 set PY=D:\mainmtenance\maintainence\Phase2\.venv\Scripts\python.exe
 
 echo.
-echo [1/5] Backend python ke liye ALLOW rule...
+echo [1/4] Backend python ke liye ALLOW rule...
 netsh advfirewall firewall delete rule name="MES-BACKEND-PY-TCP" >nul 2>&1
 netsh advfirewall firewall add rule name="MES-BACKEND-PY-TCP" dir=in action=allow program="%PY%" protocol=TCP enable=yes profile=any >nul
 if errorlevel 1 (echo     [X] fail) else (echo     [OK])
 
-echo [2/5] ANDON port TCP 9000 allow...
-netsh advfirewall firewall delete rule name="MES-ANDON-9000" >nul 2>&1
-netsh advfirewall firewall add rule name="MES-ANDON-9000" dir=in action=allow protocol=TCP localport=9000 enable=yes profile=any >nul
-if errorlevel 1 (echo     [X] fail) else (echo     [OK])
-
-echo [3/5] Backend HTTP TCP 8892 allow...
+echo [2/4] Backend HTTP TCP 8892 allow...
 netsh advfirewall firewall delete rule name="MES-BACKEND-8892" >nul 2>&1
 netsh advfirewall firewall add rule name="MES-BACKEND-8892" dir=in action=allow protocol=TCP localport=8892 enable=yes profile=any >nul
 if errorlevel 1 (echo     [X] fail) else (echo     [OK])
 
-echo [4/5] Galti se bani purani BLOCK rules hata raha hoon...
+echo [3/4] Galti se bani purani BLOCK rules hata raha hoon...
 REM Ye tab banti hain jab Windows ka "allow access?" prompt aaye aur
 REM Cancel/Block daba diya jaye. Inhe hatane se kuch khulta NAHI --
 REM Windows me inbound waise bhi by-default band hai. Ye sirf ALLOW
@@ -52,7 +46,7 @@ REM rules ko override karna band kar deti hain.
 powershell -NoProfile -Command "Get-NetFirewallRule -Direction Inbound -Action Block -Enabled True -ErrorAction SilentlyContinue | ForEach-Object { $r=$_; $p=($r|Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue).Program; if ($p -match 'python|powershell|node\.exe|\\code\.exe|postman|mdns-discovery|\.venv') { Write-Host ('     hata raha: ' + $r.DisplayName + '  [' + $p + ']'); Remove-NetFirewallRule -Name $r.Name -ErrorAction SilentlyContinue } }"
 echo     [OK]
 
-echo [5/5] Firewall wapas ON...
+echo [4/4] Firewall wapas ON...
 netsh advfirewall set allprofiles state on >nul
 if errorlevel 1 (echo     [X] fail) else (echo     [OK])
 
@@ -60,14 +54,6 @@ echo.
 echo ===================== NATIJA =====================
 netsh advfirewall show allprofiles state | findstr /I "Profile State"
 echo.
-echo ESP ka connection (192.168.30.77 -^> 9000):
-netstat -an | findstr ":9000" | findstr "192.168.30.77"
-if errorlevel 1 (
-  echo    [..] abhi connection nahi dikha - ESP har 3 sec me dubara
-  echo         judta hai, 10-15 second me aa jayega.
-) else (
-  echo    [OK] ESP juda hua hai.
-)
 echo ==================================================
 echo.
 if /i "%AUTO%"=="auto" (
