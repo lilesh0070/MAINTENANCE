@@ -434,7 +434,7 @@ export default function AndonSystem() {
           {tab === "config" && canAccess("andon-config") && (
             <>
               <div className="an-ctabs">
-                {[["plc","PLC Devices"],["outputs","Outputs"]].map(([k, l]) => (
+                {[["plc","PLC Devices"],["outputs","Assign"]].map(([k, l]) => (
                   <button key={k} className={`an-ctab${cfg === k ? " on" : ""}`} onClick={() => setCfg(k)}>{l}</button>
                 ))}
               </div>
