@@ -29,7 +29,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
 from pydantic import BaseModel
 
 from database import get_conn, dict_cursor
-from auth import auth_router, get_current_user, require_admin
+from auth import auth_router, get_current_user, require_admin, TOKEN_EXPIRE_HOURS
 # ── MAINTENANCE-ONLY SLICE ─────────────────────────────────────
 # Only the routers the Maintenance department UI needs are imported.
 # The non-maintenance routers (non_production, submachines, reports,
@@ -608,6 +608,31 @@ def audit_logins(fy: str = "", month: str = "", date: str = "", username: str = 
         cur.execute("SELECT DISTINCT username FROM maintenance_audit_log WHERE action='AUTH_LOGIN' AND username IS NOT NULL ORDER BY username")
         users = [r["username"] for r in cur.fetchall()]
     return {"rows": rows, "users": users}
+
+
+@app.get("/api/audit/active-logins")
+def audit_active_logins(user=Depends(get_current_user)):
+    """Abhi kaun-kaun logged-in hai — har user ka LATEST login jo token-window
+    ({TOKEN_EXPIRE_HOURS}h) ke andar hai AUR uske baad koi AUTH_LOGOUT nahi.
+    JWT stateless hai isliye ye best-effort estimate hai (bina logout ke browser
+    band karo to token expiry tak "active" dikhega)."""
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""
+            SELECT t.username,
+                   (SELECT u.role FROM maintenance_users u WHERE u.username = t.username) AS role,
+                   t.login_at
+              FROM (SELECT l.username, l.created_at AS login_at,
+                           ROW_NUMBER() OVER (PARTITION BY l.username ORDER BY l.created_at DESC) AS rn
+                      FROM maintenance_audit_log l WHERE l.action = 'AUTH_LOGIN') t
+             WHERE t.rn = 1
+               AND t.login_at >= NOW() - (%s * INTERVAL '1 hour')
+               AND NOT EXISTS (SELECT 1 FROM maintenance_audit_log o
+                               WHERE o.username = t.username AND o.action = 'AUTH_LOGOUT'
+                                     AND o.created_at > t.login_at)
+             ORDER BY t.login_at DESC
+        """, (TOKEN_EXPIRE_HOURS,))
+        return {"rows": cur.fetchall(), "token_hours": TOKEN_EXPIRE_HOURS}
 
 
 # ── Ping check (TCP connect test for camera/device IPs) ──────
