@@ -1224,7 +1224,9 @@ def fault_history(fy: str = "", month: str = "", date: str = "",
     live OPEN call, dono.  Filters: fy(2026-27) · month(YYYY-MM) · date(YYYY-MM-DD) ·
     zone · line · machine_no · fault.  Sab optional, AND me lagte hain."""
     _ensure_tables()
-    where, params = ["started_at IS NOT NULL"], []
+    # SIRF define kiye hue fault dikhte hain — jinka fault khali/NULL hai (abhi tak
+    # fault-map define nahi hua) wo count me aate hi nahi.
+    where, params = ["started_at IS NOT NULL", "COALESCE(fault,'') <> ''"], []
     rng = _fy_range(fy) if fy else None
     if rng:
         where.append("started_at >= %s AND started_at < %s"); params += [rng[0], rng[1]]
@@ -1236,7 +1238,7 @@ def fault_history(fy: str = "", month: str = "", date: str = "",
         if _val:
             where.append(f"{_col} = %s"); params.append(_val)
     if fault:
-        where.append("COALESCE(NULLIF(fault,''),'(unspecified)') = %s"); params.append(fault)
+        where.append("fault = %s"); params.append(fault)
     w = " AND ".join(where)
     with get_conn() as conn:
         cur = dict_cursor(conn)
@@ -1249,7 +1251,7 @@ def fault_history(fy: str = "", month: str = "", date: str = "",
             SELECT COALESCE(zone,'')       AS zone,
                    COALESCE(line,'')       AS line,
                    COALESCE(machine_no,'') AS machine_no,
-                   COALESCE(NULLIF(fault,''),'(unspecified)') AS fault,
+                   fault,
                    COUNT(*) AS total
               FROM allcalls
              WHERE {w}
@@ -1257,9 +1259,10 @@ def fault_history(fy: str = "", month: str = "", date: str = "",
              ORDER BY total DESC, zone, line, machine_no
         """, params)
         rows = cur.fetchall()
-        cur.execute("""SELECT DISTINCT COALESCE(NULLIF(fault,''),'(unspecified)') AS fault
+        cur.execute("""SELECT DISTINCT fault
                          FROM (SELECT fault FROM andon_history
                                UNION ALL SELECT fault FROM andon_system) t
+                        WHERE COALESCE(fault,'') <> ''
                         ORDER BY 1""")
         faults = [r["fault"] for r in cur.fetchall()]
     return {"rows": rows, "faults": faults}
