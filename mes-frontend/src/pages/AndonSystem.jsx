@@ -306,6 +306,59 @@ export default function AndonSystem() {
     if (outFor.type === "default") await api("/outputs/default", { method: "PUT", body: JSON.stringify(body) });
     else await api(`/plc-devices/${outFor.id}/outputs`, { method: "PUT", body: JSON.stringify(body) });
   }, "Output mapping saved");
+
+  // ── Assign (per-machine): ANDON | Model | Fault sub-tabs ──
+  const [assignTab, setAssignTab] = useState("andon");        // andon | model | fault
+  const [modelRows, setModelRows] = useState([]);
+  const [faultRows, setFaultRows] = useState([]);
+  // list khali ho to bhi ek ready row dikhe — user turant Device/Value bhar sake
+  const loadModels = useCallback(async (eid) => { const r = (await api(`/plc-devices/${eid}/models`)) || []; setModelRows(r.length ? r : [{ device_type: "D", device_no: "", value: "", name: "" }]); }, [api]);
+  const loadFaults = useCallback(async (eid) => { const r = (await api(`/plc-devices/${eid}/faults`)) || []; setFaultRows(r.length ? r : [{ device_type: "D", device_no: "", value: "", name: "" }]); }, [api]);
+  const openAssign = (e) => { setAssignTab("andon"); loadOutputs({ type: "plc", id: e.id, name: e.name }); loadModels(e.id); loadFaults(e.id); };
+  const pickMap = (which) => (which === "model" ? setModelRows : setFaultRows);
+  const setMap = (which, i, k, v) => pickMap(which)((rs) => rs.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+  const addMap = (which) => pickMap(which)((rs) => [...rs, { device_type: "D", device_no: "", value: "", name: "" }]);
+  const delMap = (which, i) => pickMap(which)((rs) => rs.filter((_, j) => j !== i));
+  const saveMaps = (which) => wrap(async () => {
+    const rows = which === "model" ? modelRows : faultRows;
+    const body = { rows: rows.map((r) => ({ device_type: r.device_type || "", device_no: r.device_no || "",
+      value: (r.value === "" || r.value == null) ? null : Number(r.value), name: r.name || "" })) };
+    await api(`/plc-devices/${outFor.id}/${which === "model" ? "models" : "faults"}`, { method: "PUT", body: JSON.stringify(body) });
+  }, "Saved");
+  // Model / Fault dono ka editor same shape — ek renderer
+  const mapEditor = (which, rows, label) => (
+    <div className="an-card">
+      <div className="an-row" style={{ marginBottom: 6 }}>
+        <b style={{ fontSize: 14 }}>{label} mapping</b>
+        {outFor?.name && <span style={{ fontSize: 11.5, color: "#64748b", fontWeight: 600 }}>· {outFor.name}</span>}
+        <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#94a3b8" }}>PLC register ki value → {label.toLowerCase()} naam.</span>
+      </div>
+      <table className="an-tbl">
+        <thead><tr><th style={{ width: 110 }}>Device</th><th style={{ width: 150 }}>Device No</th><th style={{ width: 120 }}>Value</th><th>{label} Name</th><th style={{ width: 40 }}></th></tr></thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              <td>
+                <select className="an-in" style={{ width: "100%", padding: "6px 8px" }} value={r.device_type || ""} onChange={(e) => setMap(which, i, "device_type", e.target.value)}>
+                  <option value="">—</option>
+                  {["D", "R", "W", "M", "L", "X", "Y"].map((b) => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </td>
+              <td><input className="an-in" style={{ width: "100%", padding: "6px 8px" }} value={r.device_no || ""} onChange={(e) => setMap(which, i, "device_no", e.target.value)} placeholder="e.g. 3001" /></td>
+              <td><input className="an-in" type="number" style={{ width: "100%", padding: "6px 8px" }} value={r.value ?? ""} onChange={(e) => setMap(which, i, "value", e.target.value)} placeholder="e.g. 5" /></td>
+              <td><input className="an-in" style={{ width: "100%", padding: "6px 8px" }} value={r.name || ""} onChange={(e) => setMap(which, i, "name", e.target.value)} placeholder={`${label} name`} /></td>
+              <td><button className="an-x" onClick={() => delMap(which, i)}>×</button></td>
+            </tr>
+          ))}
+          {!rows.length && <tr><td colSpan={5} style={{ color: "#94a3b8" }}>No rows yet — “+ Add row”.</td></tr>}
+        </tbody>
+      </table>
+      <div className="an-row" style={{ marginTop: 12, justifyContent: "space-between" }}>
+        <button className="an-btn gh" onClick={() => addMap(which)}>+ Add row</button>
+        <button className="an-btn" onClick={() => saveMaps(which)}>Save {label.toLowerCase()} mapping</button>
+      </div>
+    </div>
+  );
   // each department appears ONCE — its dropdown excludes departments used by other rows
   const deptUsedElsewhere = (i) => new Set(outRows.filter((_, j) => j !== i).map((r) => r.department_id).filter(Boolean));
   const onOutDept = (i, deptId) => {
@@ -448,7 +501,7 @@ export default function AndonSystem() {
                             </td>
                             <td><span className="an-chip" style={{ padding:"2px 9px", background: e.enabled ? "#dcfce7" : "#fee2e2", color: e.enabled ? "#16a34a" : "#dc2626" }}>{e.enabled ? "Enabled" : "Disabled"}</span></td>
                             <td style={{ whiteSpace:"nowrap" }}>
-                              <button className="an-btn gh sm" onClick={() => loadOutputs({ type:"plc", id:e.id, name:e.name })}>🔌 Outputs</button>{" "}
+                              <button className="an-btn gh sm" onClick={() => openAssign(e)}>📍 Assign</button>{" "}
                               <button className="an-btn gh sm" onClick={() => startPlcEdit(e)}>Edit</button>{" "}
                               <button className="an-x" onClick={() => wrap(() => api(`/plc-devices/${e.id}`, { method:"DELETE" }), "PLC removed")}>×</button>
                             </td>
@@ -464,6 +517,17 @@ export default function AndonSystem() {
               {/* ── OUTPUTS (departments + DO1–DO8 → department) ── */}
               {cfg === "outputs" && (
                 <>
+                  {/* Per-machine Assign: ANDON · Model · Fault */}
+                  {outFor.type === "plc" && (
+                    <div className="an-ctabs" style={{ marginBottom:12 }}>
+                      {[["andon","🚦 ANDON"],["model","🏷 Model"],["fault","⚠ Fault"]].map(([k, l]) => (
+                        <button key={k} className={`an-ctab${assignTab === k ? " on" : ""}`} onClick={() => setAssignTab(k)}>{l}</button>
+                      ))}
+                    </div>
+                  )}
+
+                  {(outFor.type !== "plc" || assignTab === "andon") && (
+                  <>
                   <div className="an-card" style={{ marginBottom:14 }}>
                     <b style={{ fontSize:14 }}>Departments</b>
                     <div style={{ fontSize:11.5, color:"#94a3b8", margin:"4px 0 10px" }}>Every output maps to one of these. Time calculation is per-department.</div>
@@ -489,7 +553,7 @@ export default function AndonSystem() {
                       <span style={{ marginLeft:"auto", fontSize:11.5, color:"#94a3b8" }}>PLC bit — 1=ON, 0=OFF. Department scheme fixed for every PLC.</span>
                     </div>
                     <table className="an-tbl">
-                      <thead><tr><th style={{ width:200 }}>Output</th><th>Department / role</th><th style={{ width:120 }}>Bit Type</th><th style={{ width:130 }}>Bit No</th></tr></thead>
+                      <thead><tr><th style={{ width:200 }}>Output</th><th>Department / role</th><th style={{ width:120 }}>Device</th><th style={{ width:130 }}>Device No</th></tr></thead>
                       <tbody>
                         {outRows.map((r, i) => {
                           const parentDo = ACK_PARENT[r.do_index];               // DO2→DO1, DO4→DO3
@@ -525,6 +589,11 @@ export default function AndonSystem() {
                       <button className="an-btn" onClick={saveOutputs}>Save bit mapping</button>
                     </div>
                   </div>
+                  </>
+                  )}
+
+                  {outFor.type === "plc" && assignTab === "model" && mapEditor("model", modelRows, "Model")}
+                  {outFor.type === "plc" && assignTab === "fault" && mapEditor("fault", faultRows, "Fault")}
                 </>
               )}
             </>

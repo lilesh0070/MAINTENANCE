@@ -95,7 +95,6 @@ export const PAGE_PERM_GROUPS = [
       { key: "maintenance-dmc-ng",     label: "DMC NG Point" },
     ]},
     { key: "maintenance-spare",          label: "Spare" },
-    { key: "maintenance-plc",            label: "PLC Integration" },
   ]},
   // Admin config panel.  Grant se sidebar me "Maintenance Panel" dikhega
   // (KPI Targets / Slip Threshold / PM Check Sheet / Machine DMC config).

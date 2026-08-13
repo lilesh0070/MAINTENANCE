@@ -38,6 +38,7 @@ GET/PUT         /plc-devices/{id}/outputs   this device's DO1–DO8 (default-fil
 GET             /events                     live OPEN calls (running timer)
 GET             /history                    closed calls (duration / response)
 """
+import socket
 import threading
 import time as _time
 from datetime import datetime, timedelta
@@ -156,7 +157,7 @@ def _open_long_enough(started, upto):
     return (upto - started).total_seconds() >= _slip_threshold_min() * 60
 
 
-def _slip_fields(zone, line, started, received, ended, dur_seconds=None):
+def _slip_fields(zone, line, started, received, ended, dur_seconds=None, model=None):
     """Call ke waqt se slip ke khaane banao.
 
     machine_no / machine_name JAAN-BUJH KE khali — PLC signal poori LINE par aata hai,
@@ -180,6 +181,7 @@ def _slip_fields(zone, line, started, received, ended, dur_seconds=None):
         "mc_down_time_minutes":  down_min,
         "response_time_minutes": resp_min,
         "frequency": 1,
+        "model_no": model or None,          # Assign→Model se abhi ka model (PLC value match)
         "problem_related_to": "maintenance",
     }
 
@@ -262,7 +264,7 @@ def auto_slip_on_ack(event_id):
                     print(f"[ANDON-SLIP] call {event_id} ki slip me response bhara "
                           f"(recv {flat['bd_received_time']}, resp {flat['response_time_minutes']} min)")
         if new_id:
-            print(f"[ANDON-SLIP] call {event_id} acknowledge hua → slip #{new_id} "
+            print(f"[ANDON-SLIP] call {event_id} acknowledge hua -> slip #{new_id} "
                   f"({flat['zone']}/{flat['line']} {flat['bd_start_time']}"
                   f"→recv {flat['bd_received_time']}, resp {flat['response_time_minutes']} min)")
     except Exception as ex:
@@ -315,7 +317,7 @@ def auto_slip_on_close(event_id, history_id, power_cut=False):
                 (flat["bd_ok_time"], flat["bd_end_date"],
                  flat["mc_down_time_minutes"], bool(power_cut), event_id))
             if cur2.rowcount:
-                print(f"[ANDON-SLIP] call {event_id} band → slip poori hui "
+                print(f"[ANDON-SLIP] call {event_id} band -> slip poori hui "
                       f"(ok {flat['bd_ok_time']}, down {flat['mc_down_time_minutes']} min"
                       f"{', POWER CUT' if power_cut else ''})")
                 return
@@ -328,7 +330,7 @@ def auto_slip_on_close(event_id, history_id, power_cut=False):
                 return
             new_id = _slip_insert(conn, event_id, flat, power_cut=power_cut)
         if new_id:
-            print(f"[ANDON-SLIP] call {event_id} bina acknowledge band hua → slip #{new_id}"
+            print(f"[ANDON-SLIP] call {event_id} bina acknowledge band hua -> slip #{new_id}"
                   f"{' (POWER CUT)' if power_cut else ''}")
     except Exception as ex:
         print(f"[ANDON-SLIP] close par slip update me dikkat (call {event_id}): {ex}")
@@ -352,7 +354,7 @@ def _slip_threshold_sweep():
             cur = dict_cursor(conn)
             # OPEN maintenance call, threshold paar, aur jiski slip abhi nahi hai
             cur.execute(f"""
-                SELECT e.id, e.zone, e.line, e.started_at, e.acknowledged_at
+                SELECT e.id, e.zone, e.line, e.started_at, e.acknowledged_at, e.model
                   FROM andon_system e
                   LEFT JOIN andon_departments dep ON dep.id = e.department_id
                  WHERE e.state = 'OPEN'
@@ -367,11 +369,12 @@ def _slip_threshold_sweep():
             made = 0
             for e in due:
                 flat = _slip_fields(e["zone"], e["line"],
-                                    e["started_at"], e["acknowledged_at"], None)
+                                    e["started_at"], e["acknowledged_at"], None,
+                                    model=e.get("model"))
                 if _slip_insert(conn, e["id"], flat):
                     made += 1
         if made:
-            print(f"[ANDON-SLIP] threshold sweep → {made} slip bani "
+            print(f"[ANDON-SLIP] threshold sweep -> {made} slip bani "
                   f"(call {thr} min se zyada khuli rahi)")
     except Exception as ex:
         print(f"[ANDON-SLIP] threshold sweep me dikkat: {ex}")
@@ -381,14 +384,50 @@ def _slip_threshold_sweep():
 # PLC MODE — ANDON ab ESP ki jagah Mitsubishi PLC se signal leta hai.
 # Har ~200ms har enabled PLC ka mapped bit padho: 1 → call ON (timer start),
 # 0 → OFF (stop).  Call/timer/history ka poora logic wahi `_apply_state` hai —
-# SEQUENCE bilkul same.  PLC connect+read ka code `routers.plc` se REUSE hota
-# hai (pure code me PLC ka ek hi jagah code rahe).
+# SEQUENCE bilkul same.  PLC connect+read ka code niche isi file me hai (pehle
+# routers.plc me tha; PLC Integration feature hatne par yahan aa gaya).
 # ═══════════════════════════════════════════════════════════════════════
 _PLC_POLL_INTERVAL = 0.1       # 100 ms — near real-time (press karte hi call)
 _PLC_RETRY_SECS    = 5         # offline PLC ko itni der baad dobara connect-try
 _plc_poller_started = False
 _PLC_CONN  = {}                # {dev_id: mc}  persistent MC-protocol connection
 _PLC_RETRY = {}                # {dev_id: monotonic ts — is se pehle reconnect na karo}
+
+# ── PLC connect/read helpers (MC protocol via pymcprotocol).  Pehle routers.plc
+# me the; PLC Integration feature hatne par ANDON ne apne me le liye. ────────
+BIT_DEVICES = {"X", "Y", "M", "L", "F", "V", "B", "S", "SB", "TS", "CS", "SS"}
+_PLCTYPE    = {"Q": "Q", "FX5U": "Q", "iQ-R": "iQ-R", "L": "L", "QnA": "QnA"}
+
+
+def _is_bit(dtype):
+    return (dtype or "").upper() in BIT_DEVICES
+
+
+def _connect(plc, timer=4):
+    """Core connect — mc object return karta hai ya plain exception raise."""
+    import pymcprotocol
+    plctype = _PLCTYPE.get((plc.get("series") or "Q"), "Q")
+    mc = pymcprotocol.Type3E(plctype=plctype)
+    mc.timer = timer                        # ~1s units → ~4s timeout
+    mc.connect(plc["plc_ip"], int(plc["plc_port"]))
+    return mc
+
+
+def _read_one(mc, dtype, dno):
+    head = f"{dtype.upper()}{dno}"
+    if _is_bit(dtype):
+        return int(mc.batchread_bitunits(headdevice=head, readsize=1)[0])
+    return int(mc.batchread_wordunits(headdevice=head, readsize=1)[0])
+
+
+def _reachable(ip, port, timeout=1.5):
+    """Fast TCP probe — PLC ka port pahunch me hai ya nahi (connected indicator)."""
+    try:
+        s = socket.create_connection((ip, int(port)), timeout=timeout)
+        s.close()
+        return True
+    except Exception:
+        return False
 
 
 def _plc_drop(dev_id):
@@ -398,10 +437,31 @@ def _plc_drop(dev_id):
         except Exception: pass
 
 
+def _read_model_name(mc, plc_id, cur):
+    """Model-map ke register(s) ko live padho; jis row ki value match kare uska
+    model_name.  Match na ho / map khali ho to None.  (Assign → Model tab.)"""
+    cur.execute("""SELECT device_type, device_no, value, model_name
+                     FROM andon_model_map
+                    WHERE plc_id=%s AND COALESCE(device_type,'')<>''
+                          AND COALESCE(device_no,'')<>'' AND value IS NOT NULL
+                    ORDER BY id""", (plc_id,))
+    rows = cur.fetchall()
+    if not rows:
+        return None
+    live = {}
+    for r in rows:
+        key = (r["device_type"], r["device_no"])
+        if key not in live:
+            try: live[key] = _read_one(mc, r["device_type"], r["device_no"])
+            except Exception: live[key] = None
+        if live[key] is not None and int(live[key]) == int(r["value"]):
+            return r["model_name"]
+    return None
+
+
 def _plc_poll_once(dev):
     """Ek PLC read karke uske mapped bits par `_apply_state` chalao.
     Return True = online (connect+read OK), False = offline."""
-    from routers.plc import _connect, _read_one, _reachable   # ek hi PLC code reuse
     did = dev["id"]
     mc = _PLC_CONN.get(did)
     if mc is None:
@@ -425,9 +485,11 @@ def _plc_poll_once(dev):
             cur.execute("""SELECT do_index, bit_type, bit_no FROM andon_plc_output_mapping
                             WHERE plc_id=%s AND COALESCE(bit_type,'')<>'' AND COALESCE(bit_no,'')<>''
                             ORDER BY do_index""", (did,))
-            for b in cur.fetchall():
-                val = _read_one(mc, b["bit_type"], b["bit_no"])
-                _apply_state(cur, dev, b["do_index"], val != 0)   # 1→ON, 0→OFF (idempotent level poll)
+            bits = [(b, _read_one(mc, b["bit_type"], b["bit_no"])) for b in cur.fetchall()]
+            # koi call ON ho to abhi ka model bhi padho — call OPEN hote hi store, slip me chala jaata hai
+            model = _read_model_name(mc, did, cur) if any(v != 0 for _, v in bits) else None
+            for b, val in bits:
+                _apply_state(cur, dev, b["do_index"], val != 0, model=model)   # 1→ON, 0→OFF (idempotent)
             conn.commit()
         return True
     except Exception:
@@ -532,7 +594,7 @@ def _ensure_tables():
             conn.commit()
         except Exception as _me:
             conn.rollback()      # doosra worker pehle kar chuka — data safe hai
-            print(f"[ANDON] esp→plc migration skip (shayad already done): {_me}")
+            print(f"[ANDON] esp->plc migration skip (shayad already done): {_me}")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS andon_plc_devices (
                 id          SERIAL PRIMARY KEY,
@@ -592,6 +654,30 @@ def _ensure_tables():
         # (1 → call ON/timer start, 0 → OFF/stop).  Per-PLC row me set hota hai.
         cur.execute("ALTER TABLE andon_plc_output_mapping ADD COLUMN IF NOT EXISTS bit_type VARCHAR(4)")
         cur.execute("ALTER TABLE andon_plc_output_mapping ADD COLUMN IF NOT EXISTS bit_no   VARCHAR(20)")
+        # ── ASSIGN: per-machine Model & Fault maps ──────────────────────────
+        # ANDON "Assign" page se: kisi PLC device/register ki VALUE ko model-naam
+        # ya fault-naam se map karo.  device_type=D/M/L…, device_no=address,
+        # value=register me jo aaye, model_name/fault_name=us par naam.  Per-PLC.
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS andon_model_map (
+                id          SERIAL PRIMARY KEY,
+                plc_id      INTEGER NOT NULL REFERENCES andon_plc_devices(id) ON DELETE CASCADE,
+                device_type VARCHAR(4),
+                device_no   VARCHAR(20),
+                value       INTEGER,
+                model_name  TEXT,
+                created_at  TIMESTAMP DEFAULT NOW()
+            )""")
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS andon_fault_map (
+                id          SERIAL PRIMARY KEY,
+                plc_id      INTEGER NOT NULL REFERENCES andon_plc_devices(id) ON DELETE CASCADE,
+                device_type VARCHAR(4),
+                device_no   VARCHAR(20),
+                value       INTEGER,
+                fault_name  TEXT,
+                created_at  TIMESTAMP DEFAULT NOW()
+            )""")
         # ── MIGRATION: andon_events → andon_system ──────────────────────
         # Live-calls table ka naam andon_events tha; ab andon_system hai.
         # Purani install par use RENAME karo (data bacha rahe) — warna neeche
@@ -624,6 +710,8 @@ def _ensure_tables():
                 state         VARCHAR(12) DEFAULT 'OPEN',
                 created_at    TIMESTAMP DEFAULT NOW()
             )""")
+        # call OPEN hote waqt PLC par jo model chal raha tha (model-map se) — slip ke model_no me jaata hai
+        cur.execute("ALTER TABLE andon_system ADD COLUMN IF NOT EXISTS model VARCHAR(120)")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS andon_history (
                 id               SERIAL PRIMARY KEY,
@@ -1047,6 +1135,72 @@ def save_plc_outputs(eid: int, body: OutSave, user=Depends(get_current_user)):
     return {"ok": True}
 
 
+# ── ASSIGN: per-machine Model & Fault value→name maps ──────────────────
+#  Assign page (per PLC device) me do lists: register-VALUE → model naam,
+#  aur register-VALUE → fault naam.  Dono ka shape same, isliye ek helper.
+class MapRow(BaseModel):
+    device_type: Optional[str] = ""
+    device_no:   Optional[str] = ""
+    value:       Optional[int] = None
+    name:        Optional[str] = ""      # model_name ya fault_name
+
+
+class MapSave(BaseModel):
+    rows: List[MapRow] = []
+
+
+def _get_map(table, name_col, eid):
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute(f"""SELECT device_type, device_no, value, {name_col} AS name
+                          FROM {table} WHERE plc_id=%s ORDER BY id""", (eid,))
+        return cur.fetchall()
+
+
+def _save_map(table, name_col, eid, rows):
+    """Replace-all: is PLC ki poori list nayi se likho (khali rows chhod ke)."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(f"DELETE FROM {table} WHERE plc_id=%s", (eid,))
+        for r in rows:
+            dt = (r.device_type or "").strip().upper() or None
+            dn = (r.device_no or "").strip() or None
+            nm = (r.name or "").strip() or None
+            if dt is None and dn is None and r.value is None and nm is None:
+                continue                                  # poori khali row skip
+            cur.execute(f"""INSERT INTO {table} (plc_id, device_type, device_no, value, {name_col})
+                            VALUES (%s,%s,%s,%s,%s)""", (eid, dt, dn, r.value, nm))
+        conn.commit()
+
+
+@router.get("/plc-devices/{eid}/models")
+def get_plc_models(eid: int, user=Depends(get_current_user)):
+    """This PLC's value→model map (Assign → Model tab)."""
+    _ensure_tables()
+    return _get_map("andon_model_map", "model_name", eid)
+
+
+@router.put("/plc-devices/{eid}/models")
+def save_plc_models(eid: int, body: MapSave, user=Depends(get_current_user)):
+    _ensure_tables()
+    _save_map("andon_model_map", "model_name", eid, body.rows)
+    return {"ok": True}
+
+
+@router.get("/plc-devices/{eid}/faults")
+def get_plc_faults(eid: int, user=Depends(get_current_user)):
+    """This PLC's value→fault map (Assign → Fault tab)."""
+    _ensure_tables()
+    return _get_map("andon_fault_map", "fault_name", eid)
+
+
+@router.put("/plc-devices/{eid}/faults")
+def save_plc_faults(eid: int, body: MapSave, user=Depends(get_current_user)):
+    _ensure_tables()
+    _save_map("andon_fault_map", "fault_name", eid, body.rows)
+    return {"ok": True}
+
+
 # ════════════════════════════════════════════════════════════════════
 #  CALL LIFECYCLE  (the PLC poll applies each output's ON/OFF here)
 # ════════════════════════════════════════════════════════════════════
@@ -1078,7 +1232,7 @@ def _resolve_output(cur, plc_id, do_index):
     return f"DO{do_index}", None, "Normal"
 
 
-def _apply_state(cur, dev, do_index, on, dur_override=None):
+def _apply_state(cur, dev, do_index, on, dur_override=None, model=None):
     """Open (ON) or close (OFF) the call for one output — idempotent.
 
     DO2 / DO4 are acknowledgement pulses, not calls of their own:
@@ -1116,9 +1270,9 @@ def _apply_state(cur, dev, do_index, on, dur_override=None):
             return {"do_index": do_index, "action": "already_open", "event_id": open_ev["id"]}
         disp, dept_id, prio = _resolve_output(cur, dev["id"], do_index)
         cur.execute("""INSERT INTO andon_system
-                         (plc_id, do_index, department_id, zone, line, display_name, priority, state, started_at)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,'OPEN', NOW()) RETURNING id""",
-                    (dev["id"], do_index, dept_id, dev.get("zone"), dev.get("line"), disp, prio))
+                         (plc_id, do_index, department_id, zone, line, display_name, priority, model, state, started_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'OPEN', NOW()) RETURNING id""",
+                    (dev["id"], do_index, dept_id, dev.get("zone"), dev.get("line"), disp, prio, model))
         return {"do_index": do_index, "action": "opened", "event_id": cur.fetchone()["id"],
                 "department_id": dept_id, "display_name": disp}
     # OFF ─────────────────────────────────────────────────────────────

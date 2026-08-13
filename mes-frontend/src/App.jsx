@@ -34,8 +34,6 @@ import OrganisationChart     from "./pages/OrganisationChart";
 import SkillUpgradation      from "./pages/SkillUpgradation";
 import MachineManual         from "./pages/MachineManual";
 import MachineDMC            from "./pages/MachineDMC";
-import PlcIntegration       from "./pages/PlcIntegration";
-import PlcConfigure         from "./pages/PlcConfigure";
 import DailyDMCFill          from "./pages/DailyDMCFill";
 import DMCSupervisorVerify   from "./pages/DMCSupervisorVerify";
 import DMCMaintenanceVerify  from "./pages/DMCMaintenanceVerify";
@@ -236,13 +234,6 @@ function AppRoutes() {
       } />
       <Route path="/maintenance-machine-dmc" element={
         <Protected requiredAccess="maintenance-machine-dmc"><MachineDMC /></Protected>
-      } />
-      {/* PLC Integration — Mitsubishi Q / FX5U connect + device read/write. */}
-      <Route path="/maintenance-plc" element={
-        <Protected requiredAccess="maintenance-plc"><PlcIntegration /></Protected>
-      } />
-      <Route path="/maintenance-plc/:pid" element={
-        <Protected requiredAccess="maintenance-plc"><PlcConfigure /></Protected>
       } />
       {/* Daily DMC Fill — operator fills the monthly DMC check sheet. */}
       <Route path="/maintenance-daily-dmc" element={
