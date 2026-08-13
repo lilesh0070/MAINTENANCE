@@ -88,6 +88,23 @@ export function LoginHistoryPage() {
     try { await api.post(`/api/users/${uid}/force-logout`, {}, token); } catch {}
     loadActive();
   };
+  // History clear — date range (dono khali => saari)
+  const [showClear, setShowClear] = useState(false);
+  const [clearFrom, setClearFrom] = useState("");
+  const [clearTo, setClearTo] = useState("");
+  const clearHistory = async () => {
+    const qs = new URLSearchParams();
+    if (clearFrom) qs.set("date_from", clearFrom);
+    if (clearTo) qs.set("date_to", clearTo);
+    const rng = (clearFrom || clearTo) ? `${clearFrom || "shuru"} se ${clearTo || "aaj"}` : "SAARI";
+    if (!window.confirm(`${rng} ki login history PERMANENTLY delete karni hai? Undo nahi hoga.`)) return;
+    try {
+      const d = await api.delete(`/api/audit/logins?${qs.toString()}`, token);
+      window.alert(`${d?.deleted ?? 0} record delete ho gaye.`);
+    } catch { window.alert("Delete fail hua."); }
+    setShowClear(false); setClearFrom(""); setClearTo("");
+    load();
+  };
   useEffect(() => {
     loadActive();
     if (mode !== "active") return;
@@ -179,8 +196,23 @@ export function LoginHistoryPage() {
                 </select></label>
               <button onClick={() => { setMonth(""); setDate(""); setUname(""); }}
                       style={{ padding: "8px 14px", border: "1px solid #cbd5e1", borderRadius: 8, background: "#f8fafc", fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: "#475569" }}>Reset</button>
+              <button onClick={() => setShowClear((v) => !v)}
+                      style={{ padding: "8px 14px", border: "1px solid #fecaca", borderRadius: 8, background: showClear ? "#fee2e2" : "#fef2f2", fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: "#dc2626" }}>🗑 Clear History</button>
               <span style={{ marginLeft: "auto", fontSize: 12, color: "#94a3b8", fontWeight: 600 }}>{rows.length} session{rows.length === 1 ? "" : "s"}</span>
             </div>
+            {showClear && (
+              <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed #e2e8f0", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <label style={lbl}>From
+                  <input type="date" style={sel} value={clearFrom} onChange={(e) => setClearFrom(e.target.value)} /></label>
+                <label style={lbl}>To
+                  <input type="date" style={sel} value={clearTo} onChange={(e) => setClearTo(e.target.value)} /></label>
+                <button onClick={clearHistory}
+                        style={{ padding: "8px 16px", border: "none", borderRadius: 8, background: "#dc2626", color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>🗑 Delete records</button>
+                <button onClick={() => setShowClear(false)}
+                        style={{ padding: "8px 14px", border: "1px solid #cbd5e1", borderRadius: 8, background: "#fff", fontSize: 12.5, fontWeight: 600, cursor: "pointer", color: "#475569" }}>Cancel</button>
+                <span style={{ fontSize: 11, color: "#94a3b8", flex: "1 1 100%" }}>Is date-range ke login/logout records permanently delete honge. Dono date khali chhodo to <b>saari</b> login history. Undo nahi hoga.</span>
+              </div>
+            )}
           </div>
           {/* Table */}
           <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, overflow: "hidden" }}>

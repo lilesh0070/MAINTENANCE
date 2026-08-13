@@ -639,6 +639,24 @@ def audit_active_logins(user=Depends(get_current_user)):
         return {"rows": cur.fetchall(), "token_hours": TOKEN_EXPIRE_HOURS}
 
 
+@app.delete("/api/audit/logins")
+def clear_login_history(date_from: str = "", date_to: str = "", user=Depends(require_admin)):
+    """Login/Logout history (AUTH_LOGIN/AUTH_LOGOUT rows) ko date-range me CLEAR
+    karo — Login History tab ke "Clear History" se.  date_from/date_to
+    (YYYY-MM-DD, inclusive) — dono khali ho to SAARI login history.  Admin only."""
+    where, params = ["action IN ('AUTH_LOGIN','AUTH_LOGOUT')"], []
+    if date_from:
+        where.append("created_at >= %s"); params.append(date_from + " 00:00:00")
+    if date_to:
+        where.append("created_at <= %s"); params.append(date_to + " 23:59:59")
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(f"DELETE FROM maintenance_audit_log WHERE {' AND '.join(where)}", params)
+        n = cur.rowcount
+        conn.commit()
+    return {"ok": True, "deleted": n}
+
+
 # ── Ping check (TCP connect test for camera/device IPs) ──────
 @app.get("/api/ping")
 def ping_host(ip: str, port: int = 554):
