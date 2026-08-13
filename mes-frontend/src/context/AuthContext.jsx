@@ -114,10 +114,10 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false));
   }, []);
 
-  // ── Force-logout / password-change detect karo (har 30s) ──
+  // ── Force-logout / password-change detect karo (har 10s) ──
   // JWT stateless hai: admin kisi ko force-logout kare (ya password badle) to
   // token server par TURANT invalid ho jaata hai, par is browser ko tab tak
-  // pata nahi chalta jab tak wo koi request na kare.  Isliye har 30s `/me` se
+  // pata nahi chalta jab tak wo koi request na kare.  Isliye har 10s `/me` se
   // token validate karte hain — 401 aate hi yahin se session clear + login page.
   useEffect(() => {
     if (!token) return;
@@ -132,7 +132,7 @@ export function AuthProvider({ children }) {
         })
         .catch(() => {});                          // network error → ignore (offline etc.)
     };
-    const id = setInterval(check, 30000);
+    const id = setInterval(check, 10000);   // har 10s token validate
     return () => clearInterval(id);
   }, [token]);
 
