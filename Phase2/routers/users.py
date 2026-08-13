@@ -119,6 +119,31 @@ def reset_user_password(user_id: int, body: PasswordReset, admin=Depends(require
     return {"ok": True}
 
 
+@router.post("/{user_id}/force-logout")
+def force_logout_user(user_id: int, admin=Depends(require_admin)):
+    """Admin kisi logged-in user ko force LOGOUT kare — uske SAB token turant
+    invalid (pwd_changed_at ab tak bump) + ek AUTH_LOGOUT audit.  User agli
+    request par 401 => login page par chala jayega.  Password NAHI badalta —
+    wahi se dobara login kar lega.  (Login History ke "Currently Logged In" me
+    har id ke aage 'Logout' button isi ko call karta hai.)"""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT username FROM maintenance_users WHERE id = %s", (user_id,))
+        r = cur.fetchone()
+        if not r:
+            raise HTTPException(404, "User not found")
+        uname = r[0]
+        cur.execute("UPDATE maintenance_users SET pwd_changed_at = %s WHERE id = %s",
+                    (int(time.time()), user_id))
+        cur.execute("""INSERT INTO maintenance_audit_log
+                           (action, entity_type, entity_id, details, user_id, username)
+                       VALUES ('AUTH_LOGOUT', 'user', %s, %s, %s, %s)""",
+                    (user_id, f"admin '{admin.get('username')}' ne force-logout kiya",
+                     user_id, uname))
+        conn.commit()
+    return {"ok": True, "username": uname}
+
+
 @router.put("/{user_id}/role")
 def update_user_role(user_id: int, body: UserUpdate, admin=Depends(require_admin)):
     """Role badlo.  (Naam `/role` hi rakha hai taaki AdminPanel ke purane

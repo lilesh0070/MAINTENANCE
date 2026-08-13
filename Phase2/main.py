@@ -624,6 +624,7 @@ def audit_active_logins(user=Depends(get_current_user)):
         cur.execute("""
             SELECT t.username,
                    (SELECT u.role FROM maintenance_users u WHERE u.username = t.username) AS role,
+                   (SELECT u.id   FROM maintenance_users u WHERE u.username = t.username) AS user_id,
                    t.login_at
               FROM (SELECT l.username, l.created_at AS login_at,
                            ROW_NUMBER() OVER (PARTITION BY l.username ORDER BY l.created_at DESC) AS rn

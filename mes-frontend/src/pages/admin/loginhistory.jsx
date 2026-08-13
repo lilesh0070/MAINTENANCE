@@ -82,6 +82,12 @@ export function LoginHistoryPage() {
     if (!token) return;
     try { const d = await api.get("/api/audit/active-logins", token); setActive(d?.rows || []); } catch {}
   }, [token]);
+  // Admin kisi id ko force logout kare — uske sab token invalid ho jaate hain.
+  const forceLogout = async (uid, uname) => {
+    if (!uid || !window.confirm(`"${uname}" ko abhi logout karna hai? Uske sab device/tab se session khatam ho jayega.`)) return;
+    try { await api.post(`/api/users/${uid}/force-logout`, {}, token); } catch {}
+    loadActive();
+  };
   useEffect(() => {
     loadActive();
     if (mode !== "active") return;
@@ -120,7 +126,7 @@ export function LoginHistoryPage() {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead><tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
                 <th style={{ ...th, width: 44 }}>#</th><th style={th}>User</th><th style={th}>Role</th>
-                <th style={th}>Login</th><th style={th}>Since</th>
+                <th style={th}>Login</th><th style={th}>Since</th><th style={{ ...th, width: 110 }}>Action</th>
               </tr></thead>
               <tbody>
                 {active.map((r, i) => (
@@ -133,9 +139,15 @@ export function LoginHistoryPage() {
                     <td style={{ ...td, color: "#64748b" }}>{r.role || "—"}</td>
                     <td style={{ ...td, whiteSpace: "nowrap" }}>{fmtDT(r.login_at) || "—"}</td>
                     <td style={{ ...td, color: "#16a34a", fontWeight: 600 }}>{sinceNow(r.login_at) || "—"}</td>
+                    <td style={td}>
+                      <button onClick={() => forceLogout(r.user_id, r.username)}
+                              style={{ padding: "5px 12px", border: "1px solid #fecaca", borderRadius: 7, background: "#fef2f2", color: "#dc2626", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                        ⏻ Logout
+                      </button>
+                    </td>
                   </tr>
                 ))}
-                {!active.length && <tr><td colSpan={5} style={{ padding: "22px 14px", color: "#94a3b8", textAlign: "center" }}>Abhi koi logged-in nahi.</td></tr>}
+                {!active.length && <tr><td colSpan={6} style={{ padding: "22px 14px", color: "#94a3b8", textAlign: "center" }}>Abhi koi logged-in nahi.</td></tr>}
               </tbody>
             </table>
           </div>
