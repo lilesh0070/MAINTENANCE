@@ -127,7 +127,12 @@ export default function TopBreakdowns() {
     if (fMachineName) list = list.filter((r) => r.machine_name === fMachineName);
     list = [...list].sort((a, b) => (b.solve_time_min || 0) - (a.solve_time_min || 0));
     const tMin  = list.reduce((s, r) => s + (r.solve_time_min || 0), 0);
-    const take  = topN > 0 ? list.slice(0, topN) : list;
+    // Top-N — par cutoff (Nth) down time par TIE ho to wo saari machine include karo,
+    // taaki barabar time wali machine sirf "10 ki limit" ki wajah se chhoot na jaaye.
+    // (list down-time desc sorted hai, to >= cutoff ek prefix deta hai.)
+    const take  = (topN > 0 && list.length > topN)
+      ? list.filter((r) => (r.solve_time_min || 0) >= (list[topN - 1].solve_time_min || 0))
+      : list;
     const mx    = take.length ? (take[0].solve_time_min || 0) : 0;
     // Dikhaye ja rahe top-N ko group karo — card me har group ki frequency + down time:
     //   All Zones      → zone-wise
@@ -263,7 +268,7 @@ export default function TopBreakdowns() {
           <div style={{ fontSize:11, fontWeight:800, letterSpacing:".06em", textTransform:"uppercase",
                         color:"#64748b", margin:"0 6px 8px" }}>
             {groupLabel}
-            <span style={{ color:"#cbd5e1", fontWeight:700 }}> · frequency &amp; down time {topN > 0 ? `(top ${topN})` : "(all)"}</span>
+            <span style={{ color:"#cbd5e1", fontWeight:700 }}> · frequency &amp; down time</span>
           </div>
           <div style={{ display:"flex", gap:12, overflowX:"auto", paddingBottom:6, marginBottom:14 }}>
             {groupCards.length === 0 ? (
@@ -300,6 +305,7 @@ export default function TopBreakdowns() {
                 <h3>TOP BREAKDOWNS{fZone ? ` — ${fZone}${fLine ? ` / ${fLine}` : ""}` : " — ALL ZONES"}</h3>
                 <div className="lvl">
                   {shown} breakdown{shown === 1 ? "" : "s"} shown
+                  {topN > 0 && shown > topN ? ` (Top ${topN} + ${shown - topN} same-time tie)` : ""}
                   {topN > 0 && coveredPct > 0 ? ` — covering ${coveredPct}% of total down time` : ""}
                   {loading ? " · loading…" : ""}
                 </div>
