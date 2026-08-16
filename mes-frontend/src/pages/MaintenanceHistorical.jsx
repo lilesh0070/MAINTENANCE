@@ -352,9 +352,10 @@ export default function MaintenanceHistorical() {
     if (fMachineName && norm(r.machine_name) !== norm(fMachineName)) return false;
     return true;
   };
-  const sunList = useMemo(() => sunRows.filter(planMatch),
+  // Historical Data: sirf DONE (action liya hua) plan aaye — pending nahi.
+  const sunList = useMemo(() => sunRows.filter((r) => r.status === "DONE" && planMatch(r)),
     [sunRows, fZone, fLine, fMachineNo, fMachineName]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const dayList = useMemo(() => dayRows.filter(planMatch),
+  const dayList = useMemo(() => dayRows.filter((r) => r.status === "DONE" && planMatch(r)),
     [dayRows, fZone, fLine, fMachineNo, fMachineName]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const fmtD = (iso) => (iso ? String(iso).slice(0, 10) : "—");
