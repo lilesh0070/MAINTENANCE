@@ -16,6 +16,7 @@ function AndonTable({ rows, fullscreenRef, isFullscreen, toggleFullscreen }) {
   // pehli MAX_ROWS + header jitni height set karte hain — hamesha theek 7
   // poori rows dikhti hain, aadhi row kabhi nahi.
   const boxRef = useRef(null);
+  const anchors = useRef({});   // {call id: clientTimeMs} — server elapsed se anchor (DB-clock skew-free)
   const [maxH, setMaxH] = useState(null);
   useLayoutEffect(() => {
     if (isFullscreen) { setMaxH(null); return; }          // fullscreen me koi cap nahi
@@ -38,12 +39,30 @@ function AndonTable({ rows, fullscreenRef, isFullscreen, toggleFullscreen }) {
   }, []);
 
   // Call band ho chuka ho to uska jama hua time hi dikhao (badhta na rahe);
-  // chalu call ka time har second live badhta hai.
+  // chalu call ka time har second live badhta hai.  DB clock aur browser clock
+  // alag ho sakti hain — isliye SERVER ke `elapsed_seconds` se anchor karte hain
+  // (skew-free).  Pehle sirf started_at se ginta tha, is wajah se duration
+  // breakdown ke ~1 min baad (jitni clock skew) 0 se shuru hota dikhta tha —
+  // threshold ki tarah, jabki threshold ka isse koi lena-dena nahi.
   const live = (r) => {
-    if (r.duration_seconds != null) return r.duration_seconds;
-    if (!r.started_at) return 0;
-    return Math.floor((Date.now() - new Date(r.started_at).getTime()) / 1000);
+    if (r.duration_seconds != null) return r.duration_seconds;       // band call — jama time
+    const srv = r.elapsed_seconds;
+    if (srv == null) {                                               // fallback (purana data)
+      if (!r.started_at) return 0;
+      return Math.max(0, Math.floor((Date.now() - new Date(r.started_at).getTime()) / 1000));
+    }
+    const now = Date.now();
+    const a = anchors.current[r.id];
+    if (a == null || Math.abs(Math.floor((now - a) / 1000) - srv) > 2) {
+      anchors.current[r.id] = now - srv * 1000;                      // server elapsed se anchor
+    }
+    return Math.max(0, Math.floor((now - anchors.current[r.id]) / 1000));
   };
+  // hate huye calls ke anchors saaf (ref na badhe)
+  useEffect(() => {
+    const ids = new Set(rows.map((r) => r.id));
+    for (const k of Object.keys(anchors.current)) if (!ids.has(Number(k))) delete anchors.current[k];
+  }, [rows]);
   // is_live sirf naye ANDON data me aata hai; purane data me hota hi nahi,
   // isliye "field hai hi nahi" ko bhi chalu maano (purana behaviour na toote).
   const isOpen = (r) => r.is_live !== false && r.ended_at == null;

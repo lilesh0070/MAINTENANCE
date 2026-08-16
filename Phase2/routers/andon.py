@@ -1422,6 +1422,11 @@ def dashboard_board(user=Depends(get_current_user)):
                    e.zone AS zone_name, e.line AS line_name,
                    e.started_at, NULL::timestamp AS ended_at,
                    NULL::int AS duration_seconds,
+                   -- server-computed elapsed (skew-free) — DB clock aur browser
+                   -- clock alag ho to bhi duration breakdown START se sahi chale
+                   -- (pehle frontend started_at se ginta tha -> DB skew ~1min ka
+                   --  delay dikhta tha, threshold ki tarah).
+                   EXTRACT(EPOCH FROM (NOW() - e.started_at))::int AS elapsed_seconds,
                    CASE WHEN e.acknowledged_at IS NOT NULL
                         THEN EXTRACT(EPOCH FROM (e.acknowledged_at - e.started_at))::int END
                         AS response_seconds,
