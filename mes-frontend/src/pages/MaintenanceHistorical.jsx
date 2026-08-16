@@ -20,6 +20,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { ClosureFormModal } from "./breakdown/ClosureFormModal";
 import { FormatSheet } from "./pm/FormatSheet";
+import { DmcSheet, groupDmcPoints } from "./DmcSheet";
 import { onlyProdZones } from "../constants/zones";
 
 const api = {
@@ -60,6 +61,70 @@ function monthDates(ym) {
 // ("SEAT_SLIDER", "YNC_SS") — compare normalized.
 const norm = (s) => String(s || "").toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 
+// ── DMC filled-sheet helpers (copied verbatim from MachineDMCAdmin.jsx so the
+//    read-only DmcSheet renders identically here) ───────────────────────────
+const WEEK_OF = (d) => (d <= 7 ? 1 : d <= 14 ? 2 : d <= 21 ? 3 : d <= 28 ? 4 : 5);
+
+// Only data from MAINTENANCE-SIGNED weeks is final History data (a week can be
+// signed only after the supervisor verified every date in it).
+const signedWeeks = (weekMeta) => new Set(
+  Object.entries(weekMeta || {})
+    .filter(([, m]) => String((m || {}).status || "").toUpperCase() === "SIGNED")
+    .map(([w]) => String(w)));
+// A date is FINAL only if it is itself supervisor-VERIFIED *and* its week has
+// been maintenance-SIGNED — both links of the chain, not just the week.
+const finalDays = (dayMeta, weekMeta) => {
+  const wk = signedWeeks(weekMeta);
+  return new Set(Object.entries(dayMeta || {})
+    .filter(([d, m]) => wk.has(String(WEEK_OF(parseInt(d, 10))))
+                     && String((m || {}).status || "").toUpperCase() === "VERIFIED")
+    .map(([d]) => String(d)));
+};
+// sign-off codes for the grid: per-day (operator / supervisor) + per-week (maintenance)
+const fillDayCodes = (dayMeta, weekMeta) => {
+  const ok = finalDays(dayMeta, weekMeta);
+  const out = { operator: {}, supervisor: {} };
+  Object.entries(dayMeta || {}).forEach(([d, m]) => {
+    if (!ok.has(String(d))) return;
+    if ((m || {}).operator_code)   out.operator[String(d)]   = m.operator_code;
+    if ((m || {}).supervisor_code) out.supervisor[String(d)] = m.supervisor_code;
+  });
+  return out;
+};
+const fillWeekCodes = (weekMeta) => {
+  const out = {};
+  Object.entries(weekMeta || {}).forEach(([w, m]) => {
+    if (String((m || {}).status || "").toUpperCase() === "SIGNED" && m.maintenance_code)
+      out[String(w)] = m.maintenance_code;
+  });
+  return out;
+};
+
+// Build the DmcSheet `values` map from a saved fill's entries so a filled sheet
+// renders (read-only) across the full monthly (31-day) format.  Dates still
+// awaiting supervisor verification are left blank — History shows final data only.
+const fillValues = (entries, dayMeta, weekMeta) => {
+  const ok = finalDays(dayMeta, weekMeta);
+  const v = {};
+  (entries || []).forEach((e) => {
+    const days = e.days || {};
+    Object.keys(days).forEach((d) => { if (days[d] && ok.has(String(d))) v[`${e.id}_${d}`] = days[d]; });
+  });
+  return v;
+};
+// Same, for the ✗ reasons — so a Not-OK cell shows its reason on click.
+const fillReasons = (entries, dayMeta, weekMeta) => {
+  const ok = finalDays(dayMeta, weekMeta);
+  const r = {};
+  (entries || []).forEach((e) => {
+    const rz = e.reasons || {};
+    Object.keys(rz).forEach((d) => { if (rz[d] && ok.has(String(d))) r[`${e.id}_${d}`] = rz[d]; });
+  });
+  return r;
+};
+const _MON = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const fillMonthLabel = (ym) => { if (!ym) return ""; const [y, m] = ym.split("-"); return `${_MON[parseInt(m, 10)] || m} ${y}`; };
+
 export default function MaintenanceHistorical() {
   const { token, theme, user } = useAuth();
   // ── filters (Machine Master List + FY/Month + exact Date) ──
@@ -81,6 +146,10 @@ export default function MaintenanceHistorical() {
   const [pmRows, setPmRows]       = useState([]);
   const [pmLoading, setPmLoading] = useState(true);
   const [viewSheet, setViewSheet] = useState(null);   // full filled sheet (entries incl.)
+  // ── the filled DMC check sheets ──
+  const [dmcRows, setDmcRows]       = useState([]);
+  const [dmcLoading, setDmcLoading] = useState(true);
+  const [viewDmc, setViewDmc]       = useState(null);   // full filled DMC sheet (entries incl.)
   // ── sunday plan work + daily work assign ──
   const [sunRows, setSunRows]       = useState([]);
   const [sunLoading, setSunLoading] = useState(true);
@@ -101,6 +170,9 @@ export default function MaintenanceHistorical() {
         const now = new Date();
         const cm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
         if (fyMonths(cur).some((m) => m.value === cm)) setFMonth(cm);
+        // DATE default = aaj ki date (win me Date > Month, to default aaj dikhega).
+        // Date clear karte hi wapas month-view — "jaise abhi hai" — dikhega.
+        setFDate(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`);
       }
     }).catch(() => setYears([]));
     api.get("/api/machines/", token).then((m) => setMaster(Array.isArray(m) ? m : [])).catch(() => setMaster([]));
@@ -179,6 +251,20 @@ export default function MaintenanceHistorical() {
     return () => { ignore = true; };
   }, [token, win]);
 
+  // filled DMC check sheets (machine_dmc_filled) — server returns only
+  // maintenance-signed sheets; the month window is applied client-side (no date
+  // param on this endpoint), so fetch all and filter in `dmcList`.
+  useEffect(() => {
+    if (!token) return;
+    let ignore = false;   // race fix — same as the PM effect above
+    setDmcLoading(true);
+    api.get(`/api/machine-dmc/check-sheet-fills`, token)
+      .then((d) => { if (!ignore) setDmcRows(Array.isArray(d?.rows) ? d.rows : []); })
+      .catch(() => { if (!ignore) setDmcRows([]); })
+      .finally(() => { if (!ignore) setDmcLoading(false); });
+    return () => { ignore = true; };
+  }, [token, win]);
+
   // Zone/Line/Machine matching is client-side (slip zone names like
   // "SEAT SLIDER" vs master "SEAT_SLIDER" — normalized comparison).
   const rowZone = (r) => r.zone_name || r.production_data?.zone || r.closure_data?.zone || "";
@@ -208,6 +294,21 @@ export default function MaintenanceHistorical() {
 
   const openSheet = (id) =>
     api.get(`/api/pm/check-sheet-fill/${id}`, token).then(setViewSheet).catch(() => {});
+
+  // Same zone/line/machine match as pmList, PLUS a month-window filter: this
+  // endpoint has no date param, so keep rows whose sheet_month (YYYY-MM) falls
+  // inside the FY/Month/Date window (string compare of the YYYY-MM prefix).
+  const dmcList = useMemo(() => dmcRows.filter((r) => {
+    if (fZone && norm(r.zone_name) !== norm(fZone)) return false;
+    if (fLine && norm(r.line_name) !== norm(fLine)) return false;
+    if (fMachineNo && norm(r.machine_no) !== norm(fMachineNo)) return false;
+    if (fMachineName && norm(r.machine_name) !== norm(fMachineName)) return false;
+    if (win && !(r.sheet_month >= win.start.slice(0, 7) && r.sheet_month <= win.end.slice(0, 7))) return false;
+    return true;
+  }), [dmcRows, win, fZone, fLine, fMachineNo, fMachineName]);
+
+  const openDmc = (id) =>
+    api.get(`/api/machine-dmc/check-sheet-fill/${id}`, token).then(setViewDmc).catch(() => {});
 
   const planMatch = (r) => {
     if (fZone && norm(r.zone_name) !== norm(fZone)) return false;
@@ -423,6 +524,52 @@ export default function MaintenanceHistorical() {
             </div>
           </div>
 
+          {/* ── filled DMC check sheets ── */}
+          <div className="hd-sec" style={{ marginTop:22 }}>
+            <div className="hd-sec-h">
+              <span className="hd-sec-dot" style={{ background:"#0d9488" }} />
+              <span className="hd-sec-t">Filled DMC Check Sheets</span>
+              <span className="hd-sec-c" style={{ background:"#0d9488" }}>{dmcList.length}</span>
+              <span style={{ marginLeft:"auto", fontSize:11.5, color:"#94a3b8" }}>
+                filled on Machine DMC → Daily Fill — click View Sheet
+              </span>
+            </div>
+            <div className={dmcList.length > 4 ? "hd-scroll" : undefined}>
+              <table className="hd-tbl">
+                <thead>
+                  <tr>
+                    <th>#</th><th>Month</th><th>Zone</th><th>Line</th>
+                    <th>M/C No</th><th>Machine</th>
+                    <th style={{ textAlign:"center" }}>Points</th><th>Rev</th>
+                    <th>Filled By</th><th style={{ textAlign:"center" }}>Sheet</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dmcLoading && <tr><td colSpan={10} className="hd-empty">Loading…</td></tr>}
+                  {!dmcLoading && dmcList.length === 0 &&
+                    <tr><td colSpan={10} className="hd-empty">No filled DMC sheets for this filter.</td></tr>}
+                  {!dmcLoading && dmcList.map((r, i) => (
+                    <tr key={r.id}>
+                      <td>{i + 1}</td>
+                      <td>{fillMonthLabel(r.sheet_month)}</td>
+                      <td>{r.zone_name || "—"}</td>
+                      <td>{r.line_name || "—"}</td>
+                      <td className="hd-mno">{r.machine_no || "—"}</td>
+                      <td>{r.machine_name || "—"}</td>
+                      <td style={{ textAlign:"center", fontWeight:800 }}>{r.n_points}</td>
+                      <td>{r.rev_no || "—"}</td>
+                      <td>{r.filled_by || "—"}</td>
+                      <td style={{ textAlign:"center" }}>
+                        <button className="hd-view" style={{ background:"#0d9488" }}
+                                onClick={() => openDmc(r.id)}>View Sheet</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           {/* ── sunday plan work ── */}
           <div className="hd-sec" style={{ marginTop:22 }}>
             <div className="hd-sec-h">
@@ -552,6 +699,36 @@ export default function MaintenanceHistorical() {
                      machine_no: viewSheet.machine_no, machine_name: viewSheet.machine_name,
                      pm_date: viewSheet.pm_date }}
             />
+          </div>
+        </div>
+      )}
+
+      {/* read-only filled DMC sheet (shared DmcSheet renderer) */}
+      {viewDmc && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(15,23,42,.55)", zIndex:200,
+                      display:"flex", alignItems:"flex-start", justifyContent:"center",
+                      overflowY:"auto", padding:"30px 16px" }}
+             onClick={() => setViewDmc(null)}>
+          <div style={{ maxWidth:1250, width:"100%" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
+                          background:"#fff", borderRadius:"10px 10px 0 0", padding:"10px 16px",
+                          borderBottom:"1px solid #e2e8f0" }}>
+              <b style={{ fontSize:14, color:"#0f172a", fontFamily:"'Barlow',sans-serif" }}>
+                DMC Sheet · {viewDmc.machine_no} · {fillMonthLabel(viewDmc.sheet_month)}
+                <span style={{ fontWeight:600, color:"#64748b" }}>  (filled by {viewDmc.filled_by || "—"})</span>
+              </b>
+              <button className="hd-clear" onClick={() => setViewDmc(null)}>✕ Close</button>
+            </div>
+            <DmcSheet groups={groupDmcPoints(viewDmc.entries || [])} footer={viewDmc.doc_footer || null}
+                      values={fillValues(viewDmc.entries, viewDmc.day_meta, viewDmc.week_meta)}
+                      reasons={fillReasons(viewDmc.entries, viewDmc.day_meta, viewDmc.week_meta)}
+                      actions={viewDmc._actions || {}}
+                      signGrid dayCodes={fillDayCodes(viewDmc.day_meta, viewDmc.week_meta)}
+                      weekCodes={fillWeekCodes(viewDmc.week_meta)} signableKeys={[]}
+                      sheetMonth={viewDmc.sheet_month}
+                      hdr={{ zone: viewDmc.zone_name, line: viewDmc.line_name, machine_no: viewDmc.machine_no,
+                             machine_name: viewDmc.machine_name, month: fillMonthLabel(viewDmc.sheet_month),
+                             rev_no: viewDmc.rev_no, rev_date: viewDmc.rev_date }} />
           </div>
         </div>
       )}
