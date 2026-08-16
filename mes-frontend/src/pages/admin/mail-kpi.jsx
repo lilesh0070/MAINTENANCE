@@ -18,19 +18,23 @@ import {
 // Machine Master List), pick a KPI, enter a target value and Save.  Each tab
 // lists its own saved rows.  One row per (FY, scope, KPI).
 
-// Financial years for the dropdown: 2025-2026 going forward 40 years.
-const MKT_FYS = Array.from({ length: 41 }, (_, i) => {
-  const y = 2025 + i;
-  return `${y}-${y + 1}`;
-});
-
-// Default the FY selector to the CURRENT financial year (Apr–Mar), e.g. 2026-2027.
-const MKT_CURRENT_FY = (() => {
+// Financial years for the dropdown: from 2025-2026 up to the CURRENT
+// financial year (Apr–Mar) — NO future years.  The upper bound is computed
+// from today's date on every load, so a new FY is added automatically the
+// moment it begins (each April).  e.g. today (Aug 2026) → …, 2026-2027.
+const MKT_FY_START = 2025;
+const MKT_CURRENT_FY_START = (() => {
   const d = new Date();
-  const y = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
-  return `${y}-${y + 1}`;
+  return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
 })();
-const MKT_DEFAULT_FY = MKT_FYS.includes(MKT_CURRENT_FY) ? MKT_CURRENT_FY : MKT_FYS[0];
+const MKT_FYS = Array.from(
+  { length: Math.max(1, MKT_CURRENT_FY_START - MKT_FY_START + 1) },
+  (_, i) => { const y = MKT_FY_START + i; return `${y}-${y + 1}`; }
+);
+
+// Default the FY selector to the CURRENT financial year, e.g. 2026-2027.
+const MKT_CURRENT_FY = `${MKT_CURRENT_FY_START}-${MKT_CURRENT_FY_START + 1}`;
+const MKT_DEFAULT_FY = MKT_FYS.includes(MKT_CURRENT_FY) ? MKT_CURRENT_FY : MKT_FYS[MKT_FYS.length - 1];
 
 // The six Maintenance KPI page metrics.
 const MKT_KPIS = [
