@@ -1,19 +1,14 @@
 /* ───────────────────────────────────────────────────────────────────
  * TopBreakdowns.jsx  —  Breakdown → Top 10 BD
  * ───────────────────────────────────────────────────────────────────
- * Ranked "worst offenders" view: the top-N breakdown contributors for
- * the current filter, ranked by DOWN TIME (minutes) or by FREQUENCY
- * (number of breakdowns).  Shows rank, name, frequency, down-time
- * (min + hrs) and % of the filtered total, with an inline bar.
+ * Top-N INDIVIDUAL breakdowns (har manual Break Down Slip = ek row),
+ * ranked by DOWN TIME (minutes).  Default = All Zones, so the worst
+ * breakdowns of the whole plant surface — naturally spread across zones
+ * (e.g. 4 in Seat Slider, 2 in Recliner …).  Filters (FY / Month / Zone /
+ * Line / Machine) sirf set ko narrow karte hain; unit hamesha ek breakdown.
  *
- * Same filter bar + drill as the other Breakdown pages:
- *   All Zones     → top ZONES
- *   zone selected → top LINES (of that zone)
- *   line selected → top MACHINES (machine_no of that line)
- * Filter options come from the Machine Master List (maintenance_machines).
- *
- * Data: GET /api/maintenance-kpi/breakdown-by?group=zone|line|machine
- *       (maintenance_breakdown_data — the same source as Pareto / BD Analysis).
+ * Data: GET /api/breakdowns/log  (maintenance_breakdown_data — MANUAL slip,
+ *       same source as BD History).  AUTO slip yahan nahi aata.
  * Routing: /maintenance-breakdown/top-10
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -43,6 +38,22 @@ function fyMonths(fy) {
   return out;
 }
 
+const fmtDate = (d) => (d ? String(d).slice(0, 10) : "—");
+
+// FY + Month se date window (date_from, date_to) — /log ise chahiye.
+function dateWindow(fy, month) {
+  if (month) {                                   // month = "YYYY-MM"
+    const [y, m] = month.split("-").map(Number);
+    const last = new Date(y, m, 0).getDate();
+    return [`${month}-01`, `${month}-${String(last).padStart(2, "0")}`];
+  }
+  if (fy) {                                      // poora financial year (Apr → Mar)
+    const y = parseInt(String(fy).split("-")[0], 10);
+    return [`${y}-04-01`, `${y + 1}-03-31`];
+  }
+  return [null, null];                           // All FY → no date filter
+}
+
 const BAR = "#1f4e79";   // Excel navy (matches Pareto)
 
 export default function TopBreakdowns() {
@@ -53,18 +64,16 @@ export default function TopBreakdowns() {
   const [master, setMaster] = useState([]);   // Machine Master List rows (maintenance_machines)
   const [fFy, setFFy]       = useState("");
   const [fMonth, setFMonth] = useState("");
-  const [fZone, setFZone]   = useState("SEAT_SLIDER");   // default zone (user can switch to All / any other)
+  const [fZone, setFZone]   = useState("");    // DEFAULT All Zones — top 10 poore plant ke
   const [fLine, setFLine]   = useState("");
   const [fMachineNo, setFMachineNo]     = useState("");
   const [fMachineName, setFMachineName] = useState("");
   // ── the ranking ──
-  const [rows, setRows]       = useState([]);   // grouped rows from /breakdown-by
+  const [rows, setRows]       = useState([]);   // individual breakdown rows from /log
   const [topN, setTopN]       = useState(10);   // 5 | 10 | 20 | 0 (=All)
-  const [rankBy, setRankBy]   = useState("minutes");   // "minutes" | "frequency"
   const [loading, setLoading] = useState(false);
 
-  // On first load default to the current FY with its FIRST month (April)
-  // pre-selected; the user can switch Month to "All Months" or any other.
+  // On first load default to the current FY, ALL months (whole year ka top-10).
   const booted = useRef(false);
   useEffect(() => {
     if (!token) return;
@@ -75,7 +84,6 @@ export default function TopBreakdowns() {
         booted.current = true;
         const cur = list.find((v) => v.is_current) || list[0];
         setFFy(cur.fy);
-        setFMonth(fyMonths(cur.fy)[0]?.value || "");
       }
     }).catch(() => setYears([]));
     api.get("/api/machines/", token).then((m) => setMaster(Array.isArray(m) ? m : [])).catch(() => setMaster([]));
@@ -95,68 +103,38 @@ export default function TopBreakdowns() {
   const onLine = (v) => { setFLine(v); setFMachineNo(""); setFMachineName(""); };
   const clearFilters = () => { setFFy(""); setFMonth(""); setFZone(""); setFLine(""); setFMachineNo(""); setFMachineName(""); };
 
-  // ── drill level follows the filters: zone → line → machine ──
-  const group = fLine ? "machine" : fZone ? "line" : "zone";
-
-  // machine_no → machine_name lookup (from the Machine Master) so the
-  // machine-level ranking can show the descriptive name next to the code.
-  const nameByNo = useMemo(() => {
-    const map = {};
-    for (const m of master) {
-      if (m.machine_no && m.machine_name &&
-          (!fZone || m.zone_name === fZone) &&
-          (!fLine || m.line_name === fLine)) {
-        map[String(m.machine_no)] = m.machine_name;
-      }
-    }
-    return map;
-  }, [master, fZone, fLine]);
-  // display name for a row: machine level shows the master name, else the key
-  const dispName = (r) => (group === "machine" ? (nameByNo[String(r.key)] || "") : r.key);
-
+  // ── fetch individual breakdowns (manual slip) for the FY/month/zone/line window ──
   useEffect(() => {
     if (!token) return;
-    const p = new URLSearchParams({ group });
-    if (fFy)          p.set("fy", fFy);
-    if (fMonth)       p.set("month", fMonth);
-    if (fZone)        p.set("zone_name", fZone);
-    if (fLine)        p.set("line_name", fLine);
-    if (fMachineNo)   p.set("machine_no", fMachineNo);
-    if (fMachineName) p.set("machine_name", fMachineName);
+    const [df, dt] = dateWindow(fFy, fMonth);
+    const p = new URLSearchParams({ limit: "3000" });
+    if (df)    p.set("date_from", df);
+    if (dt)    p.set("date_to", dt);
+    if (fZone) p.set("zone", fZone);
+    if (fLine) p.set("line", fLine);
     setLoading(true);
-    api.get(`/api/maintenance-kpi/breakdown-by?${p.toString()}`, token)
+    api.get(`/api/breakdowns/log?${p.toString()}`, token)
       .then((d) => setRows(Array.isArray(d?.rows) ? d.rows : []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, [token, group, fFy, fMonth, fZone, fLine, fMachineNo, fMachineName]);
+  }, [token, fFy, fMonth, fZone, fLine]);
 
-  // Rank by the chosen metric; keep grand totals over the FULL filtered set
-  // so the % column and the "covers X%" line stay honest for a Top-N view.
-  const { ranked, totalMin, totalFreq, shown, maxVal, topMin, topFreq } = useMemo(() => {
-    const key = rankBy === "frequency" ? "frequency" : "minutes";
-    const sorted = [...rows].filter((r) => (r[key] || 0) > 0)
-                            .sort((a, b) => (b[key] || 0) - (a[key] || 0));
-    const tMin  = rows.reduce((s, r) => s + (r.minutes || 0), 0);
-    const tFreq = rows.reduce((s, r) => s + (r.frequency || 0), 0);
-    const take  = topN > 0 ? sorted.slice(0, topN) : sorted;
-    const mx    = take.length ? (take[0][key] || 0) : 0;
-    // #1 by EACH metric independently (headline cards) — over the full set
-    const byMin  = [...rows].filter((r) => (r.minutes || 0) > 0)
-                            .sort((a, b) => (b.minutes || 0) - (a.minutes || 0))[0] || null;
-    const byFreq = [...rows].filter((r) => (r.frequency || 0) > 0)
-                            .sort((a, b) => (b.frequency || 0) - (a.frequency || 0))[0] || null;
-    return { ranked: take, totalMin: tMin, totalFreq: tFreq, shown: take.length,
-             maxVal: mx, topMin: byMin, topFreq: byFreq };
-  }, [rows, topN, rankBy]);
+  // Machine No / Name filter client-side (endpoint machine filter machine_name par
+  // hai; No client-side saaf rehta), phir down-time se sort → top-N.
+  const { ranked, totalMin, totalCount, shown, maxVal, longest } = useMemo(() => {
+    let list = rows.filter((r) => (r.solve_time_min || 0) > 0);
+    if (fMachineNo)   list = list.filter((r) => String(r.machine_no) === String(fMachineNo));
+    if (fMachineName) list = list.filter((r) => r.machine_name === fMachineName);
+    list = [...list].sort((a, b) => (b.solve_time_min || 0) - (a.solve_time_min || 0));
+    const tMin  = list.reduce((s, r) => s + (r.solve_time_min || 0), 0);
+    const take  = topN > 0 ? list.slice(0, topN) : list;
+    const mx    = take.length ? (take[0].solve_time_min || 0) : 0;
+    return { ranked: take, totalMin: tMin, totalCount: list.length, shown: take.length,
+             maxVal: mx, longest: list[0] || null };
+  }, [rows, fMachineNo, fMachineName, topN]);
 
-  const unitWord = group === "zone" ? "zone" : group;
-  const levelNoun = group === "zone" ? "Zone" : group === "line" ? "Line" : "Machine";
-  const listTitle = group === "zone" ? "TOP BREAKDOWN ZONES"
-    : group === "line" ? `TOP BREAKDOWN LINES — ${fZone}`
-    : `TOP BREAKDOWN MACHINES — ${fZone} / ${fLine}`;
-  const coveredPct = rankBy === "frequency"
-    ? (totalFreq ? Math.round((ranked.reduce((s, r) => s + (r.frequency || 0), 0) / totalFreq) * 100) : 0)
-    : (totalMin  ? Math.round((ranked.reduce((s, r) => s + (r.minutes || 0), 0) / totalMin) * 100) : 0);
+  const coveredPct = totalMin ? Math.round((ranked.reduce((s, r) => s + (r.solve_time_min || 0), 0) / totalMin) * 100) : 0;
+  const totalHrs   = Math.round((totalMin / 60) * 10) / 10;
 
   return (
     <>
@@ -194,7 +172,7 @@ export default function TopBreakdowns() {
         .tb-table th { background:#1f4e79; color:#fff; font-size:11px; font-weight:700; letter-spacing:.03em;
                        padding:9px 12px; text-align:left; white-space:nowrap; }
         .tb-table th.num { text-align:right; }
-        .tb-table td { border-bottom:1px solid #eef2f7; padding:8px 12px; font-size:13px; color:#0f172a; }
+        .tb-table td { border-bottom:1px solid #eef2f7; padding:8px 12px; font-size:13px; color:#0f172a; white-space:nowrap; }
         .tb-table td.num { text-align:right; font-variant-numeric:tabular-nums; font-weight:700; }
         .tb-rank { width:34px; height:34px; border-radius:9px; display:inline-flex; align-items:center;
                    justify-content:center; font-family:'Barlow Condensed',sans-serif; font-size:17px;
@@ -209,7 +187,7 @@ export default function TopBreakdowns() {
             <button className="pa-back" onClick={() => nav("/maintenance-breakdown")}>← Back</button>
             <div>
               <div className="pa-title">Top 10 <span>BD</span></div>
-              <div className="pa-sub">Worst breakdown offenders</div>
+              <div className="pa-sub">Sabse lambe breakdown (down-time) — manual slip</div>
             </div>
           </div>
           {user?.username && <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
@@ -220,9 +198,7 @@ export default function TopBreakdowns() {
           <div className="pa-fld">
             <label>Financial Year</label>
             <select className="pa-sel" value={fFy}
-                    onChange={(e) => { const v = e.target.value;
-                                       setFFy(v);
-                                       setFMonth(v ? (fyMonths(v)[0]?.value || "") : ""); }}>
+                    onChange={(e) => { setFFy(e.target.value); setFMonth(""); }}>
               <option value="">All Financial Years</option>
               {years.map((y) => <option key={y.fy} value={y.fy}>{y.fy}{y.is_current ? "  (current)" : ""}</option>)}
             </select>
@@ -268,64 +244,60 @@ export default function TopBreakdowns() {
           </div>
         </div>
 
-        {/* ── headline: #1 by hours + #1 by frequency (with name) ── */}
+        {/* ── headline: longest single breakdown + total down time in filter ── */}
         <div className="pa-body" style={{ marginBottom:0 }}>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))", gap:14, marginBottom:14 }}>
-            {[
-              { icon:"🕐", head:`Highest Down Time (${levelNoun})`, accent:"#b91c1c",
-                row: topMin,
-                big: topMin ? `${(topMin.minutes || 0).toLocaleString()} min` : "—",
-                small: topMin ? `${(topMin.hours || 0).toLocaleString()} hrs · ${(topMin.frequency || 0)} breakdowns` : "no data" },
-              { icon:"🔁", head:`Most Frequent (${levelNoun})`, accent:"#1f4e79",
-                row: topFreq,
-                big: topFreq ? `${(topFreq.frequency || 0).toLocaleString()} times` : "—",
-                small: topFreq ? `${(topFreq.minutes || 0).toLocaleString()} min · ${(topFreq.hours || 0)} hrs` : "no data" },
-            ].map((c, i) => (
-              <div key={i} style={{ background:"#fff", border:"1px solid #e2e8f0", borderLeft:`4px solid ${c.accent}`,
-                                    borderRadius:14, padding:"14px 18px", boxShadow:"0 1px 4px rgba(15,23,42,.06)" }}>
-                <div style={{ fontSize:10.5, fontWeight:800, letterSpacing:".06em", textTransform:"uppercase", color:"#94a3b8" }}>
-                  {c.icon} {c.head}
-                </div>
-                <div style={{ fontSize:18, fontWeight:800, color:"#0f172a", marginTop:6, lineHeight:1.15 }}>
-                  {c.row ? c.row.key : "—"}
-                  {c.row && group === "machine" && nameByNo[String(c.row.key)] && (
-                    <span style={{ fontSize:13, fontWeight:600, color:"#64748b" }}> · {nameByNo[String(c.row.key)]}</span>
-                  )}
-                </div>
-                <div style={{ display:"flex", alignItems:"baseline", gap:10, marginTop:4 }}>
-                  <span style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:26, fontWeight:800, color:c.accent, lineHeight:1 }}>
-                    {c.big}
-                  </span>
-                  <span style={{ fontSize:11.5, color:"#94a3b8", fontWeight:600 }}>{c.small}</span>
-                </div>
+            <div style={{ background:"#fff", border:"1px solid #e2e8f0", borderLeft:"4px solid #b91c1c",
+                          borderRadius:14, padding:"14px 18px", boxShadow:"0 1px 4px rgba(15,23,42,.06)" }}>
+              <div style={{ fontSize:10.5, fontWeight:800, letterSpacing:".06em", textTransform:"uppercase", color:"#94a3b8" }}>
+                🕐 Longest Breakdown
               </div>
-            ))}
+              <div style={{ fontSize:18, fontWeight:800, color:"#0f172a", marginTop:6, lineHeight:1.15 }}>
+                {longest ? (longest.machine_name || longest.machine_no || "—") : "—"}
+                {longest && longest.machine_no && longest.machine_name && (
+                  <span style={{ fontSize:13, fontWeight:600, color:"#64748b" }}> · {longest.machine_no}</span>
+                )}
+              </div>
+              <div style={{ display:"flex", alignItems:"baseline", gap:10, marginTop:4 }}>
+                <span style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:26, fontWeight:800, color:"#b91c1c", lineHeight:1 }}>
+                  {longest ? `${(longest.solve_time_min || 0).toLocaleString()} min` : "—"}
+                </span>
+                <span style={{ fontSize:11.5, color:"#94a3b8", fontWeight:600 }}>
+                  {longest ? `${(longest.solve_time_hours || 0).toLocaleString()} hrs · ${longest.zone_code || "—"} / ${longest.line_code || "—"} · ${fmtDate(longest.bd_date)}` : "no data"}
+                </span>
+              </div>
+            </div>
+            <div style={{ background:"#fff", border:"1px solid #e2e8f0", borderLeft:"4px solid #1f4e79",
+                          borderRadius:14, padding:"14px 18px", boxShadow:"0 1px 4px rgba(15,23,42,.06)" }}>
+              <div style={{ fontSize:10.5, fontWeight:800, letterSpacing:".06em", textTransform:"uppercase", color:"#94a3b8" }}>
+                📋 Total Down Time (filter)
+              </div>
+              <div style={{ fontSize:18, fontWeight:800, color:"#0f172a", marginTop:6, lineHeight:1.15 }}>
+                {totalCount.toLocaleString()} breakdown{totalCount === 1 ? "" : "s"}
+              </div>
+              <div style={{ display:"flex", alignItems:"baseline", gap:10, marginTop:4 }}>
+                <span style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:26, fontWeight:800, color:"#1f4e79", lineHeight:1 }}>
+                  {totalMin.toLocaleString()} min
+                </span>
+                <span style={{ fontSize:11.5, color:"#94a3b8", fontWeight:600 }}>{totalHrs.toLocaleString()} hrs</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* ── the ranked list ── */}
+        {/* ── the ranked list of individual breakdowns ── */}
         <div className="pa-body">
           <div className="pa-card">
             <div className="pa-chead">
               <div>
-                <h3>{listTitle}</h3>
+                <h3>TOP BREAKDOWNS{fZone ? ` — ${fZone}${fLine ? ` / ${fLine}` : ""}` : " — ALL ZONES"}</h3>
                 <div className="lvl">
-                  {shown} {unitWord}{shown === 1 ? "" : "s"} shown
-                  {topN > 0 && coveredPct > 0
-                    ? ` — covering ${coveredPct}% of total ${rankBy === "frequency" ? "breakdowns" : "down time"}`
-                    : ""}
+                  {shown} breakdown{shown === 1 ? "" : "s"} shown
+                  {topN > 0 && coveredPct > 0 ? ` — covering ${coveredPct}% of total down time` : ""}
                   {loading ? " · loading…" : ""}
                 </div>
               </div>
               <div className="pa-right">
-                <div className="pa-fld">
-                  <label>Rank By</label>
-                  <select className="pa-sel" style={{ minWidth:140 }} value={rankBy}
-                          onChange={(e) => setRankBy(e.target.value)}>
-                    <option value="minutes">Down Time</option>
-                    <option value="frequency">Frequency</option>
-                  </select>
-                </div>
                 <div className="pa-fld">
                   <label>Show</label>
                   <select className="pa-sel" style={{ minWidth:110 }} value={topN}
@@ -341,7 +313,7 @@ export default function TopBreakdowns() {
 
             {ranked.length === 0 ? (
               <div style={{ padding:"60px 0", textAlign:"center", color:"#94a3b8", fontSize:13, fontWeight:600 }}>
-                No breakdowns for this filter.
+                {loading ? "Loading…" : "No breakdowns for this filter."}
               </div>
             ) : (
               <div style={{ overflowX:"auto" }}>
@@ -349,37 +321,37 @@ export default function TopBreakdowns() {
                   <thead>
                     <tr>
                       <th style={{ width:56 }}>Rank</th>
-                      <th>{group === "zone" ? "Zone" : group === "line" ? "Line" : "Machine No. / Name"}</th>
-                      <th className="num">Frequency</th>
+                      <th>Date</th>
+                      <th>Zone</th>
+                      <th>Line</th>
+                      <th>Machine No</th>
+                      <th>Machine</th>
+                      <th>Problem (Maintenance)</th>
                       <th className="num">Down Time (min)</th>
                       <th className="num">Hrs</th>
                       <th className="num">% of total</th>
-                      <th style={{ width:240 }}>{rankBy === "frequency" ? "Frequency" : "Down Time"}</th>
+                      <th style={{ width:210 }}>Down Time</th>
                     </tr>
                   </thead>
                   <tbody>
                     {ranked.map((r, i) => {
-                      const val    = rankBy === "frequency" ? (r.frequency || 0) : (r.minutes || 0);
+                      const val    = r.solve_time_min || 0;
                       const barPct = maxVal ? Math.max(3, Math.round((val / maxVal) * 100)) : 0;
-                      const denom  = rankBy === "frequency" ? totalFreq : totalMin;
-                      const pctOfTotal = denom ? Math.round((val / denom) * 100) : 0;
-                      // Top 3 get medal colours; the rest a calm navy.
+                      const pct    = totalMin ? Math.round((val / totalMin) * 100) : 0;
                       const rankBg = i === 0 ? "#b91c1c" : i === 1 ? "#c2410c" : i === 2 ? "#a16207" : "#334155";
                       return (
-                        <tr key={r.key}>
+                        <tr key={r.id}>
                           <td><span className="tb-rank" style={{ background:rankBg }}>{i + 1}</span></td>
-                          <td style={{ fontWeight:700 }}>
-                            {r.key}
-                            {group === "machine" && dispName(r) && (
-                              <div style={{ fontSize:11, fontWeight:500, color:"#64748b", marginTop:1 }}>
-                                {dispName(r)}
-                              </div>
-                            )}
-                          </td>
-                          <td className="num">{(r.frequency || 0).toLocaleString()}</td>
-                          <td className="num">{(r.minutes || 0).toLocaleString()}</td>
-                          <td className="num" style={{ color:"#64748b" }}>{(r.hours || 0).toLocaleString()}</td>
-                          <td className="num" style={{ color:"#1f4e79" }}>{pctOfTotal}%</td>
+                          <td>{fmtDate(r.bd_date)}</td>
+                          <td>{r.zone_code || "—"}</td>
+                          <td>{r.line_code || "—"}</td>
+                          <td style={{ fontWeight:700 }}>{r.machine_no || "—"}</td>
+                          <td>{r.machine_name || "—"}</td>
+                          <td style={{ maxWidth:280, overflow:"hidden", textOverflow:"ellipsis" }}
+                              title={r.problem_maintenance || ""}>{r.problem_maintenance || "—"}</td>
+                          <td className="num">{val.toLocaleString()}</td>
+                          <td className="num" style={{ color:"#64748b" }}>{(r.solve_time_hours || 0).toLocaleString()}</td>
+                          <td className="num" style={{ color:"#1f4e79" }}>{pct}%</td>
                           <td>
                             <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                               <div className="tb-barwrap"><div className="tb-bar" style={{ width:`${barPct}%` }} /></div>
@@ -394,14 +366,11 @@ export default function TopBreakdowns() {
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td colSpan={2} style={{ fontWeight:800, color:"#0f172a", borderTop:"2px solid #e2e8f0" }}>
-                        Total (filtered)
+                      <td colSpan={7} style={{ fontWeight:800, color:"#0f172a", borderTop:"2px solid #e2e8f0" }}>
+                        Total (filtered) — {totalCount.toLocaleString()} breakdown{totalCount === 1 ? "" : "s"}
                       </td>
-                      <td className="num" style={{ borderTop:"2px solid #e2e8f0" }}>{totalFreq.toLocaleString()}</td>
                       <td className="num" style={{ borderTop:"2px solid #e2e8f0" }}>{totalMin.toLocaleString()}</td>
-                      <td className="num" style={{ borderTop:"2px solid #e2e8f0", color:"#64748b" }}>
-                        {Math.round(totalMin / 60).toLocaleString()}
-                      </td>
+                      <td className="num" style={{ borderTop:"2px solid #e2e8f0", color:"#64748b" }}>{totalHrs.toLocaleString()}</td>
                       <td className="num" style={{ borderTop:"2px solid #e2e8f0" }}>100%</td>
                       <td style={{ borderTop:"2px solid #e2e8f0" }} />
                     </tr>
