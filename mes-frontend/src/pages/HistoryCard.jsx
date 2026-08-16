@@ -89,9 +89,10 @@ const COLS = [
 
 // Enum/boolean prettifiers for the derived cells.
 const RELATED_LBL = { maintenance: "Maintenance", tool_room: "Tool Room" };
-// Source column display: breakdown slip -> "breakdown"; Sunday/Daily plan work -> "plan work".
-// (Log Book jaisa koi aur source ho to apna raw naam hi dikhta hai.)
-const SOURCE_LBL = { "Break Down Slip": "breakdown", "Sunday Plan": "plan work", "Daily Plan": "plan work" };
+// Source column display: breakdown slip -> "breakdown"; baaki sab (Log Book /
+// Sunday plan / Daily assign work) -> "plan work".
+const SOURCE_LBL = { "Break Down Slip": "breakdown", "Log Book": "plan work",
+                     "Sunday Plan": "plan work", "Daily Plan": "plan work" };
 
 export default function HistoryCard() {
   const { token, theme, user } = useAuth();
