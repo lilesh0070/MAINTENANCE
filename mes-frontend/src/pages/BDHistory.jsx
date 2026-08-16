@@ -42,6 +42,41 @@ function fyMonths(fy) {
   return out;
 }
 
+// BD History table = Break Down Slip ke SAARE column (maintenance_breakdown_data).
+// /api/breakdowns/log inhe aliased naam se already deta hai — yahan bas dikhate hain.
+// [header, (row) => value]  — order slip ke flow jaisa (production → maintenance → sign).
+const COLUMNS = [
+  ["Date",                   (r) => fmtDate(r.bd_date)],
+  ["Shift",                  (r) => r.shift],
+  ["Zone",                   (r) => r.zone_name],
+  ["Line",                   (r) => r.line_name],
+  ["M/C No",                 (r) => r.machine_no],
+  ["Machine",                (r) => r.machine_name],
+  ["Model",                  (r) => r.model_no],
+  ["Category",               (r) => r.category],
+  ["Line Leader",            (r) => r.line_leader_name],
+  ["Operator",               (r) => r.machine_operator_name],
+  ["BD Start Date",          (r) => fmtDate(r.bd_start_date)],
+  ["BD Start Time",          (r) => r.bd_start_time],
+  ["BD Received Time",       (r) => r.bd_received_time],
+  ["BD OK Time",             (r) => r.bd_ok_time],
+  ["BD End Date",            (r) => fmtDate(r.bd_end_date)],
+  ["Down Time (min)",        (r) => r.solve_time_min],
+  ["Response (min)",         (r) => r.bd_response_time],
+  ["Frequency",              (r) => r.frequency],
+  ["Problem (Production)",   (r) => r.problem_production],
+  ["Problem Related To",     (r) => r.problem_related_to],
+  ["Type (Elec/Mech)",       (r) => r.type_of_problem],
+  ["Problem (Maintenance)",  (r) => r.problem_maintenance],
+  ["Action Taken",           (r) => r.action_taken],
+  ["Spares Used",            (r) => r.spares_detail],
+  ["Attended By",            (r) => r.attended_by],
+  ["Prepared By",            (r) => r.prepared_by],
+  ["Received By",            (r) => r.received_by],
+  ["Line Leader / Operator", (r) => r.line_leader_operator],
+  ["Quality Engineer",       (r) => r.quality_engineer],
+];
+
 export default function BDHistory() {
   const { token, theme, user } = useAuth();
   const nav = useNavigate();
@@ -187,7 +222,8 @@ export default function BDHistory() {
         .bh-table { width:100%; border-collapse:collapse; font-size:13px; }
         .bh-table th { text-align:left; padding:10px 12px; font-size:10px; font-weight:700; letter-spacing:.06em;
                        text-transform:uppercase; color:#64748b; border-bottom:2px solid #e2e8f0; white-space:nowrap; }
-        .bh-table td { padding:9px 12px; border-bottom:1px solid #f1f5f9; color:#334155; white-space:nowrap; }
+        .bh-table td { padding:9px 12px; border-bottom:1px solid #f1f5f9; color:#334155; white-space:nowrap;
+                       max-width:300px; overflow:hidden; text-overflow:ellipsis; }
         .bh-table tr:hover td { background:#f8fafc; }
         .bh-empty { padding:46px; text-align:center; color:#94a3b8; font-size:13px; }
       `}</style>
@@ -284,22 +320,16 @@ export default function BDHistory() {
               ) : (
                 <table className="bh-table">
                   <thead>
-                    <tr>{["Date","Shift","Zone","Line","M/C No","Machine","Nature","Time (min)","Attended By","Category"]
-                      .map((h, i) => <th key={i}>{h}</th>)}</tr>
+                    <tr>{COLUMNS.map(([h], i) => <th key={i}>{h}</th>)}</tr>
                   </thead>
                   <tbody>
                     {filtered.map((r) => (
                       <tr key={r.id}>
-                        <td>{fmtDate(r.bd_date)}</td>
-                        <td>{r.shift || "—"}</td>
-                        <td>{r.zone_name || "—"}</td>
-                        <td>{r.line_name || "—"}</td>
-                        <td>{r.machine_no || "—"}</td>
-                        <td>{r.machine_name || "—"}</td>
-                        <td>{r.nature_of_work || "—"}</td>
-                        <td>{r.solve_time_min || "—"}</td>
-                        <td>{r.attended_by || "—"}</td>
-                        <td>{r.category || "—"}</td>
+                        {COLUMNS.map(([, fn], i) => {
+                          const v = fn(r);
+                          const show = (v === null || v === undefined || v === "") ? "—" : v;
+                          return <td key={i} title={show === "—" ? "" : String(show)}>{show}</td>;
+                        })}
                       </tr>
                     ))}
                   </tbody>
