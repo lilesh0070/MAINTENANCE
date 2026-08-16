@@ -45,38 +45,39 @@ function fyMonths(fy) {
 // BD History table = Break Down Slip ke SAARE column (maintenance_breakdown_data).
 // /api/breakdowns/log inhe aliased naam se already deta hai — yahan bas dikhate hain.
 // [header, (row) => value]  — order slip ke flow jaisa (production → maintenance → sign).
+// Header = actual DB column naam (maintenance_breakdown_data), order user ke sequence me.
 const COLUMNS = [
   // ── user-requested sequence (breakdown / maintenance flow) ──
-  ["Date",                   (r) => fmtDate(r.bd_date)],
-  ["Zone",                   (r) => r.zone_name],
-  ["Line",                   (r) => r.line_name],
-  ["M/C No",                 (r) => r.machine_no],
-  ["Machine",                (r) => r.machine_name],
-  ["Problem (Maintenance)",  (r) => r.problem_maintenance],
-  ["Action Taken",           (r) => r.action_taken],
-  ["BD Start Time",          (r) => r.bd_start_time],
-  ["BD Received Time",       (r) => r.bd_received_time],
-  ["Response (min)",         (r) => r.bd_response_time],
-  ["BD OK Time",             (r) => r.bd_ok_time],
-  ["Down Time (min)",        (r) => r.solve_time_min],
-  ["Spares Used",            (r) => r.spares_detail],
-  ["Attended By",            (r) => r.attended_by],
+  ["slip_date",                          (r) => fmtDate(r.bd_date)],
+  ["zone",                               (r) => r.zone_name],
+  ["line",                               (r) => r.line_name],
+  ["machine_no",                         (r) => r.machine_no],
+  ["machine_name",                       (r) => r.machine_name],
+  ["problem_observed_by_maintenance",    (r) => r.problem_maintenance],
+  ["action_taken_on_problem",            (r) => r.action_taken],
+  ["bd_start_time",                      (r) => r.bd_start_time],
+  ["bd_received_time",                   (r) => r.bd_received_time],
+  ["response_time_minutes",              (r) => r.bd_response_time],
+  ["bd_ok_time",                         (r) => r.bd_ok_time],
+  ["mc_down_time_minutes",               (r) => r.solve_time_min],
+  ["spares_used",                        (r) => r.spares_detail],
+  ["bd_attended_by",                     (r) => r.attended_by],
   // ── uske baad baaki sab ──
-  ["Shift",                  (r) => r.shift],
-  ["Model",                  (r) => r.model_no],
-  ["Category",               (r) => r.category],
-  ["Line Leader",            (r) => r.line_leader_name],
-  ["Operator",               (r) => r.machine_operator_name],
-  ["BD Start Date",          (r) => fmtDate(r.bd_start_date)],
-  ["BD End Date",            (r) => fmtDate(r.bd_end_date)],
-  ["Frequency",              (r) => r.frequency],
-  ["Problem (Production)",   (r) => r.problem_production],
-  ["Problem Related To",     (r) => r.problem_related_to],
-  ["Type (Elec/Mech)",       (r) => r.type_of_problem],
-  ["Prepared By",            (r) => r.prepared_by],
-  ["Received By",            (r) => r.received_by],
-  ["Line Leader / Operator", (r) => r.line_leader_operator],
-  ["Quality Engineer",       (r) => r.quality_engineer],
+  ["shift",                              (r) => r.shift],
+  ["model_no",                           (r) => r.model_no],
+  ["category",                           (r) => r.category],
+  ["line_leader_name",                   (r) => r.line_leader_name],
+  ["machine_operator_name",              (r) => r.machine_operator_name],
+  ["bd_start_date",                      (r) => fmtDate(r.bd_start_date)],
+  ["bd_end_date",                        (r) => fmtDate(r.bd_end_date)],
+  ["frequency",                          (r) => r.frequency],
+  ["problem_reported_by_production",     (r) => r.problem_production],
+  ["problem_related_to",                 (r) => r.problem_related_to],
+  ["type_electrical / type_mechanical",  (r) => r.type_of_problem],
+  ["prepared_by_name",                   (r) => r.prepared_by],
+  ["received_by_name",                   (r) => r.received_by],
+  ["line_leader_operator_name",          (r) => r.line_leader_operator],
+  ["quality_engineer_name",              (r) => r.quality_engineer],
 ];
 
 export default function BDHistory() {
@@ -222,8 +223,8 @@ export default function BDHistory() {
                         display:flex; align-items:center; justify-content:space-between; }
         .bh-count { font-size:11px; font-weight:600; color:#94a3b8; letter-spacing:.04em; }
         .bh-table { width:100%; border-collapse:collapse; font-size:13px; }
-        .bh-table th { text-align:left; padding:10px 12px; font-size:10px; font-weight:700; letter-spacing:.06em;
-                       text-transform:uppercase; color:#64748b; border-bottom:2px solid #e2e8f0; white-space:nowrap; }
+        .bh-table th { text-align:left; padding:10px 12px; font-size:10.5px; font-weight:700; letter-spacing:.02em;
+                       text-transform:none; color:#64748b; border-bottom:2px solid #e2e8f0; white-space:nowrap; }
         .bh-table td { padding:9px 12px; border-bottom:1px solid #f1f5f9; color:#334155; white-space:nowrap;
                        max-width:300px; overflow:hidden; text-overflow:ellipsis; }
         .bh-table tr:hover td { background:#f8fafc; }
