@@ -466,6 +466,12 @@ def _ensure_fill_table() -> None:
         # append-only audit of every stage move (fill / verify / reject / resubmit)
         cur.execute("ALTER TABLE maintenance_pm_check_sheet_filled "
                     "ADD COLUMN IF NOT EXISTS chain_log JSONB NOT NULL DEFAULT '[]'::jsonb")
+        # SHEET-LEVEL spares — one list for the whole sheet (replaces the old
+        # per-check-point spares).  Each item: {where_used, spare_name,
+        # spare_model_no, spare_cnmm_no, spare_qty}.  Mirrored into
+        # maintenance_spare (source 'PM') on save, like the Break Down Slip.
+        cur.execute("ALTER TABLE maintenance_pm_check_sheet_filled "
+                    "ADD COLUMN IF NOT EXISTS sheet_spares JSONB NOT NULL DEFAULT '[]'::jsonb")
         # sheets saved BEFORE the chain existed were single-step and complete —
         # treat them as fully approved so nothing disappears from History.
         cur.execute("UPDATE maintenance_pm_check_sheet_filled "
@@ -492,15 +498,18 @@ class CheckSheetFill(BaseModel):
     checked_by:   Optional[str] = ""
     approved_by:  Optional[str] = ""
     sign_imgs:    List = []                 # [prepared, checked, approved] PNG data-URLs
+    # sheet-level spares list — one for the whole sheet (not per check point).
+    # Each item: {where_used, spare_name, spare_model_no, spare_cnmm_no, spare_qty}
+    sheet_spares: List[dict] = []
 
 
 def _record_pm_spares(body: "CheckSheetFill", pm_date) -> None:
-    """Mirror every spare entered against this PM sheet's check points into the
-    shared `maintenance_spare` master (source 'PM'), keyed by machine + PM date —
-    exactly like the Break Down Slip / Log Book, so PM spares show on the Spare
-    page.  Idempotent: a re-save (correction) replaces THIS sheet's PM rows."""
+    """Mirror every spare entered on this PM sheet's SHEET-LEVEL spares list into
+    the shared `maintenance_spare` master (source 'PM'), keyed by machine + PM
+    date — exactly like the Break Down Slip / Log Book, so PM spares show on the
+    Spare page.  Idempotent: a re-save (correction) replaces THIS sheet's PM rows."""
     _SK = ("spare_name", "spare_model_no", "spare_cnmm_no", "spare_qty")
-    spares = [s for e in (body.entries or []) for s in (e.get("spares") or [])
+    spares = [s for s in (body.sheet_spares or [])
               if isinstance(s, dict) and any(str(s.get(k) or "").strip() for k in _SK)]
     try:
         from routers.maintenance_spare import record_usage
@@ -555,15 +564,17 @@ def save_check_sheet_fill(body: CheckSheetFill, user=Depends(get_current_user)):
             INSERT INTO maintenance_pm_check_sheet_filled
                 (zone_name, line_name, machine_no, machine_name, pm_date,
                  rev_no, rev_date, entries, prepared_by, checked_by,
-                 approved_by, filled_by, doc_footer, sign_imgs, stage, chain_log)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s::jsonb)
+                 approved_by, filled_by, doc_footer, sign_imgs, stage, chain_log,
+                 sheet_spares)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s::jsonb,%s::jsonb)
             RETURNING id
         """, (body.zone_name, body.line_name, body.machine_no, body.machine_name,
               pmd, str(body.rev_no or ""), str(body.rev_date or ""),
               json.dumps(body.entries), body.prepared_by, "",
               "", author, json.dumps(snap),
               json.dumps([prepared_sign, None, None]), "FILLED",
-              json.dumps([_log("fill", "-", "FILLED", body.prepared_by, author)])))
+              json.dumps([_log("fill", "-", "FILLED", body.prepared_by, author)]),
+              json.dumps([s for s in (body.sheet_spares or []) if (s.get("spare_name") or "").strip()])))
         new_id = cur.fetchone()[0]
         conn.commit()
     _record_pm_spares(body, pmd)      # PM spares → maintenance_spare (source 'PM')
@@ -612,11 +623,14 @@ def resubmit_check_sheet_fill(fill_id: int, body: CheckSheetFill, user=Depends(g
             UPDATE maintenance_pm_check_sheet_filled
                SET pm_date=%s, entries=%s::jsonb, prepared_by=%s,
                    sign_imgs=%s::jsonb, stage='FILLED', chain_log=%s::jsonb,
+                   sheet_spares=%s::jsonb,
                    checked_by='', checked_by_user=NULL, checked_at=NULL,
                    approved_by='', approved_by_user=NULL, approved_at=NULL
              WHERE id=%s
         """, (pmd, json.dumps(body.entries), body.prepared_by,
-              json.dumps([prepared_sign, None, None]), json.dumps(log), fill_id))
+              json.dumps([prepared_sign, None, None]), json.dumps(log),
+              json.dumps([s for s in (body.sheet_spares or []) if (s.get("spare_name") or "").strip()]),
+              fill_id))
         conn.commit()
     _record_pm_spares(body, pmd)      # re-sync PM spares → maintenance_spare
     return {"id": fill_id, "stage": "FILLED"}

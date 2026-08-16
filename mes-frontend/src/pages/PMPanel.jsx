@@ -123,6 +123,9 @@ export default function PMPanel() {
   const EMPTY_SP = { spare_name: "", spare_model_no: "", spare_cnmm_no: "", spare_qty: "" };
   const [spareEdit, setSpareEdit] = useState(null);      // { i } point index (in calSheet) | null
   const [spareMaster, setSpareMaster] = useState([]);    // maintenance_spare distinct names (datalist)
+  // ── SHEET-LEVEL spares (one list for the whole sheet, shown only on the fill
+  //    form).  [{where_used, spare_name, spare_model_no, spare_cnmm_no, spare_qty}] ──
+  const [sheetSpares, setSheetSpares] = useState([]);
   useEffect(() => {
     if (!token) return;
     fetch("/api/maintenance-spare/", { headers: { Authorization: `Bearer ${token}` } })
@@ -149,6 +152,21 @@ export default function PMPanel() {
     const arr = pointSpares(i).filter((_, j) => j !== ri);
     setPointSpares(i, arr.length ? arr : [{ ...EMPTY_SP }]);
   };
+  // sheet-level spare handlers — same picker behaviour as onSpareCell (known
+  // Spare Name auto-fills Model / ERP; ERP masked with fmtErp), but on ONE list.
+  const onSheetSpare = (ri, key, val) => setSheetSpares((rows) => {
+    const next = rows.map((r, j) =>
+      (j === ri ? { ...r, [key]: (key === "spare_cnmm_no" ? fmtErp(val) : val) } : r));
+    if (key === "spare_name") {                          // known name → auto-fill model / cnmm
+      const m = spareMaster.find((x) => (x.spare_name || "").toLowerCase() === val.toLowerCase());
+      if (m) next[ri] = { ...next[ri],
+        spare_model_no: m.spare_model_no || next[ri].spare_model_no,
+        spare_cnmm_no:  m.spare_cnmm_no  || next[ri].spare_cnmm_no };
+    }
+    return next;
+  });
+  const addSheetSpare = () => setSheetSpares((rows) => [...rows, { where_used: "", ...EMPTY_SP }]);
+  const delSheetSpare = (ri) => setSheetSpares((rows) => rows.filter((_, j) => j !== ri));
 
   // ── CELL SELECTION over the fill columns (Excel-style) ─────────────
   // Observation / Action Taken / Spares Used / Status / Sign ko drag ya
@@ -298,6 +316,7 @@ export default function PMPanel() {
     setMsg("");
     try {
       const r = await api(`/check-sheet-fill/${id}`);
+      setSheetSpares(Array.isArray(r.sheet_spares) ? r.sheet_spares : []);
       setCalSheet({
         fillId: r.id,                                   // → PUT (same row) instead of POST
         code: r.machine_no, mLabel: String(r.pm_date || "").slice(0, 7), week: 0,
@@ -356,6 +375,7 @@ export default function PMPanel() {
         ? item.done_date
         : (inWeek ? todayISO()
                   : `${wy}-${String(wm).padStart(2, "0")}-${String((week - 1) * 7 + 1).padStart(2, "0")}`);
+      setSheetSpares([]);                               // fresh sheet → empty spares list
       setCalSheet({ code: item.machine_code, mLabel, week, cp: r,
                     points: d.points || [], rev: d.rev || {}, fill: {},
                     sign: { prepared:"", checked:"", approved:"" }, signImgs: [null, null, null], date: defDate });
@@ -384,17 +404,19 @@ export default function PMPanel() {
           s_no: p.s_no, check_point: p.check_point,
           judgement_standard: p.judgement_standard, method: p.method,
           observation: p.observation || "", action_taken: p.action_taken || "",
-          spares_used: p.spares_used || "", status: p.status || "", sign: p.sign || "",
-          // structured spares only when this point's SPARES USED = Yes
-          spares: (String(p.spares_used || "").toLowerCase() === "yes" && Array.isArray(p.spares))
-            ? p.spares.filter(s => (s?.spare_name || "").trim()) : [],
+          // spares are no longer captured per point — the SHEET-LEVEL list below
+          // carries them, so every point stores a blank spares cell now.
+          spares_used: "", status: p.status || "", sign: p.sign || "",
+          spares: [],
         })),
+        // one spares list for the whole sheet (blank rows dropped)
+        sheet_spares: sheetSpares.filter(s => (s.spare_name || "").trim()),
         // stage 1 only — Engineer / In-Charge sign on their own tabs
         prepared_by: calSheet.sign.prepared, checked_by: "", approved_by: "",
         sign_imgs: [(calSheet.signImgs || [])[0] || null, null, null],
       }) });
       const wasEdit = !!calSheet.fillId;
-      setCalSheet(null); reloadPlan(); setPendRefresh(k => k + 1);
+      setCalSheet(null); setSheetSpares([]); reloadPlan(); setPendRefresh(k => k + 1);
       setMsg(wasEdit
         ? "✓ Correction save ho gayi — sheet dobara Engineer (Maintenance) ke verify ke liye gayi"
         : "✓ Check sheet saved — ab Engineer (Maintenance) ke verify ke liye gayi");
@@ -721,6 +743,9 @@ export default function PMPanel() {
         <FormatSheet f={fmt ? { ...fmt, doc_footer: calSheet.docFooter || fmt.doc_footer } : fmt}
                      points={merged} rev={calSheet.rev} editable onEdit={onEditCal} signable={[0]}
                      onSpares={(i) => setSpareEdit({ i })}
+                     sheetSpares={sheetSpares} onSheetSpare={onSheetSpare}
+                     onAddSheetSpare={addSheetSpare} onDelSheetSpare={delSheetSpare}
+                     spareNames={spareMaster.map(m => m.spare_name).filter(Boolean)}
                      cellSel={box} onCellDown={onCellDown} onCellEnter={onCellEnter}
                      signVals={[calSheet.sign.prepared, calSheet.sign.checked, calSheet.sign.approved]}
                      signImgs={calSheet.signImgs || [null,null,null]} onSign={onCalSign} onSignVal={onCalSignVal}

@@ -21,13 +21,12 @@
 // {r1,r2,c1,c2} over point index and FILL column index.  The S.No column is
 // untouched — it stays a plain serial number.
 export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = false, onEdit = null, signVals = [], signImgs = [], onSign = null, onSignVal = null, signable = null,
-                              cellSel = null, onCellDown = null, onCellEnter = null, onSpares = null }) {
-  // one-line summary of a point's structured spares (for the read-only view)
-  const spareSummary = (p) => {
-    const arr = Array.isArray(p.spares) ? p.spares.filter((s) => (s?.spare_name || "").trim()) : [];
-    if (!arr.length) return p.spares_used || "";
-    return arr.map((s) => `${s.spare_name}${String(s.spare_qty || "").trim() ? " ×" + s.spare_qty : ""}`).join(", ");
-  };
+                              cellSel = null, onCellDown = null, onCellEnter = null, onSpares = null,
+                              sheetSpares = [], onSheetSpare = null, onAddSheetSpare = null, onDelSheetSpare = null, spareNames = [] }) {
+  // Spares are no longer captured per check point — the per-row "SPARES USED"
+  // cell is left blank and a single sheet-level list is filled at the bottom
+  // (fill form only).  onSpares stays in the signature for callers that still
+  // pass it; it is unused here now.
   const canSign = (i) => (signable ? signable.includes(i) : editable);
   const inSel = (r, c) => !!cellSel && r >= cellSel.r1 && r <= cellSel.r2 && c >= cellSel.c1 && c <= cellSel.c2;
   if (!f) return <div style={{ color:"#64748b", padding:20 }}>Loading format…</div>;
@@ -99,42 +98,20 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
                                  textAlign: k === "status" ? "center" : "left",
                                  fontWeight: k === "status" ? 800 : 400,
                                  color: k === "status" ? (p[k] === "NG" ? "#dc2626" : "#15803d") : "#111827" }}>
-                      {editable ? (
+                      {/* SPARES USED per-row cell is intentionally BLANK — spares
+                          are now captured once, in the sheet-level list below
+                          (fill form only). */}
+                      {k === "spares_used" ? null : editable ? (
                         k === "status" ? (
                           <select style={{ ...cellInp, textAlign:"center" }} value={p[k] || ""}
                                   onChange={(e) => onEdit && onEdit(i, k, e.target.value)}>
                             <option value=""></option><option value="OK">OK</option><option value="NG">NG</option>
                           </select>
-                        ) : k === "spares_used" ? (
-                          <div style={{ display:"flex", alignItems:"center", gap:8, padding:"2px 4px", flexWrap:"wrap" }}>
-                            {["Yes", "No"].map((opt) => (
-                              <label key={opt} onMouseDown={(e) => e.stopPropagation()}
-                                     style={{ display:"inline-flex", alignItems:"center", gap:3, fontSize:11,
-                                              fontWeight:700, cursor:"pointer", color:"#334155" }}>
-                                <input type="radio" name={`spare-used-${i}`} value={opt}
-                                       checked={String(p.spares_used || "").toLowerCase() === opt.toLowerCase()}
-                                       onChange={() => onEdit && onEdit(i, "spares_used", opt)}
-                                       style={{ cursor:"pointer", margin:0 }} />
-                                {opt}
-                              </label>
-                            ))}
-                            {String(p.spares_used || "").toLowerCase() === "yes" && (
-                              <button type="button"
-                                      onMouseDown={(e) => e.stopPropagation()}
-                                      onClick={() => onSpares && onSpares(i)}
-                                      title="Add / edit spares used for this point"
-                                      style={{ border:"1px solid #1d4ed8", background:"#eff6ff", color:"#1d4ed8",
-                                               borderRadius:5, fontSize:10, fontWeight:800, padding:"2px 6px",
-                                               cursor:"pointer", whiteSpace:"nowrap" }}>
-                                🔧 {(Array.isArray(p.spares) ? p.spares.filter((s) => (s?.spare_name || "").trim()).length : 0)}
-                              </button>
-                            )}
-                          </div>
                         ) : (
                           <input style={cellInp} value={p[k] || ""}
                                  onChange={(e) => onEdit && onEdit(i, k, e.target.value)} />
                         )
-                      ) : (k === "spares_used" ? spareSummary(p) : (p[k] || ""))}
+                      ) : (p[k] || "")}
                     </td>
                     );
                   })}
@@ -180,6 +157,65 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
         ))}</tr>
         <tr>{(f.signoff || []).map((s) => <td key={s.label} style={{ border:sb, padding:"2px 8px 6px", fontSize:10.5, textAlign:"center", color:"#334155" }}>{s.caption}</td>)}</tr>
       </tbody></table>
+      {/* SHEET-LEVEL spares used — one list for the whole sheet, shown ONLY on
+          the fill form (never on the read-only / print view). */}
+      {editable && (
+        <div style={{ border:sb, borderTop:"none", padding:"8px 10px", background:"#fff" }}>
+          <div style={{ fontSize:12.5, fontWeight:900, color:"#111827", marginBottom:8 }}>
+            🔧 Spares Used (is sheet me)
+          </div>
+          <datalist id="fmt-sheet-spare-names">
+            {(spareNames || []).map((nm, k) => <option key={k} value={nm} />)}
+          </datalist>
+          <table style={{ width:"100%", borderCollapse:"collapse", tableLayout:"fixed" }}>
+            <colgroup>
+              <col style={{ width:"27%" }} /><col style={{ width:"23%" }} /><col style={{ width:"18%" }} />
+              <col style={{ width:"16%" }} /><col style={{ width:"9%" }} /><col style={{ width:"7%" }} />
+            </colgroup>
+            <thead><tr>{["Where Used", "Spare Name", "Model No", "Spare ERP No", "Qty", ""].map((h) =>
+              <th key={h} style={sth}>{h}</th>)}</tr></thead>
+            <tbody>
+              {(sheetSpares || []).map((r, ri) => {
+                const spInp = { width:"100%", border:"none", outline:"none", fontSize:11,
+                                fontFamily:"inherit", background:"#fefce8", padding:"4px 5px", boxSizing:"border-box" };
+                return (
+                  <tr key={ri}>
+                    <td style={{ border:sb, padding:0 }}>
+                      <input style={spInp} value={r.where_used || ""} placeholder="Point 5 - PLC panel"
+                             onChange={(e) => onSheetSpare && onSheetSpare(ri, "where_used", e.target.value)} /></td>
+                    <td style={{ border:sb, padding:0 }}>
+                      <input style={spInp} list="fmt-sheet-spare-names" value={r.spare_name || ""}
+                             onChange={(e) => onSheetSpare && onSheetSpare(ri, "spare_name", e.target.value)} /></td>
+                    <td style={{ border:sb, padding:0 }}>
+                      <input style={spInp} value={r.spare_model_no || ""}
+                             onChange={(e) => onSheetSpare && onSheetSpare(ri, "spare_model_no", e.target.value)} /></td>
+                    <td style={{ border:sb, padding:0 }}>
+                      <input style={spInp} value={r.spare_cnmm_no || ""} maxLength={8} placeholder="ABCD1234"
+                             onChange={(e) => onSheetSpare && onSheetSpare(ri, "spare_cnmm_no", e.target.value)} /></td>
+                    <td style={{ border:sb, padding:0 }}>
+                      <input style={spInp} value={r.spare_qty || ""}
+                             onChange={(e) => onSheetSpare && onSheetSpare(ri, "spare_qty", e.target.value)} /></td>
+                    <td style={{ border:sb, textAlign:"center", padding:"2px 4px" }}>
+                      <button type="button" onClick={() => onDelSheetSpare && onDelSheetSpare(ri)} title="Remove spare row"
+                              style={{ border:"none", background:"transparent", color:"#dc2626",
+                                       cursor:"pointer", fontWeight:800, fontSize:15 }}>🗑</button></td>
+                  </tr>
+                );
+              })}
+              {(!sheetSpares || sheetSpares.length === 0) && (
+                <tr><td colSpan={6} style={{ border:sb, padding:"6px 8px", fontSize:11, color:"#94a3b8", textAlign:"center" }}>
+                  Koi spare add nahi kiya — niche “＋ Add spare” se add karo.
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+          <button type="button" onClick={() => onAddSheetSpare && onAddSheetSpare()}
+                  style={{ marginTop:8, border:"1px dashed #94a3b8", background:"#f8fafc", color:"#334155",
+                           borderRadius:8, padding:"6px 12px", fontWeight:700, fontSize:11.5, cursor:"pointer" }}>
+            ＋ Add spare
+          </button>
+        </div>
+      )}
       {/* document-control footer — format no / rev no / rev date (bottom of sheet) */}
       {(() => {
         const df = f.doc_footer || { format_no: "TBDI / MAINT. / F / 011", rev_no: "00", rev_date: "20/3/2024" };
