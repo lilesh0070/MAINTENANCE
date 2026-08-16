@@ -99,13 +99,18 @@ export function StatCard({ label, value, sub, color = "#1e40af" }) {
 
 /* ── Duration / time helpers ──────────────────────────────────────── */
 export function fmtDuration(seconds) {
+  // ANDON timer / breakdown duration — ab SECONDS bhi dikhte hain (minute-only nahi),
+  // taaki live timer har second visibly tick kare.  Format:
+  //   45s · 5m 03s · 1h 05m 03s   (seconds/minutes 2-digit padded, width stable).
   if (seconds == null) return "—";
   const s = Math.max(0, Math.floor(seconds));
-  if (s < 60) return `${s} s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m} min${m > 1 ? "s" : ""}`;
-  const h = Math.floor(m / 60), rem = m % 60;
-  return rem ? `${h}h ${rem}m` : `${h} hr${h > 1 ? "s" : ""}`;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const p = (n) => String(n).padStart(2, "0");
+  if (h > 0) return `${h}h ${p(m)}m ${p(sec)}s`;
+  if (m > 0) return `${m}m ${p(sec)}s`;
+  return `${sec}s`;
 }
 
 export function fmtClock(iso) {
