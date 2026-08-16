@@ -89,6 +89,9 @@ const COLS = [
 
 // Enum/boolean prettifiers for the derived cells.
 const RELATED_LBL = { maintenance: "Maintenance", tool_room: "Tool Room" };
+// Source column display: breakdown slip -> "breakdown"; Sunday/Daily plan work -> "plan work".
+// (Log Book jaisa koi aur source ho to apna raw naam hi dikhta hai.)
+const SOURCE_LBL = { "Break Down Slip": "breakdown", "Sunday Plan": "plan work", "Daily Plan": "plan work" };
 
 export default function HistoryCard() {
   const { token, theme, user } = useAuth();
@@ -211,6 +214,7 @@ export default function HistoryCard() {
 
   const cell = (e, c, i) => {
     if (c.key === "_sno") return i + 1;
+    if (c.key === "source") return SOURCE_LBL[e.source] || e.source || "—";
     if (c.key === "type_of_problem") {           // derived from the two booleans
       const t = [];
       if (e.type_electrical) t.push("Electrical");
