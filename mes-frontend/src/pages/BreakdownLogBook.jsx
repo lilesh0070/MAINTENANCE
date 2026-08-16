@@ -117,7 +117,8 @@ export default function BreakdownLogBook() {
   const [msg, setMsg]     = useState(null);       // {type, text}
 
   // ── List filters — date defaults to TODAY, freely changeable ──
-  const [flDate, setFlDate]   = useState(todayISO());
+  const [flMonth, setFlMonth] = useState(todayISO().slice(0, 7));   // default = current month
+  const [flDate, setFlDate]   = useState("");
   const [flShift, setFlShift] = useState("");
   const [flZone, setFlZone]   = useState("");
   const [flLine, setFlLine]   = useState("");
@@ -206,16 +207,17 @@ export default function BreakdownLogBook() {
     ? [...new Set(master.filter((m) => m.zone_name === flZone && m.line_name === flLine).map((m) => m.machine_no).filter(Boolean))].sort() : [], [master, flZone, flLine]);
   const onFlZone = (v) => { setFlZone(v); setFlLine(""); setFlMno(""); };
   const onFlLine = (v) => { setFlLine(v); setFlMno(""); };
-  const clearFilters = () => { setFlDate(""); setFlShift(""); setFlZone(""); setFlLine(""); setFlMno(""); };
+  const clearFilters = () => { setFlMonth(""); setFlDate(""); setFlShift(""); setFlZone(""); setFlLine(""); setFlMno(""); };
 
   const filteredRows = useMemo(() => rows.filter((r) => {
+    if (flMonth && String(r.bd_date || "").slice(0, 7) !== flMonth) return false;
     if (flDate && String(r.bd_date || "").slice(0, 10) !== flDate) return false;
     if (flShift && r.shift !== flShift) return false;
     if (flZone && r.zone !== flZone) return false;
     if (flLine && r.line !== flLine) return false;
     if (flMno && String(r.machine_no) !== String(flMno)) return false;
     return true;
-  }), [rows, flDate, flShift, flZone, flLine, flMno]);
+  }), [rows, flMonth, flDate, flShift, flZone, flLine, flMno]);
 
   const reset = () => { setForm(newForm()); setMsg(null); };
 
@@ -320,6 +322,12 @@ export default function BreakdownLogBook() {
         .lb-table td { padding:9px 12px; border-bottom:1px solid #f1f5f9; color:#334155; white-space:nowrap; }
         .lb-table td.lb-td-wide { max-width:240px; overflow:hidden; text-overflow:ellipsis; }
         .lb-table tbody tr:hover td { background:#f8fafc; }
+        /* Delete/actions column ko right pe FREEZE karo — chaudi table me scroll par bhi dikhe */
+        .lb-table th:last-child, .lb-table td:last-child { position:sticky; right:0; background:#fff;
+                       box-shadow:-8px 0 10px -8px rgba(15,23,42,.18); }
+        .lb-del { font-weight:800; font-size:11px; border-radius:7px; padding:5px 12px; cursor:pointer;
+                  border:1px solid #fecaca; background:#fef2f2; color:#dc2626; white-space:nowrap; }
+        .lb-del:hover { background:#dc2626; color:#fff; border-color:#dc2626; }
       `}</style>
 
       <div className="lb-root">
@@ -520,6 +528,10 @@ export default function BreakdownLogBook() {
               <div style={{ display:"flex", gap:12, flexWrap:"wrap", alignItems:"flex-end",
                             padding:"16px 20px", borderBottom:"1px solid #eef2f7", background:"#fafbfc" }}>
                 <div className="lb-field" style={{ minWidth:150 }}>
+                  <span className="lb-lbl">Month</span>
+                  <input className="lb-in" type="month" value={flMonth} onChange={(e) => setFlMonth(e.target.value)} />
+                </div>
+                <div className="lb-field" style={{ minWidth:150 }}>
                   <span className="lb-lbl">Date</span>
                   <input className="lb-in" type="date" value={flDate} onChange={(e) => setFlDate(e.target.value)} />
                 </div>
@@ -568,7 +580,7 @@ export default function BreakdownLogBook() {
                     <thead>
                       <tr>
                         {LIST_COLS.map((c) => <th key={c.k}>{c.h}</th>)}
-                        <th></th>
+                        <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -582,7 +594,7 @@ export default function BreakdownLogBook() {
                               </td>
                             );
                           })}
-                          <td><button className="lb-btn" style={{ padding:"4px 10px", fontSize:11 }} onClick={() => remove(r)}>Delete</button></td>
+                          <td><button className="lb-del" onClick={() => remove(r)}>🗑 Delete</button></td>
                         </tr>
                       ))}
                     </tbody>
