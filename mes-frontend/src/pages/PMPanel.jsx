@@ -681,12 +681,6 @@ export default function PMPanel() {
             <input type="date" value={calSheet.date}
                    onChange={e=>setCalSheet(s=>s?{...s, date:e.target.value}:s)}
                    style={{marginLeft:6, padding:6, borderRadius:6, border:bd, fontSize:12}} /></label>
-          <span style={{fontSize:12, fontWeight:800, color: pointsDone ? "#16a34a" : "#64748b"}}>
-            {filledN}/{merged.length} points filled
-          </span>
-          <span style={{fontSize:11.5, fontWeight:800, color: hasPrepared ? "#16a34a" : "#64748b"}}>
-            {hasPrepared ? "✓ Code + sign done" : "✍ Sheet ke niche PREPARED BY me code + sign karo"}
-          </span>
           <button onClick={saveCalSheet} disabled={calSaving || !allFilled}
                   title={allFilled ? "" : gateHint}
                   style={{padding:"8px 20px", borderRadius:8, border:"none",
@@ -709,25 +703,7 @@ export default function PMPanel() {
           )}
         </div>
 
-        {/* ── CELL TOOLBAR — Observation / Action Taken / Spares / Status /
-             Sign wale cells ko drag ya shift+click se select karo, phir yahan
-             se Copy → Paste ya Fill Down.  Type karna pehle jaisa hi hai. ── */}
-        <div style={{...card, marginBottom:14, display:"flex", gap:8, flexWrap:"wrap", alignItems:"center",
-                     borderLeft:`4px solid ${nCells ? "#2563eb" : "#cbd5e1"}`}}>
-          <span style={{fontSize:12, fontWeight:800, color: nCells ? "#2563eb" : "#94a3b8", minWidth:150}}>
-            {nCells
-              ? `⬚ ${nCells} cell${nCells>1?"s":""} — ${FILL_LBL.slice(box.c1, box.c2+1).join(", ")} · row ${box.r1+1}${box.r2>box.r1?`–${box.r2+1}`:""}`
-              : "⬚ Koi cell select nahi"}
-          </span>
-          <button onClick={copyCells} disabled={!nCells} style={miniBtn}
-                  title="Selected cells copy karo (Ctrl+C)">📋 Copy</button>
-          <button onClick={pasteCells} disabled={!nCells || !clip} style={miniBtn}
-                  title={clip ? "Copied cells yahan paste karo (Ctrl+V)" : "Pehle kuch copy karo"}>
-            📄 Paste{clip ? ` (${clip.cells.length}×${clip.cells[0].length})` : ""}</button>
-          <button onClick={fillDown} disabled={!nCells || box.r1 === box.r2} style={miniBtn}
-                  title="Sabse upar wale cell ki value poori selection me bhar do (Ctrl+D)">⬇ Fill Down</button>
-          <button onClick={()=>setCs(null)} disabled={!nCells} style={miniBtn}>✕ Clear</button>
-        </div>
+        {/* cell toolbar (Copy/Paste/Fill Down/Clear) user request pe hataya */}
         {/* a re-opened sheet keeps the footer it was originally filled under */}
         <FormatSheet f={fmt ? { ...fmt, doc_footer: calSheet.docFooter || fmt.doc_footer } : fmt}
                      points={merged} rev={calSheet.rev} editable onEdit={onEditCal} signable={[0]}

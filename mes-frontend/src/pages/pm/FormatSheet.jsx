@@ -94,7 +94,8 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
                         onMouseOver={editable ? () => onCellEnter && onCellEnter(i, ci) : undefined}
                         style={{ border: sel ? "1px solid #2563eb" : sb, fontSize:11,
                                  padding: editable ? 0 : "3px 6px", verticalAlign:"top",
-                                 background: sel ? "#dbeafe" : undefined,
+                                 // blank SPARES USED cell ko baaki fillable cells jaisa cream do (fill mode me)
+                                 background: sel ? "#dbeafe" : (k === "spares_used" && editable ? "#fefce8" : undefined),
                                  textAlign: k === "status" ? "center" : "left",
                                  fontWeight: k === "status" ? 800 : 400,
                                  color: k === "status" ? (p[k] === "NG" ? "#dc2626" : "#15803d") : "#111827" }}>
