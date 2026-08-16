@@ -141,6 +141,10 @@ export default function MaintenanceHistorical() {
   const [rows, setRows]       = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewTicket, setViewTicket] = useState(null);
+  // ── filled AUTO breakdown slips (ANDON se) — maintenance_auto_breakdown_slip ──
+  const [autoRows, setAutoRows]       = useState([]);
+  const [autoLoading, setAutoLoading] = useState(true);
+  const [viewAuto, setViewAuto]       = useState(null);   // fetched auto slip ticket (view)
   // ── the filled PM check sheets ──
   const [pmFmt, setPmFmt]         = useState(null);   // sheet format (layout)
   const [pmRows, setPmRows]       = useState([]);
@@ -265,6 +269,26 @@ export default function MaintenanceHistorical() {
     return () => { ignore = true; };
   }, [token, win]);
 
+  // filled AUTO breakdown slips (ANDON se) — /api/maintenance-kpi/ ke `breakdowns`
+  // me se sirf COMPLETED (bhari hui) slips.  (Ye BD History/manual slip se alag hai.)
+  useEffect(() => {
+    if (!token) return;
+    let ignore = false;
+    const p = new URLSearchParams({ period: "custom" });
+    if (win) { p.set("date_from", win.start); p.set("date_to", win.end); }
+    else {
+      const t = new Date(), pad = (n) => String(n).padStart(2, "0");
+      const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      p.set("date_from", iso(new Date(t.getTime() - 730 * 864e5))); p.set("date_to", iso(t));
+    }
+    setAutoLoading(true);
+    api.get(`/api/maintenance-kpi/?${p.toString()}`, token)
+      .then((d) => { if (!ignore) setAutoRows(Array.isArray(d?.breakdowns) ? d.breakdowns.filter((b) => b.state === "COMPLETED") : []); })
+      .catch(() => { if (!ignore) setAutoRows([]); })
+      .finally(() => { if (!ignore) setAutoLoading(false); });
+    return () => { ignore = true; };
+  }, [token, win]);
+
   // Zone/Line/Machine matching is client-side (slip zone names like
   // "SEAT SLIDER" vs master "SEAT_SLIDER" — normalized comparison).
   const rowZone = (r) => r.zone_name || r.production_data?.zone || r.closure_data?.zone || "";
@@ -309,6 +333,17 @@ export default function MaintenanceHistorical() {
 
   const openDmc = (id) =>
     api.get(`/api/machine-dmc/check-sheet-fill/${id}`, token).then(setViewDmc).catch(() => {});
+
+  // AUTO slips line-level hoti hain (machine khali) — zone/line se hi filter.
+  const autoList = useMemo(() => autoRows.filter((r) => {
+    if (fZone && norm(r.zone_name) !== norm(fZone)) return false;
+    if (fLine && norm(r.line_name) !== norm(fLine)) return false;
+    return true;
+  }), [autoRows, fZone, fLine]);
+
+  // View: dashboard jaisa hi — auto slip fetch karke ClosureFormModal (read-only).
+  const openAuto = (id) =>
+    api.get(`/api/breakdown-slips/auto/${id}`, token).then(setViewAuto).catch(() => {});
 
   const planMatch = (r) => {
     if (fZone && norm(r.zone_name) !== norm(fZone)) return false;
@@ -470,6 +505,50 @@ export default function MaintenanceHistorical() {
                       <td className="hd-min">{rowMin(r)}</td>
                       <td style={{ textAlign:"center" }}>
                         <button className="hd-view" onClick={() => setViewTicket(r)}>View Slip</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* ── filled AUTO breakdown slips (ANDON) ── */}
+          <div className="hd-sec" style={{ marginTop:22 }}>
+            <div className="hd-sec-h">
+              <span className="hd-sec-dot" style={{ background:"#dc2626" }} />
+              <span className="hd-sec-t">Filled Auto Breakdown Slips (ANDON)</span>
+              <span className="hd-sec-c" style={{ background:"#dc2626" }}>{autoList.length}</span>
+              <span style={{ marginLeft:"auto", fontSize:11.5, color:"#94a3b8" }}>
+                ANDON se auto-generated — click View Slip (read-only)
+              </span>
+            </div>
+            <div className={autoList.length > 4 ? "hd-scroll" : undefined}>
+              <table className="hd-tbl">
+                <thead>
+                  <tr>
+                    <th>#</th><th>Date</th><th>Time</th><th>Shift</th><th>Zone</th><th>Line</th>
+                    <th style={{ textAlign:"center" }}>Down Time (min)</th><th>Reason</th>
+                    <th style={{ textAlign:"center" }}>Slip</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {autoLoading && <tr><td colSpan={9} className="hd-empty">Loading…</td></tr>}
+                  {!autoLoading && autoList.length === 0 &&
+                    <tr><td colSpan={9} className="hd-empty">No filled auto slips for this filter.</td></tr>}
+                  {!autoLoading && autoList.map((r, i) => (
+                    <tr key={r.id}>
+                      <td>{i + 1}</td>
+                      <td>{fmtD(r.started_at)}</td>
+                      <td>{fmtT(r.started_at)}</td>
+                      <td>{r.shift_name || "—"}</td>
+                      <td>{r.zone_name || "—"}</td>
+                      <td>{r.line_name || "—"}</td>
+                      <td className="hd-min">{r.mc_down_time_minutes ?? "—"}</td>
+                      <td style={{ maxWidth:280 }}>{r.reason || "—"}</td>
+                      <td style={{ textAlign:"center" }}>
+                        <button className="hd-view" style={{ background:"#dc2626" }}
+                                onClick={() => openAuto(r.id)}>View Slip</button>
                       </td>
                     </tr>
                   ))}
@@ -738,6 +817,16 @@ export default function MaintenanceHistorical() {
           ticket={viewTicket}
           mode="view"
           onClose={() => setViewTicket(null)}
+          onSave={() => {}}
+          token={token}
+        />
+      )}
+
+      {viewAuto && (
+        <ClosureFormModal
+          ticket={viewAuto}
+          mode="view"
+          onClose={() => setViewAuto(null)}
           onSave={() => {}}
           token={token}
         />
