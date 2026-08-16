@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { onlyProdZones } from "../../constants/zones";
+import { PROD_ZONES } from "../../constants/zones";
 import { Btn, api, todayLocalISO, fmtDuration, fmtClock } from "./shared";
 
 /* ════════════════════════════════════════════════════════════════════
  * 2.5) Maintenance KPI panel (auto-computed + target compare + CSV
  *      download).  Sits between History and Zone&Line Stats.
  * ════════════════════════════════════════════════════════════════════ */
-function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshKey }) {
+function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshKey, isAdmin }) {
   // Filters — same style as every other page: a Date (default TODAY, but
   // freely changeable) + Zone → Line cascade from the Machine Master.
   const [fDate,   setFDate]   = useState(todayLocalISO());
@@ -14,6 +14,9 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
   const [fLine,   setFLine]   = useState("");
   const [zoneSel, setZoneSel] = useState("SEAT_SLIDER");   // clicked zone tile → shows its slips
   const [master,  setMaster]  = useState([]);
+  const [dashZones, setDashZones] = useState(PROD_ZONES);   // dashboard zone tiles (admin-curated whitelist)
+  const [addOpen, setAddOpen] = useState(false);            // "+ Add Zone" picker toggle (admin)
+  const [addPick, setAddPick] = useState("");               // zone chosen in the picker
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(false);
   const [err,     setErr]     = useState(null);
@@ -25,13 +28,48 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
     api.get("/api/machines/", token).then((m) => setMaster(Array.isArray(m) ? m : [])).catch(() => setMaster([]));
   }, [token]);
 
-  const zoneOpts = useMemo(
-    () => onlyProdZones([...new Set(master.map((m) => m.zone_name).filter(Boolean))]), [master]);
+  // Dashboard zone tiles come from an admin-curated list (defaults to the six
+  // production zones).  Every entry is a real maintenance_machines zone.
+  const loadZones = useCallback(() => {
+    if (!token) return;
+    api.get("/api/dashboard-zones/", token)
+      .then((r) => { const zs = (Array.isArray(r) ? r : []).map((x) => x.zone_name).filter(Boolean);
+                     if (zs.length) setDashZones(zs); })
+      .catch(() => {});
+  }, [token]);
+  useEffect(() => { loadZones(); }, [loadZones]);
+
+  // Filter dropdown offers the same zones as the tiles (the curated list).
+  const zoneOpts = dashZones;
+  // Master zones not yet on the dashboard — the "+ Add Zone" picker options.
+  const addableZones = useMemo(() => {
+    const shown = new Set(dashZones.map((z) => String(z).toUpperCase()));
+    return [...new Set(master.map((m) => m.zone_name).filter(Boolean))]
+      .filter((z) => !shown.has(String(z).toUpperCase()))
+      .sort();
+  }, [master, dashZones]);
   const lineOpts = useMemo(
     () => fZone
       ? [...new Set(master.filter((m) => m.zone_name === fZone).map((m) => m.line_name).filter(Boolean))].sort()
       : [], [master, fZone]);
   const onZone = (v) => { setFZone(v); setFLine(""); };
+
+  // Admin: add a zone tile (only zones that exist in the Machine Master).
+  const addZone = useCallback(async () => {
+    if (!addPick) return;
+    try {
+      const r = await api.post("/api/dashboard-zones/", { zone_name: addPick }, token);
+      if (r?.zones) setDashZones(r.zones.map((x) => x.zone_name));
+      setAddPick(""); setAddOpen(false);
+    } catch (e) { alert(e.message || "Add zone failed"); }
+  }, [addPick, token]);
+  // Admin: remove a zone tile from the dashboard (Machine Master untouched).
+  const removeZone = useCallback(async (z) => {
+    try {
+      const r = await api.delete(`/api/dashboard-zones/${encodeURIComponent(z)}`, token);
+      if (r?.zones) setDashZones(r.zones.map((x) => x.zone_name));
+    } catch (e) { alert(e.message || "Remove zone failed"); }
+  }, [token]);
 
   const reload = useCallback(async () => {
     setLoading(true); setErr(null);
@@ -122,14 +160,10 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
             const k = norm(b.zone_name);
             (bdByZone[k] = bdByZone[k] || []).push(b);
           });
-          const ZONES = [
-            ["SEAT_SLIDER",   "Seat Slider"],
-            ["RECLINER",      "Recliner"],
-            ["PRESS_SHOP",    "Press Shop"],
-            ["THIN_RECLINER", "Thin Recliner"],
-            ["SUB_ASSEMBLY",  "Sub Assembly"],
-            ["LOOP_PIPE",     "Loop Pipe"],
-          ];
+          // Zone tiles come straight from the admin-curated dashboard list —
+          // the label IS the maintenance_machines spelling (e.g. SEAT_SLIDER),
+          // and norm() gives the grouping key that matches the ticket zones.
+          const ZONES = dashZones.map((z) => [norm(z), z]);
           const pendingCard = data.kpis.find((c) => c.kpi_key === "pending_closures");
           const totalBdCard = data.kpis.find((c) => c.kpi_key === "breakdowns_count");
           const selLabel = (ZONES.find(([k]) => k === zoneSel) || [null, zoneSel === "_OTHER" ? "Other / Unzoned" : zoneSel])[1];
@@ -144,12 +178,32 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
                 {totalBdCard && <KpiCard card={totalBdCard} />}
                 {pendingCard && <KpiCard card={pendingCard} />}
               </div>
-              <div style={{ margin: "16px 0 10px", fontSize: 11, fontWeight: 800,
-                            letterSpacing: ".07em", textTransform: "uppercase", color: "#64748b" }}>
-                Zone-wise Breakdowns
-                <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0, color: "#94a3b8" }}>
-                  &nbsp;— click a zone to see its slips
-                </span>
+              <div style={{ margin: "16px 0 10px", display: "flex", alignItems: "center",
+                            justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".07em",
+                              textTransform: "uppercase", color: "#64748b" }}>
+                  Zone-wise Breakdowns
+                  <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0, color: "#94a3b8" }}>
+                    &nbsp;— click a zone to see its slips
+                  </span>
+                </div>
+                {isAdmin && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {addOpen ? (
+                      <>
+                        <select value={addPick} onChange={(e) => setAddPick(e.target.value)} style={kpiSelect}>
+                          <option value="">Select zone…</option>
+                          {addableZones.map((z) => <option key={z} value={z}>{z}</option>)}
+                        </select>
+                        <Btn size="sm" variant="primary" onClick={addZone} disabled={!addPick}>Add</Btn>
+                        <Btn size="sm" variant="ghost" onClick={() => { setAddOpen(false); setAddPick(""); }}>✕</Btn>
+                      </>
+                    ) : (
+                      <Btn size="sm" onClick={() => setAddOpen(true)}
+                           title="Add a zone tile — only zones from the Machine Master">+ Add Zone</Btn>
+                    )}
+                  </div>
+                )}
               </div>
               <div style={{ display: "grid",
                             gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12 }}>
@@ -163,13 +217,21 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
                   return tiles.map(([key, label, n]) => {
                     const accent = n > 0 ? "#dc2626" : "#16a34a";
                     const active = zoneSel === key;
+                    const canRemove = isAdmin && key !== "_OTHER";   // _OTHER is not a real zone
                     return (
                       <button key={key} onClick={() => setZoneSel(key)} style={{
+                        position: "relative",
                         textAlign: "left", cursor: "pointer", fontFamily: "inherit",
                         background: active ? "rgba(220,38,38,.06)" : "#fff",
                         border: "1px solid #e2e8f0", borderLeft: `4px solid ${accent}`,
                         outline: active ? `2px solid ${accent}` : "none",
                         borderRadius: 10, padding: "12px 14px", boxShadow: "0 1px 2px rgba(0,0,0,.03)" }}>
+                        {canRemove && (
+                          <span onClick={(e) => { e.stopPropagation(); removeZone(label); }}
+                                title="Remove this zone from the dashboard"
+                                style={{ position: "absolute", top: 3, right: 7, fontSize: 15,
+                                         lineHeight: 1, color: "#cbd5e1", cursor: "pointer", fontWeight: 700 }}>×</span>
+                        )}
                         <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".06em",
                                       textTransform: "uppercase", color: "#64748b" }}>{label}</div>
                         <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 30,

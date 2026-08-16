@@ -326,7 +326,7 @@ export default function MaintenanceDashboard() {
               </div>
 
               <div className="md-section">
-                <KpiPanel token={token} lines={lines} onViewSlip={onViewSlip} onFillSlip={onFillSlip} onDeleteSlip={isAdmin ? onDeleteSlip : undefined} refreshKey={slipRefreshKey} />
+                <KpiPanel token={token} lines={lines} onViewSlip={onViewSlip} onFillSlip={onFillSlip} onDeleteSlip={isAdmin ? onDeleteSlip : undefined} refreshKey={slipRefreshKey} isAdmin={isAdmin} />
               </div>
 
               {/* machine-no wise OPEN DMC NG points — grand total is the last row */}
