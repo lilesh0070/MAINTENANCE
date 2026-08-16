@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from database import get_conn, dict_cursor
-from auth import get_current_user
+from auth import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/sunday-plan", tags=["sunday-plan"])
 
@@ -229,7 +229,7 @@ def reopen_plan(pid: int, user=Depends(get_current_user)):
 
 
 @router.delete("/{pid}")
-def delete_plan(pid: int, user=Depends(get_current_user)):
+def delete_plan(pid: int, admin=Depends(require_admin)):   # sirf admin delete kar sakta hai
     _ensure_table()
     with get_conn() as conn:
         cur = conn.cursor()

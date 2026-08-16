@@ -244,6 +244,7 @@ const SHUTDOWN_CFG = {
 
 function WorkPlanBoard({ theme, user, nav, cfg }) {
   const { token } = useAuth();
+  const isAdmin = user?.role === "admin";   // Delete option sirf admin ko dikhta hai
   const [master, setMaster] = useState([]);
   // assign form
   const [fDate, setFDate] = useState(cfg.defDate());
@@ -364,6 +365,19 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
     try {
       const r = await fetch(`${cfg.api}/${id}/reopen`, {
         method: "PUT", headers: { Authorization: `Bearer ${token}` } });
+      if (!r.ok) throw new Error(await r.text());
+      load();
+    } catch (e) { setMsg({ ok: false, text: String(e.message || e).slice(0, 160) }); }
+    finally { setBusyId(null); }
+  };
+
+  // Admin-only: galat/extra assign kiya plan delete (backend bhi require_admin gated).
+  const remove = async (id) => {
+    if (!window.confirm("Is plan ko delete karna hai? (wapas nahi aayega)")) return;
+    setBusyId(id);
+    try {
+      const r = await fetch(`${cfg.api}/${id}`, {
+        method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
       if (!r.ok) throw new Error(await r.text());
       load();
     } catch (e) { setMsg({ ok: false, text: String(e.message || e).slice(0, 160) }); }
@@ -539,6 +553,11 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
                       <button onClick={() => reopen(r.id)} disabled={busyId === r.id}
                               style={{ padding:"5px 10px", borderRadius:7, border:"1.5px solid #cbd5e1",
                                        background:"#fff", color:"#64748b", cursor:"pointer", fontSize:11, fontWeight:700 }}>↩ Undo</button>
+                    )}
+                    {isAdmin && (
+                      <button onClick={() => remove(r.id)} disabled={busyId === r.id} title="Delete this plan (admin only)"
+                              style={{ marginLeft:8, padding:"5px 10px", borderRadius:7, border:"1px solid #fecaca",
+                                       background:"#fef2f2", color:"#dc2626", cursor:"pointer", fontSize:11, fontWeight:800 }}>🗑 Delete</button>
                     )}
                   </td>
                 </tr>
