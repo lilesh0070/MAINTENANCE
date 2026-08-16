@@ -10,7 +10,7 @@
  * Fill the form, then "Save Entry" → POST /api/logbook.
  * Routing: /maintenance-logbook
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
@@ -40,6 +40,25 @@ const todayISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+
+// Financial year (Apr→Mar) helpers — FY window + uske months.
+const MON3 = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function fyWindow(fy) {
+  const y = parseInt(String(fy).split("-")[0], 10);
+  if (isNaN(y)) return null;
+  return { start: `${y}-04-01`, end: `${y + 1}-04-01` };   // end exclusive
+}
+function fyMonths(fy) {
+  const y = parseInt(String(fy).split("-")[0], 10);
+  if (isNaN(y)) return [];
+  const out = [];
+  for (let i = 0; i < 12; i++) {
+    const mo = ((3 + i) % 12) + 1;
+    const yr = mo >= 4 ? y : y + 1;
+    out.push({ value: `${yr}-${String(mo).padStart(2, "0")}`, label: `${MON3[mo]} ${yr}` });
+  }
+  return out;
+}
 
 // "HH:MM" pair → minutes between them (wraps past midnight).
 function diffMinutes(start, ok) {
@@ -117,17 +136,31 @@ export default function BreakdownLogBook() {
   const [msg, setMsg]     = useState(null);       // {type, text}
 
   // ── List filters — date defaults to TODAY, freely changeable ──
-  const [flMonth, setFlMonth] = useState(todayISO().slice(0, 7));   // default = current month
+  const [flFy, setFlFy]       = useState("");        // default current FY (boot me set)
+  const [flYears, setFlYears] = useState([]);
+  const [flMonth, setFlMonth] = useState("");        // default current month (boot me set)
   const [flDate, setFlDate]   = useState("");
   const [flShift, setFlShift] = useState("");
   const [flZone, setFlZone]   = useState("");
   const [flLine, setFlLine]   = useState("");
   const [flMno, setFlMno]     = useState("");
 
+  const flBooted = useRef(false);   // default FY→current + month→current, once
   useEffect(() => {
     if (!token) return;
     api.get("/api/machines/", token).then((m) => setMaster(Array.isArray(m) ? m : [])).catch(() => {});
     api.get("/api/maintenance-spare/", token).then((s) => setSpareMaster(Array.isArray(s) ? s : [])).catch(() => {});
+    api.get("/api/maintenance-kpi/financial-years", token).then((y) => {
+      const list = Array.isArray(y) ? y : [];
+      setFlYears(list);
+      if (!flBooted.current && list.length) {
+        flBooted.current = true;
+        const cur = (list.find((v) => v.is_current) || list[list.length - 1]).fy;
+        setFlFy(cur);
+        const cm = todayISO().slice(0, 7);
+        if (fyMonths(cur).some((m) => m.value === cm)) setFlMonth(cm);   // current month agar FY me aata ho
+      }
+    }).catch(() => setFlYears([]));
   }, [token]);
 
   const loadList = useCallback(async () => {
@@ -207,17 +240,19 @@ export default function BreakdownLogBook() {
     ? [...new Set(master.filter((m) => m.zone_name === flZone && m.line_name === flLine).map((m) => m.machine_no).filter(Boolean))].sort() : [], [master, flZone, flLine]);
   const onFlZone = (v) => { setFlZone(v); setFlLine(""); setFlMno(""); };
   const onFlLine = (v) => { setFlLine(v); setFlMno(""); };
-  const clearFilters = () => { setFlMonth(""); setFlDate(""); setFlShift(""); setFlZone(""); setFlLine(""); setFlMno(""); };
+  const clearFilters = () => { setFlFy(""); setFlMonth(""); setFlDate(""); setFlShift(""); setFlZone(""); setFlLine(""); setFlMno(""); };
 
   const filteredRows = useMemo(() => rows.filter((r) => {
-    if (flMonth && String(r.bd_date || "").slice(0, 7) !== flMonth) return false;
-    if (flDate && String(r.bd_date || "").slice(0, 10) !== flDate) return false;
+    const d = String(r.bd_date || "").slice(0, 10);
+    if (flFy) { const w = fyWindow(flFy); if (w && !(d >= w.start && d < w.end)) return false; }
+    if (flMonth && d.slice(0, 7) !== flMonth) return false;
+    if (flDate && d !== flDate) return false;
     if (flShift && r.shift !== flShift) return false;
     if (flZone && r.zone !== flZone) return false;
     if (flLine && r.line !== flLine) return false;
     if (flMno && String(r.machine_no) !== String(flMno)) return false;
     return true;
-  }), [rows, flMonth, flDate, flShift, flZone, flLine, flMno]);
+  }), [rows, flFy, flMonth, flDate, flShift, flZone, flLine, flMno]);
 
   const reset = () => { setForm(newForm()); setMsg(null); };
 
@@ -528,8 +563,18 @@ export default function BreakdownLogBook() {
               <div style={{ display:"flex", gap:12, flexWrap:"wrap", alignItems:"flex-end",
                             padding:"16px 20px", borderBottom:"1px solid #eef2f7", background:"#fafbfc" }}>
                 <div className="lb-field" style={{ minWidth:150 }}>
+                  <span className="lb-lbl">Financial Year</span>
+                  <select className="lb-sel" value={flFy} onChange={(e) => { setFlFy(e.target.value); setFlMonth(""); }}>
+                    <option value="">All FY</option>
+                    {flYears.map((y) => <option key={y.fy} value={y.fy}>{y.fy}{y.is_current ? "  (current)" : ""}</option>)}
+                  </select>
+                </div>
+                <div className="lb-field" style={{ minWidth:150 }}>
                   <span className="lb-lbl">Month</span>
-                  <input className="lb-in" type="month" value={flMonth} onChange={(e) => setFlMonth(e.target.value)} />
+                  <select className="lb-sel" value={flMonth} onChange={(e) => setFlMonth(e.target.value)} disabled={!flFy}>
+                    <option value="">All Months</option>
+                    {fyMonths(flFy).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
                 </div>
                 <div className="lb-field" style={{ minWidth:150 }}>
                   <span className="lb-lbl">Date</span>
