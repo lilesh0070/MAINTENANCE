@@ -539,7 +539,7 @@ export default function AndonSystem() {
                         <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10, marginTop:12 }}>
                           <div><label className="an-lbl">Sub Machine No</label>
                             <select className="an-in" style={{ width:"100%" }} value={plcForm.sub_machine_no} onChange={(e) => setPlcForm({ ...plcForm, sub_machine_no: e.target.value })} disabled={!plcMachines.length}>
-                              <option value="">{plcMachines.length ? "— select —" : "— pehle upar Zone/Line chunein —"}</option>
+                              <option value="">select</option>
                               {plcMachines.map((m) => <option key={m} value={m}>{m}</option>)}
                             </select></div>
                           <div><label className="an-lbl">Sub PLC IP</label><input className="an-in" style={{ width:"100%" }} value={plcForm.sub_ip} onChange={(e) => setPlcForm({ ...plcForm, sub_ip: e.target.value })} placeholder="192.168.30.108" /></div>
