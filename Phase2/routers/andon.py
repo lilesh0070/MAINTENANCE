@@ -600,6 +600,9 @@ def _ensure_tables():
         cur.execute("""
             INSERT INTO maintenance_slip_config (scope) VALUES ('GLOBAL')
             ON CONFLICT (scope) DO NOTHING""")
+        # "Pending Breakdown" dashboard ke 2 target — yahi (Slip Threshold) page se set.
+        cur.execute("ALTER TABLE maintenance_slip_config ADD COLUMN IF NOT EXISTS target_breakdowns INTEGER NOT NULL DEFAULT 10")
+        cur.execute("ALTER TABLE maintenance_slip_config ADD COLUMN IF NOT EXISTS target_pending    INTEGER NOT NULL DEFAULT 0")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS andon_departments (
                 id         SERIAL PRIMARY KEY,
@@ -867,39 +870,54 @@ def masters(user=Depends(get_current_user)):
 # ════════════════════════════════════════════════════════════════════
 class SlipThresholdIn(BaseModel):
     slip_threshold_min: int
+    # "Pending Breakdown" dashboard ke 2 target (None => purana rakho)
+    target_breakdowns: Optional[int] = None
+    target_pending:    Optional[int] = None
 
 
 @router.get("/slip-config")
 def get_slip_config(user=Depends(get_current_user)):
-    """Abhi ka AUTO-slip threshold (minute).  Default 2."""
+    """Abhi ka AUTO-slip threshold (minute) + dashboard ke 2 target.  Default 2/10/0."""
     _ensure_tables()
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("SELECT slip_threshold_min, updated_at FROM maintenance_slip_config WHERE scope='GLOBAL'")
+        cur.execute("SELECT slip_threshold_min, target_breakdowns, target_pending, updated_at "
+                    "FROM maintenance_slip_config WHERE scope='GLOBAL'")
         r = cur.fetchone()
     return {"slip_threshold_min": int(r["slip_threshold_min"]) if r else 2,
+            "target_breakdowns": int(r["target_breakdowns"]) if r and r["target_breakdowns"] is not None else 10,
+            "target_pending":    int(r["target_pending"])    if r and r["target_pending"]    is not None else 0,
             "updated_at": r["updated_at"].isoformat() if r and r["updated_at"] else None}
 
 
 @router.put("/slip-config")
 def set_slip_config(body: SlipThresholdIn, admin=Depends(require_admin)):
-    """Admin: AUTO-slip threshold badlo (1..60 min me clamp).  Turant lag jaata
-    hai — cache 10 sec me apne aap refresh ho jaata hai."""
+    """Admin: AUTO-slip threshold (1..60 min) + Pending Breakdown ke 2 target
+    (Total Breakdowns / Pending Closures).  Turant lag jaata hai — threshold ka
+    cache 10 sec me refresh, target har KPI fetch par seedha DB se padha jaata hai."""
     _ensure_tables()
     mins = max(1, min(60, int(body.slip_threshold_min)))
+    tb = None if body.target_breakdowns is None else max(0, int(body.target_breakdowns))
+    tp = None if body.target_pending    is None else max(0, int(body.target_pending))
     with get_conn() as conn:
-        cur = conn.cursor()
+        cur = dict_cursor(conn)
         cur.execute("""
-            INSERT INTO maintenance_slip_config (scope, slip_threshold_min, updated_at)
-            VALUES ('GLOBAL', %s, NOW())
+            INSERT INTO maintenance_slip_config (scope, slip_threshold_min, target_breakdowns, target_pending, updated_at)
+            VALUES ('GLOBAL', %s, COALESCE(%s,10), COALESCE(%s,0), NOW())
             ON CONFLICT (scope) DO UPDATE
                SET slip_threshold_min = EXCLUDED.slip_threshold_min,
+                   target_breakdowns  = COALESCE(%s, maintenance_slip_config.target_breakdowns),
+                   target_pending     = COALESCE(%s, maintenance_slip_config.target_pending),
                    updated_at         = NOW()
-        """, (mins,))
+            RETURNING slip_threshold_min, target_breakdowns, target_pending
+        """, (mins, tb, tp, tb, tp))
+        row = cur.fetchone()
         conn.commit()
     _THRESH_CACHE["min"] = mins        # cache turant update
     _THRESH_CACHE["at"]  = _time.time()
-    return {"slip_threshold_min": mins}
+    return {"slip_threshold_min": int(row["slip_threshold_min"]),
+            "target_breakdowns":  int(row["target_breakdowns"]),
+            "target_pending":     int(row["target_pending"])}
 
 
 # ════════════════════════════════════════════════════════════════════

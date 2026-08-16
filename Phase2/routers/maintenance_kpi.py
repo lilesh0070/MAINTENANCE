@@ -113,13 +113,28 @@ def _resolve_window(period: Optional[str],
 def _targets() -> dict:
     """{kpi_key: target} — Dashboard ke KPI card ka pass/fail target.
 
-    Zone / Line / Machine ke asli target `maintenance_kpi_target` me hain
-    (Admin Panel > KPI Targets) — wo Maintenance KPI page dikhata hai.
-    Dashboard ka card in saade default par chalta hai.
+    Base value KPI_DEFS se.  "Pending Breakdown" panel ke DO card — Total
+    Breakdowns aur Pending Closures — ka target Admin > Slip Threshold page se
+    aata hai (maintenance_slip_config.target_breakdowns / target_pending).
+    Baaki (MTBF/MTTR/Availability) default par (wo card yahan use hi nahi hote).
     """
-    return {key: {"kpi_key": key, "line_id": None, "target_value": default,
+    base = {key: {"kpi_key": key, "line_id": None, "target_value": default,
                   "unit": unit, "direction": direction, "is_active": True}
             for key, label, unit, direction, default in KPI_DEFS}
+    # Admin (Slip Threshold page) ke set kiye target se override — alag connection
+    # taaki koi dikkat (jaise column abhi bana na ho) main query ko na bigaade.
+    try:
+        with get_conn() as tconn:
+            cur = tconn.cursor()
+            cur.execute("SELECT target_breakdowns, target_pending "
+                        "FROM maintenance_slip_config WHERE scope='GLOBAL'")
+            r = cur.fetchone()
+        if r:
+            if r[0] is not None: base["breakdowns_count"]["target_value"] = float(r[0])
+            if r[1] is not None: base["pending_closures"]["target_value"] = float(r[1])
+    except Exception:
+        pass
+    return base
 
 
 def _compute(conn, start: datetime, end: datetime, line_id: Optional[int],
