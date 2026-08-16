@@ -427,10 +427,8 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
             </select>
           </Fld>
           <Fld label="Machine Name">
-            <select style={selStyle} value={mname} onChange={(e) => { setMname(e.target.value); setMno(""); }} disabled={!line}>
-              <option value="">— machine name —</option>
-              {machineNameOpts.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
+            <input style={{ ...selStyle, background:"#f8fafc", color:"#334155", minWidth:180 }} readOnly
+                   value={effName} placeholder="Auto from Machine No." />
           </Fld>
         </div>
         <div style={{ display:"flex", gap:12, flexWrap:"wrap", alignItems:"flex-end", marginTop:12 }}>
@@ -775,10 +773,8 @@ function PreventiveYearlyPlan({ theme, user, nav, meta }) {
           </select>
         </Fld>
         <Fld label="Machine Name">
-          <select style={selStyle} value={mname} onChange={(e) => { setMname(e.target.value); setMno(""); }} disabled={!line}>
-            <option value="">All Machine Names</option>
-            {machineNameOpts.map((m) => <option key={m} value={m}>{m}</option>)}
-          </select>
+          <input style={{ ...selStyle, background:"#f8fafc", color:"#334155", minWidth:180 }} readOnly
+                 value={sel?.machine_name || ""} placeholder="Auto from Machine No." />
         </Fld>
         <Fld label="Frequency">
           <select style={selStyle} value={freqSel} onChange={(e) => setFreqSel(e.target.value)} disabled={!effMno}>
