@@ -77,7 +77,7 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
           <tbody>
             {points.length > 0 ? points.map((p, i) => {
               const inp = { width:"100%", border:"none", outline:"none", fontSize:11,
-                            fontFamily:"inherit", background:"#fefce8", padding:"3px 4px", boxSizing:"border-box" };
+                            fontFamily:"inherit", background:"#fff", padding:"3px 4px", boxSizing:"border-box" };
               const FILL = ["observation", "action_taken", "spares_used", "status", "sign"];
               return (
                 <tr key={i}>
@@ -95,7 +95,7 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
                         style={{ border: sel ? "1px solid #2563eb" : sb, fontSize:11,
                                  padding: editable ? 0 : "3px 6px", verticalAlign:"top",
                                  // blank SPARES USED cell ko baaki fillable cells jaisa cream do (fill mode me)
-                                 background: sel ? "#dbeafe" : (k === "spares_used" && editable ? "#fefce8" : undefined),
+                                 background: sel ? "#dbeafe" : (k === "spares_used" && editable ? "#fff" : undefined),
                                  textAlign: k === "status" ? "center" : "left",
                                  fontWeight: k === "status" ? 800 : 400,
                                  color: k === "status" ? (p[k] === "NG" ? "#dc2626" : "#15803d") : "#111827" }}>
