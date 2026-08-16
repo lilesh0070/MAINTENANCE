@@ -115,6 +115,10 @@ export default function MaintenanceHistorical() {
   const machineNameOpts = useMemo(() => (fZone && fLine)
     ? [...new Set(master.filter((m) => m.zone_name === fZone && m.line_name === fLine)
                         .map((m) => m.machine_name).filter(Boolean))].sort() : [], [master, fZone, fLine]);
+  // Machine Name ab machine_no se AUTO-fill (alag select nahi) — master se derive.
+  const effMname = useMemo(() => (fMachineNo
+    ? (master.find((m) => m.zone_name === fZone && m.line_name === fLine && String(m.machine_no) === String(fMachineNo))?.machine_name || "")
+    : ""), [master, fZone, fLine, fMachineNo]);
   const monthOpts = useMemo(() => fFy ? fyMonths(fFy) : [], [fFy]);
   const onZone = (v) => { setFZone(v); setFLine(""); setFMachineNo(""); setFMachineName(""); };
   const onLine = (v) => { setFLine(v); setFMachineNo(""); setFMachineName(""); };
@@ -318,10 +322,8 @@ export default function MaintenanceHistorical() {
           </div>
           <div className="hd-fld">
             <label>Machine Name</label>
-            <select className="hd-sel" value={fMachineName} onChange={(e) => setFMachineName(e.target.value)} disabled={!fLine}>
-              <option value="">All Machine Names</option>
-              {machineNameOpts.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
+            <input className="hd-sel" readOnly value={effMname} placeholder="Auto from Machine No."
+                   style={{ background:"#f8fafc", color:"#334155" }} />
           </div>
           <div className="hd-fld">
             <label>&nbsp;</label>
