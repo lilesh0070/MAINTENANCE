@@ -51,12 +51,11 @@ function AndonTable({ rows, fullscreenRef, isFullscreen, toggleFullscreen }) {
       if (!r.started_at) return 0;
       return Math.max(0, Math.floor((Date.now() - new Date(r.started_at).getTime()) / 1000));
     }
-    const now = Date.now();
-    const a = anchors.current[r.id];
-    if (a == null || Math.abs(Math.floor((now - a) / 1000) - srv) > 2) {
-      anchors.current[r.id] = now - srv * 1000;                      // server elapsed se anchor
-    }
-    return Math.max(0, Math.floor((now - anchors.current[r.id]) / 1000));
+    // Pehli baar dikhi call ko server ke elapsed se anchor karo (skew-free);
+    // uske baad Date.now() se aage badhta hai (real time).  Isse dashboard ko
+    // har second re-render (blink) nahi karna padta, aur skew bhi nahi aati.
+    if (anchors.current[r.id] == null) anchors.current[r.id] = Date.now() - srv * 1000;
+    return Math.max(0, Math.floor((Date.now() - anchors.current[r.id]) / 1000));
   };
   // hate huye calls ke anchors saaf (ref na badhe)
   useEffect(() => {

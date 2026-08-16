@@ -124,8 +124,12 @@ export default function MaintenanceDashboard() {
       // re-render hi skip kar deta hai.  (Live duration ka tick AndonTable ka
       // apna 1-sec timer sambhalta hai, wo isse rukta nahi.)
       setAndonRows((prev) => {
-        const a = JSON.stringify(prev), b = JSON.stringify(rows);
-        return a === b ? prev : rows;
+        // elapsed_seconds HAR SECOND badalta hai — usse dedup me mat gino, warna
+        // active breakdown par poora dashboard har second re-render (blink) hota.
+        // AndonTable us elapsed se sirf PEHLI baar anchor karta hai + apne 1s tick
+        // se aage badhta hai, isliye stale elapsed se koi farak nahi padta.
+        const strip = (arr) => JSON.stringify((arr || []).map(({ elapsed_seconds, ...rest }) => rest));
+        return strip(prev) === strip(rows) ? prev : rows;
       });
       setAndonStats((prev) => {
         const a = JSON.stringify(prev), b = JSON.stringify(stats);
