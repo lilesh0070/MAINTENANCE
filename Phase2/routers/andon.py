@@ -390,8 +390,12 @@ def _slip_threshold_sweep():
 _PLC_POLL_INTERVAL = 0.1       # 100 ms — near real-time (press karte hi call)
 _PLC_RETRY_SECS    = 5         # offline PLC ko itni der baad dobara connect-try
 _plc_poller_started = False
-_PLC_CONN  = {}                # {dev_id: mc}  persistent MC-protocol connection
+_PLC_CONN  = {}                # {dev_id: mc}  MAIN PLC (ANDON bits) persistent connection
 _PLC_RETRY = {}                # {dev_id: monotonic ts — is se pehle reconnect na karo}
+# ── SUB PLC ── optional doosra PLC jisse Model/Fault register padhe jaate hain
+# (ANDON bits MAIN PLC se, Model/Fault SUB PLC se — jab do machine par alag ho).
+_SUB_CONN  = {}                # {dev_id: mc}  SUB PLC persistent connection
+_SUB_RETRY = {}                # {dev_id: monotonic ts}
 
 # ── PLC connect/read helpers (MC protocol via pymcprotocol).  Pehle routers.plc
 # me the; PLC Integration feature hatne par ANDON ne apne me le liye. ────────
@@ -431,10 +435,34 @@ def _reachable(ip, port, timeout=1.5):
 
 
 def _plc_drop(dev_id):
-    mc = _PLC_CONN.pop(dev_id, None)
+    # MAIN + SUB dono connection band karo
+    for _pool in (_PLC_CONN, _SUB_CONN):
+        mc = _pool.pop(dev_id, None)
+        if mc is not None:
+            try: mc.close()
+            except Exception: pass
+
+
+def _ensure_conn(pool, retry, key, ip, port, series):
+    """Persistent MC connection (ya None) — backoff + fast reachability probe.
+    MAIN aur SUB PLC dono isi se connect hote hain (alag pool/retry dicts se)."""
+    mc = pool.get(key)
     if mc is not None:
-        try: mc.close()
-        except Exception: pass
+        return mc
+    if _time.monotonic() < retry.get(key, 0):            # backoff — abhi try mat karo
+        return None
+    p = int(port or 5007)
+    if not _reachable(ip, p, timeout=0.4):               # 4s block se bacho
+        retry[key] = _time.monotonic() + _PLC_RETRY_SECS
+        return None
+    try:
+        mc = _connect({"series": series or "Q", "plc_ip": ip, "plc_port": p})
+        pool[key] = mc
+        retry.pop(key, None)
+        return mc
+    except Exception:
+        retry[key] = _time.monotonic() + _PLC_RETRY_SECS
+        return None
 
 
 def _read_map_name(mc, plc_id, cur, table, name_col):
@@ -460,26 +488,19 @@ def _read_map_name(mc, plc_id, cur, table, name_col):
 
 
 def _plc_poll_once(dev):
-    """Ek PLC read karke uske mapped bits par `_apply_state` chalao.
-    Return True = online (connect+read OK), False = offline."""
+    """Ek PLC cycle: MAIN se bits (ANDON), SUB (agar ho) se Model/Fault.
+    Return (main_ok, sub_ok).  sub_ok = None jab koi SUB PLC set nahi."""
     did = dev["id"]
-    mc = _PLC_CONN.get(did)
+    has_sub = bool((dev.get("sub_ip") or "").strip())
+    mc = _ensure_conn(_PLC_CONN, _PLC_RETRY, did, dev["ip"], dev.get("port") or 5007, dev.get("series") or "Q")
     if mc is None:
-        if _time.monotonic() < _PLC_RETRY.get(did, 0):        # backoff
-            return False
-        port = dev.get("port") or 5007
-        if not _reachable(dev["ip"], port, timeout=0.4):      # fast probe — 4s block se bacho
-            _PLC_RETRY[did] = _time.monotonic() + _PLC_RETRY_SECS
-            return False
-        try:
-            mc = _connect({"series": dev.get("series") or "Q", "plc_ip": dev["ip"], "plc_port": port})
-            _PLC_CONN[did] = mc
-            _PLC_RETRY.pop(did, None)
-        except Exception:
-            _PLC_RETRY[did] = _time.monotonic() + _PLC_RETRY_SECS
-            return False
+        return False, (False if has_sub else None)
+    # Model/Fault register kis PLC se — SUB ho to usse, warna MAIN (mc) se.
+    sub_mc = _ensure_conn(_SUB_CONN, _SUB_RETRY, did, dev["sub_ip"], dev.get("sub_port") or 5007,
+                          dev.get("sub_series") or "Q") if has_sub else None
+    read_mc = sub_mc if has_sub else mc
     try:
-        # ek hi connection me: bit-mapping fetch + PLC read + apply (fast cycle)
+        # ek hi cycle me: bit-mapping fetch + PLC read + apply (fast cycle)
         closed = []
         with get_conn() as conn:
             cur = dict_cursor(conn)
@@ -487,10 +508,11 @@ def _plc_poll_once(dev):
                             WHERE plc_id=%s AND COALESCE(bit_type,'')<>'' AND COALESCE(bit_no,'')<>''
                             ORDER BY do_index""", (did,))
             bits = [(b, _read_one(mc, b["bit_type"], b["bit_no"])) for b in cur.fetchall()]
-            # koi call ON ho to abhi ka model + fault bhi padho — call OPEN hote hi store
+            # koi call ON ho to abhi ka model + fault bhi padho (read_mc = SUB ya MAIN).
+            # read_mc None ho (SUB offline) to model/fault skip — call phir bhi chale.
             any_on = any(v != 0 for _, v in bits)
-            model = _read_map_name(mc, did, cur, "andon_model_map", "model_name") if any_on else None
-            fault = _read_map_name(mc, did, cur, "andon_fault_map", "fault_name") if any_on else None
+            model = _read_map_name(read_mc, did, cur, "andon_model_map", "model_name") if (any_on and read_mc) else None
+            fault = _read_map_name(read_mc, did, cur, "andon_fault_map", "fault_name") if (any_on and read_mc) else None
             for b, val in bits:
                 res = _apply_state(cur, dev, b["do_index"], val != 0, model=model, fault=fault)  # 1→ON, 0→OFF
                 if res and res.get("action") == "closed":            # call band -> slip poori karni hai
@@ -504,11 +526,11 @@ def _plc_poll_once(dev):
             if _eid and _hid:
                 try: auto_slip_on_close(_eid, _hid)
                 except Exception as _e: print(f"[ANDON-SLIP] close-fill dikkat (call {_eid}): {_e}")
-        return True
+        return True, (bool(sub_mc) if has_sub else None)
     except Exception:
-        _plc_drop(did)                                        # connection tut gaya → reconnect
+        _plc_drop(did)                                        # MAIN+SUB reconnect
         _PLC_RETRY[did] = _time.monotonic() + 1
-        return False
+        return False, (False if has_sub else None)
 
 
 def _plc_poll_loop():
@@ -519,7 +541,8 @@ def _plc_poll_loop():
             with get_conn() as conn:
                 cur = dict_cursor(conn)
                 cur.execute("""SELECT id, zone, line, machine_no, machine_name,
-                                      ip, port, series, enabled FROM andon_plc_devices""")
+                                      ip, port, series, sub_ip, sub_port, sub_series, enabled
+                                 FROM andon_plc_devices""")
                 devs = cur.fetchall()
             now = datetime.now().isoformat(timespec="seconds")
             ids = set()
@@ -527,11 +550,11 @@ def _plc_poll_loop():
                 ids.add(dev["id"])
                 prev = _PLC_STATUS.get(dev["id"], {})
                 if not dev.get("enabled"):
-                    _PLC_STATUS[dev["id"]] = {"online": None, "checked": now, "last_seen": prev.get("last_seen")}
+                    _PLC_STATUS[dev["id"]] = {"online": None, "sub_online": None, "checked": now, "last_seen": prev.get("last_seen")}
                     _plc_drop(dev["id"])
                     continue
-                ok = _plc_poll_once(dev)
-                _PLC_STATUS[dev["id"]] = {"online": ok, "checked": now,
+                ok, sub_ok = _plc_poll_once(dev)
+                _PLC_STATUS[dev["id"]] = {"online": ok, "sub_online": sub_ok, "checked": now,
                                           "last_seen": now if ok else prev.get("last_seen")}
             for k in list(_PLC_CONN.keys()):        # deleted PLC → connection band
                 if k not in ids: _plc_drop(k)
@@ -649,6 +672,13 @@ def _ensure_tables():
         # ── PLC mode ── device ab ESP nahi, Mitsubishi PLC hai: `series` (MC-protocol
         # plctype — Q/FX5U/iQ-R/L), IP=PLC IP, port=PLC MC port (default 5007).
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS series VARCHAR(20) DEFAULT 'Q'")
+        # ── SUB PLC (optional) ── ANDON bits MAIN PLC se, par Model/Fault register
+        # kisi DOOSRE PLC se aa sakte hain (jaise ANDON machine-5 par, Model/Fault
+        # machine-8 se).  sub_ip set ho to Model/Fault usi PLC se padhe jaate hain.
+        cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS sub_ip VARCHAR(60)")
+        cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS sub_port INTEGER")
+        cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS sub_series VARCHAR(20)")
+        cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS sub_machine_no VARCHAR(60)")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS andon_plc_output_mapping (
                 id            SERIAL PRIMARY KEY,
@@ -944,6 +974,12 @@ class PlcIn(BaseModel):
     description: Optional[str] = ""
     enabled: bool = True
     poll_path: Optional[str] = "/status"
+    # optional SUB PLC — Model/Fault register isi se padhe jaate hain (ANDON MAIN se).
+    # sub_ip khali => koi sub nahi (Model/Fault MAIN PLC se aayenge).
+    sub_ip: Optional[str] = ""
+    sub_port: Optional[int] = 5007
+    sub_series: Optional[str] = "Q"
+    sub_machine_no: Optional[str] = ""
 
 
 @router.get("/plc-devices")
@@ -952,13 +988,15 @@ def list_plc(user=Depends(get_current_user)):
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("""SELECT id, name, ip, port, series, zone, line, machine_no, machine_name,
+                              sub_ip, sub_port, sub_series, sub_machine_no,
                               description, enabled, poll_path
                          FROM andon_plc_devices ORDER BY name""")
         rows = cur.fetchall()
     # merge live connectivity (green/red) from the background poller
     for r in rows:
         st = _PLC_STATUS.get(r["id"], {})
-        r["online"] = st.get("online")            # True=connected · False=disconnected · None=not-checked/disabled
+        r["online"] = st.get("online")            # MAIN: True=connected · False=disconnected · None=not-checked/disabled
+        r["sub_online"] = st.get("sub_online")    # SUB: waise hi (None = koi sub PLC nahi)
         r["last_seen"] = st.get("last_seen")
         r["checked"] = st.get("checked")
     return rows
@@ -1008,12 +1046,15 @@ def add_plc(body: PlcIn, user=Depends(get_current_user)):
         cur = conn.cursor()
         _check_plc_unique(cur, body.ip, body.name)
         cur.execute("""INSERT INTO andon_plc_devices
-                       (name, ip, port, series, zone, line, machine_no, machine_name, description, enabled, poll_path)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                       (name, ip, port, series, zone, line, machine_no, machine_name, description, enabled, poll_path,
+                        sub_ip, sub_port, sub_series, sub_machine_no)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, %s,%s,%s,%s) RETURNING id""",
                     (body.name.strip(), body.ip.strip(), body.port or 5007, (body.series or "Q").strip() or "Q",
                      (body.zone or "").strip() or None, (body.line or "").strip() or None,
                      (body.machine_no or "").strip() or None, (body.machine_name or "").strip() or None,
-                     body.description or "", body.enabled, (body.poll_path or "/status").strip()))
+                     body.description or "", body.enabled, (body.poll_path or "/status").strip(),
+                     (body.sub_ip or "").strip() or None, int(body.sub_port or 5007),
+                     (body.sub_series or "Q").strip() or "Q", (body.sub_machine_no or "").strip() or None))
         new_id = cur.fetchone()[0]; conn.commit()
     return {"id": new_id}
 
@@ -1029,12 +1070,15 @@ def edit_plc(eid: int, body: PlcIn, user=Depends(get_current_user)):
         _check_plc_unique(cur, body.ip, body.name, skip_id=eid)
         cur.execute("""UPDATE andon_plc_devices
                           SET name=%s, ip=%s, port=%s, series=%s, zone=%s, line=%s, machine_no=%s, machine_name=%s,
-                              description=%s, enabled=%s, poll_path=%s, updated_at=NOW()
+                              description=%s, enabled=%s, poll_path=%s,
+                              sub_ip=%s, sub_port=%s, sub_series=%s, sub_machine_no=%s, updated_at=NOW()
                         WHERE id=%s""",
                     (body.name.strip(), body.ip.strip(), body.port or 5007, (body.series or "Q").strip() or "Q",
                      (body.zone or "").strip() or None, (body.line or "").strip() or None,
                      (body.machine_no or "").strip() or None, (body.machine_name or "").strip() or None,
-                     body.description or "", body.enabled, (body.poll_path or "/status").strip(), eid))
+                     body.description or "", body.enabled, (body.poll_path or "/status").strip(),
+                     (body.sub_ip or "").strip() or None, int(body.sub_port or 5007),
+                     (body.sub_series or "Q").strip() or "Q", (body.sub_machine_no or "").strip() or None, eid))
         if cur.rowcount == 0:
             raise HTTPException(404, "PLC not found")
         conn.commit()

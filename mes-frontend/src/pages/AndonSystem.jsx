@@ -10,7 +10,7 @@
  *     a shared default + per-PLC override.  Time calc (Phase 3) is per-department.
  * Backend: /api/andon/*.  Routing: /andon-system.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
@@ -265,7 +265,8 @@ export default function AndonSystem() {
   const [dName, setDName] = useState("");
 
   // ── PLC form (zone / line from the machine master) ──
-  const blankPlc = { name: "", ip: "", port: 5007, series: "Q", zone: "", line: "", machine_no: "", machine_name: "", enabled: true };
+  const blankPlc = { name: "", ip: "", port: 5007, series: "Q", zone: "", line: "", machine_no: "", machine_name: "", enabled: true,
+                     sub_on: false, sub_ip: "", sub_port: 5007, sub_series: "Q", sub_machine_no: "" };
   const [plcForm, setPlcForm] = useState(blankPlc);
   const [plcEdit, setPlcEdit] = useState(null);
   // zone → line → machine cascade, all from the machine master (like every page)
@@ -276,12 +277,18 @@ export default function AndonSystem() {
     const m = master.find((x) => x.zone_name === plcForm.zone && x.line_name === plcForm.line && String(x.machine_no) === String(v));
     setPlcForm((f) => ({ ...f, machine_no: v, machine_name: m?.machine_name || "" }));
   };
-  const startPlcEdit = (e) => { setPlcEdit(e.id); setPlcForm({ ...blankPlc, ...e, series: e.series || "Q", zone: e.zone || "", line: e.line || "", machine_no: e.machine_no || "", machine_name: e.machine_name || "" }); setCfg("plc"); };
+  const startPlcEdit = (e) => { setPlcEdit(e.id); setPlcForm({ ...blankPlc, ...e, series: e.series || "Q", zone: e.zone || "", line: e.line || "", machine_no: e.machine_no || "", machine_name: e.machine_name || "",
+      sub_on: !!e.sub_ip, sub_ip: e.sub_ip || "", sub_port: e.sub_port || 5007, sub_series: e.sub_series || "Q", sub_machine_no: e.sub_machine_no || "" }); setCfg("plc"); };
   const savePlc = () => wrap(async () => {
     const body = { name: plcForm.name, ip: plcForm.ip, port: Number(plcForm.port) || 80,
                    series: plcForm.series || "Q",
                    zone: plcForm.zone || "", line: plcForm.line || "", machine_no: plcForm.machine_no || "",
-                   machine_name: plcForm.machine_name || "", enabled: plcForm.enabled };
+                   machine_name: plcForm.machine_name || "", enabled: plcForm.enabled,
+                   // Sub PLC (Model/Fault ke liye) — sirf tab jab toggle ON ho
+                   sub_ip: plcForm.sub_on ? (plcForm.sub_ip || "") : "",
+                   sub_port: Number(plcForm.sub_port) || 5007,
+                   sub_series: plcForm.sub_series || "Q",
+                   sub_machine_no: plcForm.sub_on ? (plcForm.sub_machine_no || "") : "" };
     if (plcEdit) await api(`/plc-devices/${plcEdit}`, { method: "PUT", body: JSON.stringify(body) });
     else await api("/plc-devices", { method: "POST", body: JSON.stringify(body) });
     setPlcForm(blankPlc); setPlcEdit(null);
@@ -522,6 +529,25 @@ export default function AndonSystem() {
                         </select></div>
                       <div><label className="an-lbl">Device Name</label><input className="an-in" style={{ width:"100%" }} value={plcForm.name} onChange={(e) => setPlcForm({ ...plcForm, name: e.target.value })} placeholder="e.g. Zone A Line 1" /></div>
                     </div>
+                    {/* ── SUB PLC (optional) — Model/Fault kisi doosre PLC se ── */}
+                    <div style={{ marginTop:14, paddingTop:12, borderTop:"1px dashed #e2e8f0" }}>
+                      <label style={{ fontSize:13, fontWeight:700, display:"flex", alignItems:"center", gap:7 }}>
+                        <input type="checkbox" checked={plcForm.sub_on} onChange={(e) => setPlcForm({ ...plcForm, sub_on: e.target.checked })} />
+                        Sub PLC — Model / Fault kisi <u>doosre</u> PLC se lein? <span style={{ fontWeight:600, color:"#64748b" }}>(ANDON isi main PLC ka hi rahega)</span>
+                      </label>
+                      {plcForm.sub_on && (
+                        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10, marginTop:12 }}>
+                          <div><label className="an-lbl">Sub PLC IP</label><input className="an-in" style={{ width:"100%" }} value={plcForm.sub_ip} onChange={(e) => setPlcForm({ ...plcForm, sub_ip: e.target.value })} placeholder="192.168.30.108" /></div>
+                          <div><label className="an-lbl">Sub Port</label><input className="an-in" style={{ width:"100%" }} type="number" value={plcForm.sub_port} onChange={(e) => setPlcForm({ ...plcForm, sub_port: e.target.value })} placeholder="5007" /></div>
+                          <div><label className="an-lbl">Sub Series</label>
+                            <select className="an-in" style={{ width:"100%" }} value={plcForm.sub_series || "Q"} onChange={(e) => setPlcForm({ ...plcForm, sub_series: e.target.value })}>
+                              {["Q","FX5U","iQ-R","L"].map((s) => <option key={s} value={s}>{s}</option>)}
+                            </select></div>
+                          <div><label className="an-lbl">Sub Machine (label)</label><input className="an-in" style={{ width:"100%" }} value={plcForm.sub_machine_no} onChange={(e) => setPlcForm({ ...plcForm, sub_machine_no: e.target.value })} placeholder="e.g. YHB_SS_08" /></div>
+                          <div style={{ gridColumn:"1 / -1", fontSize:11.5, color:"#94a3b8" }}>Model & Fault register isi Sub PLC se padhe jaayenge. ANDON ke bits upar wale main PLC se hi aayenge.</div>
+                        </div>
+                      )}
+                    </div>
                     <div className="an-row" style={{ marginTop:12 }}>
                       <label style={{ fontSize:13, fontWeight:700, display:"flex", alignItems:"center", gap:6 }}>
                         <input type="checkbox" checked={plcForm.enabled} onChange={(e) => setPlcForm({ ...plcForm, enabled: e.target.checked })} /> Enabled (poll this PLC)
@@ -538,7 +564,8 @@ export default function AndonSystem() {
                       <thead><tr><th>Name</th><th>IP:Port</th><th>Zone / Line / M/C</th><th>Connection</th><th>Status</th><th></th></tr></thead>
                       <tbody>
                         {plcs.map((e) => (
-                          <tr key={e.id}>
+                          <Fragment key={e.id}>
+                          <tr>
                             <td style={{ fontWeight:600 }}>{e.name}</td>
                             <td>{e.ip}:{e.port}{e.series && <span style={{ marginLeft:6, fontSize:10, fontWeight:700, color:"#64748b", background:"#f1f5f9", padding:"1px 6px", borderRadius:99 }}>{e.series}</span>}</td>
                             <td>{[e.zone, e.line, e.machine_no].filter(Boolean).join(" / ") || "—"}</td>
@@ -561,6 +588,24 @@ export default function AndonSystem() {
                               <button className="an-x" onClick={() => wrap(() => api(`/plc-devices/${e.id}`, { method:"DELETE" }), "PLC removed")}>×</button>
                             </td>
                           </tr>
+                          {e.sub_ip && (
+                            <tr>
+                              <td style={{ color:"#64748b", fontSize:11.5, paddingTop:0, borderBottom:"1px solid #f1f5f9" }}>↳ Sub PLC</td>
+                              <td style={{ paddingTop:0 }}>{e.sub_ip}:{e.sub_port}{e.sub_series && <span style={{ marginLeft:6, fontSize:10, fontWeight:700, color:"#64748b", background:"#f1f5f9", padding:"1px 6px", borderRadius:99 }}>{e.sub_series}</span>}</td>
+                              <td style={{ color:"#94a3b8", fontSize:11.5, paddingTop:0 }}>Model / Fault{e.sub_machine_no ? ` · ${e.sub_machine_no}` : ""}</td>
+                              <td style={{ paddingTop:0 }}>
+                                <span style={{ display:"inline-flex", alignItems:"center", gap:7, fontWeight:700, fontSize:12,
+                                               color: e.sub_online === true ? "#16a34a" : e.sub_online === false ? "#dc2626" : "#94a3b8" }}
+                                      title="Sub PLC (Model/Fault) connection">
+                                  <span style={{ width:9, height:9, borderRadius:"50%", flex:"0 0 auto",
+                                                 background: e.sub_online === true ? "#16a34a" : e.sub_online === false ? "#dc2626" : "#cbd5e1" }} />
+                                  {e.sub_online === true ? "Connected" : e.sub_online === false ? "Disconnected" : "Checking…"}
+                                </span>
+                              </td>
+                              <td colSpan={2} style={{ paddingTop:0 }} />
+                            </tr>
+                          )}
+                          </Fragment>
                         ))}
                         {!plcs.length && <tr><td colSpan={6} style={{ color:"#94a3b8" }}>No PLC devices yet.</td></tr>}
                       </tbody>
