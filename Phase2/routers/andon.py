@@ -480,6 +480,7 @@ def _plc_poll_once(dev):
             return False
     try:
         # ek hi connection me: bit-mapping fetch + PLC read + apply (fast cycle)
+        closed = []
         with get_conn() as conn:
             cur = dict_cursor(conn)
             cur.execute("""SELECT do_index, bit_type, bit_no FROM andon_plc_output_mapping
@@ -491,8 +492,18 @@ def _plc_poll_once(dev):
             model = _read_map_name(mc, did, cur, "andon_model_map", "model_name") if any_on else None
             fault = _read_map_name(mc, did, cur, "andon_fault_map", "fault_name") if any_on else None
             for b, val in bits:
-                _apply_state(cur, dev, b["do_index"], val != 0, model=model, fault=fault)   # 1→ON, 0→OFF
+                res = _apply_state(cur, dev, b["do_index"], val != 0, model=model, fault=fault)  # 1→ON, 0→OFF
+                if res and res.get("action") == "closed":            # call band -> slip poori karni hai
+                    closed.append((res.get("event_id"), res.get("history_id")))
             conn.commit()
+        # commit ke BAAD (andon_history ab doosri connection ko dikhega) — har band
+        # hui MAINTENANCE call ki slip me bd_ok_time / end-date / down-time bhar do.
+        # (auto_slip_on_close pehle kahin call hi nahi hota tha -> OK-time khali reh
+        #  jaata tha; ab close par ye chalega.)
+        for _eid, _hid in closed:
+            if _eid and _hid:
+                try: auto_slip_on_close(_eid, _hid)
+                except Exception as _e: print(f"[ANDON-SLIP] close-fill dikkat (call {_eid}): {_e}")
         return True
     except Exception:
         _plc_drop(did)                                        # connection tut gaya → reconnect
