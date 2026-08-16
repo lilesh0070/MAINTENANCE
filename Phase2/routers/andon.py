@@ -510,9 +510,17 @@ def _plc_poll_once(dev):
             bits = [(b, _read_one(mc, b["bit_type"], b["bit_no"])) for b in cur.fetchall()]
             # koi call ON ho to abhi ka model + fault bhi padho (read_mc = SUB ya MAIN).
             # read_mc None ho (SUB offline) to model/fault skip — call phir bhi chale.
+            # ISOLATED: model/fault read fail ho (SUB glitch/register error) to bhi
+            # neeche ka open/close loop KABHI block na ho — warna ek bit ON rehte hue
+            # doosri bit 0 hoti to read-error uski close ko rok deta = GHOST timer.
             any_on = any(v != 0 for _, v in bits)
-            model = _read_map_name(read_mc, did, cur, "andon_model_map", "model_name") if (any_on and read_mc) else None
-            fault = _read_map_name(read_mc, did, cur, "andon_fault_map", "fault_name") if (any_on and read_mc) else None
+            model = fault = None
+            if any_on and read_mc:
+                try:
+                    model = _read_map_name(read_mc, did, cur, "andon_model_map", "model_name")
+                    fault = _read_map_name(read_mc, did, cur, "andon_fault_map", "fault_name")
+                except Exception:
+                    model = fault = None                 # enrichment optional
             for b, val in bits:
                 res = _apply_state(cur, dev, b["do_index"], val != 0, model=model, fault=fault)  # 1→ON, 0→OFF
                 if res and res.get("action") == "closed":            # call band -> slip poori karni hai
@@ -531,6 +539,67 @@ def _plc_poll_once(dev):
         _plc_drop(did)                                        # MAIN+SUB reconnect
         _PLC_RETRY[did] = _time.monotonic() + 1
         return False, (False if has_sub else None)
+
+
+_STALE_OFFLINE_GRACE = 180     # sec — itne der offline PLC ki OPEN call ghost maani jaati hai
+
+
+def _seconds_since(iso_str):
+    """app-clock ISO string se ab tak ke seconds (None agar na mile / parse na ho)."""
+    if not iso_str:
+        return None
+    try:
+        return (datetime.now() - datetime.fromisoformat(iso_str)).total_seconds()
+    except Exception:
+        return None
+
+
+def _stale_call_sweep():
+    """GHOST open call band karo — dashboard pe timer atka reh jaata hai jab bit=0
+    kabhi padha hi nahi ja raha:
+      • PLC delete ho gaya (ab kabhi poll nahi hoga),
+      • PLC disabled kar diya (Enabled off),
+      • PLC lambe (>= grace) offline hai.
+    In sab me andon_system ki OPEN row normal path se close nahi hoti, isliye yahan
+    zabardasti band karte hain — history + duration ke saath — aur maintenance call
+    ho to slip ka OK-time bhi bhar dete hain.  Isse "band hone ke baad bhi timer
+    chalta rehta" wali ghost hamesha ke liye khatam."""
+    try:
+        closed = []
+        with get_conn() as conn:
+            cur = dict_cursor(conn)
+            cur.execute("SELECT id, enabled FROM andon_plc_devices")
+            devrows = {r["id"]: r for r in cur.fetchall()}
+            cur.execute("SELECT DISTINCT plc_id FROM andon_system WHERE state='OPEN'")
+            open_pids = [r["plc_id"] for r in cur.fetchall()]
+            for pid in open_pids:
+                st = _PLC_STATUS.get(pid, {})
+                dv = devrows.get(pid)
+                reason = None
+                if dv is None:
+                    reason = "PLC deleted"
+                elif not dv.get("enabled"):
+                    reason = "PLC disabled"
+                elif st.get("online") is False:
+                    off_for = _seconds_since(st.get("offline_since"))
+                    if off_for is None or off_for >= _STALE_OFFLINE_GRACE:
+                        reason = "PLC offline"
+                # online True / abhi tak poll nahi hua → chhod do (poll khud sambhalega)
+                if not reason:
+                    continue
+                cur.execute("SELECT do_index FROM andon_system WHERE plc_id=%s AND state='OPEN'", (pid,))
+                for r in cur.fetchall():
+                    res = _apply_state(cur, {"id": pid}, r["do_index"], False)
+                    if res and res.get("action") == "closed":
+                        closed.append((res.get("event_id"), res.get("history_id"), reason))
+            conn.commit()
+        for eid, hid, reason in closed:
+            print(f"[ANDON] ghost call {eid} auto-closed ({reason}) -> timer band")
+            if eid and hid:
+                try: auto_slip_on_close(eid, hid)
+                except Exception as e: print(f"[ANDON-SLIP] ghost close-fill (call {eid}): {e}")
+    except Exception as e:
+        print(f"[ANDON] stale-call sweep dikkat: {e}")
 
 
 def _plc_poll_loop():
@@ -554,8 +623,12 @@ def _plc_poll_loop():
                     _plc_drop(dev["id"])
                     continue
                 ok, sub_ok = _plc_poll_once(dev)
-                _PLC_STATUS[dev["id"]] = {"online": ok, "sub_online": sub_ok, "checked": now,
-                                          "last_seen": now if ok else prev.get("last_seen")}
+                _st = {"online": ok, "sub_online": sub_ok, "checked": now,
+                       "last_seen": now if ok else prev.get("last_seen")}
+                # offline hone ka pehla waqt yaad rakho — stale-call sweep grace ke liye
+                if not ok:
+                    _st["offline_since"] = prev.get("offline_since") or now
+                _PLC_STATUS[dev["id"]] = _st
             for k in list(_PLC_CONN.keys()):        # deleted PLC → connection band
                 if k not in ids: _plc_drop(k)
             for k in list(_PLC_STATUS.keys()):
@@ -563,9 +636,11 @@ def _plc_poll_loop():
         except Exception as e:
             print(f"[ANDON-PLC-POLL] {e}")
         n += 1
-        if n % 60 == 0:                             # ~12s: lambi maintenance call ki auto-slip
+        if n % 60 == 0:                             # ~6s: lambi maintenance call ki auto-slip
             try: _slip_threshold_sweep()
             except Exception as e: print(f"[ANDON-SLIP] {e}")
+            try: _stale_call_sweep()                 # ghost open call (offline/disabled/deleted PLC) band karo
+            except Exception as e: print(f"[ANDON] stale-sweep {e}")
         _time.sleep(_PLC_POLL_INTERVAL)
 
 
