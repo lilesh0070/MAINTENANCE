@@ -53,37 +53,38 @@ function fyMonths(fy) {
 // column set.  Log Book rows only carry a subset; the slip-only columns come back
 // blank for them.  wrap = allow multi-line text; date = format YYYY-MM-DD.
 const COLS = [
-  { key: "_sno",                label: "S No." },
-  { key: "source",              label: "Source" },
-  { key: "shift",               label: "Shift" },
-  { key: "zone",                label: "Zone" },
-  { key: "line",                label: "Line" },
-  { key: "machine_no",          label: "M/C No." },
-  { key: "machine_name",        label: "Machine Name", wrap: true },
-  { key: "model_no",            label: "Model No." },
-  { key: "line_leader_name",    label: "Line Leader" },
-  { key: "machine_operator_name", label: "Operator" },
-  { key: "category",            label: "Category" },
-  { key: "bd_date",             label: "Breakdown Date", date: true },
-  { key: "bd_start_date",       label: "Start Date", date: true },
-  { key: "bd_end_date",         label: "End Date", date: true },
-  { key: "bd_start_time",       label: "Start Time" },
-  { key: "bd_received_time",    label: "Received Time" },
-  { key: "response_time_minutes", label: "Response (min)" },
-  { key: "bd_ok_time",          label: "OK Time" },
-  { key: "mc_down_time_minutes", label: "Down Time (min)" },
-  { key: "frequency",           label: "Frequency" },
-  { key: "problem_reported_by_production", label: "Problem Reported by Production", wrap: true },
-  { key: "problem_related_to",  label: "Related To" },
-  { key: "type_of_problem",     label: "Type of Problem" },
-  { key: "problem_observed_by_maintenance", label: "Problem Observed by Maintenance", wrap: true },
-  { key: "action_taken_on_problem", label: "Action Taken on Problem", wrap: true },
-  { key: "spares_used",         label: "Spares Used", wrap: true },
-  { key: "bd_attended_by",      label: "B/D Attended By" },
-  { key: "prepared_by_name",    label: "Prepared By" },
-  { key: "received_by_name",    label: "Received By" },
-  { key: "line_leader_operator_name", label: "Line Leader / Operator" },
-  { key: "quality_engineer_name", label: "Quality Engineer" },
+  // Header = actual DB column naam, order BD History jaisa (S No. + Source History Card-specific).
+  { key: "_sno",                            label: "S No." },
+  { key: "source",                          label: "source" },
+  { key: "bd_date",                         label: "slip_date", date: true },
+  { key: "zone",                            label: "zone" },
+  { key: "line",                            label: "line" },
+  { key: "machine_no",                      label: "machine_no" },
+  { key: "machine_name",                    label: "machine_name", wrap: true },
+  { key: "problem_observed_by_maintenance", label: "problem_observed_by_maintenance", wrap: true },
+  { key: "action_taken_on_problem",         label: "action_taken_on_problem", wrap: true },
+  { key: "bd_start_time",                   label: "bd_start_time" },
+  { key: "bd_received_time",                label: "bd_received_time" },
+  { key: "response_time_minutes",           label: "response_time_minutes" },
+  { key: "bd_ok_time",                      label: "bd_ok_time" },
+  { key: "mc_down_time_minutes",            label: "mc_down_time_minutes" },
+  { key: "spares_used",                     label: "spares_used", wrap: true },
+  { key: "bd_attended_by",                  label: "bd_attended_by" },
+  { key: "shift",                           label: "shift" },
+  { key: "model_no",                        label: "model_no" },
+  { key: "category",                        label: "category" },
+  { key: "line_leader_name",                label: "line_leader_name" },
+  { key: "machine_operator_name",           label: "machine_operator_name" },
+  { key: "bd_start_date",                   label: "bd_start_date", date: true },
+  { key: "bd_end_date",                     label: "bd_end_date", date: true },
+  { key: "frequency",                       label: "frequency" },
+  { key: "problem_reported_by_production",  label: "problem_reported_by_production", wrap: true },
+  { key: "problem_related_to",              label: "problem_related_to" },
+  { key: "type_of_problem",                 label: "type_electrical / type_mechanical" },
+  { key: "prepared_by_name",                label: "prepared_by_name" },
+  { key: "received_by_name",                label: "received_by_name" },
+  { key: "line_leader_operator_name",       label: "line_leader_operator_name" },
+  { key: "quality_engineer_name",           label: "quality_engineer_name" },
 ];
 
 // Enum/boolean prettifiers for the derived cells.
@@ -124,7 +125,12 @@ export default function HistoryCard() {
         setYears(list);
         if (!booted.current && list.length) {
           booted.current = true;
-          setFFy((list.find((v) => v.is_current) || list[list.length - 1]).fy);
+          const cur = (list.find((v) => v.is_current) || list[list.length - 1]).fy;
+          setFFy(cur);
+          // Month default = abhi ka current month (agar wo current FY me aata ho)
+          const now = new Date();
+          const cm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+          if (fyMonths(cur).some((m) => m.value === cm)) setFMonth(cm);
         }
       }).catch(() => setYears([]));
     api.get("/api/machines/", token)
@@ -261,8 +267,8 @@ export default function HistoryCard() {
         .hc-count { font-size:11px; color:#94a3b8; font-weight:600; }
         .hc-scroll { overflow-x:auto; }
         .hc-table { width:100%; border-collapse:collapse; font-size:12.5px; }
-        .hc-table th { text-align:left; padding:10px 12px; font-size:9.5px; font-weight:700; letter-spacing:.05em;
-                       text-transform:uppercase; color:#64748b; border-bottom:2px solid #e2e8f0;
+        .hc-table th { text-align:left; padding:10px 12px; font-size:10.5px; font-weight:700; letter-spacing:.02em;
+                       text-transform:none; color:#64748b; border-bottom:2px solid #e2e8f0;
                        white-space:nowrap; background:#f8fafc; position:sticky; top:0; }
         .hc-table td { padding:9px 12px; border-bottom:1px solid #f1f5f9; color:#334155; vertical-align:top; white-space:nowrap; }
         .hc-table td.wrap { white-space:normal; min-width:170px; max-width:280px; line-height:1.4; }
