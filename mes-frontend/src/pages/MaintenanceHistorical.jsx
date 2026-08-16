@@ -208,6 +208,14 @@ export default function MaintenanceHistorical() {
     return null;
   }, [fFy, fMonth, fDate]);
 
+  // PM Check Sheet + DMC monthly/periodic hain — inpar exact DATE filter NAHI
+  // lagana; sirf Month/FY window (fDate ignore).
+  const winNoDate = useMemo(() => {
+    if (fMonth) return monthDates(fMonth);
+    if (fFy)    return fyDates(fFy);
+    return null;
+  }, [fFy, fMonth]);
+
   useEffect(() => {
     if (!token) return;
     // `ignore`: jab `win` badalta hai (jaise boot pe null → current-month window),
@@ -232,16 +240,19 @@ export default function MaintenanceHistorical() {
   useEffect(() => {
     if (!token) return;
     let ignore = false;   // race fix — same as breakdown-log effect above
-    const p = new URLSearchParams();
-    if (win) { p.set("date_from", win.start); p.set("date_to", win.end); }
+    // PM Check Sheet: exact DATE ignore — sirf Month/FY (winNoDate).
+    const pmP = new URLSearchParams();
+    if (winNoDate) { pmP.set("date_from", winNoDate.start); pmP.set("date_to", winNoDate.end); }
     // only sheets that cleared the full chain (Team Member → Engineer → In-Charge)
-    p.set("stage", "APPROVED");
+    pmP.set("stage", "APPROVED");
     setPmLoading(true);
-    api.get(`/api/pm/check-sheet-fills?${p.toString()}`, token)
+    api.get(`/api/pm/check-sheet-fills?${pmP.toString()}`, token)
       .then((d) => { if (!ignore) setPmRows(Array.isArray(d?.rows) ? d.rows : []); })
       .catch(() => { if (!ignore) setPmRows([]); })
       .finally(() => { if (!ignore) setPmLoading(false); });
-    // sunday plan work + daily work assign (same window on plan_date)
+    // sunday plan work + daily work assign — day-based, to `win` (exact date bhi).
+    const p = new URLSearchParams();
+    if (win) { p.set("date_from", win.start); p.set("date_to", win.end); }
     setSunLoading(true);
     api.get(`/api/sunday-plan/?${p.toString()}`, token)
       .then((d) => { if (!ignore) setSunRows(Array.isArray(d?.rows) ? d.rows : []); })
@@ -253,7 +264,7 @@ export default function MaintenanceHistorical() {
       .catch(() => { if (!ignore) setDayRows([]); })
       .finally(() => { if (!ignore) setDayLoading(false); });
     return () => { ignore = true; };
-  }, [token, win]);
+  }, [token, win, winNoDate]);
 
   // filled DMC check sheets (machine_dmc_filled) — server returns only
   // maintenance-signed sheets; the month window is applied client-side (no date
@@ -327,9 +338,10 @@ export default function MaintenanceHistorical() {
     if (fLine && norm(r.line_name) !== norm(fLine)) return false;
     if (fMachineNo && norm(r.machine_no) !== norm(fMachineNo)) return false;
     if (fMachineName && norm(r.machine_name) !== norm(fMachineName)) return false;
-    if (win && !(r.sheet_month >= win.start.slice(0, 7) && r.sheet_month <= win.end.slice(0, 7))) return false;
+    // DMC monthly — exact DATE ignore, sirf Month/FY window (winNoDate).
+    if (winNoDate && !(r.sheet_month >= winNoDate.start.slice(0, 7) && r.sheet_month <= winNoDate.end.slice(0, 7))) return false;
     return true;
-  }), [dmcRows, win, fZone, fLine, fMachineNo, fMachineName]);
+  }), [dmcRows, winNoDate, fZone, fLine, fMachineNo, fMachineName]);
 
   const openDmc = (id) =>
     api.get(`/api/machine-dmc/check-sheet-fill/${id}`, token).then(setViewDmc).catch(() => {});
