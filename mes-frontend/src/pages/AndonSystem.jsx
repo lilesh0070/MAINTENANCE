@@ -273,17 +273,6 @@ export default function AndonSystem() {
   const plcZones    = useMemo(() => [...new Set(master.map((m) => m.zone_name).filter(Boolean))].sort(), [master]);
   const plcLines    = useMemo(() => plcForm.zone ? [...new Set(master.filter((m) => m.zone_name === plcForm.zone).map((m) => m.line_name).filter(Boolean))].sort() : [], [master, plcForm.zone]);
   const plcMachines = useMemo(() => (plcForm.zone && plcForm.line) ? [...new Set(master.filter((m) => m.zone_name === plcForm.zone && m.line_name === plcForm.line).map((m) => m.machine_no).filter(Boolean))].sort() : [], [master, plcForm.zone, plcForm.line]);
-  // Sub PLC ke liye machine list — poore master se (zone/line ke bina bhi chun sakein)
-  const subMachines = useMemo(() => {
-    const seen = new Set(), out = [];
-    for (const m of master) {
-      if (!m.machine_no || seen.has(m.machine_no)) continue;
-      seen.add(m.machine_no);
-      const ctx = [m.zone_name, m.line_name].filter(Boolean).join(" / ");
-      out.push({ no: m.machine_no, label: ctx ? `${m.machine_no} · ${ctx}` : m.machine_no });
-    }
-    return out.sort((a, b) => String(a.no).localeCompare(String(b.no)));
-  }, [master]);
   const onPlcMachine = (v) => {
     const m = master.find((x) => x.zone_name === plcForm.zone && x.line_name === plcForm.line && String(x.machine_no) === String(v));
     setPlcForm((f) => ({ ...f, machine_no: v, machine_name: m?.machine_name || "" }));
@@ -549,9 +538,9 @@ export default function AndonSystem() {
                       {plcForm.sub_on && (
                         <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10, marginTop:12 }}>
                           <div><label className="an-lbl">Sub Machine No</label>
-                            <select className="an-in" style={{ width:"100%" }} value={plcForm.sub_machine_no} onChange={(e) => setPlcForm({ ...plcForm, sub_machine_no: e.target.value })}>
-                              <option value="">— select —</option>
-                              {subMachines.map((m) => <option key={m.no} value={m.no}>{m.label}</option>)}
+                            <select className="an-in" style={{ width:"100%" }} value={plcForm.sub_machine_no} onChange={(e) => setPlcForm({ ...plcForm, sub_machine_no: e.target.value })} disabled={!plcMachines.length}>
+                              <option value="">{plcMachines.length ? "— select —" : "— pehle upar Zone/Line chunein —"}</option>
+                              {plcMachines.map((m) => <option key={m} value={m}>{m}</option>)}
                             </select></div>
                           <div><label className="an-lbl">Sub PLC IP</label><input className="an-in" style={{ width:"100%" }} value={plcForm.sub_ip} onChange={(e) => setPlcForm({ ...plcForm, sub_ip: e.target.value })} placeholder="192.168.30.108" /></div>
                           <div><label className="an-lbl">Sub Port</label><input className="an-in" style={{ width:"100%" }} type="number" value={plcForm.sub_port} onChange={(e) => setPlcForm({ ...plcForm, sub_port: e.target.value })} placeholder="5007" /></div>
