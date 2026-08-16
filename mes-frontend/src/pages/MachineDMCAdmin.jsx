@@ -551,37 +551,8 @@ export default function MachineDMCAdmin({ toast, readOnly = false }) {
             Select zone → line → machine to see its check-sheet & revision history.
           </div>
         ) : (<>
-          {/* filled sheets */}
-          <div style={card}>
-            <div style={{ fontWeight: 800, fontSize: 13, color: "#0f172a", marginBottom: 10 }}>
-              📋 Filled DMC Sheets — {mno}{histFy ? ` · FY ${histFy}` : ""}{histMonth ? ` · ${fillMonthLabel(histMonth)}` : ""} <span style={{ fontWeight: 600, color: "#94a3b8" }}>({shownSheets.length})</span>
-            </div>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead><tr>{["Month", "Format No.", "Point Rev", "Points", "Signed Weeks", "Filled By", ""].map((h) => (
-                  <th key={h} style={{ ...sth, textAlign: "left" }}>{h}</th>))}</tr></thead>
-                <tbody>
-                  {shownSheets.map((s) => (
-                    <tr key={s.id}>
-                      <td style={tdc}>{s.sheet_month || "—"}</td>
-                      <td style={tdc}><b>{s.format_no || "—"}</b></td>
-                      <td style={tdc}>Rev {s.rev_no || "—"}</td>
-                      <td style={{ ...tdc, textAlign: "center" }}>{s.n_points}</td>
-                      <td style={{ ...tdc, textAlign: "center" }}>
-                        <span style={{ color: "#15803d", fontWeight: 800 }}>🔧 {s.signed_weeks ?? 0}</span>
-                        <span style={{ color: "#94a3b8", fontWeight: 700 }}>
-                          {" "}· ✅ {s.verified_days ?? 0}/{s.submitted_days ?? 0} days
-                        </span>
-                      </td>
-                      <td style={tdc}>{s.filled_by || "—"}</td>
-                      <td style={tdc}><button onClick={() => openFill(s.id)} style={viewBtn}>View Sheet</button></td>
-                    </tr>
-                  ))}
-                  {shownSheets.length === 0 && <tr><td colSpan={7} style={{ ...tdc, textAlign: "center", color: "#94a3b8" }}>{(histFy || histMonth) ? "No maintenance-signed sheet for the selected filter." : "Nothing here yet — a sheet appears only after the full chain: Operator → Supervisor (each date) → Maintenance (weekly sign)."}</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          {/* filled DMC sheets table yahan se HATAYA gaya — ab wo Historical Data
+              page pe hai (Filled Auto/DMC sections).  History tab sirf revisions. */}
 
           {/* check-point revisions */}
           <div style={card}>
