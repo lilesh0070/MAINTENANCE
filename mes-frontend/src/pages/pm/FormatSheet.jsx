@@ -178,7 +178,7 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
             <tbody>
               {(sheetSpares || []).map((r, ri) => {
                 const spInp = { width:"100%", border:"none", outline:"none", fontSize:11,
-                                fontFamily:"inherit", background:"#fefce8", padding:"4px 5px", boxSizing:"border-box" };
+                                fontFamily:"inherit", background:"#fff", padding:"4px 5px", boxSizing:"border-box" };
                 return (
                   <tr key={ri}>
                     <td style={{ border:sb, padding:0 }}>
