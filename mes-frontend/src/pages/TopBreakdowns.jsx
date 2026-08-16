@@ -121,7 +121,7 @@ export default function TopBreakdowns() {
 
   // Machine No / Name filter client-side (endpoint machine filter machine_name par
   // hai; No client-side saaf rehta), phir down-time se sort → top-N.
-  const { ranked, totalMin, totalCount, shown, maxVal, longest } = useMemo(() => {
+  const { ranked, totalMin, totalCount, shown, maxVal, groupCards, groupLabel } = useMemo(() => {
     let list = rows.filter((r) => (r.solve_time_min || 0) > 0);
     if (fMachineNo)   list = list.filter((r) => String(r.machine_no) === String(fMachineNo));
     if (fMachineName) list = list.filter((r) => r.machine_name === fMachineName);
@@ -129,9 +129,23 @@ export default function TopBreakdowns() {
     const tMin  = list.reduce((s, r) => s + (r.solve_time_min || 0), 0);
     const take  = topN > 0 ? list.slice(0, topN) : list;
     const mx    = take.length ? (take[0].solve_time_min || 0) : 0;
+    // Dikhaye ja rahe top-N ko group karo — card me har group ki frequency + down time:
+    //   All Zones      → zone-wise
+    //   zone selected  → line-wise
+    //   line selected  → machine-wise
+    const keyOf = fLine ? ((r) => r.machine_no) : fZone ? ((r) => r.line_code) : ((r) => r.zone_code);
+    const gmap = {};
+    for (const r of take) {
+      const k = keyOf(r) || "—";
+      if (!gmap[k]) gmap[k] = { key: k, freq: 0, min: 0 };
+      gmap[k].freq += 1;
+      gmap[k].min  += (r.solve_time_min || 0);
+    }
+    const gcards = Object.values(gmap).sort((a, b) => b.min - a.min);
+    const glabel = fLine ? `By Machine — ${fZone} / ${fLine}` : fZone ? `By Line — ${fZone}` : "By Zone";
     return { ranked: take, totalMin: tMin, totalCount: list.length, shown: take.length,
-             maxVal: mx, longest: list[0] || null };
-  }, [rows, fMachineNo, fMachineName, topN]);
+             maxVal: mx, groupCards: gcards, groupLabel: glabel };
+  }, [rows, fMachineNo, fMachineName, fZone, fLine, topN]);
 
   const coveredPct = totalMin ? Math.round((ranked.reduce((s, r) => s + (r.solve_time_min || 0), 0) / totalMin) * 100) : 0;
   const totalHrs   = Math.round((totalMin / 60) * 10) / 10;
@@ -244,44 +258,37 @@ export default function TopBreakdowns() {
           </div>
         </div>
 
-        {/* ── headline: longest single breakdown + total down time in filter ── */}
+        {/* ── zone-wise (All Zones) / line-wise (zone selected) cards — sab ek hi row me ── */}
         <div className="pa-body" style={{ marginBottom:0 }}>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))", gap:14, marginBottom:14 }}>
-            <div style={{ background:"#fff", border:"1px solid #e2e8f0", borderLeft:"4px solid #b91c1c",
-                          borderRadius:14, padding:"14px 18px", boxShadow:"0 1px 4px rgba(15,23,42,.06)" }}>
-              <div style={{ fontSize:10.5, fontWeight:800, letterSpacing:".06em", textTransform:"uppercase", color:"#94a3b8" }}>
-                🕐 Longest Breakdown
-              </div>
-              <div style={{ fontSize:18, fontWeight:800, color:"#0f172a", marginTop:6, lineHeight:1.15 }}>
-                {longest ? (longest.machine_name || longest.machine_no || "—") : "—"}
-                {longest && longest.machine_no && longest.machine_name && (
-                  <span style={{ fontSize:13, fontWeight:600, color:"#64748b" }}> · {longest.machine_no}</span>
-                )}
-              </div>
-              <div style={{ display:"flex", alignItems:"baseline", gap:10, marginTop:4 }}>
-                <span style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:26, fontWeight:800, color:"#b91c1c", lineHeight:1 }}>
-                  {longest ? `${(longest.solve_time_min || 0).toLocaleString()} min` : "—"}
-                </span>
-                <span style={{ fontSize:11.5, color:"#94a3b8", fontWeight:600 }}>
-                  {longest ? `${(longest.solve_time_hours || 0).toLocaleString()} hrs · ${longest.zone_code || "—"} / ${longest.line_code || "—"} · ${fmtDate(longest.bd_date)}` : "no data"}
-                </span>
-              </div>
-            </div>
-            <div style={{ background:"#fff", border:"1px solid #e2e8f0", borderLeft:"4px solid #1f4e79",
-                          borderRadius:14, padding:"14px 18px", boxShadow:"0 1px 4px rgba(15,23,42,.06)" }}>
-              <div style={{ fontSize:10.5, fontWeight:800, letterSpacing:".06em", textTransform:"uppercase", color:"#94a3b8" }}>
-                📋 Total Down Time (filter)
-              </div>
-              <div style={{ fontSize:18, fontWeight:800, color:"#0f172a", marginTop:6, lineHeight:1.15 }}>
-                {totalCount.toLocaleString()} breakdown{totalCount === 1 ? "" : "s"}
-              </div>
-              <div style={{ display:"flex", alignItems:"baseline", gap:10, marginTop:4 }}>
-                <span style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:26, fontWeight:800, color:"#1f4e79", lineHeight:1 }}>
-                  {totalMin.toLocaleString()} min
-                </span>
-                <span style={{ fontSize:11.5, color:"#94a3b8", fontWeight:600 }}>{totalHrs.toLocaleString()} hrs</span>
-              </div>
-            </div>
+          <div style={{ fontSize:11, fontWeight:800, letterSpacing:".06em", textTransform:"uppercase",
+                        color:"#64748b", margin:"0 6px 8px" }}>
+            {groupLabel}
+            <span style={{ color:"#cbd5e1", fontWeight:700 }}> · frequency &amp; down time {topN > 0 ? `(top ${topN})` : "(all)"}</span>
+          </div>
+          <div style={{ display:"flex", gap:12, overflowX:"auto", paddingBottom:6, marginBottom:14 }}>
+            {groupCards.length === 0 ? (
+              <div style={{ color:"#94a3b8", fontSize:13, padding:"10px 4px" }}>{loading ? "Loading…" : "No data."}</div>
+            ) : groupCards.map((g, i) => {
+              const accent = i === 0 ? "#b91c1c" : i === 1 ? "#c2410c" : i === 2 ? "#a16207" : "#1f4e79";
+              const hrs = Math.round((g.min / 60) * 10) / 10;
+              return (
+                <div key={g.key} style={{ flex:"0 0 auto", minWidth:170, background:"#fff", border:"1px solid #e2e8f0",
+                                          borderLeft:`4px solid ${accent}`, borderRadius:12, padding:"12px 16px",
+                                          boxShadow:"0 1px 4px rgba(15,23,42,.06)" }}>
+                  <div style={{ fontSize:13, fontWeight:800, color:"#0f172a", whiteSpace:"nowrap", overflow:"hidden",
+                                textOverflow:"ellipsis", maxWidth:260 }} title={g.key}>{g.key}</div>
+                  <div style={{ display:"flex", alignItems:"baseline", gap:7, marginTop:5 }}>
+                    <span style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:24, fontWeight:800, color:accent, lineHeight:1 }}>
+                      {g.min.toLocaleString()}
+                    </span>
+                    <span style={{ fontSize:11, color:"#94a3b8", fontWeight:700 }}>min · {hrs} hrs</span>
+                  </div>
+                  <div style={{ fontSize:12, color:"#64748b", fontWeight:700, marginTop:4 }}>
+                    {g.freq} breakdown{g.freq === 1 ? "" : "s"}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
