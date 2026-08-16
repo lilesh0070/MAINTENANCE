@@ -681,10 +681,10 @@ export default function PMPanel() {
             <input type="date" value={calSheet.date}
                    onChange={e=>setCalSheet(s=>s?{...s, date:e.target.value}:s)}
                    style={{marginLeft:6, padding:6, borderRadius:6, border:bd, fontSize:12}} /></label>
-          <span style={{fontSize:12, fontWeight:800, color: pointsDone ? "#16a34a" : "#d97706"}}>
+          <span style={{fontSize:12, fontWeight:800, color: pointsDone ? "#16a34a" : "#64748b"}}>
             {filledN}/{merged.length} points filled
           </span>
-          <span style={{fontSize:11.5, fontWeight:800, color: hasPrepared ? "#16a34a" : "#d97706"}}>
+          <span style={{fontSize:11.5, fontWeight:800, color: hasPrepared ? "#16a34a" : "#64748b"}}>
             {hasPrepared ? "✓ Code + sign done" : "✍ Sheet ke niche PREPARED BY me code + sign karo"}
           </span>
           <button onClick={saveCalSheet} disabled={calSaving || !allFilled}
@@ -697,7 +697,7 @@ export default function PMPanel() {
           </button>
           <button onClick={()=>setCalSheet(null)}
                   style={{padding:"8px 14px", borderRadius:8, border:bd, background:"#fff", cursor:"pointer", fontSize:12, fontWeight:700, color:"#64748b"}}>✕ Cancel</button>
-          {calSheet.rejectReason ? (
+          {calSheet.rejectReason && (
             <div style={{flexBasis:"100%", fontSize:11.5, color:"#b91c1c", background:"#fef2f2",
                          border:"1px solid #fecaca", borderRadius:8, padding:"8px 10px"}}>
               ↩ <b>{calSheet.rejectedFrom || "Verifier"}</b> (code <b>{calSheet.rejectedBy || "—"}</b>) ne wapas bheji:
@@ -705,11 +705,6 @@ export default function PMPanel() {
               <span style={{display:"block", color:"#7f1d1d", fontWeight:600, marginTop:2}}>
                 Purana data waisa hi load hua hai — theek karke dobara sign karo. Wahi sheet update hogi, nayi nahi banegi.
               </span>
-            </div>
-          ) : (
-            <div style={{flexBasis:"100%", fontSize:11, color:"#64748b"}}>
-              Stage 1 of 3 — save karte hi sheet <b>Engineer (Maintenance)</b> ke verify ke liye jayegi,
-              uske baad <b>In-Charge Maintenance</b> ke approve ke liye. Dono sign ke baad hi History me submit hogi.
             </div>
           )}
         </div>
@@ -732,12 +727,6 @@ export default function PMPanel() {
           <button onClick={fillDown} disabled={!nCells || box.r1 === box.r2} style={miniBtn}
                   title="Sabse upar wale cell ki value poori selection me bhar do (Ctrl+D)">⬇ Fill Down</button>
           <button onClick={()=>setCs(null)} disabled={!nCells} style={miniBtn}>✕ Clear</button>
-
-          <div style={{flexBasis:"100%", fontSize:10.5, color:"#94a3b8"}}>
-            Kisi fill cell pe <b>drag</b> karo ya ek cell click karke dusre pe <b>shift+click</b> — beech ke saare cells select ho jayenge.
-            Phir <b>Ctrl+C / Ctrl+V</b> se copy-paste, ya <b>Ctrl+D</b> se upar wali value poori selection me.
-            Ek hi cell select karke Paste karoge to poora copied block wahin se bhar jayega.
-          </div>
         </div>
         {/* a re-opened sheet keeps the footer it was originally filled under */}
         <FormatSheet f={fmt ? { ...fmt, doc_footer: calSheet.docFooter || fmt.doc_footer } : fmt}
