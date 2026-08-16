@@ -636,12 +636,22 @@ def _plc_poll_loop():
         except Exception as e:
             print(f"[ANDON-PLC-POLL] {e}")
         n += 1
-        if n % 60 == 0:                             # ~6s: lambi maintenance call ki auto-slip
-            try: _slip_threshold_sweep()
-            except Exception as e: print(f"[ANDON-SLIP] {e}")
-            try: _stale_call_sweep()                 # ghost open call (offline/disabled/deleted PLC) band karo
+        if n % 60 == 0:                             # ~6s: ghost open call (offline/disabled/deleted PLC) band karo
+            try: _stale_call_sweep()                 # slip sweep ab ALAG dedicated thread me (poll-blocking se free)
             except Exception as e: print(f"[ANDON] stale-sweep {e}")
         _time.sleep(_PLC_POLL_INTERVAL)
+
+
+def _slip_sweep_loop():
+    """DEDICATED thread — har 1s me threshold-sweep, taaki auto-slip threshold PAAR
+    karte hi (~1s me) ban jaaye.  Poll loop ke andar chalane se offline PLC ki
+    connection-attempt cadence isko slow kar deti thi (slip 3-4s late banti thi)."""
+    while True:
+        try:
+            _slip_threshold_sweep()
+        except Exception as e:
+            print(f"[ANDON-SLIP] sweep-loop {e}")
+        _time.sleep(1.0)
 
 
 def _start_plc_poller():
@@ -649,6 +659,7 @@ def _start_plc_poller():
     if _plc_poller_started: return
     _plc_poller_started = True
     threading.Thread(target=_plc_poll_loop, daemon=True, name="andon-plc-poller").start()
+    threading.Thread(target=_slip_sweep_loop, daemon=True, name="andon-slip-sweep").start()
 
 
 def start_workers():
