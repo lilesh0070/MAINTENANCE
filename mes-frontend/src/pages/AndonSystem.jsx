@@ -791,7 +791,14 @@ export default function AndonSystem() {
                             {o.reachable === true ? "Connected" : o.reachable === false ? "Disconnected" : "Checking…"}
                           </span>
                         </td>
-                        <td>{o.bit_on === true ? <span style={{ color:"#16a34a", fontWeight:800 }}>● ON</span> : o.bit_on === false ? <span style={{ color:"#94a3b8", fontWeight:700 }}>OFF</span> : <span style={{ color:"#cbd5e1" }}>—</span>}</td>
+                        <td>
+                          {o.bit_on === true ? <span style={{ color:"#16a34a", fontWeight:800 }}>● ON</span>
+                           : o.bit_on === false ? <span style={{ color:"#94a3b8", fontWeight:700 }}>OFF</span>
+                           : <span style={{ color:"#cbd5e1" }}>—</span>}
+                          {o.should_be_on && o.bit_on !== true && (
+                            <span style={{ display:"block", fontSize:10, color:"#b45309", fontWeight:700, whiteSpace:"nowrap" }}>chahiye: ON</span>
+                          )}
+                        </td>
                         <td><span className="an-chip" style={{ padding:"2px 9px", background: o.enabled ? "#dcfce7" : "#fee2e2", color: o.enabled ? "#16a34a" : "#dc2626" }}>{o.enabled ? "Enabled" : "Disabled"}</span></td>
                         <td style={{ whiteSpace:"nowrap" }}>
                           <button className="an-btn gh sm" onClick={() => { setOutEdit(o.id); setOutForm({ department:o.department, plc_ip:o.plc_ip, plc_port:o.plc_port, plc_series:o.plc_series, bit_type:o.bit_type, bit_no:o.bit_no, enabled:o.enabled }); }}>Edit</button>{" "}
@@ -802,7 +809,7 @@ export default function AndonSystem() {
                   </tbody>
                 </table>
                 <div style={{ fontSize:11.5, color:"#94a3b8", marginTop:10 }}>
-                  <b>Connection</b> = output PLC reachable hai ya nahi (dev pe bhi dikhta). <b>Bit now</b> = call ki live state se bit ON/OFF hona chahiye (dev pe bhi sahi). Actual PLC pe write sirf us backend se hota hai jiska poller ON hai (production). Config save/edit yahin se hota hai.
+                  <b>Connection</b> = output PLC TCP se reachable hai ya nahi. <b>Bit now</b> = PLC pe bit ka <b>ACTUAL</b> state (jo writer ne sach me likha) — sirf us backend pe aata jiska poller ON hai (production); dev pe writer band → "—", aur "chahiye: ON" batata ki call ke hisaab se ON hona chahiye. Bit PLC pe tabhi likhega jab (1) production pe deploy ho (poller ON) <b>AUR</b> (2) IP/port/bit sahi ho. <i>(Note: Mitsubishi MC protocol aam taur pe port 5007 pe — 502 Modbus ka hai.)</i>
                 </div>
               </div>
             </>
