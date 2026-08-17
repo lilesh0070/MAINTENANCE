@@ -815,10 +815,23 @@ def list_call_outputs(user=Depends(get_current_user)):
                               bit_type, bit_no, enabled, created_at
                          FROM andon_call_output ORDER BY id""")
         rows = cur.fetchall()
+        # live open calls per department (unacked vs total) → DESIRED bit state
+        cur.execute("""SELECT COALESCE(dep.name, e.display_name) AS dept,
+                              COUNT(*) FILTER (WHERE e.acknowledged_at IS NULL) AS unacked,
+                              COUNT(*) AS total
+                         FROM andon_system e
+                         LEFT JOIN andon_departments dep ON dep.id = e.department_id
+                        WHERE e.state='OPEN' GROUP BY 1""")
+        live = {(r["dept"] or "").strip().lower(): r for r in cur.fetchall()}
     for r in rows:
         r["off_on_ack"] = _dept_off_on_ack(r["department"])   # response pe off?
+        # Bit now = DESIRED state, call ki live state se (call ON → bit ON; off_on_ack
+        # dept sirf jab tak UN-acknowledged).  Writer se INDEPENDENT — isliye dev
+        # (writer off) par bhi sahi ON/OFF dikhta hai, "—" nahi.
+        lc = live.get((r["department"] or "").strip().lower())
+        r["bit_on"] = (bool(lc and int(lc["unacked"] or 0) > 0) if r["off_on_ack"]
+                       else bool(lc and int(lc["total"] or 0) > 0))
         st = _OUT_STATE.get(r["id"], {})
-        r["bit_on"] = st.get("on")        # True=bit ON abhi · False=OFF · None=abhi tak nahi likha
         r["online"] = st.get("online")    # last write ok/fail (writer)
         # Connection dot: agar writer chal raha (production) to uska write-success
         # hi connected/disconnected batata hai; nahi (dev poller off) to ek quick

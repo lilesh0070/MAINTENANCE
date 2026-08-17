@@ -802,7 +802,7 @@ export default function AndonSystem() {
                   </tbody>
                 </table>
                 <div style={{ fontSize:11.5, color:"#94a3b8", marginTop:10 }}>
-                  <b>Connection</b> yahin (dev pe bhi) dikhata hai ki output PLC reachable hai ya nahi. <b>Bit now</b> tabhi update hota hai jab writer chal raha ho — yaani jis backend pe poller ON hai (production); dev pe "—". Config save/edit yahin se hota hai.
+                  <b>Connection</b> = output PLC reachable hai ya nahi (dev pe bhi dikhta). <b>Bit now</b> = call ki live state se bit ON/OFF hona chahiye (dev pe bhi sahi). Actual PLC pe write sirf us backend se hota hai jiska poller ON hai (production). Config save/edit yahin se hota hai.
                 </div>
               </div>
             </>
