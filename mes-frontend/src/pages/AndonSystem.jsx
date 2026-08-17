@@ -772,6 +772,20 @@ export default function AndonSystem() {
 
               <div className="an-card">
                 <b style={{ fontSize:14 }}>Mappings ({outs.length})</b>
+                {(() => {
+                  const w = outs.find((o) => o.writer);
+                  return (
+                    <div style={{ fontSize:12, fontWeight:700, marginTop:6, marginBottom:2,
+                                  display:"flex", alignItems:"center", gap:7,
+                                  color: w ? "#16a34a" : "#dc2626" }}>
+                      <span style={{ width:9, height:9, borderRadius:"50%", flex:"0 0 auto",
+                                     background: w ? "#16a34a" : "#dc2626",
+                                     boxShadow: w ? "0 0 0 3px rgba(22,163,74,.2)" : "0 0 0 3px rgba(220,38,38,.2)" }} />
+                      {w ? <>Writer active — <span style={{ fontFamily:"monospace" }}>{w.writer}</span> backend bits maintain kar raha ({w.writer_age}s pehle)</>
+                         : <>Koi active writer nahi — bits abhi maintain nahi ho rahe (jis backend pe ANDON_OUTPUT_ENABLED=1 wo band hai)</>}
+                    </div>
+                  );
+                })()}
                 <table className="an-tbl">
                   <thead><tr><th>Department</th><th>Output PLC</th><th>Bit</th><th>Off trigger</th><th>Connection</th><th>Bit now</th><th>Status</th><th></th></tr></thead>
                   <tbody>
@@ -809,7 +823,7 @@ export default function AndonSystem() {
                   </tbody>
                 </table>
                 <div style={{ fontSize:11.5, color:"#94a3b8", marginTop:10 }}>
-                  <b>Connection</b> = output PLC TCP se reachable hai ya nahi. <b>Bit now</b> = PLC pe bit ka <b>ACTUAL</b> state (jo writer ne sach me likha) — sirf us backend pe aata jiska poller ON hai (production); dev pe writer band → "—", aur "chahiye: ON" batata ki call ke hisaab se ON hona chahiye. Bit PLC pe tabhi likhega jab feature <b>production pe deploy</b> ho (poller ON) — tab writer M-bit likhega. Config save/edit yahin se hota hai.
+                  <b>Connection</b> = output PLC TCP se reachable. <b>Bit now</b> = PLC pe bit ka <b>ACTUAL</b> state — active writer ne likha + read-back karke DB me daala, isliye <b>har backend</b> (dev/production) pe wahi sach dikhta. "chahiye: ON" = call ke hisaab se bit ON hona chahiye (jab writer band ho ya PLC write na le raha). <b>Sirf EK backend</b> ek waqt pe likhta hai (singleton lock) — production ki priority zyada, wo dev se lock apne aap le leta, koi manual on/off nahi. Departments aur bhi add kar sakte (Tool Room, Quality…) — sab isi loop me handle. Config save/edit yahin se.
                 </div>
               </div>
             </>

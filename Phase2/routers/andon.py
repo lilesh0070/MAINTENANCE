@@ -702,6 +702,12 @@ _OUT_STATE  = {}     # {mapping_id: {ip,port,series,bit_type,bit_no,on,online,ch
 # departments that have an ACK output (DO2/DO4) → bit off on RESPONSE, not on end.
 _ACK_DEPTS  = {"maintenance", "tool room", "toolroom"}
 _OUT_ENSURED = False
+# ── writer SINGLETON lock ── sirf EK backend output PLC likhe (single-conn PLC pe
+# do writer ladenge = dono fail).  Poller-wale (production) ki priority 1 — wo dev
+# (0) se lock chheen leta; holder mar jaaye (stale >15s) to koi aur auto le leta.
+_WRITER_ID   = f"{socket.gethostname()}:{os.getpid()}"
+_WRITER_PRIO = 0 if os.getenv("ANDON_POLL_ENABLED", "1").strip().lower() in ("0", "false", "no", "off") else 1
+_have_lock   = None   # pichhla lock-state (transition log ke liye)
 
 
 def _dept_off_on_ack(dept):
@@ -726,8 +732,53 @@ def _ensure_output():
                 enabled     BOOLEAN DEFAULT TRUE,
                 created_at  TIMESTAMP DEFAULT NOW()
             )""")
+        # live state the WRITER persists → koi bhi backend (dev/prod) ka GET asli
+        # bit dikha sake (writer-only in-memory state par nahi).
+        for col, typ in (("last_bit", "BOOLEAN"), ("last_want", "BOOLEAN"),
+                         ("last_online", "BOOLEAN"), ("last_at", "TIMESTAMP"),
+                         ("last_writer", "TEXT")):
+            cur.execute(f"ALTER TABLE andon_call_output ADD COLUMN IF NOT EXISTS {col} {typ}")
+        # singleton writer lock — sirf EK backend likhe (single-conn PLC pe do
+        # writer = dono fail).  Ek hi row (id=1); holder + prio + heartbeat.
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS andon_output_lock (
+                id         INTEGER PRIMARY KEY DEFAULT 1,
+                holder     TEXT,
+                prio       INTEGER DEFAULT 0,
+                heartbeat  TIMESTAMP,
+                CONSTRAINT andon_output_lock_one CHECK (id = 1)
+            )""")
         conn.commit()
     _OUT_ENSURED = True
+
+
+def _acquire_writer_lock():
+    """DB singleton — output-writer lock claim/refresh karta.  True agar YE backend
+    holder hai (→ yahi likhega).  Higher-priority backend (production poller, prio 1)
+    lower ko (dev, prio 0) preempt karta; holder mar jaaye (heartbeat >15s puraana)
+    to koi aur le leta.  DB error pe False (safe — na likho)."""
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""INSERT INTO andon_output_lock (id, holder, prio, heartbeat)
+                           VALUES (1, %s, %s, NOW()) ON CONFLICT (id) DO NOTHING""",
+                        (_WRITER_ID, _WRITER_PRIO))
+            cur.execute("""UPDATE andon_output_lock SET holder=%s, prio=%s, heartbeat=NOW()
+                            WHERE id=1 AND (holder=%s
+                                            OR split_part(holder, ':', 1) = %s
+                                            OR heartbeat < NOW() - INTERVAL '10 seconds'
+                                            OR prio < %s)""",
+                        (_WRITER_ID, _WRITER_PRIO, _WRITER_ID,
+                         socket.gethostname(), _WRITER_PRIO))
+            # holder=%s → main hi hoon (refresh);  same-host → apni hi machine ka
+            # purana/mara instance (restart) → turant le lo (ek host pe kabhi 2
+            # backend nahi);  stale 10s → cross-host failover;  prio< → preempt.
+            got = cur.rowcount == 1
+            conn.commit()
+            return got
+    except Exception as e:
+        print(f"[ANDON-OUT] lock error: {e}")
+        return False
 
 
 def _out_write_bit(ip, port, series, bit_type, bit_no, value):
@@ -783,9 +834,24 @@ def _out_read_bit(ip, port, series, bit_type, bit_no):
 
 
 def _andon_output_write_once():
-    """One cycle: every enabled mapping → decide bit (department call active?) →
-    write it.  Mappings that were ON but got disabled/deleted are turned OFF."""
+    """One cycle — sirf LOCK-HOLDER backend body chalata: har enabled mapping →
+    bit decide (department call active?) → write + read-back → DB me persist.
+    Disabled/deleted mapping jo ON tha → OFF.  Lock na ho to skip (+ conn chhodo)."""
     _ensure_output()
+    global _have_lock
+    got = _acquire_writer_lock()
+    if got != _have_lock:
+        print(f"[ANDON-OUT] writer lock "
+              f"{'ACQUIRED — ye backend ab likhega' if got else 'RELEASED — koi aur backend likhega'} "
+              f"({_WRITER_ID}, prio={_WRITER_PRIO})", flush=True)
+        _have_lock = got
+    if not got:
+        # lock kisi aur ke paas → single-conn PLC chhod do (naya writer connect kar
+        # sake) aur is cycle kuch na likho.
+        for k in list(_OUT_CONN.keys()):
+            try: _OUT_CONN.pop(k).close()
+            except Exception: pass
+        return
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("""SELECT id, department, plc_ip, plc_port, plc_series, bit_type, bit_no
@@ -799,6 +865,7 @@ def _andon_output_write_once():
                         WHERE e.state='OPEN' GROUP BY 1""")
         live = {(r["dept"] or "").strip().lower(): r for r in cur.fetchall()}
     enabled_ids = set()
+    updates = []   # (last_bit, last_want, last_online, id) → DB me persist
     for m in maps:
         enabled_ids.add(m["id"])
         row = live.get((m["department"] or "").strip().lower())
@@ -814,11 +881,12 @@ def _andon_output_write_once():
                                 m["bit_type"], m["bit_no"], want)   # read-back: True/False/None
         if want != prev.get("want"):
             print(f"[ANDON-OUT] {m['department']} {m['bit_type']}{m['bit_no']} "
-                  f"-> {'ON' if want else 'OFF'} (readback={actual})")
+                  f"-> {'ON' if want else 'OFF'} (readback={actual})", flush=True)
         _OUT_STATE[m["id"]] = {"ip": m["plc_ip"], "port": m["plc_port"], "series": m["plc_series"],
                                "bit_type": m["bit_type"], "bit_no": m["bit_no"],
                                "want": want, "on": actual, "online": actual is not None,
                                "checked": datetime.now().isoformat(timespec="seconds")}
+        updates.append((actual, want, actual is not None, m["id"]))
     # a mapping that was ON but is no longer enabled/present → force its bit OFF once
     for oid in list(_OUT_STATE.keys()):
         if oid in enabled_ids:
@@ -828,6 +896,20 @@ def _andon_output_write_once():
             _out_write_bit(st.get("ip"), st.get("port"), st.get("series"),
                           st.get("bit_type"), st.get("bit_no"), False)
         _OUT_STATE.pop(oid, None)
+    # writer ke asli bits DB me likho → koi bhi backend ka GET sach dikhaye
+    if updates:
+        try:
+            with get_conn() as conn:
+                cur = conn.cursor()
+                for last_bit, last_want, last_online, mid in updates:
+                    cur.execute("""UPDATE andon_call_output
+                                      SET last_bit=%s, last_want=%s, last_online=%s,
+                                          last_at=NOW(), last_writer=%s
+                                    WHERE id=%s""",
+                                (last_bit, last_want, last_online, _WRITER_ID, mid))
+                conn.commit()
+        except Exception as e:
+            print(f"[ANDON-OUT] persist error: {e}")
 
 
 def _andon_output_loop():
@@ -857,7 +939,9 @@ def list_call_outputs(user=Depends(get_current_user)):
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("""SELECT id, department, plc_ip, plc_port, plc_series,
-                              bit_type, bit_no, enabled, created_at
+                              bit_type, bit_no, enabled, created_at,
+                              last_bit, last_online, last_writer,
+                              EXTRACT(EPOCH FROM (NOW() - last_at)) AS last_age
                          FROM andon_call_output ORDER BY id""")
         rows = cur.fetchall()
         # live open calls per department (unacked vs total) → DESIRED bit state
@@ -868,6 +952,10 @@ def list_call_outputs(user=Depends(get_current_user)):
                          LEFT JOIN andon_departments dep ON dep.id = e.department_id
                         WHERE e.state='OPEN' GROUP BY 1""")
         live = {(r["dept"] or "").strip().lower(): r for r in cur.fetchall()}
+        # writer lock ka heartbeat = koi backend abhi likh raha hai ya nahi (sach signal)
+        cur.execute("SELECT holder, EXTRACT(EPOCH FROM (NOW()-heartbeat)) AS age FROM andon_output_lock WHERE id=1")
+        _lk = cur.fetchone() or {}
+    _wlive = _lk.get("age") is not None and _lk["age"] <= 12
     for r in rows:
         r["off_on_ack"] = _dept_off_on_ack(r["department"])   # response pe off?
         # should_be_on = call ki live state se INTENDED bit (call ON → chahiye ON;
@@ -875,21 +963,24 @@ def list_call_outputs(user=Depends(get_current_user)):
         lc = live.get((r["department"] or "").strip().lower())
         r["should_be_on"] = (bool(lc and int(lc["unacked"] or 0) > 0) if r["off_on_ack"]
                              else bool(lc and int(lc["total"] or 0) > 0))
-        st = _OUT_STATE.get(r["id"], {})
-        # bit_on = ASLI bit.  Writer chal raha (id _OUT_STATE me) → uska read-back
-        # (write ke turant baad usi connection se padha) — single-conn PLC pe alag
-        # reader nahi khulta, contention nahi.  Writer band ho → alag short read.
-        if "on" in st:
-            r["bit_on"] = st.get("on")
+        # bit_on / online = ASLI bit — jise ACTIVE writer ne likha + read-back karke DB
+        # me persist kiya.  Har backend (dev/prod) YAHI padhta, to "Bit now" har jagah
+        # SACH.  Koi active writer nahi (last_at >20s puraana) → pata nahi ("—").
+        age = r.pop("last_age", None)
+        fresh = age is not None and age <= 12
+        r.pop("last_writer", None)
+        r["writer"] = _lk.get("holder") if _wlive else None       # lock zinda = writer chalu
+        r["writer_age"] = round(_lk["age"], 1) if _lk.get("age") is not None else None
+        if r["enabled"] and fresh:
+            r["bit_on"], r["online"] = r.get("last_bit"), r.get("last_online")
         else:
-            r["bit_on"] = _out_read_bit(r["plc_ip"], r.get("plc_port") or 5007,
-                                        r.get("plc_series") or "Q", r["bit_type"], r["bit_no"])
-        r["online"] = st.get("online")
-        # Connection: bit pata chal gaya → reachable; warna writer-status ya quick probe.
-        reach = True if r["bit_on"] is not None else st.get("online")
-        if reach is None and r.get("plc_ip"):
+            r["bit_on"], r["online"] = None, None    # disabled ya koi writer nahi
+        # Connection: bit pata chala → reachable; warna (writer band) quick TCP probe.
+        reach = True if r["bit_on"] is not None else r["online"]
+        if reach is None and r.get("plc_ip") and r["enabled"]:
             reach = _reachable(r["plc_ip"], r.get("plc_port") or 5007, timeout=0.4)
         r["reachable"] = reach
+        r.pop("last_bit", None); r.pop("last_online", None)
         if isinstance(r.get("created_at"), datetime):
             r["created_at"] = r["created_at"].isoformat()
     return rows
