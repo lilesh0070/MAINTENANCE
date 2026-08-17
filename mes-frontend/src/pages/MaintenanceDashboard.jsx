@@ -66,7 +66,7 @@ export default function MaintenanceDashboard() {
   // Admin sees the explicit name ("Maintenance Dashboard") so they can
   // tell at a glance which dept's view they're on.  Department users only
   // see "Dashboard" — they only ever land on their own.
-  const titleLeft  = isAdmin ? "Maintenance " : "";
+  const titleLeft  = "Maintenance ";
   const titleRight = "Dashboard";
   const [andonRows, setAndonRows]   = useState([]);   // ANDON table ki rows
   const [andonStats, setAndonStats] = useState({});   // 4 stat cards
@@ -280,12 +280,17 @@ export default function MaintenanceDashboard() {
         }
         .md-topbar::after { content:''; position:absolute; bottom:0; left:0; right:0; height:2px;
                             background:${theme.gradient}; }
-        .md-logo { font-family:'Barlow Condensed',sans-serif; font-size:22px; font-weight:800; color:#0f172a; }
+        .md-logo { flex:1 1 0; min-width:0; font-family:'Barlow Condensed',sans-serif; font-size:22px; font-weight:800; color:#0f172a; }
         .md-logo span { color:${theme.accent}; }
-        .md-title { position:absolute; left:50%; transform:translateX(-50%);
+        /* In flow (flex:1, centered) — NOT absolute — so on a narrow vertical
+           TV the long "Maintenance Dashboard" title can never sit on top of the
+           right-side controls (9:16 / 16:9 / Fullscreen).  Shrinks + ellipsis
+           before it would ever overlap. */
+        .md-title { flex:0 1 auto; min-width:0; text-align:center; padding:0 14px;
                     font-family:'Barlow Condensed',sans-serif;
-                    font-size:37px; font-weight:800; color:#0f172a; letter-spacing:-.01em;
-                    pointer-events:none; white-space:nowrap; }
+                    font-size:34px; font-weight:800; color:#0f172a; letter-spacing:-.01em;
+                    pointer-events:none; white-space:nowrap;
+                    overflow:hidden; text-overflow:ellipsis; }
         .md-title span { color:${theme.accent}; }
         .md-user-pill { display:flex; align-items:center; gap:10px;
                          padding:6px 14px; border-radius:99px;
@@ -332,8 +337,8 @@ export default function MaintenanceDashboard() {
           <div className="md-title">
             {titleLeft}<span>{titleRight}</span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ display: "flex", gap: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "1 1 0", justifyContent: "flex-end", minWidth: 0 }}>
+            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
               <button onClick={() => setAspect("9:16")} className="md-fs-btn" title="Portrait 9:16"
                       style={portrait ? { background: theme.accent, color: "#fff", borderColor: theme.accent } : {}}>9:16</button>
               <button onClick={() => setAspect("16:9")} className="md-fs-btn" title="Wide 16:9"
