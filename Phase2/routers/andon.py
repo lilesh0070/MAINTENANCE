@@ -542,29 +542,17 @@ def _plc_poll_once(dev):
         return False, (False if has_sub else None)
 
 
-_STALE_OFFLINE_GRACE = 180     # sec — itne der offline PLC ki OPEN call ghost maani jaati hai
-
-
-def _seconds_since(iso_str):
-    """app-clock ISO string se ab tak ke seconds (None agar na mile / parse na ho)."""
-    if not iso_str:
-        return None
-    try:
-        return (datetime.now() - datetime.fromisoformat(iso_str)).total_seconds()
-    except Exception:
-        return None
-
-
 def _stale_call_sweep():
-    """GHOST open call band karo — dashboard pe timer atka reh jaata hai jab bit=0
-    kabhi padha hi nahi ja raha:
+    """Force-close an OPEN call ONLY when the PLC can NEVER read its bit=0 again:
       • PLC delete ho gaya (ab kabhi poll nahi hoga),
-      • PLC disabled kar diya (Enabled off),
-      • PLC lambe (>= grace) offline hai.
-    In sab me andon_system ki OPEN row normal path se close nahi hoti, isliye yahan
-    zabardasti band karte hain — history + duration ke saath — aur maintenance call
-    ho to slip ka OK-time bhi bhar dete hain.  Isse "band hone ke baad bhi timer
-    chalta rehta" wali ghost hamesha ke liye khatam."""
+      • PLC disabled kar diya (Enabled off).
+    PLC sirf OFFLINE (connection toota) ho to yahan band NAHI karte — call ka
+    timer chalta rehta hai; jab PLC wapas aata hai to normal poll uska bit padhta
+    hai: 0 → close, 1 → continue (kabhi 0 se restart nahi).  (Pehle yahan 180s
+    grace ke baad offline call band kar dete the — us se genuine lambe outage me
+    call galti se band ho jaati thi; requirement ye hai ki timer chale.)
+    Deleted/disabled case me OPEN row normal path se kabhi close nahi hoti, isliye
+    yahan zabardasti band karte hain — history + duration + slip OK-time ke saath."""
     try:
         closed = []
         with get_conn() as conn:
@@ -574,18 +562,16 @@ def _stale_call_sweep():
             cur.execute("SELECT DISTINCT plc_id FROM andon_system WHERE state='OPEN'")
             open_pids = [r["plc_id"] for r in cur.fetchall()]
             for pid in open_pids:
-                st = _PLC_STATUS.get(pid, {})
                 dv = devrows.get(pid)
                 reason = None
                 if dv is None:
                     reason = "PLC deleted"
                 elif not dv.get("enabled"):
                     reason = "PLC disabled"
-                elif st.get("online") is False:
-                    off_for = _seconds_since(st.get("offline_since"))
-                    if off_for is None or off_for >= _STALE_OFFLINE_GRACE:
-                        reason = "PLC offline"
-                # online True / abhi tak poll nahi hua → chhod do (poll khud sambhalega)
+                # PLC sirf OFFLINE (connection toota) ho to call band NAHI karte —
+                # timer chalta rehta hai; reconnect par normal poll bit padhta hai
+                # (0 → close, 1 → continue).  Isse lambe outage me galat close aur
+                # 0-se-restart dono nahi hote (yahi asli requirement hai).
                 if not reason:
                     continue
                 cur.execute("SELECT do_index FROM andon_system WHERE plc_id=%s AND state='OPEN'", (pid,))
