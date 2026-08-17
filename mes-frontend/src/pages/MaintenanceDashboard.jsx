@@ -100,6 +100,13 @@ export default function MaintenanceDashboard() {
     if (document.fullscreenElement === el) document.exitFullscreen?.();
     else el.requestFullscreen?.();
   };
+  // Page-level fullscreen (whole dashboard) — for the TV display.
+  const goPageFullscreen = () => {
+    try {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen();
+    } catch { /* ignore */ }
+  };
 
   // Har 10s refresh.
   //
@@ -279,6 +286,17 @@ export default function MaintenanceDashboard() {
         .md-section h3 { margin:0 0 10px; font-family:'Barlow Condensed',sans-serif;
                           font-size:18px; font-weight:800; color:#0f172a;
                           letter-spacing:.02em; text-transform:uppercase; }
+        .md-fs-btn { border:1px solid #cbd5e1; background:#fff; color:${theme.accent};
+                     font-weight:700; font-size:12px; border-radius:8px; padding:6px 12px;
+                     cursor:pointer; font-family:inherit; white-space:nowrap; }
+
+        /* ── Portrait / vertical TV (65") — fill the whole screen, bigger tiles ── */
+        @media (orientation: portrait) {
+          .md-body   { max-width:none; padding:22px 26px 44px; }
+          .md-topbar { padding:0 26px; }
+          .md-title  { font-size:30px; }
+          .md-tiles  { grid-template-columns:repeat(2, minmax(0,1fr)); gap:18px; }
+        }
       `}</style>
 
       <div className="md-root">
@@ -288,11 +306,14 @@ export default function MaintenanceDashboard() {
           <div className="md-title">
             {titleLeft}<span>{titleRight}</span>
           </div>
-          {user?.username && (
-            <div className="md-user-pill">
-              Signed in as <b>{user.username}</b>
-            </div>
-          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button onClick={goPageFullscreen} className="md-fs-btn" title="Fullscreen (TV)">⛶ Fullscreen</button>
+            {user?.username && (
+              <div className="md-user-pill">
+                Signed in as <b>{user.username}</b>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="md-body">
