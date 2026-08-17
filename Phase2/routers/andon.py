@@ -1095,11 +1095,22 @@ def list_plc(user=Depends(get_current_user)):
                               description, enabled, poll_path
                          FROM andon_plc_devices ORDER BY name""")
         rows = cur.fetchall()
-    # merge live connectivity (green/red) from the background poller
+    # merge live connectivity (green/red) from the background poller.  On a box
+    # whose poller is OFF (ANDON_POLL_ENABLED=0 — e.g. a dev machine), _PLC_STATUS
+    # is empty so `online` stays None and the UI is stuck on "Checking…".  Fall
+    # back to a quick TCP reachability probe so the Config page still shows
+    # connected/disconnected.  A raw connect+close is NOT an MC poll — it never
+    # reads bits / opens-closes calls, so it cannot cause the call flap.
     for r in rows:
         st = _PLC_STATUS.get(r["id"], {})
-        r["online"] = st.get("online")            # MAIN: True=connected · False=disconnected · None=not-checked/disabled
-        r["sub_online"] = st.get("sub_online")    # SUB: waise hi (None = koi sub PLC nahi)
+        online = st.get("online")
+        if online is None and r.get("enabled") and r.get("ip"):
+            online = _reachable(r["ip"], r.get("port") or 5007, timeout=0.4)
+        r["online"] = online                      # True=connected · False=disconnected · None=disabled/unknown
+        sub_online = st.get("sub_online")
+        if sub_online is None and (r.get("sub_ip") or "").strip():
+            sub_online = _reachable(r["sub_ip"], r.get("sub_port") or 5007, timeout=0.4)
+        r["sub_online"] = sub_online               # None = koi sub PLC nahi
         r["last_seen"] = st.get("last_seen")
         r["checked"] = st.get("checked")
     return rows
