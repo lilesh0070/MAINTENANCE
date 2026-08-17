@@ -21,14 +21,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis,
-  CartesianGrid, Tooltip, Legend, LabelList,
+  CartesianGrid, Tooltip, LabelList,
 } from "recharts";
 import { useAuth } from "../context/AuthContext";
 
 // Spare data now comes ONLY from the Manual Break Down Slip + Log Book
 // (via the maintenance_spare table).  Breakdown-log / PM sources removed.
-const SOURCES = ["Manual Slip", "Log Book", "PM"];
-const SRC_COLOR = { "Manual Slip": "#dc2626", "Log Book": "#2563eb", "PM": "#16a34a" };
+const SOURCES = ["Manual Slip", "Log Book", "PM"];   // Source filter dropdown
 const ONE_HUE = "#2563eb";               // single-series charts: one hue, no legend
 const MONTHS = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
 
@@ -140,37 +139,40 @@ export default function Spare() {
   // render (a fresh [] literal would change identity each time)
   const rows = useMemo(() => data?.rows || [], [data]);
 
-  /* ── chart data, derived from the SAME rows the table shows ── */
-  const byMonth = useMemo(() => {
+  /* ── chart data (spare CONSUMPTION = quantity), from the SAME rows ── */
+  // Focus month for the zone chart: the picked Month, else the current
+  // calendar month.  Format YYYY-MM.
+  const focusYm = useMemo(() => {
+    if (fFy && fMon !== "") { const [from] = fyRange(fFy, fMon); return from ? from.slice(0, 7) : null; }
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }, [fFy, fMon]);
+  const focusLabel = useMemo(() =>
+    focusYm ? `${MONTHS[(Number(focusYm.slice(5, 7)) + 8) % 12]} ${focusYm.slice(0, 4)}` : "", [focusYm]);
+
+  // current / selected month → zone-wise consumed quantity
+  const zoneThisMonth = useMemo(() => {
+    const m = new Map();
+    rows.forEach(r => {
+      if ((r.used_date || "").slice(0, 7) !== focusYm) return;
+      const k = r.zone || "—";
+      m.set(k, (m.get(k) || 0) + (Number(r.qty) || 0));
+    });
+    return [...m.entries()].map(([name, qty]) => ({ name, qty }))
+      .sort((a, b) => b.qty - a.qty);
+  }, [rows, focusYm]);
+
+  // every month → consumed quantity (trend across the loaded window)
+  const byMonthQty = useMemo(() => {
     const m = new Map();
     rows.forEach(r => {
       const k = (r.used_date || "").slice(0, 7);
       if (!k) return;
-      if (!m.has(k)) m.set(k, { key: k, label: `${MONTHS[(Number(k.slice(5, 7)) + 8) % 12]} ${k.slice(2, 4)}`,
-                                "Manual Slip": 0, "Log Book": 0, "PM": 0 });
-      if (m.get(k)[r.source] != null) m.get(k)[r.source] += 1;
+      m.set(k, (m.get(k) || 0) + (Number(r.qty) || 0));
     });
-    return [...m.values()].sort((a, b) => a.key.localeCompare(b.key));
-  }, [rows]);
-
-  const byMachine = useMemo(() => {
-    const m = new Map();
-    rows.forEach(r => {
-      const k = r.machine_no || "—";
-      m.set(k, (m.get(k) || 0) + 1);
-    });
-    return [...m.entries()].map(([name, entries]) => ({ name, entries }))
-      .sort((a, b) => b.entries - a.entries).slice(0, 10).reverse();
-  }, [rows]);
-
-  const byZone = useMemo(() => {
-    const m = new Map();
-    rows.forEach(r => {
-      const k = r.zone || "—";
-      m.set(k, (m.get(k) || 0) + 1);
-    });
-    return [...m.entries()].map(([name, entries]) => ({ name, entries }))
-      .sort((a, b) => b.entries - a.entries);
+    return [...m.entries()].map(([k, qty]) => ({
+      key: k, label: `${MONTHS[(Number(k.slice(5, 7)) + 8) % 12]} ${k.slice(2, 4)}`, qty,
+    })).sort((a, b) => a.key.localeCompare(b.key));
   }, [rows]);
 
   const exportCsv = () => {
@@ -306,79 +308,70 @@ export default function Spare() {
         </div>
 
         <div className="sp-body">
-          {/* ── KPI tiles ── */}
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
-            {[["Spare entries", data?.total ?? "—", "#0f172a", ""],
-              ["Total quantity", data?.qty_total ?? "—", "#16a34a", data ? `${data.qty_unknown} rows me qty nahi thi` : ""],
-              ...SOURCES.map(s => [s, data?.by_source?.[s] ?? "—", SRC_COLOR[s], ""])].map(([l, v, c, sub]) => (
-              <div key={l} className="sp-card" style={{ borderTop: `3px solid ${c}`, minWidth: 140, padding: "10px 16px" }}>
-                <div style={{ fontSize: 10.5, color: "#64748b", fontWeight: 700 }}>{l}</div>
-                <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 28, fontWeight: 800, color: c, lineHeight: 1.05 }}>{v}</div>
-                {sub && <div style={{ fontSize: 9.5, color: "#94a3b8", fontWeight: 700 }}>{sub}</div>}
+          {/* ── Total spare consumption (only KPI) ── */}
+          <div style={{ marginBottom: 14 }}>
+            <div className="sp-card" style={{ borderTop: "3px solid #16a34a", display: "inline-block", minWidth: 240, padding: "12px 22px" }}>
+              <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase" }}>Total Spare Consumption</div>
+              <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 40, fontWeight: 800, color: "#16a34a", lineHeight: 1.05 }}>
+                {data?.qty_total ?? "—"}
               </div>
-            ))}
+              <div style={{ fontSize: 10.5, color: "#94a3b8", fontWeight: 700 }}>
+                {data ? `${data.total} entries${data.qty_unknown ? ` · ${data.qty_unknown} me qty nahi thi` : ""}` : ""}
+              </div>
+            </div>
           </div>
 
           {err && <div className="sp-card" style={{ marginBottom: 14, color: "#dc2626", fontWeight: 700, fontSize: 12.5 }}>{err}</div>}
 
-          {/* ── charts ── */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-            <div className="sp-card" style={{ gridColumn: "1 / -1" }}>
-              <h3 className="sp-ch">Month-wise spare entries</h3>
-              <div className="sp-cs">Kitni baar spare use hua — source ke hisaab se stacked. Quantity nahi, entries gini gayi hain (wo har row me bharosemand hai).</div>
-              <ResponsiveContainer width="100%" height={230}>
-                <BarChart data={byMonth} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} axisLine={false} />
-                  <Tooltip contentStyle={tip} itemStyle={{ color: "#fff" }} labelStyle={{ color: "#cbd5e1", fontWeight: 700 }}
-                           cursor={{ fill: "rgba(37,99,235,.06)" }} />
-                  <Legend wrapperStyle={{ fontSize: 11.5, fontWeight: 700 }} />
-                  {SOURCES.map((s, i) => (
-                    <Bar key={s} dataKey={s} stackId="a" fill={SRC_COLOR[s]} isAnimationActive={false}
-                         stroke="#fff" strokeWidth={2}
-                         radius={i === SOURCES.length - 1 ? [4, 4, 0, 0] : 0} maxBarSize={44} />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
+          {/* ── charts: current-month zone consumption + monthly consumption ── */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 14, marginBottom: 14 }}>
+            <div className="sp-card">
+              <h3 className="sp-ch">Zone-wise spare consumption — {focusLabel || "current month"}</h3>
+              <div className="sp-cs">Is mahine kis zone me kitni spare consume hui (quantity)</div>
+              {zoneThisMonth.length === 0 ? (
+                <div style={{ padding: "24px 0", textAlign: "center", color: "#94a3b8", fontSize: 12.5, fontStyle: "italic" }}>
+                  {focusLabel} me koi spare consumption nahi.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={Math.max(200, zoneThisMonth.length * 30 + 24)}>
+                  <BarChart data={zoneThisMonth} layout="vertical" margin={{ top: 4, right: 34, left: 8, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" horizontal={false} />
+                    <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} axisLine={false} />
+                    <YAxis type="category" dataKey="name" width={132}
+                           tick={{ fontSize: 11, fill: "#334155" }} tickLine={false} axisLine={false} />
+                    <Tooltip contentStyle={tip} itemStyle={{ color: "#fff" }} labelStyle={{ color: "#cbd5e1", fontWeight: 700 }}
+                             cursor={{ fill: "rgba(37,99,235,.06)" }} />
+                    <Bar dataKey="qty" name="Spare consumed" fill={ONE_HUE} radius={[0, 4, 4, 0]}
+                         maxBarSize={22} isAnimationActive={false}>
+                      <LabelList dataKey="qty" position="right" style={{ fontSize: 11, fontWeight: 800, fill: "#475569" }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
 
             <div className="sp-card">
-              <h3 className="sp-ch">Top 10 machines</h3>
-              <div className="sp-cs">Sabse zyada spare kis machine pe laga</div>
-              <ResponsiveContainer width="100%" height={Math.max(200, byMachine.length * 26 + 24)}>
-                <BarChart data={byMachine} layout="vertical" margin={{ top: 4, right: 30, left: 8, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" horizontal={false} />
-                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} axisLine={false} />
-                  <YAxis type="category" dataKey="name" width={132}
-                         tick={{ fontSize: 10.5, fill: "#334155" }} tickLine={false} axisLine={false} />
-                  <Tooltip contentStyle={tip} itemStyle={{ color: "#fff" }} labelStyle={{ color: "#cbd5e1", fontWeight: 700 }}
-                           cursor={{ fill: "rgba(37,99,235,.06)" }} />
-                  <Bar dataKey="entries" name="Spare entries" fill={ONE_HUE} radius={[0, 4, 4, 0]}
-                       maxBarSize={16} isAnimationActive={false}>
-                    <LabelList dataKey="entries" position="right" style={{ fontSize: 10.5, fontWeight: 800, fill: "#475569" }} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-
-            <div className="sp-card">
-              <h3 className="sp-ch">Zone-wise</h3>
-              <div className="sp-cs">Kis zone me sabse zyada spare consumption</div>
-              <ResponsiveContainer width="100%" height={Math.max(200, byZone.length * 26 + 24)}>
-                <BarChart data={byZone} layout="vertical" margin={{ top: 4, right: 30, left: 8, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" horizontal={false} />
-                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} axisLine={false} />
-                  <YAxis type="category" dataKey="name" width={132}
-                         tick={{ fontSize: 10.5, fill: "#334155" }} tickLine={false} axisLine={false} />
-                  <Tooltip contentStyle={tip} itemStyle={{ color: "#fff" }} labelStyle={{ color: "#cbd5e1", fontWeight: 700 }}
-                           cursor={{ fill: "rgba(37,99,235,.06)" }} />
-                  <Bar dataKey="entries" name="Spare entries" fill={ONE_HUE} radius={[0, 4, 4, 0]}
-                       maxBarSize={16} isAnimationActive={false}>
-                    <LabelList dataKey="entries" position="right" style={{ fontSize: 10.5, fontWeight: 800, fill: "#475569" }} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              <h3 className="sp-ch">Monthly spare consumption</h3>
+              <div className="sp-cs">Har mahine kitni spare consume hui (quantity)</div>
+              {byMonthQty.length === 0 ? (
+                <div style={{ padding: "24px 0", textAlign: "center", color: "#94a3b8", fontSize: 12.5, fontStyle: "italic" }}>
+                  Is filter pe koi spare consumption nahi.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={byMonthQty} margin={{ top: 16, right: 8, left: -18, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} axisLine={{ stroke: "#e2e8f0" }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#64748b" }} tickLine={false} axisLine={false} />
+                    <Tooltip contentStyle={tip} itemStyle={{ color: "#fff" }} labelStyle={{ color: "#cbd5e1", fontWeight: 700 }}
+                             cursor={{ fill: "rgba(37,99,235,.06)" }} />
+                    <Bar dataKey="qty" name="Spare consumed" fill={ONE_HUE} radius={[4, 4, 0, 0]}
+                         maxBarSize={46} isAnimationActive={false}>
+                      <LabelList dataKey="qty" position="top" style={{ fontSize: 10.5, fontWeight: 800, fill: "#475569" }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
 
@@ -399,7 +392,7 @@ export default function Spare() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
-                    {["Source", "Date", "Zone", "Line", "Machine No.", "Machine Name",
+                    {["Date", "Zone", "Line", "Machine No.", "Machine Name",
                       "Model No.", "Spare ERP No.", "Spare Name", "Qty"].map(h => (
                       <th key={h} style={{ ...th, textAlign: h === "Qty" ? "center" : "left" }}>{h}</th>
                     ))}
@@ -407,20 +400,15 @@ export default function Spare() {
                 </thead>
                 <tbody>
                   {busy && (
-                    <tr><td colSpan={10} style={{ ...td, textAlign: "center", color: "#94a3b8", padding: 26 }}>Loading…</td></tr>
+                    <tr><td colSpan={9} style={{ ...td, textAlign: "center", color: "#94a3b8", padding: 26 }}>Loading…</td></tr>
                   )}
                   {!busy && rows.length === 0 && (
-                    <tr><td colSpan={10} style={{ ...td, textAlign: "center", color: "#64748b", padding: 26 }}>
+                    <tr><td colSpan={9} style={{ ...td, textAlign: "center", color: "#64748b", padding: 26 }}>
                       Is filter pe koi spare nahi mila.
                     </td></tr>
                   )}
                   {!busy && rows.map((r, i) => (
                     <tr key={`${r.source}-${r.ref_id}-${i}`} className="sp-row">
-                      <td style={td}>
-                        <span style={{ padding: "1px 8px", borderRadius: 99, fontSize: 10.5, fontWeight: 800,
-                                       background: `${SRC_COLOR[r.source]}18`, color: SRC_COLOR[r.source],
-                                       whiteSpace: "nowrap" }}>{r.source}</span>
-                      </td>
                       <td style={{ ...td, fontFamily: "monospace", whiteSpace: "nowrap" }}>{r.used_date || "—"}</td>
                       <td style={td}>{r.zone || "—"}</td>
                       <td style={td}>{r.line || "—"}</td>
