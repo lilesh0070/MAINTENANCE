@@ -27,7 +27,10 @@ import { useAuth } from "../context/AuthContext";
 
 // Spare data now comes ONLY from the Manual Break Down Slip + Log Book
 // (via the maintenance_spare table).  Breakdown-log / PM sources removed.
-const SOURCES = ["Manual Slip", "Log Book", "PM"];   // Source filter dropdown
+const SOURCES = ["Manual Slip", "Log Book", "PM"];   // real source values (backend filter)
+// Display labels for the Source dropdown — the underlying VALUE stays the real
+// source string above (what maintenance_spare stores), only the label changes.
+const SRC_LABEL = { "Manual Slip": "Breakdown", "Log Book": "Plan Work", "PM": "Preventive Maintenance" };
 const ONE_HUE = "#2563eb";               // single-series charts: one hue, no legend
 const MONTHS = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
 
@@ -233,7 +236,7 @@ export default function Spare() {
         <div className="sp-top">
           <div>
             <div className="sp-title">🔩 <span>Spare</span></div>
-            <div className="sp-sub">Spare consumption — Manual Slip · Log Book · PM</div>
+            <div className="sp-sub">Spare consumption — {SOURCES.map(s => SRC_LABEL[s]).join(" · ")}</div>
           </div>
           {user?.username && <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>{user.username}</span>}
         </div>
@@ -286,7 +289,7 @@ export default function Spare() {
             <label>Source</label>
             <select className="sp-sel" value={fSrc} onChange={(e) => setFSrc(e.target.value)}>
               <option value="">All Sources</option>
-              {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+              {SOURCES.map(s => <option key={s} value={s}>{SRC_LABEL[s]}</option>)}
             </select>
           </div>
           <div className="sp-fld">
