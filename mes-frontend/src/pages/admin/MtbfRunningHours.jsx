@@ -29,6 +29,7 @@ export function MtbfRunningHours({ toast, readOnly = false, onBack }) {
   const [machine, setMachine] = useState("");
   const [hours, setHours]     = useState("");
   const [rows, setRows]       = useState([]);
+  const [calc, setCalc]       = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving]   = useState(false);
 
@@ -38,6 +39,7 @@ export function MtbfRunningHours({ toast, readOnly = false, onBack }) {
     try {
       const r = await api.get(`/api/machine-running-hours/?fy=${encodeURIComponent(fy)}`, token);
       setRows(Array.isArray(r?.rows) ? r.rows : []);
+      setCalc(r?.calc || null);
     } catch (e) { toast?.(e.message || "Load failed", "err"); }
     finally     { setLoading(false); }
   }, [fy, token, toast]);
@@ -100,6 +102,45 @@ export function MtbfRunningHours({ toast, readOnly = false, onBack }) {
             </Btn>
           </div>
         </Card>
+      )}
+
+      {/* MTBF result */}
+      {calc && (
+        <div style={{ marginTop: 18 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "#1e40af", marginBottom: 8 }}>MTBF · FY {fy}</div>
+          <Card>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                          flexWrap: "wrap", gap: 20 }}>
+              <div>
+                <div style={{ fontSize: 12, color: "#64748b" }}>
+                  (Running Hours × No. of Machines − Total Breakdown Hours) ÷ Breakdown Frequency ÷ 24
+                </div>
+                <div style={{ fontFamily: "monospace", fontSize: 13, color: "#0f172a", marginTop: 6 }}>
+                  = ({calc.running_hours} × {calc.num_machines} − {calc.total_breakdown_hours}) ÷ {calc.breakdown_frequency} ÷ 24
+                </div>
+                <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 12 }}>
+                  {[["Running Hours", calc.running_hours],
+                    ["No. of Machines", calc.num_machines],
+                    ["Total Breakdown Hours", calc.total_breakdown_hours],
+                    ["Breakdown Frequency", calc.breakdown_frequency]].map(([k, v]) => (
+                    <div key={k}>
+                      <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: ".06em",
+                                    textTransform: "uppercase", color: "#94a3b8" }}>{k}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: "#0f172a" }}>{v}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{ textAlign: "right", minWidth: 120 }}>
+                <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 46,
+                              fontWeight: 800, color: "#16a34a", lineHeight: 1 }}>
+                  {calc.mtbf_days != null ? calc.mtbf_days : "—"}
+                </div>
+                <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 700 }}>DAYS · MTBF</div>
+              </div>
+            </div>
+          </Card>
+        </div>
       )}
 
       {/* Saved rows */}

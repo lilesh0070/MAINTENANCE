@@ -79,8 +79,15 @@ def _fy_dates(fy: str):
 @router.get("/")
 def list_running_hours(fy: str = Query(..., description="e.g. 2026-2027"),
                        user=Depends(get_current_user)):
-    """Saved running-hours rows for the FY, each with its frequency-weighted
-    breakdown count from the register and the resulting MTBF."""
+    """Saved running-hours rows for the FY, plus the aggregate MTBF:
+
+        MTBF (days) = (running_hours × number_of_machines − total_breakdown_hours)
+                      / breakdown_frequency / 24
+
+    where number_of_machines is the count of machines in the Machine Master
+    (maintenance_machines), and total_breakdown_hours / breakdown_frequency are
+    the FY totals from the maintenance breakdown register (frequency-weighted).
+    running_hours is the sum of the saved per-machine running-hours entries."""
     start, end = _fy_dates(fy)
     with get_conn() as conn:
         _ensure(conn)
@@ -93,28 +100,43 @@ def list_running_hours(fy: str = Query(..., description="e.g. 2026-2027"),
         """, [fy])
         saved = cur.fetchall()
 
+        # Number of machines — straight from the Machine Master.
+        cur.execute("SELECT COUNT(*) AS n FROM maintenance_machines WHERE is_active = TRUE")
+        num_machines = int(cur.fetchone()["n"] or 0)
+
+        # FY totals from the breakdown register.
         cur.execute("""
-            SELECT machine_no, COALESCE(SUM(COALESCE(frequency, 1)), 0) AS bd
+            SELECT COALESCE(SUM(mc_down_time_minutes), 0) / 60.0     AS bd_hours,
+                   COALESCE(SUM(COALESCE(frequency, 1)), 0)          AS bd_freq
               FROM maintenance_breakdown_data
              WHERE COALESCE(slip_date, bd_start_date) >= %s
                AND COALESCE(slip_date, bd_start_date) <  %s
-               AND machine_no IS NOT NULL
-             GROUP BY machine_no
         """, [start, end])
-        bd_by = {r["machine_no"]: int(r["bd"] or 0) for r in cur.fetchall()}
+        agg = cur.fetchone()
+        bd_hours = float(agg["bd_hours"] or 0)
+        bd_freq  = int(agg["bd_freq"] or 0)
 
-    rows = []
-    for m in saved:
-        rh = float(m["running_hours"] or 0)
-        bd = bd_by.get(m["machine_no"], 0)
-        mtbf = round(rh / bd, 2) if (bd > 0 and rh > 0) else None
-        rows.append({
-            "id": m["id"], "zone_name": m["zone_name"], "line_name": m["line_name"],
-            "serial_no": m["serial_no"], "machine_no": m["machine_no"],
-            "machine_name": m["machine_name"], "running_hours": rh,
-            "breakdowns": bd, "mtbf": mtbf,
-        })
-    return {"fy": fy, "rows": rows}
+    rows = [{
+        "id": m["id"], "zone_name": m["zone_name"], "line_name": m["line_name"],
+        "serial_no": m["serial_no"], "machine_no": m["machine_no"],
+        "machine_name": m["machine_name"], "running_hours": float(m["running_hours"] or 0),
+    } for m in saved]
+
+    running_hours = sum(r["running_hours"] for r in rows)
+    mtbf_days = (round((running_hours * num_machines - bd_hours) / bd_freq / 24.0, 2)
+                 if bd_freq > 0 else None)
+
+    return {
+        "fy": fy,
+        "rows": rows,
+        "calc": {
+            "running_hours":          round(running_hours, 2),
+            "num_machines":           num_machines,
+            "total_breakdown_hours":  round(bd_hours, 2),
+            "breakdown_frequency":    bd_freq,
+            "mtbf_days":              mtbf_days,
+        },
+    }
 
 
 @router.post("/", status_code=201)
