@@ -290,12 +290,17 @@ export default function MaintenanceDashboard() {
                      font-weight:700; font-size:12px; border-radius:8px; padding:6px 12px;
                      cursor:pointer; font-family:inherit; white-space:nowrap; }
 
-        /* ── Portrait / vertical TV (65") — fill the whole screen, bigger tiles ── */
+        /* ── Portrait / vertical TV (65") — everything on ONE screen, full-width ── */
         @media (orientation: portrait) {
-          .md-body   { max-width:none; padding:22px 26px 44px; }
-          .md-topbar { padding:0 26px; }
-          .md-title  { font-size:30px; }
-          .md-tiles  { grid-template-columns:repeat(2, minmax(0,1fr)); gap:18px; }
+          .md-root    { padding-bottom:0; }
+          .md-body    { max-width:none; padding:16px 26px 12px; }
+          .md-topbar  { padding:0 26px; }
+          .md-title   { font-size:28px; }
+          .md-tiles   { grid-template-columns:repeat(2, minmax(0,1fr)); gap:14px; margin-bottom:12px; }
+          .md-section { margin-bottom:12px; }
+          .md-cols    { margin-bottom:12px !important; gap:12px !important; }
+          /* both columns full-width — no empty space beside PM This Month */
+          .md-col-a, .md-col-b { flex:1 1 100% !important; max-width:none !important; min-width:0 !important; }
         }
       `}</style>
 
@@ -323,10 +328,10 @@ export default function MaintenanceDashboard() {
             </div>
           ) : (
             <>
-              <div style={{ display: "flex", gap: 16, alignItems: "flex-start",
+              <div className="md-cols" style={{ display: "flex", gap: 16, alignItems: "flex-start",
                             flexWrap: "wrap", marginBottom: 22 }}>
                 {/* left column: stat tiles + ANDON */}
-                <div style={{ flex: "1 1 620px", minWidth: 0 }}>
+                <div className="md-col-a" style={{ flex: "1 1 620px", minWidth: 0 }}>
                   <div className="md-tiles">
                     <StatCard label="Active calls"       value={andonActive}                color={andonActive ? "#dc2626" : "#16a34a"}/>
                     <StatCard label="Today"              value={andonToday}                 color="#1e40af" sub="7 AM – 6:30 AM (plant day)"/>
@@ -341,7 +346,7 @@ export default function MaintenanceDashboard() {
                   />
                 </div>
                 {/* right column: PM This Month — aligned to the very top */}
-                <div style={{ flex: "1 1 380px", minWidth: 320, maxWidth: 500 }}>
+                <div className="md-col-b" style={{ flex: "1 1 380px", minWidth: 320, maxWidth: 500 }}>
                   <PmThisMonth token={token} />
                 </div>
               </div>
