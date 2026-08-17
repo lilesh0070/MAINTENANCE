@@ -303,6 +303,13 @@ export default function MaintenanceKPI() {
     catch (e) { alert(e.message || "Save failed"); }
     finally { setSavingUi(false); }
   };
+  // Fullscreen toggle (for the TV display).
+  const goFullscreen = () => {
+    try {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen();
+    } catch { /* ignore */ }
+  };
 
   // Page FY is "2025-26"; the KPI Target table stores "2025-2026".
   const longFy = (f) => {
@@ -521,6 +528,17 @@ export default function MaintenanceKPI() {
                            background:#fef2f2; border:1px solid #fecaca; border-radius:99px;
                            padding:2px 10px; text-transform:none; letter-spacing:0; }
         .mk-chart-body { width:100%; }
+
+        /* ── Portrait / vertical TV (e.g. 65" mounted vertical) ─────────────
+           3 cards per row (3×2) + 3 charts per row (3×2), full-width. */
+        @media (orientation: portrait) {
+          .mk-body   { padding: 0 22px 44px; }
+          .mk-grid   { grid-template-columns: repeat(3, 1fr) !important; gap: 20px; }
+          .mk-charts { grid-template-columns: repeat(3, 1fr) !important; gap: 20px; }
+          .mk-card-label   { font-size: 13px; }
+          .mk-charts-title { font-size: 26px; }
+          .mk-fybar        { flex-wrap: wrap; row-gap: 10px; }
+        }
       `}</style>
 
       <div className="mk-root">
@@ -565,6 +583,7 @@ export default function MaintenanceKPI() {
               </select>
             </div>
             <div className="mk-live">
+              <button onClick={goFullscreen} style={custBtn} title="Fullscreen (TV)">⛶ Fullscreen</button>
               {isAdmin && (
                 <button onClick={() => setShowCust((v) => !v)} style={custBtn}>⚙ Customize</button>
               )}
