@@ -158,6 +158,8 @@ function MetricChart({ def, series, target, accent, barFill, yMax, cfg }) {
   const cc = cfg || CHART_D;
   const data = series || [];
   const t = target != null && target !== "" ? Number(target) : null;
+  const axC = cc.axisColor || "#64748b";
+  const unitCap = def.unit ? def.unit.charAt(0).toUpperCase() + def.unit.slice(1) : "Value";
   return (
     <div className="mk-chart">
       <div className="mk-chart-head">
@@ -177,12 +179,17 @@ function MetricChart({ def, series, target, accent, barFill, yMax, cfg }) {
       </div>
       <div className="mk-chart-body">
         <ResponsiveContainer width="100%" height={cc.height ?? 208}>
-          <ComposedChart data={data} margin={{ top: 34, right: 10, left: -10, bottom: 0 }}>
+          <ComposedChart data={data} margin={{ top: 34, right: 12, left: 8, bottom: 8 }}>
             {cc.grid !== false && <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />}
-            <XAxis dataKey="month" interval={0} tick={{ fontSize: 10.5, fill: cc.axisColor || "#64748b", fontWeight: 600 }}
-                   axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 11, fill: cc.axisColor || "#64748b" }}
-                   axisLine={false} tickLine={false} width={34}
+            <XAxis dataKey="month" interval={0} height={40}
+                   tick={{ fontSize: 10.5, fill: axC, fontWeight: 600 }}
+                   axisLine={false} tickLine={false}
+                   label={{ value: "Month", position: "insideBottom", offset: 0,
+                            fontSize: 11, fontWeight: 800, fill: axC }} />
+            <YAxis width={52}
+                   tick={{ fontSize: 11, fill: axC }} axisLine={false} tickLine={false}
+                   label={{ value: unitCap, angle: -90, position: "insideLeft", offset: 16,
+                            style: { textAnchor: "middle", fontSize: 11, fontWeight: 800, fill: axC } }}
                    domain={yMax != null ? [0, yMax]
                      : [0, (dataMax) => Math.max(1, Math.ceil(Math.max((dataMax || 1) * 1.2, t != null ? t * 1.15 : 0)))]} />
             <Tooltip
