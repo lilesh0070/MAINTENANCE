@@ -255,6 +255,16 @@ export default function MaintenanceDashboard() {
   const andonToday    = andonStats.today    ?? 0;   // pichhle 24h ke calls
   const longestActive = andonStats.longest_seconds ?? 0;
 
+  // ── "Today" card → click → us plant-day ki SAARI ANDON calls (modal) ──────
+  const [showToday, setShowToday] = useState(false);
+  const [todayData, setTodayData] = useState(null);   // {rows, calls, total_loss_seconds}
+  const [todayErr,  setTodayErr]  = useState(false);
+  const openToday = async () => {
+    setShowToday(true); setTodayData(null); setTodayErr(false);
+    try { setTodayData(await api.get("/api/andon/today-calls", token)); }
+    catch { setTodayErr(true); }
+  };
+
   return (
     <TvFit designWidth={1280} bg="#f8fafc">
     <>
@@ -351,7 +361,7 @@ export default function MaintenanceDashboard() {
                 <div className="md-col-a" style={{ flex: "1 1 620px", minWidth: 0 }}>
                   <div className="md-tiles">
                     <StatCard label="Active calls"       value={andonActive}                color={andonActive ? "#dc2626" : "#16a34a"}/>
-                    <StatCard label="Today"              value={andonToday}                 color="#1e40af" sub="7 AM – 6:30 AM (plant day)"/>
+                    <StatCard label="Today"              value={andonToday}                 color="#1e40af" sub="7 AM – 6:30 AM (plant day)" onClick={openToday}/>
                     <StatCard label="Awaiting response"  value={andonAwaiting}              color="#b45309" sub="Call open, no ack yet"/>
                     <StatCard label="Longest active"     value={fmtDuration(longestActive)} color="#7c3aed"/>
                   </div>
@@ -390,6 +400,73 @@ export default function MaintenanceDashboard() {
           onClose={() => setClosureModal(null)}
           onSave={onSubmitClosure}
         />
+      )}
+
+      {/* "Today" card → click → us plant-day ki saari ANDON calls */}
+      {showToday && (
+        <div onClick={() => setShowToday(false)}
+             style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      zIndex: 9999, padding: 20 }}>
+          <div onClick={(e) => e.stopPropagation()}
+               style={{ background: "#fff", borderRadius: 16, width: "min(940px,96vw)",
+                        maxHeight: "88vh", display: "flex", flexDirection: "column",
+                        boxShadow: "0 20px 60px rgba(0,0,0,.3)", overflow: "hidden" }}>
+            <div style={{ padding: "16px 22px", borderBottom: "1px solid #e2e8f0",
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          background: "#f8fafc" }}>
+              <div>
+                <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 22,
+                              fontWeight: 800, color: "#0f172a" }}>📟 Today’s ANDON Calls</div>
+                <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                  {todayData
+                    ? `${todayData.from} · plant day 7 AM–6:30 AM · ${todayData.calls} call${todayData.calls === 1 ? "" : "s"} · total ${fmtDuration(todayData.total_loss_seconds)}`
+                    : "7 AM – 6:30 AM (plant day)"}
+                </div>
+              </div>
+              <button onClick={() => setShowToday(false)}
+                      style={{ border: "1px solid #cbd5e1", background: "#fff", borderRadius: 8,
+                               width: 34, height: 34, cursor: "pointer", fontSize: 16, color: "#475569" }}>✕</button>
+            </div>
+            <div style={{ overflow: "auto" }}>
+              {todayErr ? (
+                <div style={{ padding: 24, color: "#dc2626", fontSize: 13 }}>Could not load today’s calls.</div>
+              ) : !todayData ? (
+                <div style={{ padding: 24, color: "#94a3b8", fontSize: 13 }}>Loading…</div>
+              ) : todayData.rows.length === 0 ? (
+                <div style={{ padding: "28px 24px", textAlign: "center", color: "#94a3b8",
+                              fontSize: 13, fontStyle: "italic" }}>
+                  No ANDON calls in this plant-day.
+                </div>
+              ) : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr>{["Zone", "Line", "Department", "Start", "End", "Total"].map((h) => (
+                      <th key={h} style={{ textAlign: "left", padding: "10px 14px", fontSize: 10,
+                                           fontWeight: 800, letterSpacing: ".05em", textTransform: "uppercase",
+                                           color: "#64748b", borderBottom: "2px solid #e2e8f0",
+                                           position: "sticky", top: 0, background: "#f1f5f9", whiteSpace: "nowrap" }}>{h}</th>
+                    ))}</tr>
+                  </thead>
+                  <tbody>
+                    {todayData.rows.map((r, i) => (
+                      <tr key={i} style={{ borderBottom: "1px solid #f1f5f9", background: i % 2 ? "#fafbfc" : "#fff" }}>
+                        <td style={{ padding: "9px 14px", fontWeight: 700, color: "#1e40af", whiteSpace: "nowrap" }}>{r.zone || "—"}</td>
+                        <td style={{ padding: "9px 14px", color: "#0f172a", fontWeight: 600, whiteSpace: "nowrap" }}>{r.line || "—"}</td>
+                        <td style={{ padding: "9px 14px", color: "#334155", whiteSpace: "nowrap" }}>{r.department || "—"}</td>
+                        <td style={{ padding: "9px 14px", fontFamily: "monospace", color: "#475569", whiteSpace: "nowrap" }}>{r.start_time || "—"}</td>
+                        <td style={{ padding: "9px 14px", fontFamily: "monospace", color: "#475569", whiteSpace: "nowrap" }}>
+                          {r.is_live ? <span style={{ color: "#dc2626", fontWeight: 800 }}>● live</span> : (r.end_time || "—")}
+                        </td>
+                        <td style={{ padding: "9px 14px", fontFamily: "monospace", fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap" }}>{fmtDuration(r.duration_seconds)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {toastNode}

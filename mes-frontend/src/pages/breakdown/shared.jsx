@@ -96,10 +96,15 @@ export function Btn({ children, onClick, variant = "default", size = "md", disab
   );
 }
 
-export function StatCard({ label, value, sub, color = "#1e40af" }) {
+export function StatCard({ label, value, sub, color = "#1e40af", onClick }) {
   const portrait = usePortrait();
+  const clickable = typeof onClick === "function";
   return (
-    <div style={{
+    <div onClick={onClick}
+         title={clickable ? "Click to see the calls" : undefined}
+         style={{
+      position: "relative",
+      cursor: clickable ? "pointer" : "default",
       background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12,
       padding: portrait ? "8px 12px" : "14px 18px",
       // Pehle `flex: 0 0 auto` + minWidth 140 tha — card apne CONTENT jitna
@@ -125,6 +130,10 @@ export function StatCard({ label, value, sub, color = "#1e40af" }) {
       <div style={{ fontSize: portrait ? 22 : 28, fontWeight: 800, color, marginTop: 2,
                      fontFamily: "'Barlow Condensed',sans-serif" }}>{value}</div>
       {sub && <div style={{ fontSize: portrait ? 9 : 11, color: "#94a3b8", marginTop: 1 }}>{sub}</div>}
+      {clickable && (
+        <span style={{ position: "absolute", top: portrait ? 6 : 10, right: portrait ? 8 : 12,
+                       fontSize: portrait ? 11 : 13, color: "#cbd5e1", fontWeight: 800 }}>▸</span>
+      )}
     </div>
   );
 }

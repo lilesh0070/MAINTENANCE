@@ -1617,6 +1617,66 @@ def dashboard_board(user=Depends(get_current_user)):
     return {"rows": rows, "stats": stats}
 
 
+@router.get("/today-calls")
+def today_calls(frm: Optional[str] = Query(None, alias="from"),
+                to:  Optional[str] = None,
+                user=Depends(get_current_user)):
+    """Dashboard ke "Today" card par click → us plant-day (D 07:00 → D+1 06:30)
+    ki SAARI ANDON calls (har department).  Har row: zone, line, department,
+    start-time, end-time, total-time (loss seconds).  Band ho chuke (andon_history)
+    + abhi chalu (andon_system OPEN, end = abhi) dono.  Newest first.
+    `today` stat card wahi window ginta hai, to yahan ki count us card se match
+    karti hai.  from/to na do to aaj ka plant-day.
+    """
+    _ensure_tables()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT (CASE WHEN NOW()::time >= TIME '07:00' THEN CURRENT_DATE
+                                    ELSE CURRENT_DATE - INTERVAL '1 day' END)::date AS d""")
+        today_pd = cur.fetchone()["d"].isoformat()
+        f = frm or today_pd
+        t = to or f
+        # window: from-date 07:00  se  (to-date + 1 din) 06:30
+        cur.execute("""
+            SELECT h.zone, h.line, COALESCE(dep.name, h.display_name) AS department,
+                   h.started_at, h.ended_at, h.duration_seconds, FALSE AS is_live
+              FROM andon_history h
+              LEFT JOIN andon_departments dep ON dep.id = h.department_id
+             WHERE h.started_at >= (%s::date + TIME '07:00')
+               AND h.started_at <  ((%s::date + INTERVAL '1 day') + TIME '06:30')
+            UNION ALL
+            SELECT e.zone, e.line, COALESCE(dep.name, e.display_name) AS department,
+                   e.started_at, NULL::timestamp AS ended_at,
+                   EXTRACT(EPOCH FROM (NOW() - e.started_at))::int AS duration_seconds,
+                   TRUE AS is_live
+              FROM andon_system e
+              LEFT JOIN andon_departments dep ON dep.id = e.department_id
+             WHERE e.state='OPEN'
+               AND e.started_at >= (%s::date + TIME '07:00')
+               AND e.started_at <  ((%s::date + INTERVAL '1 day') + TIME '06:30')
+             ORDER BY started_at DESC
+        """, (f, t, f, t))
+        rows = cur.fetchall()
+
+    out = []
+    total = 0
+    for r in rows:
+        st, en = r["started_at"], r["ended_at"]
+        dur = int(r["duration_seconds"] or 0)
+        total += dur
+        out.append({
+            "zone":       r["zone"], "line": r["line"],
+            "department": r["department"],
+            "date":       st.date().isoformat() if st else None,
+            "start_time": st.strftime("%H:%M:%S") if st else None,
+            "end_time":   en.strftime("%H:%M:%S") if en else None,
+            "duration_seconds": dur,
+            "is_live":    bool(r["is_live"]),
+        })
+    return {"from": f, "to": t, "calls": len(out),
+            "total_loss_seconds": int(total), "rows": out}
+
+
 @router.get("/today-totals")
 def today_totals(user=Depends(get_current_user)):
     """Aaj ka (plant-day 7AM → agle din 6:30AM) HAR department ka TOTAL LOSS.
