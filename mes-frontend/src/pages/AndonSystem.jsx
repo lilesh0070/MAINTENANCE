@@ -770,7 +770,7 @@ export default function AndonSystem() {
               <div className="an-card">
                 <b style={{ fontSize:14 }}>Mappings ({outs.length})</b>
                 <table className="an-tbl">
-                  <thead><tr><th>Department</th><th>Output PLC</th><th>Bit</th><th>Off trigger</th><th>Bit now</th><th>Write</th><th>Status</th><th></th></tr></thead>
+                  <thead><tr><th>Department</th><th>Output PLC</th><th>Bit</th><th>Off trigger</th><th>Connection</th><th>Bit now</th><th>Status</th><th></th></tr></thead>
                   <tbody>
                     {outs.length === 0 && <tr><td colSpan={8} style={{ color:"#94a3b8", padding:16, textAlign:"center" }}>Koi mapping nahi — upar se add karo.</td></tr>}
                     {outs.map((o) => (
@@ -779,8 +779,16 @@ export default function AndonSystem() {
                         <td style={{ fontFamily:"monospace" }}>{o.plc_ip}:{o.plc_port}<span style={{ marginLeft:6, fontSize:10, fontWeight:700, color:"#64748b", background:"#f1f5f9", padding:"1px 6px", borderRadius:99 }}>{o.plc_series}</span></td>
                         <td style={{ fontFamily:"monospace", fontWeight:700 }}>{o.bit_type}{o.bit_no}</td>
                         <td style={{ fontSize:12 }}>{o.off_on_ack ? "Response pe" : "Call-end pe"}</td>
+                        <td>
+                          <span style={{ display:"inline-flex", alignItems:"center", gap:7, fontWeight:700, fontSize:12,
+                                         color: o.reachable === true ? "#16a34a" : o.reachable === false ? "#dc2626" : "#94a3b8" }}>
+                            <span style={{ width:10, height:10, borderRadius:"50%", flex:"0 0 auto",
+                                           background: o.reachable === true ? "#16a34a" : o.reachable === false ? "#dc2626" : "#cbd5e1",
+                                           boxShadow: o.reachable === true ? "0 0 0 3px rgba(22,163,74,.2)" : o.reachable === false ? "0 0 0 3px rgba(220,38,38,.2)" : "none" }} />
+                            {o.reachable === true ? "Connected" : o.reachable === false ? "Disconnected" : "Checking…"}
+                          </span>
+                        </td>
                         <td>{o.bit_on === true ? <span style={{ color:"#16a34a", fontWeight:800 }}>● ON</span> : o.bit_on === false ? <span style={{ color:"#94a3b8", fontWeight:700 }}>OFF</span> : <span style={{ color:"#cbd5e1" }}>—</span>}</td>
-                        <td>{o.online === true ? <span style={{ color:"#16a34a", fontSize:12, fontWeight:700 }}>ok</span> : o.online === false ? <span style={{ color:"#dc2626", fontSize:12, fontWeight:700 }}>fail</span> : <span style={{ color:"#94a3b8", fontSize:12 }}>—</span>}</td>
                         <td><span className="an-chip" style={{ padding:"2px 9px", background: o.enabled ? "#dcfce7" : "#fee2e2", color: o.enabled ? "#16a34a" : "#dc2626" }}>{o.enabled ? "Enabled" : "Disabled"}</span></td>
                         <td style={{ whiteSpace:"nowrap" }}>
                           <button className="an-btn gh sm" onClick={() => { setOutEdit(o.id); setOutForm({ department:o.department, plc_ip:o.plc_ip, plc_port:o.plc_port, plc_series:o.plc_series, bit_type:o.bit_type, bit_no:o.bit_no, enabled:o.enabled }); }}>Edit</button>{" "}
@@ -791,7 +799,7 @@ export default function AndonSystem() {
                   </tbody>
                 </table>
                 <div style={{ fontSize:11.5, color:"#94a3b8", marginTop:10 }}>
-                  "Bit now" / "Write" tabhi update hote hain jab writer chal raha ho — yaani jis backend pe poller ON hai (production). Dev pe poller OFF hai to yahan "—" dikhega, par config save/edit yahin se hota hai.
+                  <b>Connection</b> yahin (dev pe bhi) dikhata hai ki output PLC reachable hai ya nahi. <b>Bit now</b> tabhi update hota hai jab writer chal raha ho — yaani jis backend pe poller ON hai (production); dev pe "—". Config save/edit yahin se hota hai.
                 </div>
               </div>
             </>

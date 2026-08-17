@@ -819,7 +819,14 @@ def list_call_outputs(user=Depends(get_current_user)):
         r["off_on_ack"] = _dept_off_on_ack(r["department"])   # response pe off?
         st = _OUT_STATE.get(r["id"], {})
         r["bit_on"] = st.get("on")        # True=bit ON abhi · False=OFF · None=abhi tak nahi likha
-        r["online"] = st.get("online")    # write reachable?
+        r["online"] = st.get("online")    # last write ok/fail (writer)
+        # Connection dot: agar writer chal raha (production) to uska write-success
+        # hi connected/disconnected batata hai; nahi (dev poller off) to ek quick
+        # TCP reachability probe — taaki yahan bhi Connected/Disconnected dikhe.
+        reach = st.get("online")
+        if reach is None and r.get("plc_ip"):
+            reach = _reachable(r["plc_ip"], r.get("plc_port") or 5007, timeout=0.4)
+        r["reachable"] = reach
         if isinstance(r.get("created_at"), datetime):
             r["created_at"] = r["created_at"].isoformat()
     return rows
