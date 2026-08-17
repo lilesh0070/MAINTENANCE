@@ -55,13 +55,26 @@ function asHm(min) {
   return m ? `${h}h ${m}m` : `${h}h`;
 }
 
-// Lighten a hex colour toward white by `amt` (0..1) — the chart bars use a
-// softer tint of each card's accent (card = full colour, chart = lighter).
-function lighten(hex, amt) {
-  const h = hex.replace("#", "");
-  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
-  const mix = (ch) => Math.round(ch + (255 - ch) * amt);
-  return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+// Chart-bar colour = each card's accent made LIGHTER but still vivid.  We raise
+// the lightness in HSL (instead of mixing toward white, which looked washed out
+// / dull) so the hue keeps its full saturation.
+function barColor(hex) {
+  const h2 = hex.replace("#", "");
+  const r = parseInt(h2.slice(0, 2), 16) / 255,
+        g = parseInt(h2.slice(2, 4), 16) / 255,
+        b = parseInt(h2.slice(4, 6), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  let h = 0, s = 0; const l = (max + min) / 2;
+  if (d) {
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    h = max === r ? (g - b) / d + (g < b ? 6 : 0)
+      : max === g ? (b - r) / d + 2
+      :             (r - g) / d + 4;
+    h *= 60;
+  }
+  const L = Math.min(Math.round(l * 100) + 20, 66);  // lighter than the card
+  const S = Math.round(s * 100);                      // keep full saturation
+  return `hsl(${Math.round(h)}, ${S}%, ${L}%)`;
 }
 
 // The six cards — each keeps its own accent colour.  val(): pick + format
@@ -117,7 +130,7 @@ function chartNum(v) {
 // current FY + scope in KPI Targets, it is drawn as a red dashed line.
 function MetricChart({ def, series, target }) {
   const c = def.accent;                       // card's accent — dot
-  const barFill = lighten(def.accent, 0.4);   // bars: same hue, a bit lighter
+  const barFill = barColor(def.accent);       // bars: lighter but still vivid
   const data = series || [];
   const t = target != null && target !== "" ? Number(target) : null;
   return (
