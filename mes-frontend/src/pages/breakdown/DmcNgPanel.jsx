@@ -51,7 +51,7 @@ export default function DmcNgPanel({ token, refreshKey }) {
         </button>
       </div>
 
-      <div style={{ maxHeight: 320, overflowY: "auto" }}>
+      <div>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead style={{ position: "sticky", top: 0, background: "#f8fafc", zIndex: 1 }}>
             <tr>

@@ -28,9 +28,11 @@ export default function Layout({ children }) {
 
       {/* Display controls — full toolbar on the wall-dashboard pages,
           otherwise just the full-screen toggle. */}
-      {isDisplay
-        ? <DisplayToolbar showTheme={pathname === "/maintenance-overview"} />
-        : <FullscreenButton />}
+      {pathname === "/maintenance-dashboard"
+        ? null   /* dashboard has its own topbar ⛶ Fullscreen — no floating control */
+        : isDisplay
+          ? <DisplayToolbar showTheme={pathname === "/maintenance-overview"} />
+          : <FullscreenButton />}
     </div>
   );
 }

@@ -52,7 +52,7 @@ function PmThisMonth({ token }) {
           {monthLbl} · {rows.length} planned
         </div>
       </div>
-      <div style={{ maxHeight: 360, overflowY: "auto" }}>
+      <div>
         {err ? (
           <div style={{ padding: 20, color: "#dc2626", fontSize: 12.5 }}>Could not load PM schedule.</div>
         ) : !data ? (
