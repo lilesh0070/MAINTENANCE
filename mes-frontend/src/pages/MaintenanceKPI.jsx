@@ -238,7 +238,9 @@ export default function MaintenanceKPI() {
   // target key is 'lttr_minutes' but the value is entered in the same unit
   // the page shows, so it maps straight across).
   const targetFor = (defKey) => {
-    const k = defKey === "lttr_hours" ? "lttr_minutes" : defKey;
+    let k = defKey;
+    if (defKey === "lttr_hours")     k = "lttr_minutes";
+    else if (defKey === "mtbf_days") k = "mtbf_hours";   // MTBF target key unchanged
     return targets[k];
   };
 
@@ -468,9 +470,7 @@ export default function MaintenanceKPI() {
           {/* ── Per-card charts (month-by-month for the FY) ─── */}
           <div className="mk-charts-title">Monthly Trend — {data?.fy_label || fy}</div>
           <div className="mk-charts">
-            {/* MTBF is a single plant-level number (running-hours based) — no
-                month-by-month series, so it has a card but no trend chart. */}
-            {CARDS.filter((def) => def.key !== "mtbf_days").map((def) => (
+            {CARDS.map((def) => (
               <MetricChart key={def.key} def={def} series={trend} target={targetFor(def.key)} />
             ))}
           </div>

@@ -426,27 +426,25 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
         """, params)
         row = cur.fetchone() or {}
 
-        # ── Plant MTBF inputs (running-hours based, days) ──────────────
-        # These IGNORE the zone/line/machine filter — the running-hours MTBF
-        # is a single PLANT-level figure: saved running hours (matched by FY
-        # start-year, since that table stores '2026-2027' while this page uses
-        # '2026-27'), the Machine-Master machine count, and the PLANT-WIDE FY
-        # breakdown totals.
-        cur.execute("SELECT COUNT(*) AS n FROM maintenance_machines WHERE is_active = TRUE")
+        # ── MTBF inputs (running-hours based) — SCOPED to the same zone/line/
+        # machine filter as the breakdown figures, so MTBF follows the filter
+        # (whole plant with no filter, one zone when a zone is picked, etc.).
+        # running_hours is the per-machine value saved on the MTBF Calculation
+        # page (matched by FY start-year — that table stores '2026-2027' while
+        # this page uses '2026-27').
+        mwhere = ["is_active = TRUE"]
+        mparams: list = []
+        if zone_name:
+            mwhere.append("zone_name = %s"); mparams.append(zone_name)
+        if line_name:
+            mwhere.append("line_name = %s"); mparams.append(line_name)
+        if machine_no:
+            mwhere.append("machine_no = %s"); mparams.append(machine_no)
+        cur.execute(f"SELECT COUNT(*) AS n FROM maintenance_machines WHERE {' AND '.join(mwhere)}", mparams)
         num_machines = int((cur.fetchone() or {}).get("n") or 0)
         cur.execute("SELECT COALESCE(SUM(running_hours), 0) AS rh "
                     "FROM maintenance_machine_running_hours WHERE fy LIKE %s", [f"{start.year}%"])
         running_hours = float((cur.fetchone() or {}).get("rh") or 0)
-        cur.execute("""
-            SELECT COALESCE(SUM(mc_down_time_minutes), 0) / 60.0 AS bd_hours,
-                   COALESCE(SUM(COALESCE(frequency, 1)), 0)      AS bd_freq
-              FROM maintenance_breakdown_data
-             WHERE COALESCE(slip_date, bd_start_date) >= %s
-               AND COALESCE(slip_date, bd_start_date) <  %s
-        """, [start.date(), end.date()])
-        _p = cur.fetchone() or {}
-        plant_bd_hours = float(_p.get("bd_hours") or 0)
-        plant_bd_freq  = int(_p.get("bd_freq") or 0)
 
     bd_count   = int(row.get("bd_count") or 0)
     total_min  = float(row.get("total_min") or 0)
@@ -459,11 +457,13 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
     mttr_minutes = round(total_min / bd_count, 2) if bd_count > 0 else 0.0
     lttr_minutes = round(max_min, 2)
 
-    # MTBF (days) — running-hours based, plant-level (the KPI page + Overview
-    # show THIS now; the old calendar-based mtbf_hours is no longer displayed):
-    #   MTBF(days) = (running_hours × machines − breakdown_hours) / frequency / 24
-    mtbf_days = (round((running_hours * num_machines - plant_bd_hours) / plant_bd_freq / 24.0, 2)
-                 if (plant_bd_freq > 0 and running_hours > 0) else None)
+    # MTBF (days) — running-hours based, follows the zone/line/machine filter:
+    #   MTBF(days) = (running_hours × machines_in_scope − breakdown_hours)
+    #                / breakdown_frequency / 24
+    # running_hours = per-machine value; machines_in_scope + the breakdown
+    # figures both respect the current filter (so a zone selection → zone MTBF).
+    mtbf_days = (round((running_hours * num_machines - total_hours) / bd_count / 24.0, 2)
+                 if (bd_count > 0 and running_hours > 0) else None)
 
     return {
         "fy":        fy,
@@ -529,6 +529,22 @@ def fy_trend(fy:         Optional[str] = Query(None, description="e.g. 2025-26")
         """, params)
         by_month = {r["m"]: r for r in cur.fetchall()}
 
+        # MTBF inputs (running-hours based), scoped to the same zone/line/
+        # machine filter — so the monthly MTBF follows the filter too.
+        mwhere = ["is_active = TRUE"]
+        mparams: list = []
+        if zone_name:
+            mwhere.append("zone_name = %s"); mparams.append(zone_name)
+        if line_name:
+            mwhere.append("line_name = %s"); mparams.append(line_name)
+        if machine_no:
+            mwhere.append("machine_no = %s"); mparams.append(machine_no)
+        cur.execute(f"SELECT COUNT(*) AS n FROM maintenance_machines WHERE {' AND '.join(mwhere)}", mparams)
+        num_machines = int((cur.fetchone() or {}).get("n") or 0)
+        cur.execute("SELECT COALESCE(SUM(running_hours), 0) AS rh "
+                    "FROM maintenance_machine_running_hours WHERE fy LIKE %s", [f"{start.year}%"])
+        running_hours = float((cur.fetchone() or {}).get("rh") or 0)
+
     # Build the 12 FY months in order (Apr → Mar), filling gaps with zeros.
     series = []
     for i in range(12):
@@ -554,7 +570,10 @@ def fy_trend(fy:         Optional[str] = Query(None, description="e.g. 2025-26")
             cnt = t_min = x_min = o1 = 0
 
         t_hours = round(t_min / 60.0, 2)
-        mtbf = round(max(month_hours - t_hours, 0) / cnt, 2) if cnt > 0 else 0.0
+        # MTBF (days) — running-hours based, this month's breakdowns:
+        # (running_hours × machines_in_scope − month_breakdown_hours) / freq / 24
+        mtbf_days_m = (round((running_hours * num_machines - t_hours) / cnt / 24.0, 2)
+                       if (cnt > 0 and running_hours > 0) else 0.0)
         # MTTR = total downtime / number of breakdowns (frequency-weighted)
         mttr = round(t_min / cnt, 2) if cnt > 0 else 0.0
 
@@ -562,7 +581,7 @@ def fy_trend(fy:         Optional[str] = Query(None, description="e.g. 2025-26")
             "month":  calendar.month_abbr[mo],
             "ym":     key.isoformat(),
             "mttr_minutes":          mttr,
-            "mtbf_hours":            mtbf,
+            "mtbf_days":             mtbf_days_m,
             "lttr_minutes":          round(x_min, 2),
             "lttr_hours":            round(x_min / 60.0, 2),
             "over_1hr_count":        o1,
