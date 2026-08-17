@@ -372,8 +372,17 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
     total breakdown hours.
 
     Source: maintenance_breakdown_data — the maintenance breakdown register, which
-    carries the per-slip repair time (mc_down_time_minutes) and breakdown date
-    (bd_date).  Live — recomputed on every call."""
+    carries the per-slip repair time (mc_down_time_minutes), breakdown date, and a
+    per-slip `frequency` count (breakdowns in that slip; missing → 1).
+
+    Every COUNT-of-breakdowns is SUM(frequency), not a row count, so all
+    count-based metrics are frequency-weighted:
+      • Frequency = SUM(frequency)
+      • MTTR      = SUM(down_time) / SUM(frequency)
+      • MTBF      = (elapsed_hours − total_down_hours) / SUM(frequency)
+      • >1 hour   = SUM(frequency) over slips whose down_time > 60 min
+    Sums / maxes (Total Hours, LTTR) do not use frequency.  Live — recomputed
+    on every call."""
     now = datetime.utcnow()
     if not fy:
         cy = _current_fy_start(now)
@@ -409,9 +418,9 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
                 -- row COUNT.  Yahi MTBF ka failure-count denominator bhi hai.
                 COALESCE(SUM(COALESCE(frequency, 1)), 0)  AS bd_count,
                 COALESCE(SUM({st}), 0)                    AS total_min,
-                COALESCE(AVG({st}), 0)                    AS avg_min,
                 COALESCE(MAX({st}), 0)                    AS max_min,
-                COUNT(*) FILTER (WHERE ({st}) > 60)       AS over_1hr
+                -- >1hr count is frequency-weighted too (not a bare row count)
+                COALESCE(SUM(COALESCE(frequency, 1)) FILTER (WHERE ({st}) > 60), 0) AS over_1hr
               FROM maintenance_breakdown_data
              WHERE {where}
         """, params)
@@ -419,12 +428,13 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
 
     bd_count   = int(row.get("bd_count") or 0)
     total_min  = float(row.get("total_min") or 0)
-    avg_min    = float(row.get("avg_min") or 0)
     max_min    = float(row.get("max_min") or 0)
     over_1hr   = int(row.get("over_1hr") or 0)
 
     total_hours  = round(total_min / 60.0, 2)
-    mttr_minutes = round(avg_min, 2)
+    # MTTR = total repair time / number of breakdowns (frequency-weighted):
+    # SUM(down_time) / SUM(frequency).  Identical to AVG when frequency = 1.
+    mttr_minutes = round(total_min / bd_count, 2) if bd_count > 0 else 0.0
     lttr_minutes = round(max_min, 2)
 
     if bd_count > 0:
@@ -490,9 +500,8 @@ def fy_trend(fy:         Optional[str] = Query(None, description="e.g. 2025-26")
                    -- frequency column summed (see /summary) — not a row count
                    COALESCE(SUM(COALESCE(frequency, 1)), 0)      AS bd_count,
                    COALESCE(SUM({st}), 0)                        AS total_min,
-                   COALESCE(AVG({st}), 0)                        AS avg_min,
                    COALESCE(MAX({st}), 0)                        AS max_min,
-                   COUNT(*) FILTER (WHERE ({st}) > 60)           AS over_1hr
+                   COALESCE(SUM(COALESCE(frequency, 1)) FILTER (WHERE ({st}) > 60), 0) AS over_1hr
               FROM maintenance_breakdown_data
              WHERE {where}
              GROUP BY 1
@@ -518,19 +527,20 @@ def fy_trend(fy:         Optional[str] = Query(None, description="e.g. 2025-26")
         if r:
             cnt   = int(r["bd_count"] or 0)
             t_min = float(r["total_min"] or 0)
-            a_min = float(r["avg_min"] or 0)
             x_min = float(r["max_min"] or 0)
             o1    = int(r["over_1hr"] or 0)
         else:
-            cnt = t_min = a_min = x_min = o1 = 0
+            cnt = t_min = x_min = o1 = 0
 
         t_hours = round(t_min / 60.0, 2)
         mtbf = round(max(month_hours - t_hours, 0) / cnt, 2) if cnt > 0 else 0.0
+        # MTTR = total downtime / number of breakdowns (frequency-weighted)
+        mttr = round(t_min / cnt, 2) if cnt > 0 else 0.0
 
         series.append({
             "month":  calendar.month_abbr[mo],
             "ym":     key.isoformat(),
-            "mttr_minutes":          round(a_min, 2),
+            "mttr_minutes":          mttr,
             "mtbf_hours":            mtbf,
             "lttr_minutes":          round(x_min, 2),
             "lttr_hours":            round(x_min / 60.0, 2),
@@ -588,7 +598,7 @@ def breakdown_by(group:        str = Query("zone", description="zone | line | ma
         cur = dict_cursor(conn)
         cur.execute(f"""
             SELECT {col}                                        AS key,
-                   COUNT(*)                                     AS frequency,
+                   COALESCE(SUM(COALESCE(frequency, 1)), 0)     AS frequency,
                    ROUND(COALESCE(SUM({st}), 0) / 60.0, 2)      AS hours,
                    ROUND(COALESCE(SUM({st}), 0))                AS minutes
               FROM maintenance_breakdown_data
