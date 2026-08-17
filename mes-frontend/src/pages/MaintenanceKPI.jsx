@@ -34,6 +34,15 @@ const api = {
     if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
     return r.json();
   },
+  async put(path, body, token) {
+    const r = await fetch(API + path, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
+    return r.json();
+  },
 };
 
 const POLL_MS = 12000;
@@ -59,22 +68,36 @@ function asHm(min) {
 // the lightness in HSL (instead of mixing toward white, which looked washed out
 // / dull) so the hue keeps its full saturation.
 function barColor(hex) {
-  const h2 = hex.replace("#", "");
-  const r = parseInt(h2.slice(0, 2), 16) / 255,
-        g = parseInt(h2.slice(2, 4), 16) / 255,
-        b = parseInt(h2.slice(4, 6), 16) / 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
-  let h = 0, s = 0; const l = (max + min) / 2;
+  const h2 = String(hex || "#1e40af").replace("#", "");
+  const r0 = parseInt(h2.slice(0, 2), 16) / 255,
+        g0 = parseInt(h2.slice(2, 4), 16) / 255,
+        b0 = parseInt(h2.slice(4, 6), 16) / 255;
+  const max = Math.max(r0, g0, b0), min = Math.min(r0, g0, b0), d = max - min;
+  let h = 0, s = 0; let l = (max + min) / 2;
   if (d) {
     s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    h = max === r ? (g - b) / d + (g < b ? 6 : 0)
-      : max === g ? (b - r) / d + 2
-      :             (r - g) / d + 4;
-    h *= 60;
+    h = max === r0 ? (g0 - b0) / d + (g0 < b0 ? 6 : 0)
+      : max === g0 ? (b0 - r0) / d + 2
+      :              (r0 - g0) / d + 4;
+    h /= 6;
   }
-  const L = Math.min(Math.round(l * 100) + 20, 66);  // lighter than the card
-  const S = Math.round(s * 100);                      // keep full saturation
-  return `hsl(${Math.round(h)}, ${S}%, ${L}%)`;
+  l = Math.min(l + 0.20, 0.66);   // lighter but keep saturation → vivid tint
+  const hue = (p, q, t) => {
+    if (t < 0) t += 1; if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  let r, g, b;
+  if (s === 0) { r = g = b = l; }
+  else {
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue(p, q, h + 1 / 3); g = hue(p, q, h); b = hue(p, q, h - 1 / 3);
+  }
+  const toHex = (x) => Math.round(x * 255).toString(16).padStart(2, "0");
+  return "#" + toHex(r) + toHex(g) + toHex(b);
 }
 
 // The six cards — each keeps its own accent colour.  val(): pick + format
@@ -128,9 +151,9 @@ function chartNum(v) {
 // financial year (Apr → Mar).  Clean solid bars (each metric's stable accent)
 // with always-on black value labels.  When a REAL target is saved for the
 // current FY + scope in KPI Targets, it is drawn as a red dashed line.
-function MetricChart({ def, series, target }) {
-  const c = def.accent;                       // card's accent — dot
-  const barFill = barColor(def.accent);       // bars: lighter but still vivid
+function MetricChart({ def, series, target, accent, barFill, yMax }) {
+  const c = accent || def.accent;             // card's accent — dot
+  const bar = barFill || barColor(c);         // bars: lighter but still vivid
   const data = series || [];
   const t = target != null && target !== "" ? Number(target) : null;
   return (
@@ -149,7 +172,8 @@ function MetricChart({ def, series, target }) {
                    axisLine={false} tickLine={false} />
             <YAxis tick={{ fontSize: 11, fill: "#64748b" }}
                    axisLine={false} tickLine={false} width={34}
-                   domain={[0, (dataMax) => Math.max(1, Math.ceil(Math.max((dataMax || 1) * 1.2, t != null ? t * 1.15 : 0)))]} />
+                   domain={yMax != null ? [0, yMax]
+                     : [0, (dataMax) => Math.max(1, Math.ceil(Math.max((dataMax || 1) * 1.2, t != null ? t * 1.15 : 0)))]} />
             <Tooltip
               cursor={{ fill: "rgba(148,163,184,.10)" }}
               contentStyle={{ borderRadius: 10, border: "1px solid #e2e8f0", fontSize: 12,
@@ -157,7 +181,7 @@ function MetricChart({ def, series, target }) {
               labelStyle={{ fontWeight: 700, color: "#0f172a" }}
               formatter={(v) => [Number(v).toLocaleString("en-IN"), def.label]}
             />
-            <Bar dataKey={def.key} name={def.label} fill={barFill}
+            <Bar dataKey={def.key} name={def.label} fill={bar}
                  radius={[4, 4, 0, 0]} barSize={24} maxBarSize={36}
                  isAnimationActive={false}>
               <LabelList dataKey={def.key} position="top" formatter={chartNum}
@@ -181,18 +205,29 @@ function MetricChart({ def, series, target }) {
   );
 }
 
-function KpiCard({ def, metrics }) {
+function KpiCard({ def, metrics, accent }) {
+  const a = accent || def.accent;
   const v = metrics ? def.val(metrics) : "—";
   const sub = metrics ? def.sub(metrics) : "";
   return (
-    <div className="mk-card" style={{ borderTop: `3px solid ${def.accent}` }}>
+    <div className="mk-card" style={{ borderTop: `3px solid ${a}` }}>
       <div className="mk-card-label">{def.label}</div>
-      <div className="mk-card-value" style={{ color: def.accent }}>{v}</div>
+      <div className="mk-card-value" style={{ color: a }}>{v}</div>
       <div className="mk-card-unit">{def.unit}</div>
       {sub && <div className="mk-card-sub">{sub}</div>}
     </div>
   );
 }
+
+// Inline styles for the admin "Customize" panel.
+const custBtn   = { border: "1px solid #cbd5e1", background: "#fff", color: "#1e40af", fontWeight: 700, fontSize: 12, borderRadius: 8, padding: "5px 11px", cursor: "pointer", fontFamily: "inherit", marginRight: 6 };
+const custPanel = { background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, padding: 16, marginBottom: 18, boxShadow: "0 4px 16px rgba(15,23,42,.06)" };
+const custCard  = { border: "1px solid #eef2f7", borderRadius: 10, padding: "10px 12px", background: "#fafbfc" };
+const custLbl   = { display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "#64748b" };
+const custColor = { width: 36, height: 26, border: "1px solid #cbd5e1", borderRadius: 6, padding: 0, cursor: "pointer", background: "#fff" };
+const custNum   = { width: 72, border: "1.5px solid #e2e8f0", borderRadius: 6, padding: "4px 6px", fontSize: 12, fontFamily: "inherit" };
+const custGhost = { border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 11, borderRadius: 7, padding: "4px 9px", cursor: "pointer", fontFamily: "inherit" };
+const custSave  = { border: "none", background: "linear-gradient(135deg,#1e40af,#2563eb)", color: "#fff", fontWeight: 700, fontSize: 12, borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontFamily: "inherit" };
 
 export default function MaintenanceKPI() {
   const { token, theme, user } = useAuth();
@@ -211,6 +246,33 @@ export default function MaintenanceKPI() {
   // Saved KPI targets (maintenance_kpi_target) for the current FY + scope.
   const [targets, setTargets]     = useState({});   // {kpi_key: target_value}
   const timer = useRef(null);
+  const isAdmin = user?.role === "admin";
+
+  // Admin-editable appearance (colours / axis) — /api/kpi-ui-settings.
+  const [ui, setUi]             = useState({});
+  const [showCust, setShowCust] = useState(false);
+  const [savingUi, setSavingUi] = useState(false);
+  useEffect(() => {
+    if (!token) return;
+    api.get("/api/kpi-ui-settings/", token)
+      .then((r) => setUi((r && r.settings) || {}))
+      .catch(() => {});
+  }, [token]);
+  const styleOf = (key, defAccent) => {
+    const s = (ui && ui[key]) || {};
+    const accent = s.accent || defAccent;
+    return { accent, bar: s.bar || barColor(accent),
+             yMax: (s.yMax != null && Number(s.yMax) > 0) ? Number(s.yMax) : null };
+  };
+  const setUiField = (key, field, value) =>
+    setUi((prev) => ({ ...prev, [key]: { ...(prev[key] || {}), [field]: value } }));
+  const resetKpi = (key) => setUi((p) => { const n = { ...p }; delete n[key]; return n; });
+  const saveUi = async () => {
+    setSavingUi(true);
+    try { await api.put("/api/kpi-ui-settings/", { settings: ui }, token); setShowCust(false); }
+    catch (e) { alert(e.message || "Save failed"); }
+    finally { setSavingUi(false); }
+  };
 
   // Page FY is "2025-26"; the KPI Target table stores "2025-2026".
   const longFy = (f) => {
@@ -473,6 +535,9 @@ export default function MaintenanceKPI() {
               </select>
             </div>
             <div className="mk-live">
+              {isAdmin && (
+                <button onClick={() => setShowCust((v) => !v)} style={custBtn}>⚙ Customize</button>
+              )}
               <span className="mk-dot" />
               {loading ? "Loading…"
                 : lastTick ? `Live · updated ${lastTick.toLocaleTimeString("en-IN")}`
@@ -480,21 +545,68 @@ export default function MaintenanceKPI() {
             </div>
           </div>
 
+          {isAdmin && showCust && (
+            <div style={custPanel}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
+                <div style={{ fontWeight: 800, fontSize: 14, color: "#0f172a" }}>
+                  ⚙ Customize — colours &amp; axis{" "}
+                  <span style={{ fontWeight: 600, fontSize: 11, color: "#94a3b8" }}>(admin · applies for everyone)</span>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => setUi({})} style={custGhost}>Reset all</button>
+                  <button onClick={saveUi} disabled={savingUi} style={custSave}>{savingUi ? "Saving…" : "Save"}</button>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(310px,1fr))", gap: 12 }}>
+                {CARDS.map((def) => {
+                  const s = ui[def.key] || {};
+                  const accent = s.accent || def.accent;
+                  const bar = s.bar || barColor(accent);
+                  return (
+                    <div key={def.key} style={custCard}>
+                      <div style={{ fontWeight: 700, fontSize: 12, color: "#0f172a", marginBottom: 8 }}>{def.label}</div>
+                      <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+                        <label style={custLbl}>Card
+                          <input type="color" value={accent} onChange={(e) => setUiField(def.key, "accent", e.target.value)} style={custColor} />
+                        </label>
+                        <label style={custLbl}>Bar
+                          <input type="color" value={bar} onChange={(e) => setUiField(def.key, "bar", e.target.value)} style={custColor} />
+                        </label>
+                        <label style={custLbl}>Axis max
+                          <input type="number" min="0" placeholder="auto" value={s.yMax ?? ""}
+                                 onChange={(e) => setUiField(def.key, "yMax", e.target.value === "" ? null : Number(e.target.value))} style={custNum} />
+                        </label>
+                        <button onClick={() => resetKpi(def.key)} style={custGhost}>Reset</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 11, color: "#64748b", marginTop: 10 }}>
+                Bar apne aap card color ka light+vivid version leta hai — alag chahiye to Bar bhi set karo. Axis max blank = auto. <b>Save</b> pe sabke liye apply.
+              </div>
+            </div>
+          )}
+
           {err && <div className="mk-err">{err}</div>}
 
           {/* ── KPI cards ─────────────────────────────────── */}
           <div className="mk-grid">
             {CARDS.map((def) => (
-              <KpiCard key={def.key} def={def} metrics={metrics} />
+              <KpiCard key={def.key} def={def} metrics={metrics} accent={styleOf(def.key, def.accent).accent} />
             ))}
           </div>
 
           {/* ── Per-card charts (month-by-month for the FY) ─── */}
           <div className="mk-charts-title">Monthly Trend — {data?.fy_label || fy}</div>
           <div className="mk-charts">
-            {CARDS.map((def) => (
-              <MetricChart key={def.key} def={def} series={trend} target={targetFor(def.key)} />
-            ))}
+            {CARDS.map((def) => {
+              const st = styleOf(def.key, def.accent);
+              return (
+                <MetricChart key={def.key} def={def} series={trend} target={targetFor(def.key)}
+                             accent={st.accent} barFill={st.bar} yMax={st.yMax} />
+              );
+            })}
           </div>
         </div>
       </div>
