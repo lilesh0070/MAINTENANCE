@@ -168,10 +168,10 @@ function MetricChart({ def, series, target, accent, barFill, yMax, cfg }) {
         {t != null && (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 9, fontSize: 10,
                          fontWeight: 700, color: "#64748b", textTransform: "none", letterSpacing: 0 }}>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
-              <span className="mk-legend-dot mk-blink" style={{ background: "#16a34a" }} />met</span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
-              <span className="mk-legend-dot mk-blink" style={{ background: "#dc2626" }} />miss</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <span className="mk-legend-dot mk-blink" style={{ background: "#16a34a" }} />target achieved</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <span className="mk-legend-dot mk-blink" style={{ background: "#dc2626" }} />target not achieved</span>
           </span>
         )}
       </div>
