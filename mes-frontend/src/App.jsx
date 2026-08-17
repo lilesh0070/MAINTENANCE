@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DisplayProvider } from "./context/DisplayContext";
 import Layout from "./components/Layout";
+import AndonAlert from "./components/AndonAlert";
 import { NewBreakdownSlip } from "./pages/breakdown/NewBreakdownSlip";
 
 // ─── Pages — MAINTENANCE-ONLY SLICE ─────────────────────────────────────────
@@ -109,7 +110,9 @@ function BreakdownSlipRoute() {
 // ─── Routes ───────────────────────────────────────────────────────────────
 function AppRoutes() {
   return (
-    <Routes>
+    <>
+      <AndonAlert />
+      <Routes>
       {/* Public */}
       <Route path="/login" element={<Login />} />
 
@@ -263,7 +266,8 @@ function AppRoutes() {
 
       {/* Catch-all → root (other-department links from SlideNav land here). */}
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+    </>
   );
 }
 
