@@ -426,6 +426,28 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
         """, params)
         row = cur.fetchone() or {}
 
+        # ── Plant MTBF inputs (running-hours based, days) ──────────────
+        # These IGNORE the zone/line/machine filter — the running-hours MTBF
+        # is a single PLANT-level figure: saved running hours (matched by FY
+        # start-year, since that table stores '2026-2027' while this page uses
+        # '2026-27'), the Machine-Master machine count, and the PLANT-WIDE FY
+        # breakdown totals.
+        cur.execute("SELECT COUNT(*) AS n FROM maintenance_machines WHERE is_active = TRUE")
+        num_machines = int((cur.fetchone() or {}).get("n") or 0)
+        cur.execute("SELECT COALESCE(SUM(running_hours), 0) AS rh "
+                    "FROM maintenance_machine_running_hours WHERE fy LIKE %s", [f"{start.year}%"])
+        running_hours = float((cur.fetchone() or {}).get("rh") or 0)
+        cur.execute("""
+            SELECT COALESCE(SUM(mc_down_time_minutes), 0) / 60.0 AS bd_hours,
+                   COALESCE(SUM(COALESCE(frequency, 1)), 0)      AS bd_freq
+              FROM maintenance_breakdown_data
+             WHERE COALESCE(slip_date, bd_start_date) >= %s
+               AND COALESCE(slip_date, bd_start_date) <  %s
+        """, [start.date(), end.date()])
+        _p = cur.fetchone() or {}
+        plant_bd_hours = float(_p.get("bd_hours") or 0)
+        plant_bd_freq  = int(_p.get("bd_freq") or 0)
+
     bd_count   = int(row.get("bd_count") or 0)
     total_min  = float(row.get("total_min") or 0)
     max_min    = float(row.get("max_min") or 0)
@@ -437,14 +459,11 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
     mttr_minutes = round(total_min / bd_count, 2) if bd_count > 0 else 0.0
     lttr_minutes = round(max_min, 2)
 
-    if bd_count > 0:
-        uptime_hours = max(window_hours - total_hours, 0)
-        mtbf_hours   = round(uptime_hours / bd_count, 2)
-    else:
-        # No breakdowns for this filter (e.g. a zone/line/machine with no
-        # data) → every figure reads 0, not the full window as "infinite
-        # uptime".  The user wants an empty filter to show plain zeros.
-        mtbf_hours   = 0.0
+    # MTBF (days) — running-hours based, plant-level (the KPI page + Overview
+    # show THIS now; the old calendar-based mtbf_hours is no longer displayed):
+    #   MTBF(days) = (running_hours × machines − breakdown_hours) / frequency / 24
+    mtbf_days = (round((running_hours * num_machines - plant_bd_hours) / plant_bd_freq / 24.0, 2)
+                 if (plant_bd_freq > 0 and running_hours > 0) else None)
 
     return {
         "fy":        fy,
@@ -456,7 +475,9 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
                       "as_of": eff_end.isoformat()},
         "metrics": {
             "mttr_minutes":          mttr_minutes,
-            "mtbf_hours":            mtbf_hours,
+            "mtbf_days":             mtbf_days,      # running-hours based MTBF (days) — replaces old calendar-based
+            "mtbf_running_hours":    round(running_hours, 2),
+            "mtbf_num_machines":     num_machines,
             "lttr_minutes":          lttr_minutes,
             # LTTR = the single breakdown that took the LONGEST to solve,
             # expressed in hours (max solve_time / 60).

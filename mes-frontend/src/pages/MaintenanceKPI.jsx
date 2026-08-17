@@ -65,10 +65,10 @@ const CARDS = [
     hint: "Mean Time To Repair",
   },
   {
-    key: "mtbf_hours", label: "MTBF", accent: "#16a34a",
-    unit: "hours", sub: () => "between failures",
-    val: (m) => fmt(m.mtbf_hours, 2),
-    hint: "Mean Time Between Failures",
+    key: "mtbf_days", label: "MTBF", accent: "#16a34a",
+    unit: "days", sub: () => "between failures",
+    val: (m) => (m.mtbf_days == null ? "—" : fmt(m.mtbf_days, 2)),
+    hint: "Mean Time Between Failures — (running hours × machines − breakdown hours) ÷ frequency ÷ 24. Running hours 'MTBF Calculation' page se aate hain.",
   },
   {
     key: "lttr_hours", label: "LTTR", accent: "#dc2626",
@@ -468,7 +468,9 @@ export default function MaintenanceKPI() {
           {/* ── Per-card charts (month-by-month for the FY) ─── */}
           <div className="mk-charts-title">Monthly Trend — {data?.fy_label || fy}</div>
           <div className="mk-charts">
-            {CARDS.map((def) => (
+            {/* MTBF is a single plant-level number (running-hours based) — no
+                month-by-month series, so it has a card but no trend chart. */}
+            {CARDS.filter((def) => def.key !== "mtbf_days").map((def) => (
               <MetricChart key={def.key} def={def} series={trend} target={targetFor(def.key)} />
             ))}
           </div>
