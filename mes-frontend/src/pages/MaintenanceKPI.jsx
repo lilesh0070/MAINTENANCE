@@ -246,10 +246,18 @@ const custNum   = { width: 72, border: "1.5px solid #e2e8f0", borderRadius: 6, p
 const custGhost = { border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: 11, borderRadius: 7, padding: "4px 9px", cursor: "pointer", fontFamily: "inherit" };
 const custSave  = { border: "none", background: "linear-gradient(135deg,#1e40af,#2563eb)", color: "#fff", fontWeight: 700, fontSize: 12, borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontFamily: "inherit" };
 
+// Current financial year (Apr–Mar), e.g. "2026-27".  The page opens on it so
+// real data shows immediately — no flash of an empty older default year.
+const CUR_FY = (() => {
+  const d = new Date();
+  const y = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
+  return `${y}-${String(y + 1).slice(-2)}`;
+})();
+
 export default function MaintenanceKPI() {
   const { token, theme, user } = useAuth();
   const [years, setYears]     = useState([]);
-  const [fy, setFy]           = useState("2025-26");   // default per requirement
+  const [fy, setFy]           = useState(CUR_FY);   // open on current FY (data shows at once)
   const [data, setData]       = useState(null);
   const [trend, setTrend]     = useState(null);
   const [loading, setLoading] = useState(true);
@@ -533,7 +541,7 @@ export default function MaintenanceKPI() {
               <span className="mk-fy-label">Financial Year</span>
               <select className="mk-fy-select" value={fy}
                       onChange={(e) => setFy(e.target.value)}>
-                {years.length === 0 && <option value="2025-26">2025-26</option>}
+                {years.length === 0 && <option value={CUR_FY}>{CUR_FY}</option>}
                 {years.map((y) => (
                   <option key={y.fy} value={y.fy}>
                     {y.fy}{y.is_current ? "  (current)" : ""}
