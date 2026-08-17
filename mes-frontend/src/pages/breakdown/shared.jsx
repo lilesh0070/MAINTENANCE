@@ -9,17 +9,31 @@
 
 import { useState, useEffect } from "react";
 
-// Is the viewport portrait (vertical TV)?  Inline-styled components use this to
-// shrink their sizing for the big vertical display.
+// Is the layout portrait (vertical TV)?  Returns the manual aspect override
+// (localStorage "mes_aspect" = "9:16" | "16:9", set by the dashboard toggle)
+// when present, else auto-detects the viewport orientation.  Inline-styled
+// components use this to shrink their sizing for the vertical display.
+function readPortrait() {
+  try {
+    const a = localStorage.getItem("mes_aspect");
+    if (a === "9:16") return true;
+    if (a === "16:9") return false;
+  } catch { /* ignore */ }
+  return typeof window !== "undefined" && !!window.matchMedia
+    && window.matchMedia("(orientation: portrait)").matches;
+}
 export function usePortrait() {
-  const [p, setP] = useState(() =>
-    typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(orientation: portrait)").matches);
+  const [p, setP] = useState(readPortrait);
   useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const mq = window.matchMedia("(orientation: portrait)");
-    const on = () => setP(mq.matches);
-    mq.addEventListener ? mq.addEventListener("change", on) : mq.addListener(on);
-    return () => { mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on); };
+    if (typeof window === "undefined") return;
+    const on = () => setP(readPortrait());
+    const mq = window.matchMedia && window.matchMedia("(orientation: portrait)");
+    if (mq) { mq.addEventListener ? mq.addEventListener("change", on) : mq.addListener(on); }
+    window.addEventListener("mes-aspect-change", on);
+    return () => {
+      if (mq) { mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on); }
+      window.removeEventListener("mes-aspect-change", on);
+    };
   }, []);
   return p;
 }

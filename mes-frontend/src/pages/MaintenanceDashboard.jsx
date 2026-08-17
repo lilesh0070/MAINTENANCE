@@ -27,7 +27,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { api, StatCard, fmtDuration } from "./breakdown/shared";
+import { api, StatCard, fmtDuration, usePortrait } from "./breakdown/shared";
 import AndonTable from "./breakdown/AndonTable";
 import PmThisMonth from "./breakdown/PmThisMonth";
 import KpiPanel from "./breakdown/KpiPanel";
@@ -107,6 +107,18 @@ export default function MaintenanceDashboard() {
       else document.documentElement.requestFullscreen();
     } catch { /* ignore */ }
   };
+  // Portrait / 9:16 vs 16:9 — auto from orientation, or forced by the topbar
+  // toggle (stored in localStorage; usePortrait picks it up everywhere).
+  const portrait = usePortrait();
+  const setAspect = (a) => {
+    try { localStorage.setItem("mes_aspect", a); } catch { /* ignore */ }
+    window.dispatchEvent(new Event("mes-aspect-change"));
+  };
+  useEffect(() => {   // TV: drop the default 8px body margin so it fills exactly
+    const prev = document.body.style.margin;
+    document.body.style.margin = "0";
+    return () => { document.body.style.margin = prev; };
+  }, []);
 
   // Har 10s refresh.
   //
@@ -290,22 +302,20 @@ export default function MaintenanceDashboard() {
                      font-weight:700; font-size:12px; border-radius:8px; padding:6px 12px;
                      cursor:pointer; font-family:inherit; white-space:nowrap; }
 
-        /* ── Portrait / vertical TV (65") — everything on ONE screen, full-width ── */
-        @media (orientation: portrait) {
-          body        { margin:0; }
-          .md-root    { padding-bottom:0; }
-          .md-body    { max-width:none; padding:16px 26px 12px; }
-          .md-topbar  { padding:0 26px; }
-          .md-title   { font-size:28px; }
-          .md-tiles   { grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px; margin-bottom:12px; }
-          .md-section { margin-bottom:12px; }
-          .md-cols    { margin-bottom:12px !important; gap:12px !important; }
-          /* both columns full-width — no empty space beside PM This Month */
-          .md-col-a, .md-col-b { flex:1 1 100% !important; max-width:none !important; min-width:0 !important; }
-        }
+        /* ── Portrait / 9:16 — auto by orientation OR forced via topbar toggle.
+             Everything on ONE screen, full-width. ── */
+        .md-root.md-portrait { padding-bottom:0; }
+        .md-portrait .md-body    { max-width:none; padding:16px 26px 12px; }
+        .md-portrait .md-topbar  { padding:0 26px; }
+        .md-portrait .md-title   { font-size:28px; }
+        .md-portrait .md-tiles   { grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px; margin-bottom:12px; }
+        .md-portrait .md-section { margin-bottom:12px; }
+        .md-portrait .md-cols    { margin-bottom:12px !important; gap:12px !important; }
+        /* both columns full-width — no empty space beside PM This Month */
+        .md-portrait .md-col-a, .md-portrait .md-col-b { flex:1 1 100% !important; max-width:none !important; min-width:0 !important; }
       `}</style>
 
-      <div className="md-root">
+      <div className={"md-root" + (portrait ? " md-portrait" : "")}>
         {/* Production-Dashboard-style topbar (red accent for Maintenance) */}
         <div className="md-topbar">
           <div className="md-logo" />
@@ -313,6 +323,12 @@ export default function MaintenanceDashboard() {
             {titleLeft}<span>{titleRight}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", gap: 4 }}>
+              <button onClick={() => setAspect("9:16")} className="md-fs-btn" title="Portrait 9:16"
+                      style={portrait ? { background: theme.accent, color: "#fff", borderColor: theme.accent } : {}}>9:16</button>
+              <button onClick={() => setAspect("16:9")} className="md-fs-btn" title="Wide 16:9"
+                      style={!portrait ? { background: theme.accent, color: "#fff", borderColor: theme.accent } : {}}>16:9</button>
+            </div>
             <button onClick={goPageFullscreen} className="md-fs-btn" title="Fullscreen (TV)">⛶ Fullscreen</button>
             {user?.username && (
               <div className="md-user-pill">
