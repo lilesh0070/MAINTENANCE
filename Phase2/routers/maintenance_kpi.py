@@ -404,7 +404,10 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
         cur = dict_cursor(conn)
         cur.execute(f"""
             SELECT
-                COUNT(*)                                  AS bd_count,
+                -- Total Breakdown Frequency = SUM of the `frequency` column
+                -- (har slip apna count rakhta hai; missing → 1), na ki bare
+                -- row COUNT.  Yahi MTBF ka failure-count denominator bhi hai.
+                COALESCE(SUM(COALESCE(frequency, 1)), 0)  AS bd_count,
                 COALESCE(SUM({st}), 0)                    AS total_min,
                 COALESCE(AVG({st}), 0)                    AS avg_min,
                 COALESCE(MAX({st}), 0)                    AS max_min,
@@ -484,7 +487,8 @@ def fy_trend(fy:         Optional[str] = Query(None, description="e.g. 2025-26")
         cur = dict_cursor(conn)
         cur.execute(f"""
             SELECT date_trunc('month', COALESCE(slip_date, bd_start_date))::date           AS m,
-                   COUNT(*)                                      AS bd_count,
+                   -- frequency column summed (see /summary) — not a row count
+                   COALESCE(SUM(COALESCE(frequency, 1)), 0)      AS bd_count,
                    COALESCE(SUM({st}), 0)                        AS total_min,
                    COALESCE(AVG({st}), 0)                        AS avg_min,
                    COALESCE(MAX({st}), 0)                        AS max_min,
