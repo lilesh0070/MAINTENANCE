@@ -446,6 +446,18 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
                     "FROM maintenance_machine_running_hours WHERE fy LIKE %s", [f"{start.year}%"])
         running_hours = float((cur.fetchone() or {}).get("rh") or 0)
 
+        # Monthly breakdown buckets (same filter) — used to AVERAGE the monthly
+        # MTBF over the elapsed months for the yearly card.
+        cur.execute(f"""
+            SELECT date_trunc('month', COALESCE(slip_date, bd_start_date))::date AS m,
+                   COALESCE(SUM({st}), 0) / 60.0            AS bd_hours,
+                   COALESCE(SUM(COALESCE(frequency, 1)), 0) AS bd_freq
+              FROM maintenance_breakdown_data
+             WHERE {where}
+             GROUP BY 1
+        """, params)
+        _mbd = {r["m"]: r for r in cur.fetchall()}
+
     bd_count   = int(row.get("bd_count") or 0)
     total_min  = float(row.get("total_min") or 0)
     max_min    = float(row.get("max_min") or 0)
@@ -457,13 +469,26 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
     mttr_minutes = round(total_min / bd_count, 2) if bd_count > 0 else 0.0
     lttr_minutes = round(max_min, 2)
 
-    # MTBF (days) — running-hours based, follows the zone/line/machine filter:
-    #   MTBF(days) = (running_hours × machines_in_scope − breakdown_hours)
-    #                / breakdown_frequency / 24
-    # running_hours = per-machine value; machines_in_scope + the breakdown
-    # figures both respect the current filter (so a zone selection → zone MTBF).
-    mtbf_days = (round((running_hours * num_machines - total_hours) / bd_count / 24.0, 2)
-                 if (bd_count > 0 and running_hours > 0) else None)
+    # Yearly MTBF (days) = AVERAGE of the monthly MTBFs over the ELAPSED months
+    # (April → current month; a finished past FY = all 12).  Each month uses the
+    # running-hours formula with that month's (filtered) breakdowns:
+    #   monthly MTBF = (running_hours × machines_in_scope − month_hours) / freq / 24
+    # so the card is the mean of the month-by-month chart bars (sum ÷ months).
+    _elapsed = 0
+    _mtbf_sum = 0.0
+    for _i in range(12):
+        _y  = start.year + (start.month - 1 + _i) // 12
+        _mo = (start.month - 1 + _i) % 12 + 1
+        if datetime(_y, _mo, 1) > now:
+            break                      # this + all later months haven't started
+        _elapsed += 1
+        _r = _mbd.get(date(_y, _mo, 1))
+        if _r:
+            _bf = int(_r["bd_freq"] or 0)
+            if _bf > 0 and running_hours > 0:
+                _mtbf_sum += (running_hours * num_machines - float(_r["bd_hours"] or 0)) / _bf / 24.0
+    mtbf_days = (round(_mtbf_sum / _elapsed, 2)
+                 if (_elapsed > 0 and running_hours > 0) else None)
 
     return {
         "fy":        fy,
