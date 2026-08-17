@@ -598,13 +598,30 @@ def dmc_fill_one(fid: int, user=Depends(get_current_user)):
         cur = dict_cursor(conn)
         cur.execute("SELECT * FROM machine_dmc_filled WHERE id = %s", (fid,))
         row = cur.fetchone()
-    if not row:
-        raise HTTPException(404, "Filled sheet not found")
-    # Same approval gate as the History list — an unsigned sheet is not
-    # readable here either (otherwise the gate would be UI-only).
-    if not any(str((m or {}).get("status") or "").upper() == "SIGNED"
-               for m in (row.get("week_meta") or {}).values()):
-        raise HTTPException(404, "Sheet is not maintenance-signed yet")
+        if not row:
+            raise HTTPException(404, "Filled sheet not found")
+        # Same approval gate as the History list — an unsigned sheet is not
+        # readable here either (otherwise the gate would be UI-only).
+        if not any(str((m or {}).get("status") or "").upper() == "SIGNED"
+                   for m in (row.get("week_meta") or {}).values()):
+            raise HTTPException(404, "Sheet is not maintenance-signed yet")
+        # Attach the CLOSED-NG corrective actions (recorded on the DMC NG Point
+        # page) keyed `point_id_day`, so the sheet can render a fixed ✗ in amber
+        # instead of red.  Without this only the admin History built the map
+        # (client-side) and every other View Sheet showed closed NGs as "open".
+        acts = {}
+        cur.execute("""SELECT point_id, ng_date, action_taken
+                         FROM machine_dmc_fill_ng_point
+                        WHERE machine_no = %s AND sheet_month = %s
+                          AND COALESCE(zone_name,'') = COALESCE(%s,'')
+                          AND COALESCE(line_name,'') = COALESCE(%s,'')
+                          AND action_taken IS NOT NULL AND action_taken <> ''""",
+                    (row.get("machine_no"), row.get("sheet_month"),
+                     row.get("zone_name"), row.get("line_name")))
+        for a in cur.fetchall():
+            if a["point_id"] is not None and a["ng_date"] is not None:
+                acts[f'{a["point_id"]}_{a["ng_date"].day}'] = a["action_taken"]
+        row["_actions"] = acts
     if isinstance(row.get("created_at"), datetime):
         row["created_at"] = row["created_at"].isoformat()
     return row
