@@ -256,69 +256,62 @@ export default function BDAnalysis() {
           </div>
         </div>
 
-        {/* ── 2 metric buttons: Total Breakdown Hours | Total Breakdown Frequency ── */}
-        <div className="ba-metrics">
-          {METRICS.map((m) => (
-            <button key={m.key}
-                    className={`ba-mbtn${metric === m.key ? " on" : ""}`}
-                    style={metric === m.key ? { background: m.color } : {}}
-                    onClick={() => setMetric(m.key)}>
-              <span>{m.icon}</span>{m.label}
-            </button>
-          ))}
-        </div>
-
-        {/* ── the drill-down chart: zone-wise → line-wise → machine-wise ── */}
+        {/* ── both metrics on ONE page, stacked: Hours (top) + Frequency (below) ── */}
         <div className="ba-body">
-          <div className="ba-card">
-            <div className="ba-chead">
-              <div>
-                <h3>{met.label}</h3>
-                <div className="lvl">{levelLabel} · {periodLabel}{loading ? " · loading…" : ""}</div>
-              </div>
-              <div className="ba-total">
-                <div className="v" style={{ color: met.color }}>
-                  {metric === "hours" ? totalVal.toFixed(1) : totalVal}
+          {METRICS.map((m) => {
+            const mTotal = chartData.reduce((s, d) => s + (d[m.key] || 0), 0);
+            return (
+              <div className="ba-card" key={m.key} style={{ marginBottom: 18 }}>
+                <div className="ba-chead">
+                  <div>
+                    <h3><span style={{ marginRight: 6 }}>{m.icon}</span>{m.label}</h3>
+                    <div className="lvl">{levelLabel} · {periodLabel}{loading ? " · loading…" : ""}</div>
+                  </div>
+                  <div className="ba-total">
+                    <div className="v" style={{ color: m.color }}>
+                      {m.key === "hours" ? mTotal.toFixed(1) : mTotal}
+                    </div>
+                    <div className="u">Total {m.unit}</div>
+                  </div>
                 </div>
-                <div className="u">Total {met.unit}</div>
-              </div>
-            </div>
 
-            {chartData.length === 0 ? (
-              <div style={{ padding:"60px 0", textAlign:"center", color:"#94a3b8", fontSize:13, fontWeight:600 }}>
-                No {group}s to plot — pick a {group === "line" ? "zone" : "line"} above.
+                {chartData.length === 0 ? (
+                  <div style={{ padding:"60px 0", textAlign:"center", color:"#94a3b8", fontSize:13, fontWeight:600 }}>
+                    No {group}s to plot — pick a {group === "line" ? "zone" : "line"} above.
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={groupHeight(group, chartData.length)}>
+                    <BarChart data={chartData}
+                              margin={{ top: 28, right: 24, left: 0,
+                                        bottom: group === "zone" ? 10 : 30 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                      <XAxis dataKey="name" interval={0}
+                             angle={group === "zone" ? 0 : -35}
+                             textAnchor={group === "zone" ? "middle" : "end"}
+                             height={group === "zone" ? 34 : 84}
+                             tick={{ fontSize: 11, fontWeight: 700, fill: "#475569" }} />
+                      <YAxis tick={{ fontSize: 11, fill: "#64748b" }} allowDecimals={m.key === "hours"} />
+                      <Tooltip
+                        formatter={(v) => [m.key === "hours" ? `${Number(v).toFixed(2)} hrs` : v, m.label]}
+                        contentStyle={{ borderRadius: 10, border: "1px solid #e2e8f0",
+                                        fontFamily: "'Barlow',sans-serif", fontSize: 12.5, fontWeight: 600 }} />
+                      <Bar dataKey={m.key} name={m.label} radius={[6, 6, 0, 0]} maxBarSize={56}>
+                        <LabelList dataKey={m.key} position="top"
+                                   formatter={(v) => (v ? (m.key === "hours" ? Number(v).toFixed(1) : v) : "")}
+                                   style={{ fontSize: 11, fontWeight: 800, fill: "#334155" }} />
+                        {chartData.map((d, i) => (
+                          <Cell key={i}
+                                fill={group === "machine" && selMachineNo
+                                  ? (d.name === selMachineNo ? m.color : "#cbd5e1")
+                                  : m.color} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
               </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={groupHeight(group, chartData.length)}>
-                <BarChart data={chartData}
-                          margin={{ top: 28, right: 24, left: 0,
-                                    bottom: group === "zone" ? 10 : 30 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                  <XAxis dataKey="name" interval={0}
-                         angle={group === "zone" ? 0 : -35}
-                         textAnchor={group === "zone" ? "middle" : "end"}
-                         height={group === "zone" ? 34 : 84}
-                         tick={{ fontSize: 11, fontWeight: 700, fill: "#475569" }} />
-                  <YAxis tick={{ fontSize: 11, fill: "#64748b" }} allowDecimals={metric === "hours"} />
-                  <Tooltip
-                    formatter={(v) => [metric === "hours" ? `${Number(v).toFixed(2)} hrs` : v, met.label]}
-                    contentStyle={{ borderRadius: 10, border: "1px solid #e2e8f0",
-                                    fontFamily: "'Barlow',sans-serif", fontSize: 12.5, fontWeight: 600 }} />
-                  <Bar dataKey={metric} name={met.label} radius={[6, 6, 0, 0]} maxBarSize={56}>
-                    <LabelList dataKey={metric} position="top"
-                               formatter={(v) => (v ? (metric === "hours" ? Number(v).toFixed(1) : v) : "")}
-                               style={{ fontSize: 11, fontWeight: 800, fill: "#334155" }} />
-                    {chartData.map((d, i) => (
-                      <Cell key={i}
-                            fill={group === "machine" && selMachineNo
-                              ? (d.name === selMachineNo ? met.color : "#cbd5e1")
-                              : met.color} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
+            );
+          })}
         </div>
       </div>
     </>
