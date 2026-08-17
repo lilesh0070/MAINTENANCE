@@ -287,11 +287,31 @@ export default function MaintenanceKPI() {
       .catch(() => {});
   }, [token]);
   const portrait = usePortrait();
+  // Vertical-TV aspect toggle (9:16 / 16:9) — mirrors the Maintenance Dashboard.
+  const setAspect = (a) => {
+    try { localStorage.setItem("mes_aspect", a); } catch { /* ignore */ }
+    window.dispatchEvent(new Event("mes-aspect-change"));
+  };
+  // Track viewport height so portrait charts can grow to fill the tall screen.
+  const [winH, setWinH] = useState(() => (typeof window !== "undefined" ? window.innerHeight : 900));
+  useEffect(() => {
+    const on = () => setWinH(window.innerHeight);
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  // Full-bleed on the TV: drop the browser's default body margin while here.
+  useEffect(() => {
+    const prev = document.body.style.margin;
+    document.body.style.margin = "0";
+    return () => { document.body.style.margin = prev; };
+  }, []);
   const cardCfg  = { ...CARD_D,  ...(ui.card  || {}) };
   const chartCfg = { ...CHART_D, ...(ui.chart || {}) };
-  // Vertical TV → compact so all 6 cards + 6 charts fit on one screen.
-  const cardCfgEff  = portrait ? { ...cardCfg,  valueSize: Math.min(cardCfg.valueSize, 32) } : cardCfg;
-  const chartCfgEff = portrait ? { ...chartCfg, height: Math.min(chartCfg.height, 150), barSize: Math.min(chartCfg.barSize, 18) } : chartCfg;
+  // Vertical TV → 6 cards (3×2) + 6 charts 2-per-row (2×3); charts grow to fill
+  // the leftover screen height so nothing floats above a big empty gap.
+  const cardCfgEff  = portrait ? { ...cardCfg,  valueSize: Math.min(cardCfg.valueSize, 46) } : cardCfg;
+  const chartH      = portrait ? Math.max(220, Math.round((winH - 780) / 3)) : chartCfg.height;
+  const chartCfgEff = portrait ? { ...chartCfg, height: chartH, barSize: Math.min(chartCfg.barSize, 30) } : chartCfg;
   const kpiStyle = (key, defAccent) => {
     const s = (ui.kpi && ui.kpi[key]) || {};
     const accent = s.accent || defAccent;
@@ -534,24 +554,25 @@ export default function MaintenanceKPI() {
                            padding:2px 10px; text-transform:none; letter-spacing:0; }
         .mk-chart-body { width:100%; }
 
-        /* ── Portrait / vertical TV (e.g. 65" mounted vertical) ─────────────
-           3 cards per row (3×2) + 3 charts per row (3×2), full-width. */
-        @media (orientation: portrait) {
-          body       { margin: 0; }
-          .mk-root   { padding-bottom: 0; }
-          .mk-body   { padding: 0 18px 6px; }
-          .mk-grid   { grid-template-columns: repeat(3, 1fr) !important; gap: 10px; margin-bottom: 4px; }
-          .mk-charts { grid-template-columns: repeat(3, 1fr) !important; gap: 10px; }
-          .mk-card   { padding: 12px 14px 10px; }
-          .mk-card-label   { font-size: 12px; min-height: 0; }
-          .mk-chart  { padding: 10px 12px 4px; }
-          .mk-chart-head   { margin-bottom: 6px; }
-          .mk-charts-title { font-size: 20px; margin: 8px 0 8px; }
-          .mk-fybar        { flex-wrap: wrap; row-gap: 8px; padding: 10px 14px; }
-        }
+        /* ── Portrait / vertical TV (65" mounted vertical) ──────────────────
+           Driven by the 9:16/16:9 toggle (or auto orientation) via the
+           .mk-portrait class, NOT an orientation media query — so the toggle
+           can force it and every usePortrait consumer stays in sync.
+           3 cards per row (3×2) + 2 charts per row (2×3), full-width, charts
+           grown (chartCfgEff) to fill the tall screen height. */
+        .mk-root.mk-portrait      { padding-bottom: 0; }
+        .mk-portrait .mk-body     { padding: 0 20px 12px; max-width: none; }
+        .mk-portrait .mk-grid     { grid-template-columns: repeat(3, 1fr) !important; gap: 14px; margin-bottom: 12px; }
+        .mk-portrait .mk-charts   { grid-template-columns: repeat(2, 1fr) !important; gap: 16px; }
+        .mk-portrait .mk-card     { padding: 16px 18px 14px; }
+        .mk-portrait .mk-card-label   { font-size: 14px; min-height: 0; }
+        .mk-portrait .mk-chart    { padding: 14px 16px 8px; }
+        .mk-portrait .mk-chart-head   { margin-bottom: 10px; }
+        .mk-portrait .mk-charts-title { font-size: 24px; margin: 14px 0 12px; }
+        .mk-portrait .mk-fybar        { flex-wrap: wrap; row-gap: 8px; padding: 12px 16px; }
       `}</style>
 
-      <div className="mk-root">
+      <div className={"mk-root" + (portrait ? " mk-portrait" : "")}>
         <div className="mk-topbar">
           <div />
           <div className="mk-title">
@@ -593,6 +614,12 @@ export default function MaintenanceKPI() {
               </select>
             </div>
             <div className="mk-live">
+              <div style={{ display: "inline-flex", gap: 4, marginRight: 6 }}>
+                <button onClick={() => setAspect("9:16")} title="Portrait 9:16"
+                        style={{ ...custBtn, marginRight: 0, ...(portrait ? { background: "#1e40af", color: "#fff", border: "1px solid #1e40af" } : {}) }}>9:16</button>
+                <button onClick={() => setAspect("16:9")} title="Wide 16:9"
+                        style={{ ...custBtn, marginRight: 0, ...(!portrait ? { background: "#1e40af", color: "#fff", border: "1px solid #1e40af" } : {}) }}>16:9</button>
+              </div>
               <button onClick={goFullscreen} style={custBtn} title="Fullscreen (TV)">⛶ Fullscreen</button>
               {isAdmin && (
                 <button onClick={() => setShowCust((v) => !v)} style={custBtn}>⚙ Customize</button>
