@@ -6,9 +6,6 @@
 !.env.example
 Phase2/.env
 
-# Deleted-row backups (JSON/SQL dumps written before a cleanup delete)
-Phase2/_deleted_backups/
-
 # ─── Python ──────────────────────────────────────────────────
 .venv/
 venv/
