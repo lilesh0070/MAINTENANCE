@@ -55,12 +55,17 @@ function asHm(min) {
   return m ? `${h}h ${m}m` : `${h}h`;
 }
 
-// One professional accent used across every card + chart (no per-metric
-// rainbow): values, bars, top-borders and dots.  Secondary text is one grey.
-const KPI_COLOR = "#1e40af";
+// Lighten a hex colour toward white by `amt` (0..1) — the chart bars use a
+// softer tint of each card's accent (card = full colour, chart = lighter).
+function lighten(hex, amt) {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+  const mix = (ch) => Math.round(ch + (255 - ch) * amt);
+  return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+}
 
-// The six cards — driven off the /summary `metrics` object.
-// val(): pick + format from metrics.
+// The six cards — each keeps its own accent colour.  val(): pick + format
+// from metrics.
 const CARDS = [
   {
     key: "mttr_minutes", label: "MTTR", accent: "#b45309",
@@ -111,7 +116,8 @@ function chartNum(v) {
 // with always-on black value labels.  When a REAL target is saved for the
 // current FY + scope in KPI Targets, it is drawn as a red dashed line.
 function MetricChart({ def, series, target }) {
-  const c = KPI_COLOR;
+  const c = def.accent;                       // card's accent — dot
+  const barFill = lighten(def.accent, 0.4);   // bars: same hue, a bit lighter
   const data = series || [];
   const t = target != null && target !== "" ? Number(target) : null;
   return (
@@ -138,7 +144,7 @@ function MetricChart({ def, series, target }) {
               labelStyle={{ fontWeight: 700, color: "#0f172a" }}
               formatter={(v) => [Number(v).toLocaleString("en-IN"), def.label]}
             />
-            <Bar dataKey={def.key} name={def.label} fill={c}
+            <Bar dataKey={def.key} name={def.label} fill={barFill}
                  radius={[4, 4, 0, 0]} barSize={24} maxBarSize={36}
                  isAnimationActive={false}>
               <LabelList dataKey={def.key} position="top" formatter={chartNum}
@@ -166,9 +172,9 @@ function KpiCard({ def, metrics }) {
   const v = metrics ? def.val(metrics) : "—";
   const sub = metrics ? def.sub(metrics) : "";
   return (
-    <div className="mk-card" style={{ borderTop: `3px solid ${KPI_COLOR}` }}>
+    <div className="mk-card" style={{ borderTop: `3px solid ${def.accent}` }}>
       <div className="mk-card-label">{def.label}</div>
-      <div className="mk-card-value" style={{ color: KPI_COLOR }}>{v}</div>
+      <div className="mk-card-value" style={{ color: def.accent }}>{v}</div>
       <div className="mk-card-unit">{def.unit}</div>
       {sub && <div className="mk-card-sub">{sub}</div>}
     </div>
