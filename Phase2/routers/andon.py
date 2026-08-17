@@ -731,33 +731,35 @@ def _ensure_output():
 
 
 def _out_write_bit(ip, port, series, bit_type, bit_no, value):
-    """Write ONE bit to an output PLC (persistent connection + backoff).
-    Pure MC bit-WRITE, separate pool from the ANDON read poller.  True on ok."""
+    """Write ONE bit to an output PLC and READ IT BACK on the SAME connection.
+    Returns the ACTUAL bit (True/False) after the write, or None if it couldn't
+    connect / write / read.  ONE persistent connection per PLC — many PLCs (e.g.
+    FX5U) allow only ONE, so a separate reader would fight the writer."""
     key = (ip, int(port or 5007))
     mc = _OUT_CONN.get(key)
     if mc is None:
         if _time.monotonic() < _OUT_RETRY.get(key, 0):
-            return False
+            return None
         if not _reachable(ip, key[1], timeout=0.4):
             _OUT_RETRY[key] = _time.monotonic() + _PLC_RETRY_SECS
-            return False
+            return None
         try:
             mc = _connect({"series": series or "Q", "plc_ip": ip, "plc_port": key[1]})
             _OUT_CONN[key] = mc
             _OUT_RETRY.pop(key, None)
         except Exception:
             _OUT_RETRY[key] = _time.monotonic() + _PLC_RETRY_SECS
-            return False
+            return None
     try:
         mc.batchwrite_bitunits(headdevice=f"{(bit_type or '').upper()}{bit_no}",
                                values=[1 if value else 0])
-        return True
+        return bool(_read_one(mc, bit_type, bit_no))          # write ke baad ASLI bit
     except Exception:
         try: mc.close()
         except Exception: pass
         _OUT_CONN.pop(key, None)
         _OUT_RETRY[key] = _time.monotonic() + 1
-        return False
+        return None
 
 
 def _out_read_bit(ip, port, series, bit_type, bit_no):
@@ -807,12 +809,16 @@ def _andon_output_write_once():
         else:
             # Quality / Material / … → ON while ANY open call exists.
             want = bool(row and int(row["total"] or 0) > 0)
-        ok = _out_write_bit(m["plc_ip"], m["plc_port"], m["plc_series"],
-                            m["bit_type"], m["bit_no"], want)
+        prev = _OUT_STATE.get(m["id"], {})
+        actual = _out_write_bit(m["plc_ip"], m["plc_port"], m["plc_series"],
+                                m["bit_type"], m["bit_no"], want)   # read-back: True/False/None
+        if want != prev.get("want"):
+            print(f"[ANDON-OUT] {m['department']} {m['bit_type']}{m['bit_no']} "
+                  f"-> {'ON' if want else 'OFF'} (readback={actual})")
         _OUT_STATE[m["id"]] = {"ip": m["plc_ip"], "port": m["plc_port"], "series": m["plc_series"],
                                "bit_type": m["bit_type"], "bit_no": m["bit_no"],
-                               "on": want if ok else _OUT_STATE.get(m["id"], {}).get("on"),
-                               "online": ok, "checked": datetime.now().isoformat(timespec="seconds")}
+                               "want": want, "on": actual, "online": actual is not None,
+                               "checked": datetime.now().isoformat(timespec="seconds")}
     # a mapping that was ON but is no longer enabled/present → force its bit OFF once
     for oid in list(_OUT_STATE.keys()):
         if oid in enabled_ids:
@@ -870,13 +876,16 @@ def list_call_outputs(user=Depends(get_current_user)):
         r["should_be_on"] = (bool(lc and int(lc["unacked"] or 0) > 0) if r["off_on_ack"]
                              else bool(lc and int(lc["total"] or 0) > 0))
         st = _OUT_STATE.get(r["id"], {})
-        # bit_on = PLC ka ASLI bit value (short-lived MC read) — writer ke _OUT_STATE
-        # pe bharosa nahi, kyunki kuch PLC (jaise ye FX5U) write ACK kar dete hain
-        # par bit actually likhte nahi.  None = read/reach fail ("—").
-        r["bit_on"] = _out_read_bit(r["plc_ip"], r.get("plc_port") or 5007,
-                                    r.get("plc_series") or "Q", r["bit_type"], r["bit_no"])
-        r["online"] = st.get("online")    # last write ok/fail (writer)
-        # Connection: bit read ho gaya → reachable; warna writer-status ya quick probe.
+        # bit_on = ASLI bit.  Writer chal raha (id _OUT_STATE me) → uska read-back
+        # (write ke turant baad usi connection se padha) — single-conn PLC pe alag
+        # reader nahi khulta, contention nahi.  Writer band ho → alag short read.
+        if "on" in st:
+            r["bit_on"] = st.get("on")
+        else:
+            r["bit_on"] = _out_read_bit(r["plc_ip"], r.get("plc_port") or 5007,
+                                        r.get("plc_series") or "Q", r["bit_type"], r["bit_no"])
+        r["online"] = st.get("online")
+        # Connection: bit pata chal gaya → reachable; warna writer-status ya quick probe.
         reach = True if r["bit_on"] is not None else st.get("online")
         if reach is None and r.get("plc_ip"):
             reach = _reachable(r["plc_ip"], r.get("plc_port") or 5007, timeout=0.4)
