@@ -809,7 +809,7 @@ export default function AndonSystem() {
                   </tbody>
                 </table>
                 <div style={{ fontSize:11.5, color:"#94a3b8", marginTop:10 }}>
-                  <b>Connection</b> = output PLC TCP se reachable hai ya nahi. <b>Bit now</b> = PLC pe bit ka <b>ACTUAL</b> state (jo writer ne sach me likha) — sirf us backend pe aata jiska poller ON hai (production); dev pe writer band → "—", aur "chahiye: ON" batata ki call ke hisaab se ON hona chahiye. Bit PLC pe tabhi likhega jab (1) production pe deploy ho (poller ON) <b>AUR</b> (2) IP/port/bit sahi ho. <i>(Note: Mitsubishi MC protocol aam taur pe port 5007 pe — 502 Modbus ka hai.)</i>
+                  <b>Connection</b> = output PLC TCP se reachable hai ya nahi. <b>Bit now</b> = PLC pe bit ka <b>ACTUAL</b> state (jo writer ne sach me likha) — sirf us backend pe aata jiska poller ON hai (production); dev pe writer band → "—", aur "chahiye: ON" batata ki call ke hisaab se ON hona chahiye. Bit PLC pe tabhi likhega jab feature <b>production pe deploy</b> ho (poller ON) — tab writer M-bit likhega. Config save/edit yahin se hota hai.
                 </div>
               </div>
             </>
