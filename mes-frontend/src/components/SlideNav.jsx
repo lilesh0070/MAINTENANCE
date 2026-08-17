@@ -42,7 +42,6 @@ export default function SlideNav() {
         items: [
           { key: "maintenance-overview",    label: "Overview",             icon: "📈",                   path: "/maintenance-overview" },
           { key: "andon-system",            label: "ANDON",                icon: "🚦",                   path: "/andon-system" },
-          { key: "andon-monitor",           label: "ANDON Monitor",         icon: "🔔",                   path: "/andon-monitor" },
           { key: "maintenance-update-plan", label: "Update Plan",           icon: "📝",                   path: "/maintenance-update-plan" },
           { key: "maintenance-dashboard",   label: "Maintenance Dashboard", icon: "/dashboard-icon.png",  iconImg: true, path: "/maintenance-dashboard" },
           { key: "maintenance-kpi",         label: "Maintenance KPI",       icon: "📊",                   path: "/maintenance-kpi" },
@@ -74,7 +73,6 @@ export default function SlideNav() {
       items: [
         { key: "maintenance-overview",    label: "Overview",             icon: "📈",                   path: "/maintenance-overview" },
         { key: "andon-system",            label: "ANDON",                icon: "🚦",                   path: "/andon-system" },
-        { key: "andon-monitor",           label: "ANDON Monitor",         icon: "🔔",                   path: "/andon-monitor" },
         { key: "maintenance-update-plan", label: "Update Plan",           icon: "📝",                   path: "/maintenance-update-plan" },
         { key: "maintenance-dashboard",   label: "Maintenance Dashboard", icon: "/dashboard-icon.png",  iconImg: true, path: "/maintenance-dashboard" },
         { key: "maintenance-kpi",         label: "Maintenance KPI",       icon: "📊",                   path: "/maintenance-kpi" },

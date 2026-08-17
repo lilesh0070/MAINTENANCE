@@ -13,6 +13,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import AndonMonitor from "./AndonMonitor";
 
 const PRIORITIES = ["Critical", "High", "Normal", "Low"];
 const PRIO_COLOR = { Critical: "#dc2626", High: "#ea580c", Normal: "#2563eb", Low: "#64748b" };
@@ -53,7 +54,7 @@ const fmtClock = (s) => {
 const ACK_PARENT = { 2: 1, 4: 3 };
 // ANDON top tabs → per-tab permission sub-key (inherits the andon-system parent
 // unless a sub-key is explicitly set to None).
-const TAB_KEY = { board: "andon-board", faults: "andon-faults", config: "andon-config", callout: "andon-config", reports: "andon-reports" };
+const TAB_KEY = { board: "andon-board", monitor: "andon-board", faults: "andon-faults", config: "andon-config", callout: "andon-config", reports: "andon-reports" };
 // Call→Output: departments jinka bit RESPONSE (acknowledge) pe off hota hai
 // (inme ACK output hai — DO2/DO4); baaki call band hone par hi off.
 const OUT_ACK_DEPTS = ["maintenance", "tool room", "toolroom"];
@@ -509,7 +510,7 @@ export default function AndonSystem() {
 
         <div className="an-body">
           <div className="an-tabs">
-            {[["board","Live Board"],["faults","Fault History"],["config","Configuration"],["callout","Call → Output"],["reports","Reports"]]
+            {[["board","Live Board"],["monitor","Monitor"],["faults","Fault History"],["config","Configuration"],["callout","Call → Output"],["reports","Reports"]]
               .filter(([k]) => canAccess(TAB_KEY[k]))
               .map(([k, l]) => (
               <button key={k} className={`an-tab${tab === k ? " on" : ""}`} onClick={() => setTab(k)}>{l}</button>
@@ -725,6 +726,8 @@ export default function AndonSystem() {
               )}
             </>
           )}
+
+          {tab === "monitor" && canAccess("andon-board") && <AndonMonitor embedded />}
 
           {tab === "callout" && canAccess("andon-config") && (
             <>

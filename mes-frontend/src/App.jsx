@@ -18,7 +18,6 @@ import PMPanel               from "./pages/PMPanel";
 import MaintenanceKPI        from "./pages/MaintenanceKPI";
 import MaintenanceOverview   from "./pages/MaintenanceOverview";
 import AndonSystem           from "./pages/AndonSystem";
-import AndonMonitor          from "./pages/AndonMonitor";
 import MaintenanceBreakdown  from "./pages/MaintenanceBreakdown";
 import BDHistory             from "./pages/BDHistory";
 import BreakdownLogBook      from "./pages/BreakdownLogBook";
@@ -161,9 +160,6 @@ function AppRoutes() {
       {/* ANDON Management System — standalone module (config · live board · reports). */}
       <Route path="/andon-system" element={
         <Protected requiredAccess="andon-system"><AndonSystem /></Protected>
-      } />
-      <Route path="/andon-monitor" element={
-        <Protected requiredAccess="andon-system"><AndonMonitor /></Protected>
       } />
 
       {/* Maintenance KPI — financial-year headline cards (MTTR/MTBF/LTTR…). */}

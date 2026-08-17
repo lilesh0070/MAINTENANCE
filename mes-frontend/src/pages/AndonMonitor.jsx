@@ -14,7 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { fmtDuration } from "./breakdown/shared";
 
-export default function AndonMonitor() {
+export default function AndonMonitor({ embedded = false }) {
   const { token, theme, user } = useAuth();
   const nav = useNavigate();
   const accent = theme?.accent || "#dc2626";
@@ -98,14 +98,16 @@ export default function AndonMonitor() {
         .am-empty { background:#fff; border:1px dashed #cbd5e1; border-radius:14px; padding:40px; text-align:center; color:#94a3b8; }
       `}</style>
 
-      <div className="am-root">
-        <div className="am-top">
-          <button className="am-back" onClick={() => nav(-1)}>← Back</button>
-          <div className="am-title">🔔 ANDON <span>Monitor</span></div>
-          <div style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user?.username || ""}</div>
-        </div>
+      <div className={embedded ? "" : "am-root"}>
+        {!embedded && (
+          <div className="am-top">
+            <button className="am-back" onClick={() => nav(-1)}>← Back</button>
+            <div className="am-title">🔔 ANDON <span>Monitor</span></div>
+            <div style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user?.username || ""}</div>
+          </div>
+        )}
 
-        <div className="am-body">
+        <div className="am-body" style={embedded ? { margin:"4px auto 0", padding:0 } : undefined}>
           {/* ── top stats ── */}
           <div className="am-stats">
             {STAT.map(([l, v, c, s]) => (
