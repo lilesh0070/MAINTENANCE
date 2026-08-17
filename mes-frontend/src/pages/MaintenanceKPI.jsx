@@ -151,9 +151,10 @@ function chartNum(v) {
 // financial year (Apr → Mar).  Clean solid bars (each metric's stable accent)
 // with always-on black value labels.  When a REAL target is saved for the
 // current FY + scope in KPI Targets, it is drawn as a red dashed line.
-function MetricChart({ def, series, target, accent, barFill, yMax }) {
+function MetricChart({ def, series, target, accent, barFill, yMax, cfg }) {
   const c = accent || def.accent;             // card's accent — dot
   const bar = barFill || barColor(c);         // bars: lighter but still vivid
+  const cc = cfg || CHART_D;
   const data = series || [];
   const t = target != null && target !== "" ? Number(target) : null;
   return (
@@ -165,12 +166,12 @@ function MetricChart({ def, series, target, accent, barFill, yMax }) {
         {t != null && <span className="mk-chart-target">Target: {t}</span>}
       </div>
       <div className="mk-chart-body">
-        <ResponsiveContainer width="100%" height={208}>
+        <ResponsiveContainer width="100%" height={cc.height ?? 208}>
           <ComposedChart data={data} margin={{ top: 22, right: 10, left: -10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
-            <XAxis dataKey="month" interval={0} tick={{ fontSize: 10.5, fill: "#64748b", fontWeight: 600 }}
+            {cc.grid !== false && <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />}
+            <XAxis dataKey="month" interval={0} tick={{ fontSize: 10.5, fill: cc.axisColor || "#64748b", fontWeight: 600 }}
                    axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 11, fill: "#64748b" }}
+            <YAxis tick={{ fontSize: 11, fill: cc.axisColor || "#64748b" }}
                    axisLine={false} tickLine={false} width={34}
                    domain={yMax != null ? [0, yMax]
                      : [0, (dataMax) => Math.max(1, Math.ceil(Math.max((dataMax || 1) * 1.2, t != null ? t * 1.15 : 0)))]} />
@@ -182,10 +183,12 @@ function MetricChart({ def, series, target, accent, barFill, yMax }) {
               formatter={(v) => [Number(v).toLocaleString("en-IN"), def.label]}
             />
             <Bar dataKey={def.key} name={def.label} fill={bar}
-                 radius={[4, 4, 0, 0]} barSize={24} maxBarSize={36}
+                 radius={[cc.barRadius ?? 4, cc.barRadius ?? 4, 0, 0]} barSize={cc.barSize ?? 24} maxBarSize={80}
                  isAnimationActive={false}>
-              <LabelList dataKey={def.key} position="top" formatter={chartNum}
-                         fill="#0f172a" fontSize={11} fontWeight={700} />
+              {cc.labels !== false && (
+                <LabelList dataKey={def.key} position="top" formatter={chartNum}
+                           fill="#0f172a" fontSize={11} fontWeight={700} />
+              )}
             </Bar>
             {t != null && (
               <ReferenceLine y={t} stroke="#dc2626" strokeWidth={2} strokeDasharray="7 4"
@@ -205,22 +208,36 @@ function MetricChart({ def, series, target, accent, barFill, yMax }) {
   );
 }
 
-function KpiCard({ def, metrics, accent }) {
+function KpiCard({ def, metrics, accent, cfg }) {
   const a = accent || def.accent;
+  const c = cfg || CARD_D;
   const v = metrics ? def.val(metrics) : "—";
   const sub = metrics ? def.sub(metrics) : "";
   return (
-    <div className="mk-card" style={{ borderTop: `3px solid ${a}` }}>
-      <div className="mk-card-label">{def.label}</div>
-      <div className="mk-card-value" style={{ color: a }}>{v}</div>
+    <div className="mk-card" style={{
+      borderTop: `${c.borderW ?? 3}px solid ${a}`,
+      background: c.bg || "#fff",
+      borderRadius: c.radius ?? 16,
+      boxShadow: c.shadow === false ? "none" : undefined,
+    }}>
+      <div className="mk-card-label" style={{ color: c.labelColor || "#64748b" }}>{def.label}</div>
+      <div className="mk-card-value" style={{ color: a, fontSize: c.valueSize ?? 48 }}>{v}</div>
       <div className="mk-card-unit">{def.unit}</div>
       {sub && <div className="mk-card-sub">{sub}</div>}
     </div>
   );
 }
 
+// Defaults for the admin-customizable card + chart styling (match the CSS).
+const CARD_D  = { bg: "#ffffff", valueSize: 48, labelColor: "#64748b", borderW: 3, radius: 16, shadow: true };
+const CHART_D = { barSize: 24, barRadius: 4, height: 208, grid: true, labels: true, axisColor: "#64748b" };
+
 // Inline styles for the admin "Customize" panel.
 const custBtn   = { border: "1px solid #cbd5e1", background: "#fff", color: "#1e40af", fontWeight: 700, fontSize: 12, borderRadius: 8, padding: "5px 11px", cursor: "pointer", fontFamily: "inherit", marginRight: 6 };
+const custTabBtn = (on) => ({ border: on ? "none" : "1px solid #cbd5e1", background: on ? "linear-gradient(135deg,#1e40af,#2563eb)" : "#fff", color: on ? "#fff" : "#475569", fontWeight: 700, fontSize: 12.5, borderRadius: 8, padding: "7px 20px", cursor: "pointer", fontFamily: "inherit" });
+const custField  = { display: "flex", flexDirection: "column", gap: 5, fontSize: 11, fontWeight: 700, color: "#64748b" };
+const custSecTitle = { fontWeight: 800, fontSize: 11, color: "#64748b", textTransform: "uppercase", letterSpacing: ".06em", margin: "4px 0 8px" };
+const custControls = { display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 18, padding: "12px 14px", background: "#fafbfc", border: "1px solid #eef2f7", borderRadius: 10 };
 const custPanel = { background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, padding: 16, marginBottom: 18, boxShadow: "0 4px 16px rgba(15,23,42,.06)" };
 const custCard  = { border: "1px solid #eef2f7", borderRadius: 10, padding: "10px 12px", background: "#fafbfc" };
 const custLbl   = { display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "#64748b" };
@@ -248,9 +265,11 @@ export default function MaintenanceKPI() {
   const timer = useRef(null);
   const isAdmin = user?.role === "admin";
 
-  // Admin-editable appearance (colours / axis) — /api/kpi-ui-settings.
+  // Admin-editable appearance — /api/kpi-ui-settings.  Shape:
+  //   { card:{…global…}, chart:{…global…}, kpi:{ <key>:{accent,bar,yMax} } }
   const [ui, setUi]             = useState({});
   const [showCust, setShowCust] = useState(false);
+  const [custTab, setCustTab]   = useState("card");   // "card" | "chart"
   const [savingUi, setSavingUi] = useState(false);
   useEffect(() => {
     if (!token) return;
@@ -258,15 +277,18 @@ export default function MaintenanceKPI() {
       .then((r) => setUi((r && r.settings) || {}))
       .catch(() => {});
   }, [token]);
-  const styleOf = (key, defAccent) => {
-    const s = (ui && ui[key]) || {};
+  const cardCfg  = { ...CARD_D,  ...(ui.card  || {}) };
+  const chartCfg = { ...CHART_D, ...(ui.chart || {}) };
+  const kpiStyle = (key, defAccent) => {
+    const s = (ui.kpi && ui.kpi[key]) || {};
     const accent = s.accent || defAccent;
     return { accent, bar: s.bar || barColor(accent),
              yMax: (s.yMax != null && Number(s.yMax) > 0) ? Number(s.yMax) : null };
   };
-  const setUiField = (key, field, value) =>
-    setUi((prev) => ({ ...prev, [key]: { ...(prev[key] || {}), [field]: value } }));
-  const resetKpi = (key) => setUi((p) => { const n = { ...p }; delete n[key]; return n; });
+  const setCard  = (f, v) => setUi((p) => ({ ...p, card:  { ...(p.card  || {}), [f]: v } }));
+  const setChart = (f, v) => setUi((p) => ({ ...p, chart: { ...(p.chart || {}), [f]: v } }));
+  const setKpi   = (key, f, v) => setUi((p) => ({ ...p, kpi: { ...(p.kpi || {}), [key]: { ...((p.kpi || {})[key] || {}), [f]: v } } }));
+  const resetKpi = (key) => setUi((p) => { const k = { ...(p.kpi || {}) }; delete k[key]; return { ...p, kpi: k }; });
   const saveUi = async () => {
     setSavingUi(true);
     try { await api.put("/api/kpi-ui-settings/", { settings: ui }, token); setShowCust(false); }
@@ -549,41 +571,94 @@ export default function MaintenanceKPI() {
             <div style={custPanel}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
                 <div style={{ fontWeight: 800, fontSize: 14, color: "#0f172a" }}>
-                  ⚙ Customize — colours &amp; axis{" "}
-                  <span style={{ fontWeight: 600, fontSize: 11, color: "#94a3b8" }}>(admin · applies for everyone)</span>
+                  ⚙ Customize{" "}
+                  <span style={{ fontWeight: 600, fontSize: 11, color: "#94a3b8" }}>(admin · applies for everyone · live preview)</span>
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => setUi({})} style={custGhost}>Reset all</button>
                   <button onClick={saveUi} disabled={savingUi} style={custSave}>{savingUi ? "Saving…" : "Save"}</button>
                 </div>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(310px,1fr))", gap: 12 }}>
-                {CARDS.map((def) => {
-                  const s = ui[def.key] || {};
-                  const accent = s.accent || def.accent;
-                  const bar = s.bar || barColor(accent);
-                  return (
-                    <div key={def.key} style={custCard}>
-                      <div style={{ fontWeight: 700, fontSize: 12, color: "#0f172a", marginBottom: 8 }}>{def.label}</div>
-                      <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
-                        <label style={custLbl}>Card
-                          <input type="color" value={accent} onChange={(e) => setUiField(def.key, "accent", e.target.value)} style={custColor} />
-                        </label>
-                        <label style={custLbl}>Bar
-                          <input type="color" value={bar} onChange={(e) => setUiField(def.key, "bar", e.target.value)} style={custColor} />
-                        </label>
-                        <label style={custLbl}>Axis max
-                          <input type="number" min="0" placeholder="auto" value={s.yMax ?? ""}
-                                 onChange={(e) => setUiField(def.key, "yMax", e.target.value === "" ? null : Number(e.target.value))} style={custNum} />
-                        </label>
-                        <button onClick={() => resetKpi(def.key)} style={custGhost}>Reset</button>
-                      </div>
-                    </div>
-                  );
-                })}
+
+              {/* Card | Charts */}
+              <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                <button onClick={() => setCustTab("card")}  style={custTabBtn(custTab === "card")}>Cards</button>
+                <button onClick={() => setCustTab("chart")} style={custTabBtn(custTab === "chart")}>Charts</button>
               </div>
-              <div style={{ fontSize: 11, color: "#64748b", marginTop: 10 }}>
-                Bar apne aap card color ka light+vivid version leta hai — alag chahiye to Bar bhi set karo. Axis max blank = auto. <b>Save</b> pe sabke liye apply.
+
+              {custTab === "card" ? (
+                <>
+                  <div style={custSecTitle}>All cards</div>
+                  <div style={custControls}>
+                    <label style={custField}>Background
+                      <input type="color" value={cardCfg.bg} onChange={(e) => setCard("bg", e.target.value)} style={custColor} /></label>
+                    <label style={custField}>Label colour
+                      <input type="color" value={cardCfg.labelColor} onChange={(e) => setCard("labelColor", e.target.value)} style={custColor} /></label>
+                    <label style={custField}>Value size
+                      <input type="number" min="20" max="90" value={cardCfg.valueSize} onChange={(e) => setCard("valueSize", Number(e.target.value))} style={custNum} /></label>
+                    <label style={custField}>Border width
+                      <input type="number" min="0" max="12" value={cardCfg.borderW} onChange={(e) => setCard("borderW", Number(e.target.value))} style={custNum} /></label>
+                    <label style={custField}>Corner radius
+                      <input type="number" min="0" max="30" value={cardCfg.radius} onChange={(e) => setCard("radius", Number(e.target.value))} style={custNum} /></label>
+                    <label style={{ ...custField, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <input type="checkbox" checked={cardCfg.shadow !== false} onChange={(e) => setCard("shadow", e.target.checked)} style={{ width: 18, height: 18 }} />Shadow</label>
+                  </div>
+                  <div style={custSecTitle}>Per-card colour</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))", gap: 10 }}>
+                    {CARDS.map((def) => {
+                      const accent = (ui.kpi && ui.kpi[def.key] && ui.kpi[def.key].accent) || def.accent;
+                      return (
+                        <div key={def.key} style={{ ...custCard, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                          <span style={{ fontWeight: 700, fontSize: 12, color: "#0f172a" }}>{def.label}</span>
+                          <input type="color" value={accent} onChange={(e) => setKpi(def.key, "accent", e.target.value)} style={custColor} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={custSecTitle}>All charts</div>
+                  <div style={custControls}>
+                    <label style={custField}>Bar width
+                      <input type="number" min="6" max="60" value={chartCfg.barSize} onChange={(e) => setChart("barSize", Number(e.target.value))} style={custNum} /></label>
+                    <label style={custField}>Bar radius
+                      <input type="number" min="0" max="20" value={chartCfg.barRadius} onChange={(e) => setChart("barRadius", Number(e.target.value))} style={custNum} /></label>
+                    <label style={custField}>Chart height
+                      <input type="number" min="140" max="360" value={chartCfg.height} onChange={(e) => setChart("height", Number(e.target.value))} style={custNum} /></label>
+                    <label style={custField}>Axis colour
+                      <input type="color" value={chartCfg.axisColor} onChange={(e) => setChart("axisColor", e.target.value)} style={custColor} /></label>
+                    <label style={{ ...custField, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <input type="checkbox" checked={chartCfg.grid !== false} onChange={(e) => setChart("grid", e.target.checked)} style={{ width: 18, height: 18 }} />Grid</label>
+                    <label style={{ ...custField, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <input type="checkbox" checked={chartCfg.labels !== false} onChange={(e) => setChart("labels", e.target.checked)} style={{ width: 18, height: 18 }} />Value labels</label>
+                  </div>
+                  <div style={custSecTitle}>Per-chart</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 10 }}>
+                    {CARDS.map((def) => {
+                      const s = (ui.kpi && ui.kpi[def.key]) || {};
+                      const accent = s.accent || def.accent;
+                      const bar = s.bar || barColor(accent);
+                      return (
+                        <div key={def.key} style={custCard}>
+                          <div style={{ fontWeight: 700, fontSize: 12, color: "#0f172a", marginBottom: 8 }}>{def.label}</div>
+                          <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+                            <label style={custLbl}>Bar
+                              <input type="color" value={bar} onChange={(e) => setKpi(def.key, "bar", e.target.value)} style={custColor} /></label>
+                            <label style={custLbl}>Axis max
+                              <input type="number" min="0" placeholder="auto" value={s.yMax ?? ""}
+                                     onChange={(e) => setKpi(def.key, "yMax", e.target.value === "" ? null : Number(e.target.value))} style={custNum} /></label>
+                            <button onClick={() => resetKpi(def.key)} style={custGhost}>Reset</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              <div style={{ fontSize: 11, color: "#64748b", marginTop: 14 }}>
+                Changes turant preview hote hain. <b>Save</b> pe sabke liye apply. Bar default = card color ka light version; axis max blank = auto.
               </div>
             </div>
           )}
@@ -593,7 +668,8 @@ export default function MaintenanceKPI() {
           {/* ── KPI cards ─────────────────────────────────── */}
           <div className="mk-grid">
             {CARDS.map((def) => (
-              <KpiCard key={def.key} def={def} metrics={metrics} accent={styleOf(def.key, def.accent).accent} />
+              <KpiCard key={def.key} def={def} metrics={metrics}
+                       accent={kpiStyle(def.key, def.accent).accent} cfg={cardCfg} />
             ))}
           </div>
 
@@ -601,10 +677,10 @@ export default function MaintenanceKPI() {
           <div className="mk-charts-title">Monthly Trend — {data?.fy_label || fy}</div>
           <div className="mk-charts">
             {CARDS.map((def) => {
-              const st = styleOf(def.key, def.accent);
+              const st = kpiStyle(def.key, def.accent);
               return (
                 <MetricChart key={def.key} def={def} series={trend} target={targetFor(def.key)}
-                             accent={st.accent} barFill={st.bar} yMax={st.yMax} />
+                             accent={st.accent} barFill={st.bar} yMax={st.yMax} cfg={chartCfg} />
               );
             })}
           </div>
