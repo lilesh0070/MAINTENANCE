@@ -1766,6 +1766,51 @@ def live_events(user=Depends(get_current_user)):
         return cur.fetchall()
 
 
+@router.get("/monitor")
+def monitor_board(user=Depends(get_current_user)):
+    """Simple ALL-department ANDON monitor page: every OPEN call
+    (department / zone / line / running timer), the department list with each
+    one's active-call count (for the 6 buttons), and top stats
+    (active now · longest active · total today).  Read-only, from andon_system."""
+    _ensure_tables()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT e.id, COALESCE(dep.name, e.display_name) AS department,
+                              e.zone, e.line, e.machine_no, e.display_name, e.priority,
+                              e.started_at, e.acknowledged_at,
+                              EXTRACT(EPOCH FROM (NOW() - e.started_at))::int AS elapsed_seconds,
+                              CASE WHEN e.acknowledged_at IS NOT NULL
+                                   THEN EXTRACT(EPOCH FROM (e.acknowledged_at - e.started_at))::int END
+                                   AS response_seconds
+                         FROM andon_system e
+                         LEFT JOIN andon_departments dep ON dep.id = e.department_id
+                        WHERE e.state='OPEN'
+                        ORDER BY e.started_at""")
+        rows = cur.fetchall()
+        cur.execute("SELECT id, name, color FROM andon_departments ORDER BY id")
+        depts = cur.fetchall()
+        day_start = ("CASE WHEN NOW()::time >= TIME '07:00' "
+                     "     THEN CURRENT_DATE + TIME '07:00' "
+                     "     ELSE (CURRENT_DATE - INTERVAL '1 day') + TIME '07:00' END")
+        day_end = f"(({day_start}) + INTERVAL '23 hours 30 minutes')"
+        cur.execute(f"""SELECT
+              (SELECT COUNT(*) FROM andon_system
+                 WHERE started_at >= ({day_start}) AND started_at < {day_end})
+            + (SELECT COUNT(*) FROM andon_history
+                 WHERE started_at >= ({day_start}) AND started_at < {day_end}) AS today""")
+        today = int((cur.fetchone() or {}).get("today") or 0)
+    counts, longest = {}, 0
+    for r in rows:
+        k = (r["department"] or "").strip()
+        counts[k] = counts.get(k, 0) + 1
+        if (r["elapsed_seconds"] or 0) > longest:
+            longest = r["elapsed_seconds"]
+    for d in depts:
+        d["active"] = counts.get((d["name"] or "").strip(), 0)
+    return {"rows": rows, "departments": depts,
+            "stats": {"active": len(rows), "longest_seconds": int(longest), "today": today}}
+
+
 @router.get("/dashboard")
 def dashboard_board(user=Depends(get_current_user)):
     """Maintenance Dashboard ke ANDON table ke liye — SIRF abhi chalu calls.
