@@ -55,8 +55,12 @@ function asHm(min) {
   return m ? `${h}h ${m}m` : `${h}h`;
 }
 
+// One professional accent used across every card + chart (no per-metric
+// rainbow): values, bars, top-borders and dots.  Secondary text is one grey.
+const KPI_COLOR = "#1e40af";
+
 // The six cards — driven off the /summary `metrics` object.
-// accent: card colour;  val(): pick + format from metrics.
+// val(): pick + format from metrics.
 const CARDS = [
   {
     key: "mttr_minutes", label: "MTTR", accent: "#b45309",
@@ -107,7 +111,7 @@ function chartNum(v) {
 // with always-on black value labels.  When a REAL target is saved for the
 // current FY + scope in KPI Targets, it is drawn as a red dashed line.
 function MetricChart({ def, series, target }) {
-  const c = def.accent;
+  const c = KPI_COLOR;
   const data = series || [];
   const t = target != null && target !== "" ? Number(target) : null;
   return (
@@ -124,7 +128,7 @@ function MetricChart({ def, series, target }) {
             <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
             <XAxis dataKey="month" interval={0} tick={{ fontSize: 10.5, fill: "#64748b", fontWeight: 600 }}
                    axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }}
+            <YAxis tick={{ fontSize: 11, fill: "#64748b" }}
                    axisLine={false} tickLine={false} width={34}
                    domain={[0, (dataMax) => Math.max(1, Math.ceil(Math.max((dataMax || 1) * 1.2, t != null ? t * 1.15 : 0)))]} />
             <Tooltip
@@ -162,12 +166,11 @@ function KpiCard({ def, metrics }) {
   const v = metrics ? def.val(metrics) : "—";
   const sub = metrics ? def.sub(metrics) : "";
   return (
-    <div className="mk-card" style={{ borderTop: `3px solid ${def.accent}` }}>
+    <div className="mk-card" style={{ borderTop: `3px solid ${KPI_COLOR}` }}>
       <div className="mk-card-label">{def.label}</div>
-      <div className="mk-card-value" style={{ color: def.accent }}>{v}</div>
+      <div className="mk-card-value" style={{ color: KPI_COLOR }}>{v}</div>
       <div className="mk-card-unit">{def.unit}</div>
       {sub && <div className="mk-card-sub">{sub}</div>}
-      <div className="mk-card-hint">{def.hint}</div>
     </div>
   );
 }
@@ -380,7 +383,7 @@ export default function MaintenanceKPI() {
                          text-transform:uppercase; color:#64748b; min-height:28px; }
         .mk-card-value { font-family:'Barlow Condensed',sans-serif; font-size:48px;
                          font-weight:800; line-height:1.05; margin-top:6px; }
-        .mk-card-unit { font-size:13px; font-weight:700; color:#94a3b8; margin-top:2px; }
+        .mk-card-unit { font-size:13px; font-weight:700; color:#64748b; margin-top:2px; }
         .mk-card-sub  { font-size:12px; color:#64748b; margin-top:8px; font-weight:600; }
         .mk-card-hint { font-size:11px; color:#cbd5e1; margin-top:10px;
                         border-top:1px dashed #eef2f7; padding-top:8px; }
@@ -401,7 +404,7 @@ export default function MaintenanceKPI() {
                          font-weight:800; color:#0f172a; text-transform:uppercase;
                          letter-spacing:.05em; margin-bottom:10px; }
         .mk-chart-dot { width:10px; height:10px; border-radius:3px; flex-shrink:0; }
-        .mk-chart-unit { font-size:11px; font-weight:600; color:#94a3b8;
+        .mk-chart-unit { font-size:11px; font-weight:600; color:#64748b;
                          text-transform:none; letter-spacing:0; }
         .mk-chart-target { margin-left:auto; font-size:11px; font-weight:800; color:#dc2626;
                            background:#fef2f2; border:1px solid #fecaca; border-radius:99px;
