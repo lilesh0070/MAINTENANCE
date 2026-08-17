@@ -647,25 +647,44 @@ def _start_plc_poller():
     _plc_poller_started = True
     threading.Thread(target=_plc_poll_loop, daemon=True, name="andon-plc-poller").start()
     threading.Thread(target=_slip_sweep_loop, daemon=True, name="andon-slip-sweep").start()
+
+
+_output_writer_started = False
+
+
+def _start_output_writer():
+    global _output_writer_started
+    if _output_writer_started: return
+    _output_writer_started = True
     threading.Thread(target=_andon_output_loop, daemon=True, name="andon-output-writer").start()
 
 
 def start_workers():
-    """PLC bit-poller — ANDON ka signal source.  (ESP raw-TCP ingest retire ho
-    chuka hai.)  Idempotent + DB-independent (boot par safe).
+    """ANDON background workers — two INDEPENDENT gates:
 
-    Set ANDON_POLL_ENABLED=0 in .env to SKIP the poller.  A dev machine that
-    shares the production DB (192.168.30.15) + sits on the plant network can
-    otherwise reach the SAME PLCs and write the SAME andon_system table as the
-    production backend — two pollers then fight over the PLC's single MC
-    connection (read fails read as bit-0 → call closes → next read bit-1 →
-    reopens = the call keeps restarting) and deadlock on andon_system.  So dev
-    runs the API without the poller; only ONE backend (production) should poll.
+      • ANDON_POLL_ENABLED (default 1) — the INPUT poller (reads PLC bits →
+        andon_system).  A dev box that shares the production DB + plant network
+        would otherwise fight production for the PLC's MC connection (read-fail
+        looks like bit-0 → call closes → reopens = flap) and deadlock on
+        andon_system, so dev sets this 0.
+      • ANDON_OUTPUT_ENABLED (default = same as the poller) — the OUTPUT writer
+        (Call → Output: reads andon_system → writes output-PLC bits).  It NEVER
+        polls the input PLCs, so it can run safely even where the input poller is
+        off — e.g. on a dev box to test/prove Call → Output without the flap.
     """
-    if os.getenv("ANDON_POLL_ENABLED", "1").strip().lower() in ("0", "false", "no", "off"):
-        print("[ANDON] poller DISABLED (ANDON_POLL_ENABLED=0) — not polling the PLC")
-        return
-    _start_plc_poller()
+    def _off(name, default):
+        return os.getenv(name, default).strip().lower() in ("0", "false", "no", "off")
+    poll_off = _off("ANDON_POLL_ENABLED", "1")
+    out_off  = _off("ANDON_OUTPUT_ENABLED", "0" if poll_off else "1")
+    if poll_off:
+        print("[ANDON] input poller DISABLED (ANDON_POLL_ENABLED=0)")
+    else:
+        _start_plc_poller()
+    if out_off:
+        print("[ANDON] output writer disabled")
+    else:
+        _start_output_writer()
+        print("[ANDON] output writer ENABLED — mirroring calls to output-PLC bits")
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -739,6 +758,26 @@ def _out_write_bit(ip, port, series, bit_type, bit_no, value):
         _OUT_CONN.pop(key, None)
         _OUT_RETRY[key] = _time.monotonic() + 1
         return False
+
+
+def _out_read_bit(ip, port, series, bit_type, bit_no):
+    """Read a bit's ACTUAL value from an output PLC via a SHORT-LIVED MC
+    connection (connect + read + close — writer ke persistent pool se alag, to
+    thread-race nahi).  True/False, ya None agar reach/read fail.  Non-destructive.
+    'Bit now' isi se aata hai — asli PLC value, writer ke bharose nahi (kuch PLC
+    write ACK kar dete hain par bit actually likhte nahi)."""
+    try:
+        p = int(port or 5007)
+        if not _reachable(ip, p, timeout=0.4):
+            return None
+        mc = _connect({"series": series or "Q", "plc_ip": ip, "plc_port": p})
+        try:
+            return bool(_read_one(mc, bit_type, bit_no))
+        finally:
+            try: mc.close()
+            except Exception: pass
+    except Exception:
+        return None
 
 
 def _andon_output_write_once():
@@ -831,15 +870,14 @@ def list_call_outputs(user=Depends(get_current_user)):
         r["should_be_on"] = (bool(lc and int(lc["unacked"] or 0) > 0) if r["off_on_ack"]
                              else bool(lc and int(lc["total"] or 0) > 0))
         st = _OUT_STATE.get(r["id"], {})
-        # bit_on = ACTUAL — jo writer ne PLC pe SUCCESSFULLY likha.  Sirf us backend
-        # par set hota jiska poller ON hai (production) + write succeed ho.  Dev pe
-        # writer band → None ("—").  Isliye "chahiye ON par likha nahi" saaf dikhta.
-        r["bit_on"] = st.get("on")
+        # bit_on = PLC ka ASLI bit value (short-lived MC read) — writer ke _OUT_STATE
+        # pe bharosa nahi, kyunki kuch PLC (jaise ye FX5U) write ACK kar dete hain
+        # par bit actually likhte nahi.  None = read/reach fail ("—").
+        r["bit_on"] = _out_read_bit(r["plc_ip"], r.get("plc_port") or 5007,
+                                    r.get("plc_series") or "Q", r["bit_type"], r["bit_no"])
         r["online"] = st.get("online")    # last write ok/fail (writer)
-        # Connection dot: agar writer chal raha (production) to uska write-success
-        # hi connected/disconnected batata hai; nahi (dev poller off) to ek quick
-        # TCP reachability probe — taaki yahan bhi Connected/Disconnected dikhe.
-        reach = st.get("online")
+        # Connection: bit read ho gaya → reachable; warna writer-status ya quick probe.
+        reach = True if r["bit_on"] is not None else st.get("online")
         if reach is None and r.get("plc_ip"):
             reach = _reachable(r["plc_ip"], r.get("plc_port") or 5007, timeout=0.4)
         r["reachable"] = reach
