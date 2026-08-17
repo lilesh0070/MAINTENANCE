@@ -38,6 +38,7 @@ GET/PUT         /plc-devices/{id}/outputs   this device's DO1–DO8 (default-fil
 GET             /events                     live OPEN calls (running timer)
 GET             /history                    closed calls (duration / response)
 """
+import os
 import socket
 import threading
 import time as _time
@@ -664,7 +665,19 @@ def _start_plc_poller():
 
 def start_workers():
     """PLC bit-poller — ANDON ka signal source.  (ESP raw-TCP ingest retire ho
-    chuka hai.)  Idempotent + DB-independent (boot par safe)."""
+    chuka hai.)  Idempotent + DB-independent (boot par safe).
+
+    Set ANDON_POLL_ENABLED=0 in .env to SKIP the poller.  A dev machine that
+    shares the production DB (192.168.30.15) + sits on the plant network can
+    otherwise reach the SAME PLCs and write the SAME andon_system table as the
+    production backend — two pollers then fight over the PLC's single MC
+    connection (read fails read as bit-0 → call closes → next read bit-1 →
+    reopens = the call keeps restarting) and deadlock on andon_system.  So dev
+    runs the API without the poller; only ONE backend (production) should poll.
+    """
+    if os.getenv("ANDON_POLL_ENABLED", "1").strip().lower() in ("0", "false", "no", "off"):
+        print("[ANDON] poller DISABLED (ANDON_POLL_ENABLED=0) — not polling the PLC")
+        return
     _start_plc_poller()
 
 
