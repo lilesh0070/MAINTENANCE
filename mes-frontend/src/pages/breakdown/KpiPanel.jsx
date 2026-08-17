@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { PROD_ZONES } from "../../constants/zones";
-import { Btn, api, todayLocalISO, fmtDuration, fmtClock } from "./shared";
+import { Btn, api, todayLocalISO, fmtDuration, fmtClock, usePortrait } from "./shared";
 
 /* ════════════════════════════════════════════════════════════════════
  * 2.5) Maintenance KPI panel (auto-computed + target compare + CSV
@@ -20,6 +20,7 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(false);
   const [err,     setErr]     = useState(null);
+  const portrait = usePortrait();   // vertical TV → compact sizing
 
   // Machine Master List for the zone/line dropdowns (standing rule: all
   // filters derive from maintenance_machines).
@@ -174,7 +175,8 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
           return (
             <>
               <div style={{ display: "grid",
-                            gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 14 }}>
+                            gridTemplateColumns: portrait ? "repeat(auto-fill, minmax(140px, 1fr))" : "repeat(auto-fill, minmax(200px, 1fr))",
+                            gap: portrait ? 10 : 14 }}>
                 {totalBdCard && <KpiCard card={totalBdCard} />}
                 {pendingCard && <KpiCard card={pendingCard} />}
               </div>
@@ -206,7 +208,8 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
                 )}
               </div>
               <div style={{ display: "grid",
-                            gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12 }}>
+                            gridTemplateColumns: portrait ? "repeat(auto-fill, minmax(112px, 1fr))" : "repeat(auto-fill, minmax(160px, 1fr))",
+                            gap: portrait ? 8 : 12 }}>
                 {(() => {
                   const zoneKeys = ZONES.map(([k]) => k);
                   const mapped = zoneKeys.reduce((s, k) => s + (counts[k] || 0), 0);
@@ -225,18 +228,18 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
                         background: active ? "rgba(220,38,38,.06)" : "#fff",
                         border: "1px solid #e2e8f0", borderLeft: `4px solid ${accent}`,
                         outline: active ? `2px solid ${accent}` : "none",
-                        borderRadius: 10, padding: "12px 14px", boxShadow: "0 1px 2px rgba(0,0,0,.03)" }}>
+                        borderRadius: 10, padding: portrait ? "8px 10px" : "12px 14px", boxShadow: "0 1px 2px rgba(0,0,0,.03)" }}>
                         {canRemove && (
                           <span onClick={(e) => { e.stopPropagation(); removeZone(label); }}
                                 title="Remove this zone from the dashboard"
                                 style={{ position: "absolute", top: 3, right: 7, fontSize: 15,
                                          lineHeight: 1, color: "#cbd5e1", cursor: "pointer", fontWeight: 700 }}>×</span>
                         )}
-                        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".06em",
+                        <div style={{ fontSize: portrait ? 9 : 10.5, fontWeight: 800, letterSpacing: ".06em",
                                       textTransform: "uppercase", color: "#64748b" }}>{label}</div>
-                        <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 30,
+                        <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: portrait ? 22 : 30,
                                       fontWeight: 800, color: accent, lineHeight: 1.15 }}>{n}</div>
-                        <div style={{ fontSize: 10.5, color: "#94a3b8" }}>breakdowns</div>
+                        <div style={{ fontSize: portrait ? 9 : 10.5, color: "#94a3b8" }}>breakdowns</div>
                       </button>
                     );
                   });

@@ -26,6 +26,7 @@ import {
   ResponsiveContainer, ComposedChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, LabelList, ReferenceLine,
 } from "recharts";
+import { usePortrait } from "./breakdown/shared";
 
 const API = "";
 const api = {
@@ -285,8 +286,12 @@ export default function MaintenanceKPI() {
       .then((r) => setUi((r && r.settings) || {}))
       .catch(() => {});
   }, [token]);
+  const portrait = usePortrait();
   const cardCfg  = { ...CARD_D,  ...(ui.card  || {}) };
   const chartCfg = { ...CHART_D, ...(ui.chart || {}) };
+  // Vertical TV → compact so all 6 cards + 6 charts fit on one screen.
+  const cardCfgEff  = portrait ? { ...cardCfg,  valueSize: Math.min(cardCfg.valueSize, 32) } : cardCfg;
+  const chartCfgEff = portrait ? { ...chartCfg, height: Math.min(chartCfg.height, 150), barSize: Math.min(chartCfg.barSize, 18) } : chartCfg;
   const kpiStyle = (key, defAccent) => {
     const s = (ui.kpi && ui.kpi[key]) || {};
     const accent = s.accent || defAccent;
@@ -532,12 +537,17 @@ export default function MaintenanceKPI() {
         /* ── Portrait / vertical TV (e.g. 65" mounted vertical) ─────────────
            3 cards per row (3×2) + 3 charts per row (3×2), full-width. */
         @media (orientation: portrait) {
-          .mk-body   { padding: 0 22px 44px; }
-          .mk-grid   { grid-template-columns: repeat(3, 1fr) !important; gap: 20px; }
-          .mk-charts { grid-template-columns: repeat(3, 1fr) !important; gap: 20px; }
-          .mk-card-label   { font-size: 13px; }
-          .mk-charts-title { font-size: 26px; }
-          .mk-fybar        { flex-wrap: wrap; row-gap: 10px; }
+          body       { margin: 0; }
+          .mk-root   { padding-bottom: 0; }
+          .mk-body   { padding: 0 18px 6px; }
+          .mk-grid   { grid-template-columns: repeat(3, 1fr) !important; gap: 10px; margin-bottom: 4px; }
+          .mk-charts { grid-template-columns: repeat(3, 1fr) !important; gap: 10px; }
+          .mk-card   { padding: 12px 14px 10px; }
+          .mk-card-label   { font-size: 12px; min-height: 0; }
+          .mk-chart  { padding: 10px 12px 4px; }
+          .mk-chart-head   { margin-bottom: 6px; }
+          .mk-charts-title { font-size: 20px; margin: 8px 0 8px; }
+          .mk-fybar        { flex-wrap: wrap; row-gap: 8px; padding: 10px 14px; }
         }
       `}</style>
 
@@ -696,7 +706,7 @@ export default function MaintenanceKPI() {
           <div className="mk-grid">
             {CARDS.map((def) => (
               <KpiCard key={def.key} def={def} metrics={metrics}
-                       accent={kpiStyle(def.key, def.accent).accent} cfg={cardCfg} />
+                       accent={kpiStyle(def.key, def.accent).accent} cfg={cardCfgEff} />
             ))}
           </div>
 
@@ -707,7 +717,7 @@ export default function MaintenanceKPI() {
               const st = kpiStyle(def.key, def.accent);
               return (
                 <MetricChart key={def.key} def={def} series={trend} target={targetFor(def.key)}
-                             accent={st.accent} barFill={st.bar} yMax={st.yMax} cfg={chartCfg} />
+                             accent={st.accent} barFill={st.bar} yMax={st.yMax} cfg={chartCfgEff} />
               );
             })}
           </div>

@@ -7,6 +7,23 @@
  * sections here — section-specific code lives in that section's file.
  */
 
+import { useState, useEffect } from "react";
+
+// Is the viewport portrait (vertical TV)?  Inline-styled components use this to
+// shrink their sizing for the big vertical display.
+export function usePortrait() {
+  const [p, setP] = useState(() =>
+    typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(orientation: portrait)").matches);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(orientation: portrait)");
+    const on = () => setP(mq.matches);
+    mq.addEventListener ? mq.addEventListener("change", on) : mq.addListener(on);
+    return () => { mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on); };
+  }, []);
+  return p;
+}
+
 export const API = "";
 
 // today as YYYY-MM-DD (the Pending Breakdown panel's date filter defaults here)
@@ -66,10 +83,11 @@ export function Btn({ children, onClick, variant = "default", size = "md", disab
 }
 
 export function StatCard({ label, value, sub, color = "#1e40af" }) {
+  const portrait = usePortrait();
   return (
     <div style={{
       background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12,
-      padding: "14px 18px",
+      padding: portrait ? "8px 12px" : "14px 18px",
       // Pehle `flex: 0 0 auto` + minWidth 140 tha — card apne CONTENT jitna
       // chaudा ho jaata tha aur sikudta hi nahi.  Jiska sub-text lamba (jaise
       // "Call open, no ack yet") wo card mota ho jaata, aur thodi si sankri
@@ -85,14 +103,14 @@ export function StatCard({ label, value, sub, color = "#1e40af" }) {
       // Isse neeche (asli mobile) hi 2x2 me jaate hain, jo theek hai.
       // `minWidth: 0` zaroori hai — warna flex item apne content se chhota
       // nahi ho sakta aur sikudna bekaar ho jaata.
-      boxSizing: "border-box", flex: "1 1 130px", minWidth: 0,
+      boxSizing: "border-box", flex: portrait ? "1 1 110px" : "1 1 130px", minWidth: 0,
       boxShadow: "0 1px 3px rgba(0,0,0,.04)",
     }}>
-      <div style={{ fontSize: 10, color: "#64748b", fontWeight: 700,
+      <div style={{ fontSize: portrait ? 9 : 10, color: "#64748b", fontWeight: 700,
                      letterSpacing: ".08em", textTransform: "uppercase" }}>{label}</div>
-      <div style={{ fontSize: 28, fontWeight: 800, color, marginTop: 2,
+      <div style={{ fontSize: portrait ? 22 : 28, fontWeight: 800, color, marginTop: 2,
                      fontFamily: "'Barlow Condensed',sans-serif" }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: portrait ? 9 : 11, color: "#94a3b8", marginTop: 1 }}>{sub}</div>}
     </div>
   );
 }

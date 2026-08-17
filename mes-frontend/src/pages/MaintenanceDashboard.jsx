@@ -292,6 +292,7 @@ export default function MaintenanceDashboard() {
 
         /* ── Portrait / vertical TV (65") — everything on ONE screen, full-width ── */
         @media (orientation: portrait) {
+          body        { margin:0; }
           .md-root    { padding-bottom:0; }
           .md-body    { max-width:none; padding:16px 26px 12px; }
           .md-topbar  { padding:0 26px; }
