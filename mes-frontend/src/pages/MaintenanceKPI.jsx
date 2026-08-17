@@ -112,7 +112,7 @@ const CARDS = [
   },
   {
     key: "mtbf_days", label: "MTBF", accent: "#16a34a",
-    unit: "days", sub: () => "between failures",
+    unit: "days", sub: () => "between failures", higherIsBetter: true,
     val: (m) => (m.mtbf_days == null ? "—" : fmt(m.mtbf_days, 2)),
     hint: "Mean Time Between Failures — (running hours × machines − breakdown hours) ÷ frequency ÷ 24. Running hours 'MTBF Calculation' page se aate hain.",
   },
@@ -165,10 +165,19 @@ function MetricChart({ def, series, target, accent, barFill, yMax, cfg }) {
         {def.label}
         <span className="mk-chart-unit">· {def.unit} / month</span>
         {t != null && <span className="mk-chart-target">Target: {t}</span>}
+        {t != null && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 9, fontSize: 10,
+                         fontWeight: 700, color: "#64748b", textTransform: "none", letterSpacing: 0 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+              <span className="mk-legend-dot mk-blink" style={{ background: "#16a34a" }} />met</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+              <span className="mk-legend-dot mk-blink" style={{ background: "#dc2626" }} />miss</span>
+          </span>
+        )}
       </div>
       <div className="mk-chart-body">
         <ResponsiveContainer width="100%" height={cc.height ?? 208}>
-          <ComposedChart data={data} margin={{ top: 22, right: 10, left: -10, bottom: 0 }}>
+          <ComposedChart data={data} margin={{ top: 34, right: 10, left: -10, bottom: 0 }}>
             {cc.grid !== false && <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />}
             <XAxis dataKey="month" interval={0} tick={{ fontSize: 10.5, fill: cc.axisColor || "#64748b", fontWeight: 600 }}
                    axisLine={false} tickLine={false} />
@@ -189,6 +198,21 @@ function MetricChart({ def, series, target, accent, barFill, yMax, cfg }) {
               {cc.labels !== false && (
                 <LabelList dataKey={def.key} position="top" formatter={chartNum}
                            fill="#0f172a" fontSize={11} fontWeight={700} />
+              )}
+              {/* Target status dot per month — blinks green when the target is
+                  met, red when missed.  "Met" = at/under target for the usual
+                  lower-is-better KPIs; at/over target for MTBF (higherIsBetter). */}
+              {t != null && (
+                <LabelList dataKey={def.key} content={(p) => {
+                  const v = p.value == null ? null : Number(p.value);
+                  if (v == null || v <= 0 || p.x == null) return null;
+                  const met = def.higherIsBetter ? v >= t : v <= t;
+                  return (
+                    <circle cx={Number(p.x) + Number(p.width) / 2} cy={Number(p.y) - 22}
+                            r={4.5} fill={met ? "#16a34a" : "#dc2626"}
+                            stroke="#fff" strokeWidth={1.5} className="mk-blink" />
+                  );
+                }} />
               )}
             </Bar>
             {t != null && (
@@ -552,6 +576,10 @@ export default function MaintenanceKPI() {
         .mk-chart-target { margin-left:auto; font-size:11px; font-weight:800; color:#dc2626;
                            background:#fef2f2; border:1px solid #fecaca; border-radius:99px;
                            padding:2px 10px; text-transform:none; letter-spacing:0; }
+        /* per-month target-status dot (green=met, red=missed) — blinks */
+        @keyframes mkBlink { 0%,100% { opacity:1; } 50% { opacity:.15; } }
+        .mk-blink { animation: mkBlink 1s ease-in-out infinite; }
+        .mk-legend-dot { width:9px; height:9px; border-radius:50%; display:inline-block; }
         .mk-chart-body { width:100%; }
 
         /* ── Portrait / vertical TV (65" mounted vertical) ──────────────────
