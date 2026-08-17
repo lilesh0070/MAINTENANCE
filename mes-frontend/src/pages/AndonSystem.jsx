@@ -53,7 +53,11 @@ const fmtClock = (s) => {
 const ACK_PARENT = { 2: 1, 4: 3 };
 // ANDON top tabs → per-tab permission sub-key (inherits the andon-system parent
 // unless a sub-key is explicitly set to None).
-const TAB_KEY = { board: "andon-board", faults: "andon-faults", config: "andon-config", reports: "andon-reports" };
+const TAB_KEY = { board: "andon-board", faults: "andon-faults", config: "andon-config", callout: "andon-config", reports: "andon-reports" };
+// Call→Output: departments jinka bit RESPONSE (acknowledge) pe off hota hai
+// (inme ACK output hai — DO2/DO4); baaki call band hone par hi off.
+const OUT_ACK_DEPTS = ["maintenance", "tool room", "toolroom"];
+const outDeptOffAck = (d) => OUT_ACK_DEPTS.includes(String(d || "").trim().toLowerCase());
 
 // Fault History — FY ke 12 mahine (Apr..Mar)
 function fyMonthsList(fy) {
@@ -108,6 +112,9 @@ export default function AndonSystem() {
   const [master, setMaster]   = useState([]);       // flat maintenance_machines rows (zone_name/line_name/machine_no/machine_name)
   const [depts, setDepts]     = useState([]);
   const [plcs, setPlcs]       = useState([]);
+  const [outs, setOuts]       = useState([]);       // Call → PLC output mappings (list + live bit status)
+  const [outForm, setOutForm] = useState({ department:"", plc_ip:"", plc_port:5007, plc_series:"Q", bit_type:"M", bit_no:"", enabled:true });
+  const [outEdit, setOutEdit] = useState(null);
   const [events, setEvents]   = useState([]);       // live OPEN calls (the board)
   const [totals, setTotals]   = useState([]);        // aaj ka per-department total loss
   const [, setTick]           = useState(0);         // 1s heartbeat so timers advance smoothly
@@ -175,18 +182,22 @@ export default function AndonSystem() {
 
   const load = useCallback(async () => {
     try {
-      const [mc, d, e] = await Promise.all([
+      const [mc, d, e, o] = await Promise.all([
         fetch("/api/machines/", { headers: { Authorization: `Bearer ${token}` } }).then((r) => (r.ok ? r.json() : [])).catch(() => []),
         api("/departments").catch(() => []), api("/plc-devices").catch(() => []),
+        api("/call-outputs").catch(() => []),
       ]);
-      setMaster(Array.isArray(mc) ? mc : []); setDepts(d || []); setPlcs(e || []);
+      setMaster(Array.isArray(mc) ? mc : []); setDepts(d || []); setPlcs(e || []); setOuts(o || []);
     } catch (err) { flash(String(err.message || err).slice(0, 120)); }
   }, [api, token]);
   useEffect(() => { if (token) load(); }, [token, load]);
   // live PLC connectivity — re-poll the list every 10s so the green/red dots update
   useEffect(() => {
     if (!token) return;
-    const id = setInterval(() => { api("/plc-devices").then((e) => setPlcs(e || [])).catch(() => {}); }, 10000);
+    const id = setInterval(() => {
+      api("/plc-devices").then((e) => setPlcs(e || [])).catch(() => {});
+      api("/call-outputs").then((o) => setOuts(o || [])).catch(() => {});
+    }, 10000);
     return () => clearInterval(id);
   }, [token, api]);
   // ── Live board: pull active calls every 300ms while the board tab is open ──
@@ -293,6 +304,18 @@ export default function AndonSystem() {
     else await api("/plc-devices", { method: "POST", body: JSON.stringify(body) });
     setPlcForm(blankPlc); setPlcEdit(null);
   }, plcEdit ? "PLC updated" : "PLC added");
+
+  // ── Call → Output PLC bit mapping (save) ──
+  const saveOut = () => wrap(async () => {
+    const body = { department: outForm.department, plc_ip: (outForm.plc_ip || "").trim(),
+                   plc_port: Number(outForm.plc_port) || 5007, plc_series: outForm.plc_series || "Q",
+                   bit_type: outForm.bit_type || "M", bit_no: String(outForm.bit_no).trim(),
+                   enabled: outForm.enabled };
+    if (outEdit) await api(`/call-outputs/${outEdit}`, { method: "PUT", body: JSON.stringify(body) });
+    else await api("/call-outputs", { method: "POST", body: JSON.stringify(body) });
+    setOutForm({ department:"", plc_ip:"", plc_port:5007, plc_series:"Q", bit_type:"M", bit_no:"", enabled:true });
+    setOutEdit(null);
+  }, outEdit ? "Mapping updated" : "Mapping added");
 
   // ── Output mapping (default template OR a specific PLC) ──
   const [outFor, setOutFor] = useState({ type: "default", id: null, name: "Default template" });
@@ -486,7 +509,7 @@ export default function AndonSystem() {
 
         <div className="an-body">
           <div className="an-tabs">
-            {[["board","Live Board"],["faults","Fault History"],["config","Configuration"],["reports","Reports"]]
+            {[["board","Live Board"],["faults","Fault History"],["config","Configuration"],["callout","Call → Output"],["reports","Reports"]]
               .filter(([k]) => canAccess(TAB_KEY[k]))
               .map(([k, l]) => (
               <button key={k} className={`an-tab${tab === k ? " on" : ""}`} onClick={() => setTab(k)}>{l}</button>
@@ -700,6 +723,77 @@ export default function AndonSystem() {
                   {outFor.type === "plc" && assignTab === "fault" && mapEditor("fault", faultRows, "Fault")}
                 </>
               )}
+            </>
+          )}
+
+          {tab === "callout" && canAccess("andon-config") && (
+            <>
+              <div className="an-card" style={{ marginBottom:14 }}>
+                <b style={{ fontSize:14 }}>{outEdit ? "Edit mapping" : "Add Call → Output mapping"}</b>
+                <div style={{ fontSize:12, color:"#64748b", marginTop:5, lineHeight:1.5 }}>
+                  Kisi department ki call active hote hi ek output PLC ka bit <b>ON</b>, call band hone par <b>OFF</b>.
+                  <br /><b>Maintenance</b> & <b>Tool Room</b> ka bit <b>response (acknowledge)</b> aate hi off ho jaata hai;
+                  baaki (Quality / Material / …) call <b>band</b> hone par. (Ye alag config hai — ANDON reading isse alag chalti hai.)
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginTop:12 }}>
+                  <div><label className="an-lbl">Department (call)</label>
+                    <select className="an-in" style={{ width:"100%" }} value={outForm.department} onChange={(e) => setOutForm({ ...outForm, department: e.target.value })}>
+                      <option value="">— select —</option>{depts.map((d) => <option key={d.id} value={d.name}>{d.name}</option>)}
+                    </select>
+                    {outForm.department && <div style={{ fontSize:11, fontWeight:700, marginTop:3,
+                                                          color: outDeptOffAck(outForm.department) ? "#b45309" : "#0e7490" }}>
+                      {outDeptOffAck(outForm.department) ? "Bit off: response (acknowledge) pe" : "Bit off: call band hone pe"}
+                    </div>}
+                  </div>
+                  <div><label className="an-lbl">Output PLC IP</label><input className="an-in" style={{ width:"100%" }} value={outForm.plc_ip} onChange={(e) => setOutForm({ ...outForm, plc_ip: e.target.value })} placeholder="192.168.30.120" /></div>
+                  <div><label className="an-lbl">Port</label><input className="an-in" style={{ width:"100%" }} type="number" value={outForm.plc_port} onChange={(e) => setOutForm({ ...outForm, plc_port: e.target.value })} placeholder="5007" /></div>
+                  <div><label className="an-lbl">Series</label>
+                    <select className="an-in" style={{ width:"100%" }} value={outForm.plc_series || "Q"} onChange={(e) => setOutForm({ ...outForm, plc_series: e.target.value })}>
+                      {["Q","FX5U","iQ-R","L"].map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select></div>
+                  <div><label className="an-lbl">Bit type</label>
+                    <select className="an-in" style={{ width:"100%" }} value={outForm.bit_type} onChange={(e) => setOutForm({ ...outForm, bit_type: e.target.value })}>
+                      {["M","Y","L","B","F","V","S"].map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select></div>
+                  <div><label className="an-lbl">Bit no</label><input className="an-in" style={{ width:"100%" }} value={outForm.bit_no} onChange={(e) => setOutForm({ ...outForm, bit_no: e.target.value })} placeholder="e.g. 100" /></div>
+                </div>
+                <div className="an-row" style={{ marginTop:12 }}>
+                  <label style={{ fontSize:13, fontWeight:700, display:"flex", alignItems:"center", gap:6 }}>
+                    <input type="checkbox" checked={outForm.enabled} onChange={(e) => setOutForm({ ...outForm, enabled: e.target.checked })} /> Enabled (write this bit)
+                  </label>
+                  <div style={{ marginLeft:"auto" }} />
+                  {outEdit && <button className="an-btn gh" onClick={() => { setOutEdit(null); setOutForm({ department:"", plc_ip:"", plc_port:5007, plc_series:"Q", bit_type:"M", bit_no:"", enabled:true }); }}>Cancel</button>}
+                  <button className="an-btn" disabled={!outForm.department || !outForm.plc_ip.trim() || !String(outForm.bit_no).trim()} onClick={saveOut}>{outEdit ? "Save" : "+ Add mapping"}</button>
+                </div>
+              </div>
+
+              <div className="an-card">
+                <b style={{ fontSize:14 }}>Mappings ({outs.length})</b>
+                <table className="an-tbl">
+                  <thead><tr><th>Department</th><th>Output PLC</th><th>Bit</th><th>Off trigger</th><th>Bit now</th><th>Write</th><th>Status</th><th></th></tr></thead>
+                  <tbody>
+                    {outs.length === 0 && <tr><td colSpan={8} style={{ color:"#94a3b8", padding:16, textAlign:"center" }}>Koi mapping nahi — upar se add karo.</td></tr>}
+                    {outs.map((o) => (
+                      <tr key={o.id}>
+                        <td style={{ fontWeight:700 }}>{o.department}</td>
+                        <td style={{ fontFamily:"monospace" }}>{o.plc_ip}:{o.plc_port}<span style={{ marginLeft:6, fontSize:10, fontWeight:700, color:"#64748b", background:"#f1f5f9", padding:"1px 6px", borderRadius:99 }}>{o.plc_series}</span></td>
+                        <td style={{ fontFamily:"monospace", fontWeight:700 }}>{o.bit_type}{o.bit_no}</td>
+                        <td style={{ fontSize:12 }}>{o.off_on_ack ? "Response pe" : "Call-end pe"}</td>
+                        <td>{o.bit_on === true ? <span style={{ color:"#16a34a", fontWeight:800 }}>● ON</span> : o.bit_on === false ? <span style={{ color:"#94a3b8", fontWeight:700 }}>OFF</span> : <span style={{ color:"#cbd5e1" }}>—</span>}</td>
+                        <td>{o.online === true ? <span style={{ color:"#16a34a", fontSize:12, fontWeight:700 }}>ok</span> : o.online === false ? <span style={{ color:"#dc2626", fontSize:12, fontWeight:700 }}>fail</span> : <span style={{ color:"#94a3b8", fontSize:12 }}>—</span>}</td>
+                        <td><span className="an-chip" style={{ padding:"2px 9px", background: o.enabled ? "#dcfce7" : "#fee2e2", color: o.enabled ? "#16a34a" : "#dc2626" }}>{o.enabled ? "Enabled" : "Disabled"}</span></td>
+                        <td style={{ whiteSpace:"nowrap" }}>
+                          <button className="an-btn gh sm" onClick={() => { setOutEdit(o.id); setOutForm({ department:o.department, plc_ip:o.plc_ip, plc_port:o.plc_port, plc_series:o.plc_series, bit_type:o.bit_type, bit_no:o.bit_no, enabled:o.enabled }); }}>Edit</button>{" "}
+                          <button className="an-x" onClick={() => wrap(() => api(`/call-outputs/${o.id}`, { method:"DELETE" }), "Mapping removed")}>×</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div style={{ fontSize:11.5, color:"#94a3b8", marginTop:10 }}>
+                  "Bit now" / "Write" tabhi update hote hain jab writer chal raha ho — yaani jis backend pe poller ON hai (production). Dev pe poller OFF hai to yahan "—" dikhega, par config save/edit yahin se hota hai.
+                </div>
+              </div>
             </>
           )}
 

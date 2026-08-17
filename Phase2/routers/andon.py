@@ -647,6 +647,7 @@ def _start_plc_poller():
     _plc_poller_started = True
     threading.Thread(target=_plc_poll_loop, daemon=True, name="andon-plc-poller").start()
     threading.Thread(target=_slip_sweep_loop, daemon=True, name="andon-slip-sweep").start()
+    threading.Thread(target=_andon_output_loop, daemon=True, name="andon-output-writer").start()
 
 
 def start_workers():
@@ -665,6 +666,212 @@ def start_workers():
         print("[ANDON] poller DISABLED (ANDON_POLL_ENABLED=0) — not polling the PLC")
         return
     _start_plc_poller()
+
+
+# ════════════════════════════════════════════════════════════════════
+#  CALL → PLC OUTPUT  (SEPARATE config)
+#  Mirror each department's LIVE andon call onto a bit of an OUTPUT PLC:
+#  bit ON while the call is active, OFF when it ends.  Maintenance / Tool
+#  Room turn OFF as soon as the call is ACKNOWLEDGED (response received);
+#  every other department stays ON until the call actually ends.
+#  This WRITES to a PLC, so it runs ONLY where the poller runs
+#  (start_workers → ANDON_POLL_ENABLED); a dev box never writes.
+# ════════════════════════════════════════════════════════════════════
+_OUT_CONN   = {}     # {(ip,port): mc}   persistent WRITE connections (separate pool)
+_OUT_RETRY  = {}     # {(ip,port): monotonic ts}
+_OUT_STATE  = {}     # {mapping_id: {ip,port,series,bit_type,bit_no,on,online,checked}}
+# departments that have an ACK output (DO2/DO4) → bit off on RESPONSE, not on end.
+_ACK_DEPTS  = {"maintenance", "tool room", "toolroom"}
+_OUT_ENSURED = False
+
+
+def _dept_off_on_ack(dept):
+    return (dept or "").strip().lower() in _ACK_DEPTS
+
+
+def _ensure_output():
+    global _OUT_ENSURED
+    if _OUT_ENSURED:
+        return
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS andon_call_output (
+                id          SERIAL PRIMARY KEY,
+                department  TEXT NOT NULL,
+                plc_ip      TEXT NOT NULL,
+                plc_port    INTEGER DEFAULT 5007,
+                plc_series  TEXT    DEFAULT 'Q',
+                bit_type    TEXT NOT NULL,
+                bit_no      TEXT NOT NULL,
+                enabled     BOOLEAN DEFAULT TRUE,
+                created_at  TIMESTAMP DEFAULT NOW()
+            )""")
+        conn.commit()
+    _OUT_ENSURED = True
+
+
+def _out_write_bit(ip, port, series, bit_type, bit_no, value):
+    """Write ONE bit to an output PLC (persistent connection + backoff).
+    Pure MC bit-WRITE, separate pool from the ANDON read poller.  True on ok."""
+    key = (ip, int(port or 5007))
+    mc = _OUT_CONN.get(key)
+    if mc is None:
+        if _time.monotonic() < _OUT_RETRY.get(key, 0):
+            return False
+        if not _reachable(ip, key[1], timeout=0.4):
+            _OUT_RETRY[key] = _time.monotonic() + _PLC_RETRY_SECS
+            return False
+        try:
+            mc = _connect({"series": series or "Q", "plc_ip": ip, "plc_port": key[1]})
+            _OUT_CONN[key] = mc
+            _OUT_RETRY.pop(key, None)
+        except Exception:
+            _OUT_RETRY[key] = _time.monotonic() + _PLC_RETRY_SECS
+            return False
+    try:
+        mc.batchwrite_bitunits(headdevice=f"{(bit_type or '').upper()}{bit_no}",
+                               values=[1 if value else 0])
+        return True
+    except Exception:
+        try: mc.close()
+        except Exception: pass
+        _OUT_CONN.pop(key, None)
+        _OUT_RETRY[key] = _time.monotonic() + 1
+        return False
+
+
+def _andon_output_write_once():
+    """One cycle: every enabled mapping → decide bit (department call active?) →
+    write it.  Mappings that were ON but got disabled/deleted are turned OFF."""
+    _ensure_output()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT id, department, plc_ip, plc_port, plc_series, bit_type, bit_no
+                         FROM andon_call_output WHERE enabled=TRUE""")
+        maps = cur.fetchall()
+        cur.execute("""SELECT COALESCE(dep.name, e.display_name) AS dept,
+                              COUNT(*) FILTER (WHERE e.acknowledged_at IS NULL) AS unacked,
+                              COUNT(*) AS total
+                         FROM andon_system e
+                         LEFT JOIN andon_departments dep ON dep.id = e.department_id
+                        WHERE e.state='OPEN' GROUP BY 1""")
+        live = {(r["dept"] or "").strip().lower(): r for r in cur.fetchall()}
+    enabled_ids = set()
+    for m in maps:
+        enabled_ids.add(m["id"])
+        row = live.get((m["department"] or "").strip().lower())
+        if _dept_off_on_ack(m["department"]):
+            # Maintenance / Tool Room → ON only while an UN-acknowledged call is
+            # open (bit off the moment response arrives).
+            want = bool(row and int(row["unacked"] or 0) > 0)
+        else:
+            # Quality / Material / … → ON while ANY open call exists.
+            want = bool(row and int(row["total"] or 0) > 0)
+        ok = _out_write_bit(m["plc_ip"], m["plc_port"], m["plc_series"],
+                            m["bit_type"], m["bit_no"], want)
+        _OUT_STATE[m["id"]] = {"ip": m["plc_ip"], "port": m["plc_port"], "series": m["plc_series"],
+                               "bit_type": m["bit_type"], "bit_no": m["bit_no"],
+                               "on": want if ok else _OUT_STATE.get(m["id"], {}).get("on"),
+                               "online": ok, "checked": datetime.now().isoformat(timespec="seconds")}
+    # a mapping that was ON but is no longer enabled/present → force its bit OFF once
+    for oid in list(_OUT_STATE.keys()):
+        if oid in enabled_ids:
+            continue
+        st = _OUT_STATE[oid]
+        if st.get("on"):
+            _out_write_bit(st.get("ip"), st.get("port"), st.get("series"),
+                          st.get("bit_type"), st.get("bit_no"), False)
+        _OUT_STATE.pop(oid, None)
+
+
+def _andon_output_loop():
+    """DEDICATED thread — mirror ANDON calls onto output PLC bits every ~1s.
+    Started only from _start_plc_poller (i.e. only when polling is enabled)."""
+    while True:
+        try:
+            _andon_output_write_once()
+        except Exception as e:
+            print(f"[ANDON-OUT] {e}")
+        _time.sleep(1.0)
+
+
+class CallOutputIn(BaseModel):
+    department: str
+    plc_ip: str
+    plc_port: Optional[int] = 5007
+    plc_series: Optional[str] = "Q"
+    bit_type: str
+    bit_no: str
+    enabled: bool = True
+
+
+@router.get("/call-outputs")
+def list_call_outputs(user=Depends(get_current_user)):
+    _ensure_output()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT id, department, plc_ip, plc_port, plc_series,
+                              bit_type, bit_no, enabled, created_at
+                         FROM andon_call_output ORDER BY id""")
+        rows = cur.fetchall()
+    for r in rows:
+        r["off_on_ack"] = _dept_off_on_ack(r["department"])   # response pe off?
+        st = _OUT_STATE.get(r["id"], {})
+        r["bit_on"] = st.get("on")        # True=bit ON abhi · False=OFF · None=abhi tak nahi likha
+        r["online"] = st.get("online")    # write reachable?
+        if isinstance(r.get("created_at"), datetime):
+            r["created_at"] = r["created_at"].isoformat()
+    return rows
+
+
+@router.post("/call-outputs", status_code=201)
+def add_call_output(body: CallOutputIn, user=Depends(get_current_user)):
+    _ensure_output()
+    dept = (body.department or "").strip()
+    ip   = (body.plc_ip or "").strip()
+    bt   = (body.bit_type or "").strip().upper()
+    bn   = str(body.bit_no or "").strip()
+    if not (dept and ip and bt and bn):
+        raise HTTPException(400, "department, plc_ip, bit_type, bit_no required")
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""INSERT INTO andon_call_output
+                         (department, plc_ip, plc_port, plc_series, bit_type, bit_no, enabled)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                    (dept, ip, body.plc_port or 5007, body.plc_series or "Q", bt, bn, bool(body.enabled)))
+        new_id = cur.fetchone()[0]; conn.commit()
+    return {"id": new_id}
+
+
+@router.put("/call-outputs/{oid}")
+def edit_call_output(oid: int, body: CallOutputIn, user=Depends(get_current_user)):
+    _ensure_output()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""UPDATE andon_call_output
+                          SET department=%s, plc_ip=%s, plc_port=%s, plc_series=%s,
+                              bit_type=%s, bit_no=%s, enabled=%s
+                        WHERE id=%s""",
+                    ((body.department or "").strip(), (body.plc_ip or "").strip(),
+                     body.plc_port or 5007, body.plc_series or "Q",
+                     (body.bit_type or "").strip().upper(), str(body.bit_no or "").strip(),
+                     bool(body.enabled), oid))
+        if cur.rowcount == 0:
+            raise HTTPException(404, "mapping not found")
+        conn.commit()
+    # let the writer re-evaluate + turn off the old bit if this got disabled
+    return {"ok": True}
+
+
+@router.delete("/call-outputs/{oid}")
+def del_call_output(oid: int, user=Depends(get_current_user)):
+    _ensure_output()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM andon_call_output WHERE id=%s", (oid,))
+        conn.commit()
+    return {"ok": True}
 
 
 def _ensure_tables():
