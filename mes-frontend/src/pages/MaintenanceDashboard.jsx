@@ -297,7 +297,7 @@ export default function MaintenanceDashboard() {
           .md-body    { max-width:none; padding:16px 26px 12px; }
           .md-topbar  { padding:0 26px; }
           .md-title   { font-size:28px; }
-          .md-tiles   { grid-template-columns:repeat(2, minmax(0,1fr)); gap:14px; margin-bottom:12px; }
+          .md-tiles   { grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px; margin-bottom:12px; }
           .md-section { margin-bottom:12px; }
           .md-cols    { margin-bottom:12px !important; gap:12px !important; }
           /* both columns full-width — no empty space beside PM This Month */
