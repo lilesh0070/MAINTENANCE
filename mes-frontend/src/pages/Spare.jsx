@@ -437,11 +437,6 @@ export default function Spare() {
               </table>
             </div>
           </div>
-
-          <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 8 }}>
-            Ye sirf report hai — entry yahan se nahi hoti. Spare data ab sirf Manual Break Down Slip aur
-            Log Book se aata hai (maintenance_spare table). Galat spare dikhe to wahin theek karo jahan bhara tha.
-          </div>
         </div>
       </div>
     </>
