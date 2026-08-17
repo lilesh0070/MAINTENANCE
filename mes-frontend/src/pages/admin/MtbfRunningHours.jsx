@@ -1,10 +1,9 @@
-/* admin/MtbfRunningHours.jsx — MTBF Calculation (simple).
+/* admin/MtbfRunningHours.jsx — MTBF Calculation (minimal).
 
-   Opened from the KPI Targets page.  Pick a Financial Year + a machine, type
-   its running (operating) hours, Save.  Breakdown count comes automatically
-   from the register, and MTBF = running_hours / breakdowns.  Saved rows list
-   below with a Delete. */
-import { useState, useEffect, useCallback, useMemo } from "react";
+   Opened from the KPI Targets page.  One row: type a machine, type its running
+   (operating) hours, Save.  Breakdown count comes automatically from the
+   register; MTBF = running_hours / breakdowns.  Saved rows list below. */
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { api } from "../../api/client";
 import { Card, Btn, Select, Input, Spinner, EmptyState } from "./ui";
@@ -27,30 +26,11 @@ const td  = { padding: "8px 10px", whiteSpace: "nowrap", color: "#0f172a" };
 export function MtbfRunningHours({ toast, readOnly = false, onBack }) {
   const { token } = useAuth();
   const [fy, setFy]   = useState(FYS.includes(DEFAULT_FY) ? DEFAULT_FY : FYS[FYS.length - 1]);
-  const [master, setMaster] = useState([]);
-  const [zone, setZone] = useState("");
-  const [line, setLine] = useState("");
-  const [machineNo, setMachineNo] = useState("");
-  const [hours, setHours] = useState("");
-  const [rows, setRows] = useState([]);          // saved rows for the FY
+  const [machine, setMachine] = useState("");
+  const [hours, setHours]     = useState("");
+  const [rows, setRows]       = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving]   = useState(false);
-
-  useEffect(() => {
-    if (!token) return;
-    api.get("/api/machines/", token).then(m => setMaster(Array.isArray(m) ? m : [])).catch(() => {});
-  }, [token]);
-
-  const zoneOpts = useMemo(
-    () => [...new Set(master.map(m => m.zone_name).filter(Boolean))].sort(), [master]);
-  const lineOpts = useMemo(
-    () => zone ? [...new Set(master.filter(m => m.zone_name === zone).map(m => m.line_name).filter(Boolean))].sort() : [],
-    [master, zone]);
-  const machineOpts = useMemo(
-    () => (zone && line)
-      ? master.filter(m => m.zone_name === zone && m.line_name === line)
-              .sort((a, b) => (a.serial_no || 0) - (b.serial_no || 0))
-      : [], [master, zone, line]);
 
   const load = useCallback(async () => {
     if (!fy) { setRows([]); return; }
@@ -65,21 +45,17 @@ export function MtbfRunningHours({ toast, readOnly = false, onBack }) {
   useEffect(() => { load(); }, [load]);
 
   const save = async () => {
-    if (!machineNo) { toast?.("Pehle machine chuno", "err"); return; }
+    if (!machine.trim()) { toast?.("Machine daalo", "err"); return; }
     if (hours === "" || isNaN(parseFloat(hours))) { toast?.("Running hours daalo", "err"); return; }
-    const m = machineOpts.find(x => String(x.machine_no) === String(machineNo));
     setSaving(true);
     try {
       await api.post("/api/machine-running-hours/", {
         fy,
-        entries: [{
-          zone_name: zone, line_name: line, serial_no: m?.serial_no ?? null,
-          machine_no: machineNo, machine_name: m?.machine_name ?? null,
-          running_hours: parseFloat(hours),
-        }],
+        entries: [{ machine_no: machine.trim(), machine_name: machine.trim(),
+                    running_hours: parseFloat(hours) }],
       }, token);
       toast?.("Saved", "ok");
-      setHours("");
+      setMachine(""); setHours("");
       await load();
     } catch (e) { toast?.(e.message || "Save failed", "err"); }
     finally     { setSaving(false); }
@@ -95,15 +71,9 @@ export function MtbfRunningHours({ toast, readOnly = false, onBack }) {
       {/* Header — back + title + FY */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end",
                     marginBottom: 14, gap: 16, flexWrap: "wrap" }}>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <Btn size="sm" onClick={onBack}>← Back</Btn>
-            <div style={{ fontWeight: 700, fontSize: 15, color: "#0f172a" }}>MTBF Calculation</div>
-          </div>
-          <div style={{ fontSize: 11, color: "#64748b", marginTop: 6, maxWidth: 720, lineHeight: 1.5 }}>
-            Machine chuno, uske <b>running (operating) hours</b> daalo aur Save karo.
-            MTBF = running hours ÷ breakdowns (breakdowns register se automatic).
-          </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Btn size="sm" onClick={onBack}>← Back</Btn>
+          <div style={{ fontWeight: 700, fontSize: 15, color: "#0f172a" }}>MTBF Calculation</div>
         </div>
         <div>
           <label style={lbl}>Financial Year *</label>
@@ -113,43 +83,18 @@ export function MtbfRunningHours({ toast, readOnly = false, onBack }) {
         </div>
       </div>
 
-      {/* Entry form: Zone → Line → Machine + Running Hours + Save */}
+      {/* One row: Machine | Running Hours | Save */}
       {!readOnly && (
         <Card>
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-            <div>
-              <label style={lbl}>Zone</label>
-              <Select value={zone} onChange={e => { setZone(e.target.value); setLine(""); setMachineNo(""); }}
-                      style={{ minWidth: 160 }}>
-                <option value="">Select zone…</option>
-                {zoneOpts.map(z => <option key={z} value={z}>{z}</option>)}
-              </Select>
-            </div>
-            <div>
-              <label style={lbl}>Line</label>
-              <Select value={line} onChange={e => { setLine(e.target.value); setMachineNo(""); }}
-                      style={{ minWidth: 160 }} disabled={!zone}>
-                <option value="">Select line…</option>
-                {lineOpts.map(l => <option key={l} value={l}>{l}</option>)}
-              </Select>
-            </div>
-            <div>
-              <label style={lbl}>Machine</label>
-              <Select value={machineNo} onChange={e => setMachineNo(e.target.value)}
-                      style={{ minWidth: 200 }} disabled={!line}>
-                <option value="">Select machine…</option>
-                {machineOpts.map(m => (
-                  <option key={m.machine_no} value={m.machine_no}>
-                    {m.machine_no}{m.machine_name ? ` — ${m.machine_name}` : ""}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <label style={lbl}>Running Hours *</label>
-              <Input type="number" min="0" step="any" value={hours} placeholder="e.g. 1200"
-                     onChange={e => setHours(e.target.value)} style={{ width: 140 }} />
-            </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <Input value={machine} placeholder="Machine"
+                   onChange={e => setMachine(e.target.value)}
+                   onKeyDown={e => e.key === "Enter" && save()}
+                   style={{ width: 240 }} />
+            <Input type="number" min="0" step="any" value={hours} placeholder="Running hours"
+                   onChange={e => setHours(e.target.value)}
+                   onKeyDown={e => e.key === "Enter" && save()}
+                   style={{ width: 160 }} />
             <Btn variant="primary" onClick={save} disabled={saving}>
               {saving ? "Saving…" : "Save"}
             </Btn>
@@ -163,15 +108,14 @@ export function MtbfRunningHours({ toast, readOnly = false, onBack }) {
       </div>
       <Card>
         {loading ? <Spinner /> : rows.length === 0 ? (
-          <EmptyState text="Abhi kuch save nahi hua" sub={`FY ${fy} ke liye machine + running hours daalo`} />
+          <EmptyState text="Abhi kuch save nahi hua" sub={`FY ${fy} — machine + running hours daalo`} />
         ) : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ color: "#64748b", fontSize: 10, fontWeight: 800, letterSpacing: ".06em",
                              textTransform: "uppercase", borderBottom: "2px solid #eef2f7" }}>
-                  <th style={th}>Machine No</th>
-                  <th style={th}>Machine Name</th>
+                  <th style={th}>Machine</th>
                   <th style={{ ...th, textAlign: "right" }}>Running Hours</th>
                   <th style={{ ...th, textAlign: "right" }}>Breakdowns</th>
                   <th style={{ ...th, textAlign: "right" }}>MTBF (hrs)</th>
@@ -181,8 +125,7 @@ export function MtbfRunningHours({ toast, readOnly = false, onBack }) {
               <tbody>
                 {rows.map(r => (
                   <tr key={r.id} style={{ borderTop: "1px solid #eef2f7" }}>
-                    <td style={{ ...td, fontWeight: 700 }}>{r.machine_no}</td>
-                    <td style={{ ...td, color: "#475569", whiteSpace: "normal" }}>{r.machine_name}</td>
+                    <td style={{ ...td, fontWeight: 700, whiteSpace: "normal" }}>{r.machine_no}</td>
                     <td style={{ ...td, textAlign: "right" }}>{r.running_hours}</td>
                     <td style={{ ...td, textAlign: "right", fontWeight: 700,
                                  color: r.breakdowns > 0 ? "#dc2626" : "#94a3b8" }}>{r.breakdowns}</td>
