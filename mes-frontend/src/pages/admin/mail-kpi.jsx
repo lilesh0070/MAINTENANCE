@@ -10,6 +10,7 @@ import {
   PageHeading, Card, Pill, Btn, FF, Input, Select,
   Modal, ModalActions, Toast, EmptyState, Spinner, ExcelImportButton,
 } from "./ui";
+import { MtbfRunningHours } from "./MtbfRunningHours";
 
 
 // ─── KPI TARGETS PAGE (Maintenance) ───────────────────────────
@@ -63,6 +64,7 @@ export function KpiTargetsPage({ toast, readOnly = false }) {
   // KPI filter buttons between the form and the saved list — the list shows
   // only the selected KPI's targets.  Default on refresh = MTTR.
   const [kpiFilter, setKpiFilter] = useState("mttr_minutes");
+  const [showMtbf, setShowMtbf]   = useState(false);   // MTBF Calculation sub-page toggle
 
   const EMPTY = {
     fy: MKT_DEFAULT_FY,
@@ -216,6 +218,7 @@ export function KpiTargetsPage({ toast, readOnly = false }) {
     .concat(readOnly ? [] : ["Actions"]);
 
   if (!ready) return <Spinner />;
+  if (showMtbf) return <MtbfRunningHours toast={toast} readOnly={readOnly} onBack={() => setShowMtbf(false)} />;
 
   return (
     <div>
@@ -226,6 +229,9 @@ export function KpiTargetsPage({ toast, readOnly = false }) {
           <div style={{fontSize:11,color:"#64748b",marginTop:2,maxWidth:760,lineHeight:1.5}}>
             Pick a <b>Financial Year</b>, choose a tab (<b>Zone / Line / Machine</b>), set the scope
             from the <b>Machine Master List</b>, pick a <b>KPI</b>, enter the <b>Target value</b> and Save.
+          </div>
+          <div style={{marginTop:10}}>
+            <Btn size="sm" onClick={() => setShowMtbf(true)}>📊 MTBF Calculation — machine running hours</Btn>
           </div>
         </div>
         <div style={{display:"flex",alignItems:"flex-end",gap:12,flexWrap:"wrap"}}>
