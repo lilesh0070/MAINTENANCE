@@ -117,8 +117,6 @@ export function MtbfRunningHours({ toast, readOnly = false, onBack }) {
                              textTransform: "uppercase", borderBottom: "2px solid #eef2f7" }}>
                   <th style={th}>Machine</th>
                   <th style={{ ...th, textAlign: "right" }}>Running Hours</th>
-                  <th style={{ ...th, textAlign: "right" }}>Breakdowns</th>
-                  <th style={{ ...th, textAlign: "right" }}>MTBF (hrs)</th>
                   {!readOnly && <th style={{ ...th, textAlign: "right" }}>Action</th>}
                 </tr>
               </thead>
@@ -127,12 +125,6 @@ export function MtbfRunningHours({ toast, readOnly = false, onBack }) {
                   <tr key={r.id} style={{ borderTop: "1px solid #eef2f7" }}>
                     <td style={{ ...td, fontWeight: 700, whiteSpace: "normal" }}>{r.machine_no}</td>
                     <td style={{ ...td, textAlign: "right" }}>{r.running_hours}</td>
-                    <td style={{ ...td, textAlign: "right", fontWeight: 700,
-                                 color: r.breakdowns > 0 ? "#dc2626" : "#94a3b8" }}>{r.breakdowns}</td>
-                    <td style={{ ...td, textAlign: "right", fontWeight: 800,
-                                 color: r.mtbf != null ? "#16a34a" : "#94a3b8" }}>
-                      {r.mtbf != null ? r.mtbf : "—"}
-                    </td>
                     {!readOnly && (
                       <td style={{ ...td, textAlign: "right" }}>
                         <Btn size="sm" variant="danger" onClick={() => del(r.id)}>Delete</Btn>
