@@ -105,20 +105,30 @@ export default function MaintenanceCAPA() {
         else if (sr) sr.textContent = "";
       });
     };
-    const compact = () => {            // pull the whole filled rows up — no gaps
+    // a row is fillable ONLY if the row above has a cause → no skipping (row 1 open,
+    // row 2 opens when row 1 filled, and so on).
+    const updateEnabled = () => {
+      let prevFilled = true;
+      rows.forEach((r) => {
+        COLS.forEach((c) => { const el = q(r, c); if (el) el.disabled = !prevFilled; });
+        const cause = q(r, 4);
+        prevFilled = prevFilled && !!(cause && String(cause.value).trim() !== "");
+      });
+    };
+    const compact = () => {            // clear a middle row → pull the rest up (no gaps)
       const kept = rows.filter((r) => { const c = q(r, 4); return c && String(c.value).trim() !== ""; })
                        .map((r) => COLS.map((c) => (q(r, c) ? q(r, c).value : "")));
       rows.forEach((r, i) => {
         const row = kept[i] || ["", "", "", ""];
         COLS.forEach((c, j) => { const el = q(r, c); if (el && el.value !== row[j]) el.value = row[j]; });
       });
-      recompute();
+      recompute(); updateEnabled();
     };
-    const onInput = (e) => { if (e.target.classList && e.target.classList.contains("dv-cause")) recompute(); };
+    const onInput = (e) => { if (e.target.classList && e.target.classList.contains("dv-cause")) { recompute(); updateEnabled(); } };
     const onChange = (e) => { if (e.target.classList && e.target.classList.contains("dv-cause")) compact(); };
     form.addEventListener("input", onInput);
     form.addEventListener("change", onChange);
-    recompute();                       // initial (after prefill / load)
+    recompute(); updateEnabled();      // initial (after prefill / load)
     return () => { form.removeEventListener("input", onInput); form.removeEventListener("change", onChange); };
   }, [view, prefill]);
 
@@ -284,6 +294,7 @@ export default function MaintenanceCAPA() {
         .qpr input.fin, .qpr textarea.fta { width:100%; box-sizing:border-box; border:none; outline:none; background:transparent; font:inherit; color:#1d4ed8; padding:1px 3px; }
         .qpr textarea.fta { resize:none; overflow:hidden; line-height:1.15; }
         .qpr input.fin:focus, .qpr textarea.fta:focus { background:#eff6ff; }
+        .qpr input.fin:disabled, .qpr textarea.fta:disabled { background:#eef2f7; cursor:not-allowed; }
         .qpr input.fcb { width:14px; height:14px; margin-left:5px; vertical-align:middle; cursor:pointer; accent-color:#1d4ed8; }
         .qpr .pbox { position:relative; min-height:90px; height:100%; display:flex; align-items:center; justify-content:center; gap:8px; }
         .qpr .pbox .pimg { display:none; max-width:100%; max-height:230px; }
