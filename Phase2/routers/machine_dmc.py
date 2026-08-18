@@ -30,7 +30,7 @@ department users, not just admins, so mutations are NOT admin-gated here; the
 frontend `readOnly` flag controls who sees the edit UI.
 """
 from datetime import date, datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 import json
 
 from fastapi import APIRouter, Depends, Query, HTTPException
@@ -729,8 +729,8 @@ def dmc_save_fill(body: DmcFill, user=Depends(get_current_user)):
                 if not _locked(d):
                     days[str(d)] = v
             for d, v in (e.get("reasons") or {}).items():
-                if not _locked(d):
-                    rz[str(d)] = v
+                if not _locked(d) and str(v or "").strip():
+                    rz[str(d)] = v      # empty se existing (Line-Leader-filled) reason wipe na ho
             merged_entries.append({**e, "days": days, "reasons": rz})
         for pid, e in prev_by_id.items():             # points the client didn't send
             if pid not in seen:
@@ -851,6 +851,11 @@ class DmcVerify(BaseModel):
     # the Line Leader's OWN points for this date (resp = LINE LEADER), merged
     # into the sheet in this same locked transaction before it flips VERIFIED
     entries:         List[dict] = []
+    # Line Leader fills the reason for the OPERATOR's ✗ (NG) marks here (operator
+    # ab NG bina reason chhod deta) — { "<point_id>": "reason" } for THIS date.
+    # Applied onto the stored NG cells before the VERIFIED flip; a date can't be
+    # verified while any ✗ on it still has no reason.
+    reason_patch:    Dict[str, str] = {}
 
 
 @router.get("/pending-verify")
@@ -945,11 +950,45 @@ def dmc_verify_day(body: DmcVerify, user=Depends(get_current_user)):
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "No filled sheet for this machine / month")
-        # the Line Leader's own points go in FIRST, while the date is still open
-        if body.entries:
-            merged = _merge_add_only(row.get("entries") or [], body.entries)
-            cur.execute("UPDATE machine_dmc_filled SET entries=%s WHERE id=%s",
-                        (json.dumps(merged), row["id"]))
+        # the Line Leader's own points go in FIRST, while the date is still open;
+        # no own entries → this just returns the stored entries (copied).
+        merged = _merge_add_only(row.get("entries") or [], body.entries or [])
+
+        # Line Leader fills the OPERATOR's ✗ reasons for THIS date (reason_patch)
+        # — only onto cells that are actually NG on `key`.
+        patch = body.reason_patch or {}
+        for e in merged:
+            if str(e.get("id")) in patch and \
+               str((e.get("days") or {}).get(key) or "").upper() == "NG":
+                rz = dict(e.get("reasons") or {})
+                rz[key] = str(patch[str(e.get("id"))] or "").strip()
+                e["reasons"] = rz
+
+        # GATE — is date ka koi bhi ✗ (NG) bina reason ke ho to verify BLOCK
+        # (operator + line-leader dono ke NG cover — server-side enforce).
+        missing = [e for e in merged
+                   if str((e.get("days") or {}).get(key) or "").upper() == "NG"
+                   and not str((e.get("reasons") or {}).get(key) or "").strip()]
+        if missing:
+            raise HTTPException(400,
+                f"{len(missing)} Not-OK (✗) point(s) on this date still have no reason — "
+                f"fill every ✗ reason before verifying.")
+
+        cur.execute("UPDATE machine_dmc_filled SET entries=%s WHERE id=%s",
+                    (json.dumps(merged), row["id"]))
+
+        # keep the NG table's reason in sync for this date's rows (NG Point page /
+        # reports read it) — rows already exist from the operator's save-explode.
+        ng_date = f"{body.sheet_month}-{int(body.day):02d}"
+        for e in merged:
+            if str((e.get("days") or {}).get(key) or "").upper() == "NG":
+                cur.execute("""UPDATE machine_dmc_fill_ng_point SET reason=%s
+                                WHERE zone_name=%s AND line_name=%s AND machine_no=%s
+                                  AND sheet_month=%s AND point_id=%s AND ng_date=%s""",
+                            (str((e.get("reasons") or {}).get(key) or "").strip() or None,
+                             body.zone, body.line, body.machine_no,
+                             body.sheet_month, e.get("id"), ng_date))
+
         meta = row.get("day_meta") or {}
         day  = dict(meta.get(key) or {})
         day.update({

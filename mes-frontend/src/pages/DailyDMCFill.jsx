@@ -54,8 +54,7 @@ export default function DailyDMCFill() {
   const [header, setHeader] = useState({});      // rev info from /points
   const [values, setValues] = useState({});      // `${id}_${day}` -> OK|NG|<numeric>  (editable)
   const [savedValues, setSavedValues] = useState({});  // submitted history — drives frequency scheduling
-  const [reasons, setReasons] = useState({});    // `${id}_${day}` -> reason (for ✗ NG)
-  const [reasonPopup, setReasonPopup] = useState(null);  // { id, day, x, y } — reason entry popup
+  const [reasons, setReasons] = useState({});    // `${id}_${day}` -> reason (Line Leader ka bhara, display ke liye)
   const [lockedDays, setLockedDays] = useState({});      // { dayNum: true } — dates already submitted (view-only)
   const [signs, setSigns]   = useState({});      // {operator, supervisor, maintenance} — sign-off CODES
   const [dayMeta, setDayMeta]   = useState({});  // per-date sign-off + approval state
@@ -145,18 +144,16 @@ export default function DailyDMCFill() {
   const onZone = (v) => { setZone(v); setLine(""); setMno(""); };
   const onLine = (v) => { setLine(v); setMno(""); };
 
-  const onToggle = (id, day, e) => {
+  const onToggle = (id, day) => {
     setStatus("");
     const k = `${id}_${day}`;
     const cur = values[k] || "";
     const next = cur === "" ? "OK" : cur === "OK" ? "NG" : "";   // cycle blank→OK→NG→blank
     setValues((s) => { const n = { ...s }; if (next) n[k] = next; else delete n[k]; return n; });
-    if (next === "NG") {
-      // ✗ → open the reason popup right at the clicked cell
-      setReasonPopup({ id, day, x: (e && e.clientX) || 200, y: (e && e.clientY) || 200 });
-    } else {
-      // no longer NG → drop its reason + close any popup
-      setReasonPopup(null);
+    // NG ka reason ab OPERATOR nahi bharta — wo bas ✗ mark karke submit kar deta;
+    // reason baad me LINE LEADER (Supervisor Verify) bharega.  Un-NG hone par
+    // agar koi purana reason pada ho to hata do.
+    if (next !== "NG") {
       setReasons((r) => { if (!(k in r)) return r; const n = { ...r }; delete n[k]; return n; });
     }
   };
@@ -171,7 +168,6 @@ export default function DailyDMCFill() {
       return n;
     });
   };
-  const onReason = (id, day, val) => { setStatus(""); setReasons((r) => ({ ...r, [`${id}_${day}`]: val })); };
   const onSign = (k, val) => { setStatus(""); setSigns((s) => ({ ...s, [k]: String(val).toUpperCase() })); };
 
   // ── which points are DUE on this date (frequency scheduling) ──
@@ -200,15 +196,9 @@ export default function DailyDMCFill() {
       alert("Enter the Machine Operator code in the sign-off row before submitting.");
       return;
     }
-    // every ✗ (Not OK) mark on this day MUST carry a reason before saving
-    const ngMissing = points.filter((p) => values[`${p.id}_${day}`] === "NG"
-                                        && !(reasons[`${p.id}_${day}`] || "").trim());
-    if (ngMissing.length) {
-      const first = ngMissing[0];   // pop the reason box for the first one to guide the operator
-      setReasonPopup({ id: first.id, day, x: window.innerWidth / 2 - 160, y: 150 });
-      alert(`Enter a reason for ${ngMissing.length} Not-OK (✗) point(s) before saving.`);
-      return;
-    }
+    // NOTE: operator NG (✗) ke reason ki koi zaroorat NAHI — wo bas ✗ mark karke
+    // submit kar deta; har ✗ ka reason baad me LINE LEADER Supervisor Verify pe
+    // bharega (aur reason bhare bina wo date verify nahi kar paayega).
     setSaving(true);
     try {
       const entries = points.map((p) => {
@@ -351,57 +341,6 @@ export default function DailyDMCFill() {
 
         </div>
       </div>
-
-      {/* Not-OK reason popup — MANDATORY: reason bhare bina band nahi hota;
-          cancel karna ho to "Remove ✗" se cross hatao. */}
-      {reasonPopup && (() => {
-        const p = points.find((pt) => pt.id === reasonPopup.id);
-        if (!p) return null;
-        const rk = `${reasonPopup.id}_${reasonPopup.day}`;
-        const hasReason = (reasons[rk] || "").trim().length > 0;
-        const close = () => setReasonPopup(null);
-        // ✗ poori tarah hatao (cross + reason dono) — NG cancel
-        const removeNg = () => {
-          setValues((s) => { const n = { ...s }; delete n[rk]; return n; });
-          setReasons((r) => { const n = { ...r }; delete n[rk]; return n; });
-          close();
-        };
-        return (
-          <>
-            {/* overlay: reason bhara ho tabhi bahar-click se band, warna mandatory */}
-            <div onClick={() => { if (hasReason) close(); }} style={{ position: "fixed", inset: 0, zIndex: 900 }} />
-            <div onClick={(e) => e.stopPropagation()}
-                 style={{ position: "fixed", zIndex: 901, width: 320,
-                          left: Math.max(12, Math.min(reasonPopup.x, window.innerWidth - 336)),
-                          top: Math.min(reasonPopup.y + 14, window.innerHeight - 240),
-                          background: "#fff", borderRadius: 10, border: "1px solid #e2e8f0",
-                          boxShadow: "0 12px 34px rgba(15,23,42,.28)", padding: 14 }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: "#b91c1c", marginBottom: 3 }}>✗ Not OK — reason</div>
-              <div style={{ fontSize: 11.5, color: "#334155", marginBottom: 9 }}>#{p.s_no} · {p.check_point}</div>
-              <textarea autoFocus rows={3} value={reasons[rk] || ""} placeholder="Why is this Not OK?"
-                        onChange={(e) => onReason(reasonPopup.id, reasonPopup.day, e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (hasReason) close(); } }}
-                        style={{ width: "100%", boxSizing: "border-box", borderRadius: 8, border: "1px solid #cbd5e1",
-                                 padding: "7px 9px", fontSize: 12.5, fontFamily: "inherit", outline: "none", resize: "vertical" }} />
-              {!hasReason && (
-                <div style={{ fontSize: 11, color: "#b45309", marginTop: 6, lineHeight: 1.4 }}>
-                  Reason likhna zaroori hai — warna <b>Remove ✗</b> se cross hatayein.
-                </div>
-              )}
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 10 }}>
-                <button onClick={removeNg}
-                        style={{ padding: "6px 12px", borderRadius: 7, border: "1px solid #cbd5e1", background: "#fff",
-                                 color: "#64748b", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Remove ✗</button>
-                <button onClick={() => { if (hasReason) close(); }} disabled={!hasReason}
-                        style={{ padding: "6px 18px", borderRadius: 7, border: "none",
-                                 background: hasReason ? "#dc2626" : "#fca5a5", color: "#fff",
-                                 fontSize: 12, fontWeight: 800,
-                                 cursor: hasReason ? "pointer" : "not-allowed", opacity: hasReason ? 1 : 0.7 }}>Done</button>
-              </div>
-            </div>
-          </>
-        );
-      })()}
     </>
   );
 }

@@ -155,6 +155,15 @@ export default function DMCSupervisorVerify() {
     const d0 = String(sel.day);
     return sheet.points.filter((p) => sheet.ownIds.has(String(p.id)) && !sheet.values[`${p.id}_${d0}`]);
   };
+  // OPERATOR ke ✗ (NG) points is date par — operator ab reason bina ✗ chhod deta,
+  // Line Leader yahin unka reason bharega.  (ownIds = Line Leader ke apne points;
+  // baaki NG operator ke maane jaate.)
+  const operatorNg = () => {
+    if (!sheet || !sel) return [];
+    const d0 = String(sel.day);
+    return sheet.points.filter((p) => !sheet.ownIds.has(String(p.id))
+      && String(sheet.values[`${p.id}_${d0}`] || "").toUpperCase() === "NG");
+  };
 
   const verify = async () => {
     if (!supCode.trim()) { alert("Enter your supervisor code before verifying."); return; }
@@ -166,13 +175,23 @@ export default function DMCSupervisorVerify() {
     const d0 = String(sel.day);
     const noReason = ownEntries().filter((e) => e.days[d0] === "NG" && !(e.reasons[d0] || "").trim());
     if (noReason.length) { alert(`A ✗ needs a reason — ${noReason.length} point(s) without one.`); return; }
+    // operator ke har ✗ ka reason bhi bharna zaroori — warna verify block.
+    const opNg = operatorNg();
+    const opMissing = opNg.filter((p) => !(sheet.reasons[`${p.id}_${d0}`] || "").trim());
+    if (opMissing.length) {
+      alert(`Operator ne ${opMissing.length} point(s) Not-OK (✗) kiye hain — pehle unka reason bharo, phir verify.`);
+      return;
+    }
+    // { point_id: reason } — operator NG points ke reason backend ko bhejo
+    const reason_patch = {};
+    opNg.forEach((p) => { reason_patch[String(p.id)] = (sheet.reasons[`${p.id}_${d0}`] || "").trim(); });
     setSaving(true);
     try {
       await api(`/verify-day`, { method: "PUT", body: JSON.stringify({
         zone: sel.zone_name, line: sel.line_name, machine_no: sel.machine_no,
         sheet_month: sel.sheet_month, day: sel.day,
         supervisor_code: supCode.trim().toUpperCase(),
-        entries: ownEntries() }) });
+        entries: ownEntries(), reason_patch }) });
       setMsg(`✅ ${dateLabel(sel.date)} verified & submitted.`);
       setSel(null); setSheet(null);
       loadList();
@@ -188,6 +207,10 @@ export default function DMCSupervisorVerify() {
 
   const onZone = (v) => { setZone(v); setLine(""); setMno(""); setSel(null); setSheet(null); };
   const onLine = (v) => { setLine(v); setMno(""); setSel(null); setSheet(null); };
+
+  // operator NG points (is date par) + jinke reason abhi bhare nahi
+  const opNgList    = (sheet && sel && sel.status !== "VERIFIED") ? operatorNg() : [];
+  const opNgPending = opNgList.filter((p) => !(sheet?.reasons?.[`${p.id}_${String(sel?.day)}`] || "").trim());
 
   return (
     <>
@@ -330,9 +353,18 @@ export default function DMCSupervisorVerify() {
                     <input value={supCode} maxLength={20} placeholder="Enter your code"
                            onChange={(e) => setSupCode(e.target.value.toUpperCase())}
                            style={{ ...sels, minWidth: 200, letterSpacing: ".06em", fontWeight: 800 }} /></div>
-                  <button onClick={verify} disabled={saving}
-                          style={{ marginLeft: "auto", padding: "10px 24px", borderRadius: 8, border: "none",
-                                   background: "#16a34a", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}>
+                  {opNgPending.length > 0 && (
+                    <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 800, color: "#b45309",
+                                   background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "7px 11px" }}>
+                      ⚠ {opNgPending.length} operator ✗ reason pending — neeche bharo
+                    </span>
+                  )}
+                  <button onClick={verify} disabled={saving || opNgPending.length > 0}
+                          title={opNgPending.length > 0 ? "Pehle operator ke NG points ka reason bharo" : ""}
+                          style={{ marginLeft: opNgPending.length > 0 ? 10 : "auto", padding: "10px 24px", borderRadius: 8, border: "none",
+                                   background: "#16a34a", color: "#fff", fontWeight: 800, fontSize: 14,
+                                   opacity: opNgPending.length > 0 ? 0.5 : 1,
+                                   cursor: opNgPending.length > 0 ? "not-allowed" : "pointer" }}>
                     {saving ? "Verifying…" : "✅ Verify & Submit"}</button>
                 </>)}
                 <button onClick={() => { setSel(null); setSheet(null); }}
@@ -352,6 +384,44 @@ export default function DMCSupervisorVerify() {
                         hdr={{ zone: sel.zone_name, line: sel.line_name, machine_no: sel.machine_no,
                                machine_name: sel.machine_name, month: monthLabel(sel.sheet_month),
                                date: dateLabel(sel.date), rev_no: sheet.header.rev_no, rev_date: sheet.header.rev_date }} />
+
+              {/* operator ke ✗ points — Line Leader inka reason bhare (verify se pehle) */}
+              {sel.status !== "VERIFIED" && opNgList.length > 0 && (
+                <div style={{ ...card, marginTop: 12, borderLeft: "4px solid #dc2626" }}>
+                  <div style={{ fontWeight: 800, fontSize: 14, color: "#b91c1c", marginBottom: 3 }}>
+                    ✗ Operator Not-OK points — fill reason
+                    <span style={{ fontWeight: 700, color: opNgPending.length ? "#b45309" : "#16a34a" }}>
+                      {" "}({opNgPending.length ? `${opNgPending.length} pending` : "all filled ✓"})
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#64748b", marginBottom: 10 }}>
+                    Operator ne ye points ✗ (Not-OK) mark kiye — har ek ka reason bharo. Reason bhare bina ye date verify nahi hogi.
+                  </div>
+                  {opNgList.map((p) => {
+                    const rk = `${p.id}_${String(sel.day)}`;
+                    const filled = (sheet.reasons[rk] || "").trim().length > 0;
+                    return (
+                      <div key={p.id} style={{ display: "flex", gap: 10, alignItems: "flex-start",
+                                               padding: "9px 0", borderTop: "1px solid #f1f5f9" }}>
+                        <div style={{ flex: "0 0 auto", width: 22, height: 22, borderRadius: 6, marginTop: 2,
+                                      background: filled ? "#dcfce7" : "#fee2e2", color: filled ? "#16a34a" : "#dc2626",
+                                      fontWeight: 800, fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          {filled ? "✓" : "✗"}
+                        </div>
+                        <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 700, color: "#0f172a" }}>#{p.s_no} · {p.check_point}</div>
+                          {p.criteria && <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 5 }}>{p.criteria}</div>}
+                          <textarea rows={2} value={sheet.reasons[rk] || ""} placeholder="Reason for ✗ (Not OK)…"
+                                    onChange={(e) => onReason(p.id, sel.day, e.target.value)}
+                                    style={{ width: "100%", boxSizing: "border-box", borderRadius: 8,
+                                             border: `1px solid ${filled ? "#cbd5e1" : "#fca5a5"}`,
+                                             padding: "7px 9px", fontSize: 12.5, fontFamily: "inherit", resize: "vertical" }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </>) : null
           )}
         </div>
