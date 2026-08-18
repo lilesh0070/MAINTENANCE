@@ -31,6 +31,9 @@ export default function MaintenanceCAPA() {
   const formRef = useRef(null);
   const videoRef = useRef(null);
   const [cam, setCam] = useState(null);   // {box} while the live-camera modal is open
+  const [sign, setSign] = useState(null); // {box} while the signature-pad modal is open
+  const sigCanvasRef = useRef(null);
+  const drawing = useRef(false);
   const [view, setView]   = useState("list");      // "list" | "form"
   const [rows, setRows]   = useState([]);
   const [counts, setCounts] = useState({ total: 0, pending: 0, done: 0 });
@@ -100,6 +103,8 @@ export default function MaintenanceCAPA() {
     const onClick = (e) => {
       const camBtn = e.target.closest && e.target.closest(".pcam");
       if (camBtn) { const box = camBtn.closest(".pbox"); if (box) setCam({ box }); return; }
+      const sigBtn = e.target.closest && e.target.closest(".ssign");
+      if (sigBtn) { const box = sigBtn.closest(".pbox"); if (box) setSign({ box }); return; }
       if (!e.target.classList || !e.target.classList.contains("pclr")) return;
       const box = e.target.closest(".pbox");
       box.querySelector(".pdata").value = ""; const img = box.querySelector(".pimg");
@@ -132,6 +137,29 @@ export default function MaintenanceCAPA() {
     const img = box.querySelector(".pimg"); if (img) img.src = url;
     box.classList.add("has");
     setCam(null);
+  };
+
+  // signature pad — draw with mouse / touch
+  const sigPos = (e) => {
+    const c = sigCanvasRef.current; const r = c.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return { x: (t.clientX - r.left) * (c.width / r.width), y: (t.clientY - r.top) * (c.height / r.height) };
+  };
+  const sigStart = (e) => { e.preventDefault(); drawing.current = true;
+    const ctx = sigCanvasRef.current.getContext("2d"); const p = sigPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); };
+  const sigMove = (e) => { if (!drawing.current) return; e.preventDefault();
+    const ctx = sigCanvasRef.current.getContext("2d"); const p = sigPos(e);
+    ctx.lineTo(p.x, p.y); ctx.strokeStyle = "#0f172a"; ctx.lineWidth = 2; ctx.lineCap = "round"; ctx.stroke(); };
+  const sigEnd = () => { drawing.current = false; };
+  const clearSign = () => { const c = sigCanvasRef.current; if (c) c.getContext("2d").clearRect(0, 0, c.width, c.height); };
+  const saveSign = () => {
+    const c = sigCanvasRef.current; if (!c || !sign?.box) return;
+    const url = c.toDataURL("image/png");
+    const box = sign.box;
+    box.querySelector(".pdata").value = url;
+    const img = box.querySelector(".pimg"); if (img) img.src = url;
+    box.classList.add("has");
+    setSign(null);
   };
 
   const collect = () => {
@@ -230,6 +258,10 @@ export default function MaintenanceCAPA() {
         .cam-act { display:flex; gap:10px; justify-content:center; margin-top:12px; }
         .cam-shot { border:none; background:#16a34a; color:#fff; font-weight:800; font-size:14px; border-radius:8px; padding:10px 24px; cursor:pointer; }
         .cam-cxl { border:1px solid #cbd5e1; background:#fff; color:#334155; font-weight:700; font-size:13px; border-radius:8px; padding:10px 18px; cursor:pointer; }
+        .sig-canvas { border:1px solid #cbd5e1; border-radius:8px; background:#fff; touch-action:none; cursor:crosshair; display:block; max-width:86vw; }
+        .qpr .sbox { min-height:38px; }
+        .qpr .sbox .pimg { max-height:44px; }
+        .qpr .sbox .pbtn { padding:3px 10px; font-size:10.5px; }
         @media print { .cp-top { display:none; } .cp-root { background:#fff; } .cp-body { margin:0; padding:0; } .cp-sheet { box-shadow:none; } }
       `}</style>
 
@@ -319,6 +351,22 @@ export default function MaintenanceCAPA() {
             <div className="cam-act">
               <button className="cam-shot" onClick={capture}>📸 Capture</button>
               <button className="cam-cxl" onClick={() => setCam(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {sign && (
+        <div className="cam-ov" onClick={() => setSign(null)}>
+          <div className="cam-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="cam-hd">✍ Signature — mouse / finger se sign karo</div>
+            <canvas ref={sigCanvasRef} width={520} height={190} className="sig-canvas"
+                    onMouseDown={sigStart} onMouseMove={sigMove} onMouseUp={sigEnd} onMouseLeave={sigEnd}
+                    onTouchStart={sigStart} onTouchMove={sigMove} onTouchEnd={sigEnd} />
+            <div className="cam-act">
+              <button className="cam-shot" onClick={saveSign}>✓ Save Sign</button>
+              <button className="cam-cxl" onClick={clearSign}>Clear</button>
+              <button className="cam-cxl" onClick={() => setSign(null)}>Cancel</button>
             </div>
           </div>
         </div>
