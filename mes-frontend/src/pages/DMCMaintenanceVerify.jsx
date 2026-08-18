@@ -362,7 +362,8 @@ export default function DMCMaintenanceVerify() {
         const key = `${ngPop.id}_${ngPop.day}`;
         const has = (sheet?.reasons?.[key] || "").trim();
         return (
-          <div style={{ position: "fixed", inset: 0, zIndex: 900 }} onClick={() => setNgPop(null)}>
+          // reason bhare bina bahar-click se band NAHI hoga — ya reason bharo ya "Cancel ✗"
+          <div style={{ position: "fixed", inset: 0, zIndex: 900 }} onClick={() => { if (has) setNgPop(null); }}>
             <div onClick={(e) => e.stopPropagation()}
                  style={{ position: "fixed", width: 320,
                           left: Math.max(12, Math.min(ngPop.x, window.innerWidth - 336)),

@@ -432,7 +432,9 @@ export default function DMCSupervisorVerify() {
         const p = sheet?.points.find((pt) => String(pt.id) === String(ngPop.id));
         const key = `${ngPop.id}_${ngPop.day}`;
         return (
-          <div style={{ position: "fixed", inset: 0, zIndex: 900 }} onClick={() => setNgPop(null)}>
+          // reason bhare bina bahar-click se band NAHI hoga — ya reason bharo ya "Cancel ✗"
+          <div style={{ position: "fixed", inset: 0, zIndex: 900 }}
+               onClick={() => { if ((sheet?.reasons?.[key] || "").trim()) setNgPop(null); }}>
             <div onClick={(e) => e.stopPropagation()}
                  style={{ position: "fixed", width: 320,
                           left: Math.max(12, Math.min(ngPop.x, window.innerWidth - 336)),

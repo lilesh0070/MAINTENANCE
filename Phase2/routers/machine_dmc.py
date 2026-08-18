@@ -1141,6 +1141,18 @@ def dmc_maint_sign_week(body: DmcMaintSign, user=Depends(get_current_user)):
         # verified — never on a new/unverified date, which would slip past the
         # check above.
         if body.entries:
+            # Maintenance apne ✗ (NG) ka reason bharna zaroori — bina reason week
+            # sign na ho (verify-day jaisa hi server-side gate).
+            no_reason = 0
+            for e in body.entries:
+                rz = e.get("reasons") or {}
+                for d, v in (e.get("days") or {}).items():
+                    if str(v).upper() == "NG" and not str(rz.get(str(d)) or "").strip():
+                        no_reason += 1
+            if no_reason:
+                raise HTTPException(400,
+                    f"{no_reason} Not-OK (✗) maintenance point(s) have no reason — "
+                    f"fill every ✗ reason before signing.")
             want = {str(d) for e in body.entries for d, v in (e.get("days") or {}).items()
                     if str(v or "").strip()}
             stray = sorted(d for d in want
