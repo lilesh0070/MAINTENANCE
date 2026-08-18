@@ -255,8 +255,8 @@ class DmcRevBump(BaseModel):
     zone:       str
     line:       str
     machine_no: str
-    rev_no:     str
-    rev_date:   str   # YYYY-MM-DD
+    rev_no:     Optional[str] = ""   # blank → AUTO (current rev + 1)
+    rev_date:   Optional[str] = ""   # blank → aaj ki date (YYYY-MM-DD)
     new_points: List[DmcStagedPoint] = []   # staged adds — NEW rev par commit
 
 
@@ -406,17 +406,17 @@ def dmc_del_point(pid: int, user=Depends(get_current_user)):
 # ── ADMIN — revision bump ──────────────────────────────────────────────────
 @router.put("/rev")
 def dmc_bump_rev(body: DmcRevBump, user=Depends(get_current_user)):
-    """Update the revision: archive the CURRENT point set under the old rev,
-    then re-stamp the live rows with the new rev_no / rev_date.  Points are
-    carried forward (not wiped); add/delete against the new current rev after."""
+    """Update the revision: archive the CURRENT point set under the old rev, then
+    re-stamp the live rows with the new rev.  `rev_no` blank → AUTO = current rev + 1
+    (naya point add karne par khud badh jaati hai); `rev_date` blank → aaj.  Points
+    carried forward (not wiped); staged `new_points` commit at the new rev.  Pehli
+    baar (machine par koi point nahi) → seedhe Rev 1 par naye points."""
     _ensure_dmc()
+    rev_date = (body.rev_date or "").strip() or date.today().isoformat()
     try:
-        datetime.strptime(body.rev_date, "%Y-%m-%d")
+        datetime.strptime(rev_date, "%Y-%m-%d")
     except ValueError:
         raise HTTPException(400, "rev_date must be YYYY-MM-DD")
-    new_rev = _rev_int(body.rev_no)
-    if new_rev <= 0:
-        raise HTTPException(400, "Invalid new rev no")
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("""SELECT MAX(rev_no) AS r FROM machine_dmc
@@ -424,27 +424,34 @@ def dmc_bump_rev(body: DmcRevBump, user=Depends(get_current_user)):
                     (body.machine_no, body.zone, body.line))
         row = cur.fetchone()
         cur_raw = row and row["r"]
-        if cur_raw is None:
-            raise HTTPException(404, "No points for this machine")
-        if new_rev <= _rev_int(cur_raw):
-            raise HTTPException(400, f"New rev no. must be greater than current rev ({cur_raw})")
-        # archive the OLD rev (drop any partial earlier snapshot of it first)
-        cur.execute("""DELETE FROM machine_dmc_rev
-                        WHERE machine_no = %s AND zone = %s AND line = %s AND rev_no = %s""",
-                    (body.machine_no, body.zone, body.line, str(cur_raw)))
-        cur.execute("""
-            INSERT INTO machine_dmc_rev
-                (zone, line, machine_no, machine_name, s_no, category, check_point,
-                 criteria, method, resp, freq, type, format_no, rev_no, rev_date, sort_order)
-            SELECT zone, line, machine_no, machine_name, s_no, category, check_point,
-                   criteria, method, resp, freq, type, format_no, rev_no, rev_date, sort_order
-              FROM machine_dmc
-             WHERE machine_no = %s AND zone = %s AND line = %s
-        """, (body.machine_no, body.zone, body.line))
-        archived = cur.rowcount
-        cur.execute("""UPDATE machine_dmc SET rev_no = %s, rev_date = %s
-                        WHERE machine_no = %s AND zone = %s AND line = %s""",
-                    (str(new_rev), body.rev_date, body.machine_no, body.zone, body.line))
+        cur_int = _rev_int(cur_raw) if cur_raw is not None else 0
+        # rev_no diya ho to wahi (must be > current); blank → AUTO current + 1
+        if (body.rev_no or "").strip():
+            new_rev = _rev_int(body.rev_no)
+            if new_rev <= cur_int:
+                raise HTTPException(400, f"New rev no. must be greater than current rev ({cur_raw})")
+        else:
+            new_rev = cur_int + 1
+
+        archived = 0
+        if cur_raw is not None:
+            # archive the OLD rev (drop any partial earlier snapshot of it first)
+            cur.execute("""DELETE FROM machine_dmc_rev
+                            WHERE machine_no = %s AND zone = %s AND line = %s AND rev_no = %s""",
+                        (body.machine_no, body.zone, body.line, str(cur_raw)))
+            cur.execute("""
+                INSERT INTO machine_dmc_rev
+                    (zone, line, machine_no, machine_name, s_no, category, check_point,
+                     criteria, method, resp, freq, type, format_no, rev_no, rev_date, sort_order)
+                SELECT zone, line, machine_no, machine_name, s_no, category, check_point,
+                       criteria, method, resp, freq, type, format_no, rev_no, rev_date, sort_order
+                  FROM machine_dmc
+                 WHERE machine_no = %s AND zone = %s AND line = %s
+            """, (body.machine_no, body.zone, body.line))
+            archived = cur.rowcount
+            cur.execute("""UPDATE machine_dmc SET rev_no = %s, rev_date = %s
+                            WHERE machine_no = %s AND zone = %s AND line = %s""",
+                        (str(new_rev), rev_date, body.machine_no, body.zone, body.line))
         # staged naye points ko NEW rev par commit karo (atomic — rev bump ke saath hi)
         added = 0
         if body.new_points:
@@ -467,10 +474,10 @@ def dmc_bump_rev(body: DmcRevBump, user=Depends(get_current_user)):
                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """, (body.zone, body.line, body.machine_no, pt.machine_name or mn_ctx, s_no,
                       pt.category or "", pt.check_point, pt.criteria or "", pt.method or "",
-                      pt.resp or "", pt.freq or "", pt.type or "", str(new_rev), body.rev_date, so_next))
+                      pt.resp or "", pt.freq or "", pt.type or "", str(new_rev), rev_date, so_next))
                 added += 1
-    return {"ok": True, "old_rev": str(cur_raw), "new_rev": str(new_rev),
-            "archived_points": archived, "added_points": added}
+    return {"ok": True, "old_rev": (str(cur_raw) if cur_raw is not None else ""),
+            "new_rev": str(new_rev), "archived_points": archived, "added_points": added}
 
 
 @router.get("/revs")
