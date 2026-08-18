@@ -214,19 +214,55 @@ def _ensure_capa_sheet():
                 updated_at  TIMESTAMP DEFAULT NOW()
             )
         """)
+        # link a saved QPR sheet back to the ≥60-min breakdown it belongs to
+        cur.execute("ALTER TABLE maintenance_capa_sheet ADD COLUMN IF NOT EXISTS breakdown_id INTEGER")
         conn.commit()
     _CAPA_DDL = True
 
 
+@router.get("/pending")
+def capa_pending(user=Depends(get_current_user)):
+    """Every manual-slip breakdown with a ≥60-min repair (mc_down_time_minutes) is
+    a CAPA.  Returns each with machine_no / machine_name / date / model + whether
+    its QPR sheet is started (sheet_id) yet."""
+    _ensure_capa_sheet()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute(f"""
+            SELECT bd.id AS bd_id, bd.machine_no, bd.machine_name,
+                   COALESCE(bd.slip_date, bd.bd_start_date) AS bd_date,
+                   bd.model_no, bd.mc_down_time_minutes AS duration_min,
+                   bd.zone AS zone_name, bd.line AS line_name,
+                   COALESCE(NULLIF(bd.problem_observed_by_maintenance,''),
+                            bd.problem_reported_by_production, '') AS problem,
+                   s.id AS sheet_id, s.status AS sheet_status, s.qpr_no
+              FROM maintenance_breakdown_data bd
+              LEFT JOIN LATERAL (
+                   SELECT id, status, qpr_no FROM maintenance_capa_sheet
+                    WHERE breakdown_id = bd.id ORDER BY id DESC LIMIT 1
+              ) s ON TRUE
+             WHERE {_MIN60}
+             ORDER BY COALESCE(bd.slip_date, bd.bd_start_date) DESC NULLS LAST, bd.id DESC
+        """)
+        rows = cur.fetchall()
+    for r in rows:
+        if r.get("bd_date"):
+            r["bd_date"] = r["bd_date"].isoformat()
+        r["duration_min"] = _num(r["duration_min"])
+    pend = sum(1 for r in rows if not r["sheet_id"])
+    return {"rows": rows, "total": len(rows), "pending": pend, "done": len(rows) - pend}
+
+
 class CapaSheet(BaseModel):
-    id:         Optional[int] = None
-    data:       dict = {}
-    qpr_no:     Optional[str] = ""
-    machine_no: Optional[str] = ""
-    zone:       Optional[str] = ""
-    line:       Optional[str] = ""
-    title:      Optional[str] = ""
-    status:     Optional[str] = "DRAFT"
+    id:           Optional[int] = None
+    data:         dict = {}
+    qpr_no:       Optional[str] = ""
+    machine_no:   Optional[str] = ""
+    zone:         Optional[str] = ""
+    line:         Optional[str] = ""
+    title:        Optional[str] = ""
+    status:       Optional[str] = "DRAFT"
+    breakdown_id: Optional[int] = None
 
 
 @router.get("/sheets")
@@ -290,10 +326,11 @@ def save_capa_sheet(body: CapaSheet, user=Depends(get_current_user)):
             sid = row[0]
         else:
             cur.execute("""INSERT INTO maintenance_capa_sheet
-                              (qpr_no, machine_no, zone, line, title, status, data, created_by, updated_by)
-                            VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s) RETURNING id""",
+                              (qpr_no, machine_no, zone, line, title, status, data,
+                               breakdown_id, created_by, updated_by)
+                            VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s) RETURNING id""",
                         (qpr_no, machine, body.zone or "", body.line or "", title, status,
-                         json.dumps(d), who, who))
+                         json.dumps(d), body.breakdown_id, who, who))
             sid = cur.fetchone()[0]
         conn.commit()
     return {"ok": True, "id": sid}
