@@ -29,6 +29,8 @@ const PREFILL = (bd) => ({
 export default function MaintenanceCAPA() {
   const { token, theme, user } = useAuth();
   const formRef = useRef(null);
+  const videoRef = useRef(null);
+  const [cam, setCam] = useState(null);   // {box} while the live-camera modal is open
   const [view, setView]   = useState("list");      // "list" | "form"
   const [rows, setRows]   = useState([]);
   const [counts, setCounts] = useState({ total: 0, pending: 0, done: 0 });
@@ -96,6 +98,8 @@ export default function MaintenanceCAPA() {
       rd.readAsDataURL(f); inp.value = "";
     };
     const onClick = (e) => {
+      const camBtn = e.target.closest && e.target.closest(".pcam");
+      if (camBtn) { const box = camBtn.closest(".pbox"); if (box) setCam({ box }); return; }
       if (!e.target.classList || !e.target.classList.contains("pclr")) return;
       const box = e.target.closest(".pbox");
       box.querySelector(".pdata").value = ""; const img = box.querySelector(".pimg");
@@ -105,6 +109,30 @@ export default function MaintenanceCAPA() {
     form.addEventListener("click", onClick);
     return () => { form.removeEventListener("change", onChange); form.removeEventListener("click", onClick); };
   }, [view]);
+
+  // live camera — open the webcam when the modal is shown, stop it on close
+  useEffect(() => {
+    if (!cam) return;
+    let stream;
+    navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment" }, audio: false })
+      .then((s) => { stream = s;
+        if (videoRef.current) { videoRef.current.srcObject = s; videoRef.current.play().catch(() => {}); } })
+      .catch((e) => { flash("Camera nahi khula: " + (e?.message || e)); setCam(null); });
+    return () => { if (stream) stream.getTracks().forEach((t) => t.stop()); };
+  }, [cam]);
+
+  const capture = () => {
+    const v = videoRef.current; if (!v || !cam?.box) return;
+    const cv = document.createElement("canvas");
+    cv.width = v.videoWidth || 640; cv.height = v.videoHeight || 480;
+    cv.getContext("2d").drawImage(v, 0, 0, cv.width, cv.height);
+    const url = cv.toDataURL("image/jpeg", 0.85);
+    const box = cam.box;
+    box.querySelector(".pdata").value = url;
+    const img = box.querySelector(".pimg"); if (img) img.src = url;
+    box.classList.add("has");
+    setCam(null);
+  };
 
   const collect = () => {
     const data = {};
@@ -194,6 +222,13 @@ export default function MaintenanceCAPA() {
         .qpr .pbtn input[type=file] { display:none; }
         .qpr .pclr { display:none; position:absolute; top:3px; right:3px; border:none; background:#dc2626; color:#fff; border-radius:6px; width:20px; height:20px; cursor:pointer; font-weight:800; line-height:1; }
         .qpr .pbox.has .pclr { display:block; }
+        .cam-ov { position:fixed; inset:0; background:rgba(15,23,42,.72); z-index:1000; display:flex; align-items:center; justify-content:center; }
+        .cam-modal { background:#fff; border-radius:14px; padding:16px; box-shadow:0 20px 60px rgba(0,0,0,.4); max-width:92vw; }
+        .cam-hd { font-weight:800; font-size:14px; color:#0f172a; margin-bottom:10px; }
+        .cam-vid { display:block; width:520px; max-width:86vw; max-height:58vh; background:#000; border-radius:10px; object-fit:contain; }
+        .cam-act { display:flex; gap:10px; justify-content:center; margin-top:12px; }
+        .cam-shot { border:none; background:#16a34a; color:#fff; font-weight:800; font-size:14px; border-radius:8px; padding:10px 24px; cursor:pointer; }
+        .cam-cxl { border:1px solid #cbd5e1; background:#fff; color:#334155; font-weight:700; font-size:13px; border-radius:8px; padding:10px 18px; cursor:pointer; }
         @media print { .cp-top { display:none; } .cp-root { background:#fff; } .cp-body { margin:0; padding:0; } .cp-sheet { box-shadow:none; } }
       `}</style>
 
@@ -271,6 +306,19 @@ export default function MaintenanceCAPA() {
           </div>
         )}
       </div>
+
+      {cam && (
+        <div className="cam-ov" onClick={() => setCam(null)}>
+          <div className="cam-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="cam-hd">📷 Camera — photo lo</div>
+            <video ref={videoRef} autoPlay playsInline muted className="cam-vid" />
+            <div className="cam-act">
+              <button className="cam-shot" onClick={capture}>📸 Capture</button>
+              <button className="cam-cxl" onClick={() => setCam(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
