@@ -123,11 +123,18 @@ export default function MaintenanceCAPA() {
         .cp-msg { font-size:12.5px; font-weight:700; color:#16a34a; }
         .cp-body { max-width:1280px; margin:16px auto; padding:0 24px; }
 
-        .cp-tbl-wrap { background:#fff; border:1px solid #e2e8f0; border-radius:14px; overflow:hidden; box-shadow:0 1px 3px rgba(15,23,42,.05); }
+        .cp-tbl-wrap { background:#fff; border:1px solid #e2e8f0; border-radius:14px; overflow-x:auto; box-shadow:0 1px 3px rgba(15,23,42,.05); }
         .cp-tbl { width:100%; border-collapse:collapse; }
         .cp-tbl th { background:#1e3a8a; color:#fff; font-size:11.5px; font-weight:700; padding:11px 14px; text-align:left; white-space:nowrap; }
         .cp-tbl td { border-bottom:1px solid #eef2f7; padding:10px 14px; font-size:12.5px; color:#334155; }
+        .cp-tbl tbody tr { cursor:pointer; }
         .cp-tbl tr:hover td { background:#f8fafc; }
+        /* long text columns clamped to ~3 lines so the QPR button stays visible */
+        .cp-clamp { max-width:230px; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; line-height:1.3; }
+        /* keep Status + QPR pinned to the right while scrolling wide rows */
+        .cp-tbl th.cp-stick, .cp-tbl td.cp-stick { position:sticky; right:0; background:#fff; box-shadow:-6px 0 8px -6px rgba(0,0,0,.15); }
+        .cp-tbl th.cp-stick { background:#1e3a8a; }
+        .cp-tbl tr:hover td.cp-stick { background:#f8fafc; }
         .cp-dur { font-weight:800; color:#dc2626; text-align:center; }
         .cp-mno { font-weight:800; color:#0f172a; }
         .cp-fill { border:none; cursor:pointer; background:${theme.accent}; color:#fff; border-radius:8px; padding:7px 15px; font-size:12.5px; font-weight:800; }
@@ -175,20 +182,21 @@ export default function MaintenanceCAPA() {
                   <th>#</th><th>Date</th><th>Zone</th><th>Line</th><th>Machine No</th>
                   <th>Problem by Maintenance</th><th>Action Taken</th>
                   <th style={{ textAlign:"center" }}>Total Time (min)</th><th>Attended By</th>
-                  <th style={{ textAlign:"center" }}>Status</th><th style={{ textAlign:"center" }}>QPR</th>
+                  <th style={{ textAlign:"center" }}>Status</th>
+                  <th className="cp-stick" style={{ textAlign:"center" }}>QPR</th>
                 </tr></thead>
                 <tbody>
                   {loading && <tr><td colSpan={11} style={{ textAlign:"center", color:"#94a3b8", padding:30 }}>Loading…</td></tr>}
                   {!loading && rows.length === 0 && <tr><td colSpan={11} style={{ textAlign:"center", color:"#94a3b8", padding:30 }}>No ≥60-min breakdowns.</td></tr>}
                   {!loading && rows.map((r, i) => (
-                    <tr key={r.bd_id}>
+                    <tr key={r.bd_id} onClick={() => fillQpr(r)} title="Click to open QPR">
                       <td>{i + 1}</td>
                       <td style={{ whiteSpace:"nowrap" }}>{r.bd_date}</td>
                       <td>{r.zone_name}</td>
                       <td>{r.line_name}</td>
                       <td className="cp-mno">{r.machine_no}</td>
-                      <td style={{ maxWidth:300 }}>{r.problem_maintenance}</td>
-                      <td style={{ maxWidth:300 }}>{r.action_taken}</td>
+                      <td><div className="cp-clamp">{r.problem_maintenance}</div></td>
+                      <td><div className="cp-clamp">{r.action_taken}</div></td>
                       <td className="cp-dur">{r.duration_min}</td>
                       <td style={{ whiteSpace:"nowrap" }}>{r.attended_by}</td>
                       <td style={{ textAlign:"center" }}>
@@ -196,10 +204,10 @@ export default function MaintenanceCAPA() {
                           ? <span className="cp-badge" style={{ background:"#dcfce7", color:"#166534" }}>Filled</span>
                           : <span className="cp-badge" style={{ background:"#fee2e2", color:"#b91c1c" }}>Pending</span>}
                       </td>
-                      <td style={{ textAlign:"center" }}>
+                      <td className="cp-stick" style={{ textAlign:"center" }}>
                         {r.sheet_id
-                          ? <button className="cp-open" onClick={() => fillQpr(r)}>Open</button>
-                          : <button className="cp-fill" onClick={() => fillQpr(r)}>Fill QPR</button>}
+                          ? <button className="cp-open" onClick={(e) => { e.stopPropagation(); fillQpr(r); }}>Open</button>
+                          : <button className="cp-fill" onClick={(e) => { e.stopPropagation(); fillQpr(r); }}>Fill QPR</button>}
                       </td>
                     </tr>
                   ))}
