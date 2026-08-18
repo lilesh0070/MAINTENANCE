@@ -88,6 +88,25 @@ export default function MaintenanceCAPA() {
     });
   }, [view, prefill]);
 
+  // Data Validation: auto Sr. No. — number the FILLED "Possible cause" rows top→bottom
+  useEffect(() => {
+    if (view !== "form" || !formRef.current) return;
+    const form = formRef.current;
+    const recompute = () => {
+      const causes = [...form.querySelectorAll(".dv-cause")].sort((a, b) => (+a.dataset.row) - (+b.dataset.row));
+      let n = 0;
+      causes.forEach((c) => {
+        const sr = form.querySelector('.dv-srno[data-row="' + c.dataset.row + '"]');
+        if (String(c.value).trim() !== "") { n += 1; if (sr) sr.textContent = n; }
+        else if (sr) sr.textContent = "";
+      });
+    };
+    const onInput = (e) => { if (e.target.classList && e.target.classList.contains("dv-cause")) recompute(); };
+    form.addEventListener("input", onInput);
+    recompute();                       // initial (after prefill / load)
+    return () => form.removeEventListener("input", onInput);
+  }, [view, prefill]);
+
   // wire the photo upload / camera widgets (uncontrolled → data-URL into a hidden input)
   useEffect(() => {
     if (view !== "form" || !formRef.current) return;
