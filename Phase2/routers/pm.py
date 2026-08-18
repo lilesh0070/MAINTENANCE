@@ -195,8 +195,8 @@ class RevBump(BaseModel):
     zone: str
     line: str
     machine_no: str
-    rev_no: str                          # must be > current (numeric)
-    rev_date: str                        # YYYY-MM-DD
+    rev_no: Optional[str] = ""            # blank → AUTO (current rev + 1)
+    rev_date: Optional[str] = ""          # blank → aaj ki date (YYYY-MM-DD)
     new_points: List[PmStagedPoint] = [] # staged adds — NEW rev par commit
 
 
@@ -269,47 +269,53 @@ def delete_check_point(pid: int, user=Depends(get_current_user)):
 
 @router.put("/check-point-rev")
 def bump_check_point_rev(body: RevBump, user=Depends(get_current_user)):
-    """Update the sheet's revision.  New rev_no must be numerically GREATER
-    than the current one.  The current points are archived under the OLD
-    rev first, so the previous revision stays viewable point-by-point."""
+    """Update the sheet's revision.  `rev_no` blank → AUTO = current rev + 1 (naya
+    point add karne par khud badhti hai); `rev_date` blank → aaj.  The current
+    points are archived under the OLD rev first, so the previous revision stays
+    viewable point-by-point.  Pehli baar (machine par koi point nahi) → seedhe
+    Rev 1, koi archive nahi."""
     _ensure_cp_rev_table()
+    rev_date_s = (body.rev_date or "").strip() or date.today().isoformat()
     try:
-        new_date = datetime.strptime(body.rev_date, "%Y-%m-%d").date()
+        new_date = datetime.strptime(rev_date_s, "%Y-%m-%d").date()
     except Exception:
         raise HTTPException(400, "rev_date must be YYYY-MM-DD")
-    new_rev = _rev_int(body.rev_no)
-    if new_rev <= 0:
-        raise HTTPException(400, "rev_no must be a number")
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("""SELECT MAX(rev_no) rev_no FROM maintenance_pm_check_point
                         WHERE zone=%s AND line=%s AND machine_no=%s""",
                     (body.zone, body.line, body.machine_no))
         ctx = cur.fetchone()
-        if not ctx or ctx["rev_no"] is None:
-            raise HTTPException(404, "no points for this machine")
-        cur_rev = _rev_int(ctx["rev_no"])
-        if new_rev <= cur_rev:
-            raise HTTPException(400,
-                f"New rev no. must be greater than the current rev ({ctx['rev_no']}).")
+        cur_raw = ctx["rev_no"] if ctx else None
+        cur_rev = _rev_int(cur_raw) if cur_raw is not None else 0
+        # rev_no diya ho to wahi (must be > current); blank → AUTO current + 1
+        if (body.rev_no or "").strip():
+            new_rev = _rev_int(body.rev_no)
+            if new_rev <= cur_rev:
+                raise HTTPException(400,
+                    f"New rev no. must be greater than the current rev ({cur_raw}).")
+        else:
+            new_rev = cur_rev + 1
         cur2 = conn.cursor()
-        # replace any earlier snapshot of the old rev with the final state
-        cur2.execute("""DELETE FROM maintenance_pm_check_point_rev
-                         WHERE zone=%s AND line=%s AND machine_no=%s AND rev_no=%s""",
-                     (body.zone, body.line, body.machine_no, ctx["rev_no"]))
-        cur2.execute("""INSERT INTO maintenance_pm_check_point_rev
-              (zone,line,machine_no,machine_name,s_no,check_point,judgement_standard,
-               method,rev_no,rev_date,sort_order)
-              SELECT zone,line,machine_no,machine_name,s_no,check_point,
-                     judgement_standard,method,rev_no,rev_date,sort_order
-                FROM maintenance_pm_check_point
-               WHERE zone=%s AND line=%s AND machine_no=%s""",
-                     (body.zone, body.line, body.machine_no))
-        archived = cur2.rowcount
-        cur2.execute("""UPDATE maintenance_pm_check_point
-                           SET rev_no=%s, rev_date=%s
-                         WHERE zone=%s AND line=%s AND machine_no=%s""",
-                     (str(new_rev), new_date, body.zone, body.line, body.machine_no))
+        archived = 0
+        if cur_raw is not None:
+            # replace any earlier snapshot of the old rev with the final state
+            cur2.execute("""DELETE FROM maintenance_pm_check_point_rev
+                             WHERE zone=%s AND line=%s AND machine_no=%s AND rev_no=%s""",
+                         (body.zone, body.line, body.machine_no, cur_raw))
+            cur2.execute("""INSERT INTO maintenance_pm_check_point_rev
+                  (zone,line,machine_no,machine_name,s_no,check_point,judgement_standard,
+                   method,rev_no,rev_date,sort_order)
+                  SELECT zone,line,machine_no,machine_name,s_no,check_point,
+                         judgement_standard,method,rev_no,rev_date,sort_order
+                    FROM maintenance_pm_check_point
+                   WHERE zone=%s AND line=%s AND machine_no=%s""",
+                         (body.zone, body.line, body.machine_no))
+            archived = cur2.rowcount
+            cur2.execute("""UPDATE maintenance_pm_check_point
+                               SET rev_no=%s, rev_date=%s
+                             WHERE zone=%s AND line=%s AND machine_no=%s""",
+                         (str(new_rev), new_date, body.zone, body.line, body.machine_no))
         # staged naye points ko NEW rev par commit karo (atomic — rev bump ke saath hi)
         added = 0
         if body.new_points:
@@ -333,8 +339,8 @@ def bump_check_point_rev(body: RevBump, user=Depends(get_current_user)):
                      (pt.method or "").strip(), str(new_rev), new_date, so_next))
                 added += 1
         conn.commit()
-    return {"ok": True, "old_rev": ctx["rev_no"], "new_rev": str(new_rev),
-            "archived_points": archived, "added_points": added}
+    return {"ok": True, "old_rev": (cur_raw if cur_raw is not None else ""),
+            "new_rev": str(new_rev), "archived_points": archived, "added_points": added}
 
 
 @router.get("/check-point-machines")

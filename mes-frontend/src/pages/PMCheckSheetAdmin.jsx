@@ -55,7 +55,7 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
   const [npMe, setNpMe]   = useState("");
   const [pending, setPending] = useState([]);   // staged naye points — rev bump par hi commit
   // rev bump form
-  const [nrNo, setNrNo]     = useState("");
+  // rev bump — rev number AUTO (current+1); sirf date settable
   const [nrDate, setNrDate] = useState(() => new Date().toISOString().slice(0, 10));
   // ── FORMAT document-control (Format No / Rev No / Rev Date) — per format ──
   const [formatDocs, setFormatDocs] = useState([]);       // [{name,label,doc_footer}]
@@ -172,18 +172,18 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
   };
 
   const bumpRev = async () => {
-    const cur = parseInt(revs.current?.rev_no || "0", 10);
-    const nxt = parseInt(nrNo, 10);
-    if (!nxt || nxt <= cur) { say(`New rev no. must be greater than the current rev (${revs.current?.rev_no || "—"})`, "err"); return; }
-    if (!nrDate) { say("Pick a rev date", "err"); return; }
-    const extra = pending.length ? `\n${pending.length} naya point is nayi rev me add hoga.` : "";
-    if (!window.confirm(`Update revision ${revs.current?.rev_no} → ${nxt}?\nCurrent points Rev ${revs.current?.rev_no} me archive honge.${extra}`)) return;
+    const nxt = parseInt(revs.current?.rev_no || "0", 10) + 1;   // AUTO — rev khud current + 1
+    const q = pending.length
+      ? `${pending.length} naya point Rev ${nxt} par save karein?\nAbhi ke points Rev ${revs.current?.rev_no || 0} me archive honge.`
+      : `Sirf revision badhein Rev ${revs.current?.rev_no || 0} → Rev ${nxt}? (koi naya point nahi)`;
+    if (!window.confirm(q)) return;
     setBusy(true);
     try {
+      // rev_no khaali bhejte hain → backend khud current+1 karta (single source of truth)
       const r = await api(`/check-point-rev`, { method: "PUT", body: JSON.stringify({
-        zone, line, machine_no: mno, rev_no: String(nxt), rev_date: nrDate, new_points: pending }) });
-      say(`Rev ${r.new_rev} ✓ — ${r.added_points || 0} naye point add, Rev ${r.old_rev} archived`);
-      setPending([]); setNrNo(""); setSelRev(""); loadRevs(); loadPoints();
+        zone, line, machine_no: mno, rev_no: "", rev_date: nrDate || "", new_points: pending }) });
+      say(`Rev ${r.new_rev} ✓ — ${r.added_points || 0} naye point add${r.old_rev ? `, Rev ${r.old_rev} archived` : ""}`);
+      setPending([]); setSelRev(""); loadRevs(); loadPoints();
     } catch (e) { say(String(e.message || e), "err"); }
     finally { setBusy(false); }
   };
@@ -288,29 +288,30 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
         )}
       </div>
 
-      {/* rev bump */}
+      {/* rev bump — rev number AUTO current+1 (manual type nahi) */}
       {canEdit && (
         <div style={{ ...card, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", borderLeft: "4px solid #2563eb" }}>
           <div style={{ fontWeight: 800, fontSize: 13, color: "#0f172a", alignSelf: "center" }}>
-            ↑ Update Revision — current: <span style={{ color: "#2563eb" }}>Rev {revs.current?.rev_no}</span> ({revs.current?.rev_date})
+            ↑ Save Revision — <span style={{ color: "#2563eb" }}>Rev {revs.current?.rev_no ?? "—"}</span>
+            {" → "}<span style={{ color: "#16a34a" }}>Rev {parseInt(revs.current?.rev_no || "0", 10) + 1}</span>
+            <span style={{ fontWeight: 600, color: "#94a3b8" }}> (auto)</span>
           </div>
-          <div><div style={{ fontSize: 10.5, fontWeight: 800, color: "#64748b", marginBottom: 4 }}>NEW REV NO. (&gt; {revs.current?.rev_no})</div>
-            <input type="number" min={parseInt(revs.current?.rev_no || "0", 10) + 1} value={nrNo}
-                   onChange={(e) => setNrNo(e.target.value)} style={{ ...sel, minWidth: 110 }} /></div>
-          <div><div style={{ fontSize: 10.5, fontWeight: 800, color: "#64748b", marginBottom: 4 }}>NEW REV DATE</div>
+          <div><div style={{ fontSize: 10.5, fontWeight: 800, color: "#64748b", marginBottom: 4 }}>REV DATE</div>
             <input type="date" value={nrDate} onChange={(e) => setNrDate(e.target.value)} style={{ ...sel, minWidth: 150 }} /></div>
           <button onClick={bumpRev} disabled={busy}
                   style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "#2563eb", color: "#fff",
                            fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
-            {busy ? "…" : "Update Revision"}</button>
-          <span style={{ fontSize: 11, color: "#94a3b8" }}>Old revision's points are archived and stay viewable from the Revision dropdown.</span>
+            {busy ? "…" : (pending.length
+              ? `Save ${pending.length} point → Rev ${parseInt(revs.current?.rev_no || "0", 10) + 1}`
+              : `Bump to Rev ${parseInt(revs.current?.rev_no || "0", 10) + 1}`)}</button>
+          <span style={{ fontSize: 11, color: "#94a3b8" }}>Rev khud +1 hoti hai; purana rev archive ho ke Revision dropdown me dikhta.</span>
         </div>
       )}
 
       {canEdit && pending.length > 0 && (
         <div style={{ ...card, marginTop: 10, borderLeft: "4px solid #d97706", background: "#fffbeb", color: "#92400e", fontSize: 12.5, fontWeight: 700, lineHeight: 1.5 }}>
-          ⚠ {pending.length} naya point <b>PENDING</b> hai — save karne ke liye upar <b>Update Revision</b> (naya rev no + date) dabao.
-          Rev bump kiye bina page chhoda / reload kiya to ye <b>hat jayenge</b>.
+          ⚠ {pending.length} naya point <b>PENDING</b> hai — upar <b>Save … → Rev {parseInt(revs.current?.rev_no || "0", 10) + 1}</b> dabao, ye naye rev number ke saath save ho jayenge.
+          Save kiye bina page chhoda / reload kiya to ye <b>hat jayenge</b>.
         </div>
       )}
 
