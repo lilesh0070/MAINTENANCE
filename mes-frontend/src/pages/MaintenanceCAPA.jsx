@@ -88,47 +88,48 @@ export default function MaintenanceCAPA() {
     });
   }, [view, prefill]);
 
-  // Data Validation: auto Sr. No. + keep filled rows CONTIGUOUS (no empty row in
-  // between).  Sr.No updates live while typing; on blur, filled rows pull up.
+  // Data Validation: auto Sr. No. + row-by-row enable (next row opens only after the
+  // previous cause is filled) + compact on clear.  Refs cached once → no per-keystroke
+  // querySelector, so no click lag.
   useEffect(() => {
     if (view !== "form" || !formRef.current) return;
     const form = formRef.current;
+    const COLS = [4, 8, 10, 12];   // cause, verification, result, remarks
     const rows = [...form.querySelectorAll(".dv-cause")].map((c) => +c.dataset.row).sort((a, b) => a - b);
-    const COLS = [4, 8, 10, 12];   // cause, verification, result, remarks (column indices)
-    const q = (r, c) => form.querySelector('[name="f_' + r + '_' + c + '"]');
+    const cell = {}, srno = {};    // cache element refs ONCE
+    rows.forEach((r) => {
+      cell[r] = {}; COLS.forEach((c) => { cell[r][c] = form.querySelector('[name="f_' + r + '_' + c + '"]'); });
+      srno[r] = form.querySelector('.dv-srno[data-row="' + r + '"]');
+    });
+    const filled = (r) => { const c = cell[r][4]; return !!(c && String(c.value).trim() !== ""); };
     const recompute = () => {
       let n = 0;
-      rows.forEach((r) => {
-        const cause = q(r, 4);
-        const sr = form.querySelector('.dv-srno[data-row="' + r + '"]');
-        if (cause && String(cause.value).trim() !== "") { n += 1; if (sr) sr.textContent = n; }
-        else if (sr) sr.textContent = "";
-      });
+      rows.forEach((r) => { const sr = srno[r]; if (filled(r)) { n += 1; if (sr) sr.textContent = n; } else if (sr) sr.textContent = ""; });
     };
-    // a row is fillable ONLY if the row above has a cause → no skipping (row 1 open,
-    // row 2 opens when row 1 filled, and so on).
     const updateEnabled = () => {
-      let prevFilled = true;
+      let prev = true;
       rows.forEach((r) => {
-        COLS.forEach((c) => { const el = q(r, c); if (el) el.disabled = !prevFilled; });
-        const cause = q(r, 4);
-        prevFilled = prevFilled && !!(cause && String(cause.value).trim() !== "");
+        const dis = !prev;
+        COLS.forEach((c) => { const el = cell[r][c]; if (el && el.disabled !== dis) el.disabled = dis; });   // write only if changed
+        prev = prev && filled(r);
       });
     };
-    const compact = () => {            // clear a middle row → pull the rest up (no gaps)
-      const kept = rows.filter((r) => { const c = q(r, 4); return c && String(c.value).trim() !== ""; })
-                       .map((r) => COLS.map((c) => (q(r, c) ? q(r, c).value : "")));
-      rows.forEach((r, i) => {
-        const row = kept[i] || ["", "", "", ""];
-        COLS.forEach((c, j) => { const el = q(r, c); if (el && el.value !== row[j]) el.value = row[j]; });
-      });
+    const hasGap = () => {          // an empty row with a filled row below it
+      let seenEmpty = false;
+      for (const r of rows) { if (!filled(r)) seenEmpty = true; else if (seenEmpty) return true; }
+      return false;
+    };
+    const compact = () => {
+      const kept = rows.filter(filled).map((r) => COLS.map((c) => (cell[r][c] ? cell[r][c].value : "")));
+      rows.forEach((r, i) => { const row = kept[i] || ["", "", "", ""];
+        COLS.forEach((c, j) => { const el = cell[r][c]; if (el && el.value !== row[j]) el.value = row[j]; }); });
       recompute(); updateEnabled();
     };
     const onInput = (e) => { if (e.target.classList && e.target.classList.contains("dv-cause")) { recompute(); updateEnabled(); } };
-    const onChange = (e) => { if (e.target.classList && e.target.classList.contains("dv-cause")) compact(); };
+    const onChange = (e) => { if (e.target.classList && e.target.classList.contains("dv-cause") && hasGap()) compact(); };
     form.addEventListener("input", onInput);
     form.addEventListener("change", onChange);
-    recompute(); updateEnabled();      // initial (after prefill / load)
+    recompute(); updateEnabled();
     return () => { form.removeEventListener("input", onInput); form.removeEventListener("change", onChange); };
   }, [view, prefill]);
 
