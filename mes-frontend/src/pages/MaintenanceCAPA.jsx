@@ -88,30 +88,29 @@ export default function MaintenanceCAPA() {
     });
   }, [view, prefill]);
 
-  // Data Validation: auto Sr. No. + row-by-row enable (next row opens only after the
-  // previous cause is filled) + compact on clear.  Refs cached once → no per-keystroke
-  // querySelector, so no click lag.
+  // Data Validation: auto Sr. No. + row-by-row lock (next row typeable only after the
+  // previous cause is filled) + compact on clear.  readOnly (not disabled) → clicks
+  // always land instantly; render runs ONLY when a row's filled-state flips → typing is
+  // zero-cost otherwise.
   useEffect(() => {
     if (view !== "form" || !formRef.current) return;
     const form = formRef.current;
     const COLS = [4, 8, 10, 12];   // cause, verification, result, remarks
     const rows = [...form.querySelectorAll(".dv-cause")].map((c) => +c.dataset.row).sort((a, b) => a - b);
-    const cell = {}, srno = {};    // cache element refs ONCE
+    const cell = {}, srno = {}, state = {};   // cache element refs + last-known filled state ONCE
     rows.forEach((r) => {
       cell[r] = {}; COLS.forEach((c) => { cell[r][c] = form.querySelector('[name="f_' + r + '_' + c + '"]'); });
       srno[r] = form.querySelector('.dv-srno[data-row="' + r + '"]');
     });
     const filled = (r) => { const c = cell[r][4]; return !!(c && String(c.value).trim() !== ""); };
-    const recompute = () => {
-      let n = 0;
-      rows.forEach((r) => { const sr = srno[r]; if (filled(r)) { n += 1; if (sr) sr.textContent = n; } else if (sr) sr.textContent = ""; });
-    };
-    const updateEnabled = () => {
-      let prev = true;
+    const render = () => {                     // Sr.No + lock the rows below the first empty one
+      let n = 0, prev = true;
       rows.forEach((r) => {
-        const dis = !prev;
-        COLS.forEach((c) => { const el = cell[r][c]; if (el && el.disabled !== dis) el.disabled = dis; });   // write only if changed
-        prev = prev && filled(r);
+        const f = filled(r);
+        const sr = srno[r]; if (f) { n += 1; if (sr) sr.textContent = n; } else if (sr) sr.textContent = "";
+        const lock = !prev;
+        COLS.forEach((c) => { const el = cell[r][c]; if (el && el.readOnly !== lock) el.readOnly = lock; });
+        state[r] = f; prev = prev && f;
       });
     };
     const hasGap = () => {          // an empty row with a filled row below it
@@ -119,17 +118,22 @@ export default function MaintenanceCAPA() {
       for (const r of rows) { if (!filled(r)) seenEmpty = true; else if (seenEmpty) return true; }
       return false;
     };
-    const compact = () => {
+    const compact = () => {         // clear a middle row → pull the rest up
       const kept = rows.filter(filled).map((r) => COLS.map((c) => (cell[r][c] ? cell[r][c].value : "")));
       rows.forEach((r, i) => { const row = kept[i] || ["", "", "", ""];
         COLS.forEach((c, j) => { const el = cell[r][c]; if (el && el.value !== row[j]) el.value = row[j]; }); });
-      recompute(); updateEnabled();
+      render();
     };
-    const onInput = (e) => { if (e.target.classList && e.target.classList.contains("dv-cause")) { recompute(); updateEnabled(); } };
+    const onInput = (e) => {        // re-render ONLY when this row's filled-state actually flips
+      const t = e.target;
+      if (!t.classList || !t.classList.contains("dv-cause")) return;
+      const r = +t.dataset.row;
+      if (filled(r) !== state[r]) render();
+    };
     const onChange = (e) => { if (e.target.classList && e.target.classList.contains("dv-cause") && hasGap()) compact(); };
     form.addEventListener("input", onInput);
     form.addEventListener("change", onChange);
-    recompute(); updateEnabled();
+    render();
     return () => { form.removeEventListener("input", onInput); form.removeEventListener("change", onChange); };
   }, [view, prefill]);
 
@@ -295,7 +299,7 @@ export default function MaintenanceCAPA() {
         .qpr input.fin, .qpr textarea.fta { width:100%; box-sizing:border-box; border:none; outline:none; background:transparent; font:inherit; color:#1d4ed8; padding:1px 3px; }
         .qpr textarea.fta { resize:none; overflow:hidden; line-height:1.15; }
         .qpr input.fin:focus, .qpr textarea.fta:focus { background:#eff6ff; }
-        .qpr input.fin:disabled, .qpr textarea.fta:disabled { background:#eef2f7; cursor:not-allowed; }
+        .qpr input.fin[readonly], .qpr textarea.fta[readonly] { background:#eef2f7; cursor:not-allowed; }
         .qpr input.fcb { width:14px; height:14px; margin-left:5px; vertical-align:middle; cursor:pointer; accent-color:#1d4ed8; }
         .qpr .pbox { position:relative; min-height:90px; height:100%; display:flex; align-items:center; justify-content:center; gap:8px; }
         .qpr .pbox .pimg { display:none; max-width:100%; max-height:230px; }
