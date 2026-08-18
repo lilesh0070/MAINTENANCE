@@ -72,7 +72,39 @@ export default function MaintenanceCAPA() {
       if (el.type === "checkbox") el.checked = (v === true || v === "on" || v === "true" || v === 1 || v === "1");
       else el.value = v;
     });
+    // reflect any loaded photo (hidden pdata value → <img>)
+    formRef.current.querySelectorAll(".pbox").forEach((box) => {
+      const d = box.querySelector(".pdata")?.value;
+      const img = box.querySelector(".pimg");
+      if (d) { if (img) img.src = d; box.classList.add("has"); }
+      else { if (img) img.removeAttribute("src"); box.classList.remove("has"); }
+    });
   }, [view, prefill]);
+
+  // wire the photo upload / camera widgets (uncontrolled → data-URL into a hidden input)
+  useEffect(() => {
+    if (view !== "form" || !formRef.current) return;
+    const form = formRef.current;
+    const onChange = (e) => {
+      const inp = e.target;
+      if (inp.type !== "file" || !inp.closest || !inp.closest(".pbox")) return;
+      const f = inp.files && inp.files[0]; if (!f) return;
+      const box = inp.closest(".pbox");
+      const rd = new FileReader();
+      rd.onload = () => { const img = box.querySelector(".pimg");
+        box.querySelector(".pdata").value = rd.result; if (img) img.src = rd.result; box.classList.add("has"); };
+      rd.readAsDataURL(f); inp.value = "";
+    };
+    const onClick = (e) => {
+      if (!e.target.classList || !e.target.classList.contains("pclr")) return;
+      const box = e.target.closest(".pbox");
+      box.querySelector(".pdata").value = ""; const img = box.querySelector(".pimg");
+      if (img) img.removeAttribute("src"); box.classList.remove("has");
+    };
+    form.addEventListener("change", onChange);
+    form.addEventListener("click", onClick);
+    return () => { form.removeEventListener("change", onChange); form.removeEventListener("click", onClick); };
+  }, [view]);
 
   const collect = () => {
     const data = {};
@@ -154,6 +186,14 @@ export default function MaintenanceCAPA() {
         .qpr textarea.fta { resize:none; overflow:hidden; line-height:1.15; }
         .qpr input.fin:focus, .qpr textarea.fta:focus { background:#eff6ff; }
         .qpr input.fcb { width:14px; height:14px; margin-left:5px; vertical-align:middle; cursor:pointer; accent-color:#1d4ed8; }
+        .qpr .pbox { position:relative; min-height:90px; height:100%; display:flex; align-items:center; justify-content:center; gap:8px; }
+        .qpr .pbox .pimg { display:none; max-width:100%; max-height:230px; }
+        .qpr .pbox.has .pimg { display:block; } .qpr .pbox.has .pbtns { display:none; }
+        .qpr .pbtns { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
+        .qpr .pbtn { display:inline-flex; align-items:center; gap:4px; border:1px dashed #94a3b8; border-radius:8px; padding:6px 12px; font-size:11px; font-weight:700; color:#475569; cursor:pointer; background:#f8fafc; }
+        .qpr .pbtn input[type=file] { display:none; }
+        .qpr .pclr { display:none; position:absolute; top:3px; right:3px; border:none; background:#dc2626; color:#fff; border-radius:6px; width:20px; height:20px; cursor:pointer; font-weight:800; line-height:1; }
+        .qpr .pbox.has .pclr { display:block; }
         @media print { .cp-top { display:none; } .cp-root { background:#fff; } .cp-body { margin:0; padding:0; } .cp-sheet { box-shadow:none; } }
       `}</style>
 
