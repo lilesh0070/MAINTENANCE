@@ -29,8 +29,10 @@ GET  /summary          {open_count, closed_count, open[], closed[]}
 POST /start/{bd_id}    Open (or resume) the CAPA-QPR for a breakdown → {qpr_id}
 """
 import json
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from database import get_conn, dict_cursor
 from auth import get_current_user
@@ -174,3 +176,136 @@ def start_capa(bd_id: int, user=Depends(get_current_user)):
             return {"qpr_id": ex["id"], "qpr_no": ex["qpr_no"], "resumed": True}
         new_id = row[0]
     return {"qpr_id": new_id, "qpr_no": next_no, "resumed": False}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NEW CAPA / QPR SHEET  (capa.xlsx format — the full fillable QUALITY PROBLEM
+# REPORT sheet).  Standalone from the breakdown-driven flow above: the whole
+# form is stored as a flat {cell_name: value} JSONB map (cell names f_<row>_<col>
+# match the generated grid).  A few key cells are mirrored into columns for the
+# list / filtering.
+# ─────────────────────────────────────────────────────────────────────────────
+_QPR_NO_KEY  = "f_4_13"    # M4  — QPR No.
+_TITLE_KEY   = "f_16_3"    # C16 — Reported Problem
+_MC_KEY      = "f_9_6"     # F9  — MACHINE_NO value
+
+_CAPA_DDL = False
+
+
+def _ensure_capa_sheet():
+    global _CAPA_DDL
+    if _CAPA_DDL:
+        return
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS maintenance_capa_sheet (
+                id          SERIAL PRIMARY KEY,
+                qpr_no      TEXT,
+                machine_no  TEXT,
+                zone        TEXT,
+                line        TEXT,
+                title       TEXT,
+                status      TEXT DEFAULT 'DRAFT',
+                data        JSONB DEFAULT '{}'::jsonb,
+                created_by  TEXT,
+                created_at  TIMESTAMP DEFAULT NOW(),
+                updated_by  TEXT,
+                updated_at  TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        conn.commit()
+    _CAPA_DDL = True
+
+
+class CapaSheet(BaseModel):
+    id:         Optional[int] = None
+    data:       dict = {}
+    qpr_no:     Optional[str] = ""
+    machine_no: Optional[str] = ""
+    zone:       Optional[str] = ""
+    line:       Optional[str] = ""
+    title:      Optional[str] = ""
+    status:     Optional[str] = "DRAFT"
+
+
+@router.get("/sheets")
+def list_capa_sheets(user=Depends(get_current_user)):
+    """Saved QPR sheets — newest first (no data blob, just the list fields)."""
+    _ensure_capa_sheet()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT id, qpr_no, machine_no, zone, line, title, status,
+                              created_by, created_at, updated_by, updated_at
+                         FROM maintenance_capa_sheet
+                        ORDER BY updated_at DESC NULLS LAST, id DESC LIMIT 500""")
+        rows = cur.fetchall()
+    for r in rows:
+        for k in ("created_at", "updated_at"):
+            if r.get(k):
+                r[k] = r[k].isoformat()
+    return {"rows": rows}
+
+
+@router.get("/sheet/{sid}")
+def get_capa_sheet(sid: int, user=Depends(get_current_user)):
+    """One saved QPR sheet with its full {cell: value} data map."""
+    _ensure_capa_sheet()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("SELECT * FROM maintenance_capa_sheet WHERE id=%s", (sid,))
+        r = cur.fetchone()
+    if not r:
+        raise HTTPException(404, "QPR sheet not found")
+    for k in ("created_at", "updated_at"):
+        if r.get(k):
+            r[k] = r[k].isoformat()
+    return r
+
+
+@router.post("/sheet")
+def save_capa_sheet(body: CapaSheet, user=Depends(get_current_user)):
+    """Create a new QPR sheet, or update an existing one (when `id` is sent).
+    The whole form rides in `data`; qpr_no / machine_no / title are pulled from
+    known cells unless the caller sent them."""
+    _ensure_capa_sheet()
+    d = body.data or {}
+    qpr_no = (body.qpr_no or str(d.get(_QPR_NO_KEY) or "")).strip()
+    machine = (body.machine_no or str(d.get(_MC_KEY) or "")).strip()
+    title = (body.title or str(d.get(_TITLE_KEY) or "")).strip()
+    status = (body.status or "DRAFT").strip() or "DRAFT"
+    who = _author(user)
+    with get_conn() as conn:
+        cur = conn.cursor()
+        if body.id:
+            cur.execute("""UPDATE maintenance_capa_sheet
+                              SET data=%s::jsonb, qpr_no=%s, machine_no=%s, zone=%s, line=%s,
+                                  title=%s, status=%s, updated_by=%s, updated_at=NOW()
+                            WHERE id=%s RETURNING id""",
+                        (json.dumps(d), qpr_no, machine, body.zone or "", body.line or "",
+                         title, status, who, body.id))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(404, "QPR sheet not found")
+            sid = row[0]
+        else:
+            cur.execute("""INSERT INTO maintenance_capa_sheet
+                              (qpr_no, machine_no, zone, line, title, status, data, created_by, updated_by)
+                            VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s) RETURNING id""",
+                        (qpr_no, machine, body.zone or "", body.line or "", title, status,
+                         json.dumps(d), who, who))
+            sid = cur.fetchone()[0]
+        conn.commit()
+    return {"ok": True, "id": sid}
+
+
+@router.delete("/sheet/{sid}")
+def delete_capa_sheet(sid: int, user=Depends(get_current_user)):
+    _ensure_capa_sheet()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM maintenance_capa_sheet WHERE id=%s", (sid,))
+        if cur.rowcount == 0:
+            raise HTTPException(404, "QPR sheet not found")
+        conn.commit()
+    return {"ok": True}
