@@ -208,6 +208,7 @@ export default function MaintenanceCAPA() {
 
         .cp-scroll { overflow-x:auto; margin-top:12px; }
         .cp-sheet { background:#fff; padding:10px; box-shadow:0 3px 16px rgba(15,23,42,.18); min-width:1000px; }
+        .cp-format { font-family:Arial, sans-serif; font-size:11.5px; font-weight:700; color:#7f1d1d; padding:8px 6px 3px; letter-spacing:.02em; }
         .qpr { width:100%; border-collapse:collapse; table-layout:fixed; font-family:Arial, sans-serif; color:#111; }
         .qpr td { overflow:hidden; word-wrap:break-word; line-height:1.15; }
         .qpr input.fin, .qpr textarea.fta { width:100%; box-sizing:border-box; border:none; outline:none; background:transparent; font:inherit; color:#1d4ed8; padding:1px 3px; }
@@ -300,7 +301,10 @@ export default function MaintenanceCAPA() {
           <div className="cp-body">
             <div className="cp-scroll">
               <form ref={formRef} onSubmit={(e) => e.preventDefault()}>
-                <div className="cp-sheet" dangerouslySetInnerHTML={{ __html: CAPA_QPR_GRID }} />
+                <div className="cp-sheet">
+                  <div dangerouslySetInnerHTML={{ __html: CAPA_QPR_GRID }} />
+                  <div className="cp-format">FORMAT NO.:- TBDI / QA / F / 006 &nbsp;&nbsp;&nbsp; REV. NO.:- 00 &nbsp;&nbsp;&nbsp; REV. DATE:- 20/03/2024</div>
+                </div>
               </form>
             </div>
           </div>
