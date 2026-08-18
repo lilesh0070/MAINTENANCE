@@ -88,23 +88,38 @@ export default function MaintenanceCAPA() {
     });
   }, [view, prefill]);
 
-  // Data Validation: auto Sr. No. — number the FILLED "Possible cause" rows top→bottom
+  // Data Validation: auto Sr. No. + keep filled rows CONTIGUOUS (no empty row in
+  // between).  Sr.No updates live while typing; on blur, filled rows pull up.
   useEffect(() => {
     if (view !== "form" || !formRef.current) return;
     const form = formRef.current;
+    const rows = [...form.querySelectorAll(".dv-cause")].map((c) => +c.dataset.row).sort((a, b) => a - b);
+    const COLS = [4, 8, 10, 12];   // cause, verification, result, remarks (column indices)
+    const q = (r, c) => form.querySelector('[name="f_' + r + '_' + c + '"]');
     const recompute = () => {
-      const causes = [...form.querySelectorAll(".dv-cause")].sort((a, b) => (+a.dataset.row) - (+b.dataset.row));
       let n = 0;
-      causes.forEach((c) => {
-        const sr = form.querySelector('.dv-srno[data-row="' + c.dataset.row + '"]');
-        if (String(c.value).trim() !== "") { n += 1; if (sr) sr.textContent = n; }
+      rows.forEach((r) => {
+        const cause = q(r, 4);
+        const sr = form.querySelector('.dv-srno[data-row="' + r + '"]');
+        if (cause && String(cause.value).trim() !== "") { n += 1; if (sr) sr.textContent = n; }
         else if (sr) sr.textContent = "";
       });
     };
+    const compact = () => {            // pull the whole filled rows up — no gaps
+      const kept = rows.filter((r) => { const c = q(r, 4); return c && String(c.value).trim() !== ""; })
+                       .map((r) => COLS.map((c) => (q(r, c) ? q(r, c).value : "")));
+      rows.forEach((r, i) => {
+        const row = kept[i] || ["", "", "", ""];
+        COLS.forEach((c, j) => { const el = q(r, c); if (el && el.value !== row[j]) el.value = row[j]; });
+      });
+      recompute();
+    };
     const onInput = (e) => { if (e.target.classList && e.target.classList.contains("dv-cause")) recompute(); };
+    const onChange = (e) => { if (e.target.classList && e.target.classList.contains("dv-cause")) compact(); };
     form.addEventListener("input", onInput);
+    form.addEventListener("change", onChange);
     recompute();                       // initial (after prefill / load)
-    return () => form.removeEventListener("input", onInput);
+    return () => { form.removeEventListener("input", onInput); form.removeEventListener("change", onChange); };
   }, [view, prefill]);
 
   // wire the photo upload / camera widgets (uncontrolled → data-URL into a hidden input)
