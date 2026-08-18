@@ -19,13 +19,13 @@ import { CAPA_QPR_GRID } from "./capaGrid";
 
 // breakdown field  →  QPR grid cell (input name)
 const PREFILL = (bd) => ({
-  f_9_6:  bd.machine_no   || "",   // MACHINE_NO
-  f_10_6: bd.machine_name || "",   // MACHINE_NAME
-  f_10_4: bd.model_no     || "",   // Model
-  f_2_13: bd.bd_date      || "",   // QPR DATE
-  f_16_3: bd.problem      || "",   // Reported Problem
-  f_zone: bd.zone_name    || "",   // ZONE
-  f_line: bd.line_name    || "",   // LINE
+  f_mno:   bd.machine_no   || "",   // MACHINE_NO
+  f_mname: bd.machine_name || "",   // MACHINE_NAME
+  f_10_4:  bd.model_no     || "",   // Model
+  f_2_13:  bd.bd_date      || "",   // QPR DATE
+  f_16_3:  bd.problem      || "",   // Reported Problem
+  f_zone:  bd.zone_name    || "",   // ZONE
+  f_line:  bd.line_name    || "",   // LINE
 });
 
 export default function MaintenanceCAPA() {

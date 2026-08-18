@@ -187,7 +187,7 @@ def start_capa(bd_id: int, user=Depends(get_current_user)):
 # ─────────────────────────────────────────────────────────────────────────────
 _QPR_NO_KEY  = "f_4_13"    # M4  — QPR No.
 _TITLE_KEY   = "f_16_3"    # C16 — Reported Problem
-_MC_KEY      = "f_9_6"     # F9  — MACHINE_NO value
+_MC_KEY      = "f_mno"     # MACHINE_NO value (machine section cell)
 
 _CAPA_DDL = False
 
