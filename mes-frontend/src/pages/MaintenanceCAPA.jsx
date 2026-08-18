@@ -62,11 +62,16 @@ export default function MaintenanceCAPA() {
   useEffect(() => { loadPending(); }, [loadPending]);
 
   // apply the prefill / loaded data whenever the FORM view opens
+  // (handles text inputs AND checkboxes)
   useEffect(() => {
     if (view !== "form" || !formRef.current) return;
     const els = formRef.current.elements;
     formRef.current.reset();
-    Object.entries(prefill || {}).forEach(([k, v]) => { if (els[k] && v != null) els[k].value = v; });
+    Object.entries(prefill || {}).forEach(([k, v]) => {
+      const el = els[k]; if (!el || v == null) return;
+      if (el.type === "checkbox") el.checked = (v === true || v === "on" || v === "true" || v === 1 || v === "1");
+      else el.value = v;
+    });
   }, [view, prefill]);
 
   const collect = () => {
@@ -148,6 +153,7 @@ export default function MaintenanceCAPA() {
         .qpr input.fin, .qpr textarea.fta { width:100%; box-sizing:border-box; border:none; outline:none; background:transparent; font:inherit; color:#1d4ed8; padding:1px 3px; }
         .qpr textarea.fta { resize:none; overflow:hidden; line-height:1.15; }
         .qpr input.fin:focus, .qpr textarea.fta:focus { background:#eff6ff; }
+        .qpr input.fcb { width:14px; height:14px; margin-left:5px; vertical-align:middle; cursor:pointer; accent-color:#1d4ed8; }
         @media print { .cp-top { display:none; } .cp-root { background:#fff; } .cp-body { margin:0; padding:0; } .cp-sheet { box-shadow:none; } }
       `}</style>
 
