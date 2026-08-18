@@ -2020,17 +2020,33 @@ def dashboard_board(user=Depends(get_current_user)):
             "     THEN CURRENT_DATE + TIME '07:00' "
             "     ELSE (CURRENT_DATE - INTERVAL '1 day') + TIME '07:00' END")
         day_end = f"(({day_start}) + INTERVAL '23 hours 30 minutes')"   # agle din 06:30
+        # Ye panel "MAINTENANCE ANDON" hai → saare stat cards bhi SIRF maintenance
+        # ke calls ginein (table pehle se maintenance-only tha).  Pehle cards har
+        # department gin lete the, isliye Other Loss ki open call bhi ACTIVE /
+        # AWAITING / LONGEST me aa jaati thi jabki table khaali dikhta tha.
+        maint_e = "COALESCE(dep.name, e.display_name) ILIKE 'maintenance'"
+        maint_h = "COALESCE(dep.name, h.display_name) ILIKE 'maintenance'"
         cur.execute(f"""
             SELECT
-              (SELECT COUNT(*) FROM andon_system WHERE state='OPEN')            AS active,
-              (SELECT COUNT(*) FROM andon_system
-                 WHERE state='OPEN' AND acknowledged_at IS NULL)                AS awaiting,
-              (SELECT COUNT(*) FROM andon_system
-                 WHERE started_at >= ({day_start}) AND started_at < {day_end})
-            + (SELECT COUNT(*) FROM andon_history
-                 WHERE started_at >= ({day_start}) AND started_at < {day_end})  AS today,
-              COALESCE((SELECT MAX(EXTRACT(EPOCH FROM (NOW() - started_at))::int)
-                          FROM andon_system WHERE state='OPEN'), 0)             AS longest_seconds
+              (SELECT COUNT(*) FROM andon_system e
+                 LEFT JOIN andon_departments dep ON dep.id = e.department_id
+                WHERE e.state='OPEN' AND {maint_e})                             AS active,
+              (SELECT COUNT(*) FROM andon_system e
+                 LEFT JOIN andon_departments dep ON dep.id = e.department_id
+                WHERE e.state='OPEN' AND e.acknowledged_at IS NULL
+                  AND {maint_e})                                                AS awaiting,
+              (SELECT COUNT(*) FROM andon_system e
+                 LEFT JOIN andon_departments dep ON dep.id = e.department_id
+                WHERE e.started_at >= ({day_start}) AND e.started_at < {day_end}
+                  AND {maint_e})
+            + (SELECT COUNT(*) FROM andon_history h
+                 LEFT JOIN andon_departments dep ON dep.id = h.department_id
+                WHERE h.started_at >= ({day_start}) AND h.started_at < {day_end}
+                  AND {maint_h})                                                AS today,
+              COALESCE((SELECT MAX(EXTRACT(EPOCH FROM (NOW() - e.started_at))::int)
+                          FROM andon_system e
+                          LEFT JOIN andon_departments dep ON dep.id = e.department_id
+                         WHERE e.state='OPEN' AND {maint_e}), 0)                AS longest_seconds
         """)
         stats = dict(cur.fetchone() or {})
 
@@ -2045,11 +2061,12 @@ def today_calls(frm: Optional[str] = Query(None, alias="from"),
                 to:  Optional[str] = None,
                 user=Depends(get_current_user)):
     """Dashboard ke "Today" card par click → us plant-day (D 07:00 → D+1 06:30)
-    ki SAARI ANDON calls (har department).  Har row: zone, line, department,
-    start-time, end-time, total-time (loss seconds).  Band ho chuke (andon_history)
-    + abhi chalu (andon_system OPEN, end = abhi) dono.  Newest first.
-    `today` stat card wahi window ginta hai, to yahan ki count us card se match
-    karti hai.  from/to na do to aaj ka plant-day.
+    ki SIRF MAINTENANCE ANDON calls (ye Maintenance panel hai — Other Loss / Quality
+    / Toolroom yahan nahi).  Har row: zone, line, department, start-time, end-time,
+    total-time (loss seconds).  Band ho chuke (andon_history) + abhi chalu
+    (andon_system OPEN, end = abhi) dono.  Newest first.  `today` stat card wahi
+    window + wahi maintenance filter ginta hai, to count modal se match karti hai.
+    from/to na do to aaj ka plant-day.
     """
     _ensure_tables()
     with get_conn() as conn:
@@ -2067,6 +2084,7 @@ def today_calls(frm: Optional[str] = Query(None, alias="from"),
               LEFT JOIN andon_departments dep ON dep.id = h.department_id
              WHERE h.started_at >= (%s::date + TIME '07:00')
                AND h.started_at <  ((%s::date + INTERVAL '1 day') + TIME '06:30')
+               AND COALESCE(dep.name, h.display_name) ILIKE 'maintenance'
             UNION ALL
             SELECT e.zone, e.line, COALESCE(dep.name, e.display_name) AS department,
                    e.started_at, NULL::timestamp AS ended_at,
@@ -2077,6 +2095,7 @@ def today_calls(frm: Optional[str] = Query(None, alias="from"),
              WHERE e.state='OPEN'
                AND e.started_at >= (%s::date + TIME '07:00')
                AND e.started_at <  ((%s::date + INTERVAL '1 day') + TIME '06:30')
+               AND COALESCE(dep.name, e.display_name) ILIKE 'maintenance'
              ORDER BY started_at DESC
         """, (f, t, f, t))
         rows = cur.fetchall()
