@@ -94,6 +94,12 @@ export default function MaintenanceCAPA() {
     const form = formRef.current;
     const onChange = (e) => {
       const inp = e.target;
+      // Yes/No checkboxes → mutually exclusive within their data-radio group
+      if (inp.type === "checkbox" && inp.dataset && inp.dataset.radio && inp.checked) {
+        form.querySelectorAll('input.fcb[data-radio="' + inp.dataset.radio + '"]')
+            .forEach((o) => { if (o !== inp) o.checked = false; });
+        return;
+      }
       if (inp.type !== "file" || !inp.closest || !inp.closest(".pbox")) return;
       const f = inp.files && inp.files[0]; if (!f) return;
       const box = inp.closest(".pbox");
