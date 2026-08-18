@@ -24,6 +24,8 @@ const PREFILL = (bd) => ({
   f_10_4: bd.model_no     || "",   // Model
   f_2_13: bd.bd_date      || "",   // QPR DATE
   f_16_3: bd.problem      || "",   // Reported Problem
+  f_zone: bd.zone_name    || "",   // ZONE
+  f_line: bd.line_name    || "",   // LINE
 });
 
 export default function MaintenanceCAPA() {
