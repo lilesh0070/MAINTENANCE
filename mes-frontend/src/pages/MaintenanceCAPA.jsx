@@ -172,9 +172,10 @@ export default function MaintenanceCAPA() {
             <div className="cp-tbl-wrap">
               <table className="cp-tbl">
                 <thead><tr>
-                  <th>#</th><th>M/C No</th><th>Machine Name</th><th>Zone</th><th>Line</th><th>Date</th>
-                  <th>Model</th><th style={{ textAlign:"center" }}>Duration (min)</th><th>Problem</th>
-                  <th style={{ textAlign:"center" }}>Status</th><th style={{ textAlign:"center" }}>Action</th>
+                  <th>#</th><th>Date</th><th>Zone</th><th>Line</th><th>Machine No</th>
+                  <th>Problem by Maintenance</th><th>Action Taken</th>
+                  <th style={{ textAlign:"center" }}>Total Time (min)</th><th>Attended By</th>
+                  <th style={{ textAlign:"center" }}>Status</th><th style={{ textAlign:"center" }}>QPR</th>
                 </tr></thead>
                 <tbody>
                   {loading && <tr><td colSpan={11} style={{ textAlign:"center", color:"#94a3b8", padding:30 }}>Loading…</td></tr>}
@@ -182,14 +183,14 @@ export default function MaintenanceCAPA() {
                   {!loading && rows.map((r, i) => (
                     <tr key={r.bd_id}>
                       <td>{i + 1}</td>
-                      <td className="cp-mno">{r.machine_no}</td>
-                      <td>{r.machine_name}</td>
+                      <td style={{ whiteSpace:"nowrap" }}>{r.bd_date}</td>
                       <td>{r.zone_name}</td>
                       <td>{r.line_name}</td>
-                      <td>{r.bd_date}</td>
-                      <td>{r.model_no || "—"}</td>
+                      <td className="cp-mno">{r.machine_no}</td>
+                      <td style={{ maxWidth:300 }}>{r.problem_maintenance}</td>
+                      <td style={{ maxWidth:300 }}>{r.action_taken}</td>
                       <td className="cp-dur">{r.duration_min}</td>
-                      <td style={{ maxWidth:240 }}>{r.problem}</td>
+                      <td style={{ whiteSpace:"nowrap" }}>{r.attended_by}</td>
                       <td style={{ textAlign:"center" }}>
                         {r.sheet_id
                           ? <span className="cp-badge" style={{ background:"#dcfce7", color:"#166534" }}>Filled</span>

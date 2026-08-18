@@ -233,6 +233,9 @@ def capa_pending(user=Depends(get_current_user)):
                    COALESCE(bd.slip_date, bd.bd_start_date) AS bd_date,
                    bd.model_no, bd.mc_down_time_minutes AS duration_min,
                    bd.zone AS zone_name, bd.line AS line_name,
+                   COALESCE(bd.problem_observed_by_maintenance, '')  AS problem_maintenance,
+                   COALESCE(bd.action_taken_on_problem, '')          AS action_taken,
+                   COALESCE(bd.bd_attended_by, '')                   AS attended_by,
                    COALESCE(NULLIF(bd.problem_observed_by_maintenance,''),
                             bd.problem_reported_by_production, '') AS problem,
                    s.id AS sheet_id, s.status AS sheet_status, s.qpr_no
