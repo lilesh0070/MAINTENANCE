@@ -236,9 +236,12 @@ export default function MaintenanceDashboard() {
   const onSubmitClosure = async (slice, phase, prodExtra) => {
     try {
       const id = closureModal.ticket.id;
+      // 2-stage: production apni half de -> PENDING_MAINTENANCE, maintenance complete -> COMPLETED
+      const stage = phase === "production" ? "PENDING_MAINTENANCE" : "COMPLETED";
       await api.post(`/api/breakdown-slips/auto/${id}/fill`,
                      { maintenance_data: phase === "maintenance" ? slice : undefined,
-                       production_data:  phase === "production" ? slice : (prodExtra || undefined) },
+                       production_data:  phase === "production" ? slice : (prodExtra || undefined),
+                       stage },
                      token);
       showToast("Slip saved ✓");
       setClosureModal(null);

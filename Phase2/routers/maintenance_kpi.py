@@ -278,6 +278,10 @@ def _build_payload(conn, start: datetime, end: datetime,
         sl_where.append("s.line = %s"); sl_params.append(line_name)
     if zone_name:
         sl_where.append("s.zone = %s"); sl_params.append(zone_name)
+    # 2-STAGE: MAIN DASHBOARD pe wahi slip dikhe jo Production apni half submit kar
+    # chuka (PENDING_MAINTENANCE / COMPLETED).  Jo abhi PENDING_PRODUCTION hai (production
+    # ne nahi bhari) wo yahan NAHI aati.  NULL = feature se pehle wali purani slips.
+    sl_where.append("(s.prod_stage IS NULL OR s.prod_stage <> 'PENDING_PRODUCTION')")
 
     cur.execute(f"""
         SELECT s.id,

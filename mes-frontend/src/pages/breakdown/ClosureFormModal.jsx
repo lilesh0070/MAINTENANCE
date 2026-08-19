@@ -1087,8 +1087,8 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                      : "Fill every field in your half before submitting"}>
                 {saving
                    ? "Submitting…"
-                   : isProduction  ? "Submit Production Half"
-                   : isMaintenance ? "Submit"
+                   : isProduction  ? "Half Breakdown Submit"
+                   : isMaintenance ? "Complete & Submit"
                                    : "Submit"}
               </Btn>
             )}

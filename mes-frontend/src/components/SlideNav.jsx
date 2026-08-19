@@ -46,6 +46,7 @@ export default function SlideNav() {
           { key: "maintenance-dashboard",   label: "Maintenance Dashboard", icon: "/dashboard-icon.png",  iconImg: true, path: "/maintenance-dashboard" },
           { key: "maintenance-kpi",         label: "Maintenance KPI",       icon: "📊",                   path: "/maintenance-kpi" },
           { key: "maintenance-breakdown",   label: "Breakdown",             icon: "🚨",                   path: "/maintenance-breakdown" },
+          { key: "maintenance-breakdown-slip", label: "Production Breakdown Slip", icon: "🏭",           path: "/production-breakdown-slip" },
           // "Breakdown Slip" sidebar item removed — the manual slip is opened
           // from the Breakdown page itself (its own button), so a separate
           // sidebar entry was a duplicate.  Route /maintenance-breakdown/new-slip
@@ -77,6 +78,7 @@ export default function SlideNav() {
         { key: "maintenance-dashboard",   label: "Maintenance Dashboard", icon: "/dashboard-icon.png",  iconImg: true, path: "/maintenance-dashboard" },
         { key: "maintenance-kpi",         label: "Maintenance KPI",       icon: "📊",                   path: "/maintenance-kpi" },
         { key: "maintenance-breakdown",   label: "Breakdown",             icon: "🚨",                   path: "/maintenance-breakdown" },
+          { key: "maintenance-breakdown-slip", label: "Production Breakdown Slip", icon: "🏭",           path: "/production-breakdown-slip" },
         { key: "skill-training",          label: "Skill & Training",      icon: "🎓",                   path: "/skill-training" },
         { key: "maintenance-historical",  label: "Historical Data",       icon: "/historical-icon.png", iconImg: true, path: "/maintenance-historical" },
         { key: "maintenance-capa",        label: "CAPA",                  icon: "🛡",                   path: "/maintenance-capa" },

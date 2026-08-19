@@ -167,6 +167,23 @@ def _ensure_table():
                           ON {AUTO_SLIP_TABLE} (andon_event_id)
                         WHERE andon_event_id IS NOT NULL""")
 
+        # ── 2-STAGE (Production → Maintenance) flow ────────────────────────
+        # prod_stage: ANDON slip banaye  → 'PENDING_PRODUCTION'
+        #             Production half submit → 'PENDING_MAINTENANCE'  (tab hi
+        #                                       MAIN DASHBOARD pe maintenance ko dikhe)
+        #             Maintenance complete → 'COMPLETED'
+        cur.execute("""SELECT 1 FROM information_schema.columns
+                        WHERE table_name=%s AND column_name='prod_stage'""", (AUTO_SLIP_TABLE,))
+        if not cur.fetchone():
+            cur.execute(f"ALTER TABLE {AUTO_SLIP_TABLE} ADD COLUMN prod_stage VARCHAR(20)")
+            # Ye feature se PEHLE bani saari slips maintenance-ready thi — unhe
+            # PENDING_MAINTENANCE karo taaki dashboard se gayab na ho jaayein.
+            cur.execute(f"UPDATE {AUTO_SLIP_TABLE} SET prod_stage='PENDING_MAINTENANCE' WHERE prod_stage IS NULL")
+            # Aage se har NAYI ANDON slip PENDING_PRODUCTION se shuru hogi.
+            cur.execute(f"ALTER TABLE {AUTO_SLIP_TABLE} ALTER COLUMN prod_stage SET DEFAULT 'PENDING_PRODUCTION'")
+        cur.execute(f"ALTER TABLE {AUTO_SLIP_TABLE} ADD COLUMN IF NOT EXISTS production_by_user_id INTEGER")
+        cur.execute(f"ALTER TABLE {AUTO_SLIP_TABLE} ADD COLUMN IF NOT EXISTS production_at TIMESTAMP")
+
         conn.commit()
     _ensured = True
 
@@ -447,6 +464,9 @@ def _slip_to_ticket(r: dict) -> dict:
 class AutoSlipFill(BaseModel):
     maintenance_data: Optional[dict] = None
     production_data:  Optional[dict] = None
+    # 2-stage flow: production apni half submit kare -> 'PENDING_MAINTENANCE',
+    # maintenance complete kare -> 'COMPLETED'.  None = sirf save, stage na badle.
+    stage:            Optional[str]  = None
 
 
 @router.get("/auto/{sid}")
@@ -460,6 +480,28 @@ def get_auto_slip(sid: int, user=Depends(get_current_user)) -> dict:
     if not r:
         raise HTTPException(404, "auto slip not found")
     return _slip_to_ticket(dict(r))
+
+
+@router.get("/stage/{stage}")
+def list_by_stage(stage: str, user=Depends(get_current_user)) -> List[dict]:
+    """2-stage flow ki list: PENDING_PRODUCTION (production tab), PENDING_MAINTENANCE
+    (maintenance ko), COMPLETED (history).  Har row me display fields + id."""
+    _ensure_table()
+    if stage not in ("PENDING_PRODUCTION", "PENDING_MAINTENANCE", "COMPLETED"):
+        raise HTTPException(400, "bad stage")
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute(f"""
+            SELECT id, zone, line, machine_no, machine_name, shift, slip_date,
+                   bd_start_date, bd_start_time, bd_received_time, bd_ok_time,
+                   mc_down_time_minutes, response_time_minutes, category,
+                   problem_reported_by_production, prod_stage, andon_event_id,
+                   production_at, submitted_at
+              FROM {AUTO_SLIP_TABLE}
+             WHERE prod_stage = %s
+             ORDER BY bd_start_date DESC NULLS LAST, bd_start_time DESC NULLS LAST, id DESC
+        """, (stage,))
+        return [dict(r) for r in cur.fetchall()]
 
 
 @router.delete("/auto/{sid}")
@@ -529,6 +571,15 @@ def fill_auto_slip(sid: int, body: AutoSlipFill, user=Depends(get_current_user))
         else:
             sets.append(f"{col} = %s")
             vals.append(_blank_to_none(value))
+
+    # 2-stage transition (stage-only update bhi allow — isliye `if not sets` se PEHLE)
+    _uid = user.get("id") if isinstance(user, dict) else None
+    if body.stage in ("PENDING_PRODUCTION", "PENDING_MAINTENANCE", "COMPLETED"):
+        sets.append("prod_stage = %s"); vals.append(body.stage)
+        if body.stage == "PENDING_MAINTENANCE":     # production ne apni half di
+            sets.append("production_by_user_id = %s"); vals.append(_uid)
+            sets.append("production_at = NOW()")
+
     if not sets:
         return {"ok": True, "id": sid, "updated": 0}
 
