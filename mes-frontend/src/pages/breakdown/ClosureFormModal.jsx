@@ -169,9 +169,18 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
     "problem_related_to",
   ]);
 
+  // PROBLEM RELATED TO tabhi lock hota hai jab ANDON ne use SET kiya ho.  Purani
+  // slips (jo is feature se pehle bani, column NULL) me dono false aate hain —
+  // unhe lock kar dete to radio na tick hota na badal paate (slip khali chhap
+  // jaati).  Aise case me maintenance ise khud chun sakta hai.
+  const _rt = ticket?.maintenance_data?.problem_related_to;
+  const relToSetByAndon = !!(_rt && (_rt.maintenance || _rt.tool_room));
+
   const fieldEditable = (key) => {
     if (readOnly) return false;
     if (LOCKED_FIELDS.has(key)) return false;   // collector-stamped times/dates stay locked
+    if (key === "problem_related_to")
+      return isAutoSlip && relToSetByAndon ? false : (isProduction ? false : isMaintenance);
     if (isAutoSlip && AUTO_LOCKED_FIELDS.has(key)) return false;  // ANDON ki date — na chhedo
     if (isProduction)  return PROD_FIELDS.has(key);
     // Maintenance-driven fill = the WHOLE slip is editable (both the upper

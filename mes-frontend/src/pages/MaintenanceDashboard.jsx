@@ -182,7 +182,10 @@ export default function MaintenanceDashboard() {
 
   const openAutoSlip = async (id, mode) => {
     try {
-      const t = await api.get(`/api/breakdown-slips/auto/${id}`, token);
+      // src EXPLICIT — dashboard hamesha maintenance table ki slips dikhata hai.
+      // (Dono auto-tables ke id alag-alag chalte hain, isliye bina src ke kabhi
+      //  galat table ki row khul sakti thi.)
+      const t = await api.get(`/api/breakdown-slips/auto/${id}?src=maintenance`, token);
       setClosureModal({ ticket: t, mode, phase: "maintenance" });
     } catch (e) {
       showToast(e.message || "Slip khul nahi payi", "err");
@@ -195,7 +198,7 @@ export default function MaintenanceDashboard() {
   const onDeleteSlip = async (id) => {
     if (!window.confirm("Ye auto-generated slip delete kar dein? Wapas nahi aayegi.")) return;
     try {
-      await api.delete(`/api/breakdown-slips/auto/${id}`, token);
+      await api.delete(`/api/breakdown-slips/auto/${id}?src=maintenance`, token);
       showToast("Slip delete ho gayi ✓");
       setSlipRefreshKey((k) => k + 1);
       reload();
@@ -241,7 +244,7 @@ export default function MaintenanceDashboard() {
       await api.post(`/api/breakdown-slips/auto/${id}/fill`,
                      { maintenance_data: phase === "maintenance" ? slice : undefined,
                        production_data:  phase === "production" ? slice : (prodExtra || undefined),
-                       stage },
+                       stage, src: "maintenance" },
                      token);
       showToast("Slip saved ✓");
       setClosureModal(null);

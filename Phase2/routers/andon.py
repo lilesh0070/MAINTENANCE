@@ -117,12 +117,6 @@ def _mins_between(a, b):
     return max(d, 0)
 
 
-def _is_maintenance(dept):
-    """Slip sirf MAINTENANCE ke call ki banti hai (Toolroom/Quality/Material/
-    Other Loss ki nahi)."""
-    return str(dept or "").strip().lower() == "maintenance"
-
-
 # Slip kis department ke call ki banti hai, aur kis TABLE me jaati hai.
 #   Maintenance call -> maintenance_auto_breakdown_slip  (main dashboard isi ko dekhta)
 #   Toolroom    call -> toolroom_auto_breakdown_slip     (dashboard pe kabhi nahi)
@@ -221,8 +215,13 @@ def _slip_insert(conn, event_id, flat, power_cut=False, table=None):
     kabhi nahi banegi.  Return: nayi slip ka id, ya None (pehle se thi).
 
     `table` = maintenance ya tool room ki AUTO table (dept se tay hoti hai)."""
-    from routers.breakdown_slips import _COLS, _blank_to_none, AUTO_SLIP_TABLE
-    tbl = table or AUTO_SLIP_TABLE
+    from routers.breakdown_slips import _COLS, _blank_to_none
+    # `table` ZAROORI hai.  Pehle yahan chup-chaap AUTO_SLIP_TABLE fallback tha —
+    # koi call-site bhoolta to TOOL ROOM ki slip maintenance table me gir jaati
+    # (aur main dashboard par dikh jaati).  Ab saaf error.
+    if not table:
+        raise ValueError("_slip_insert: `table` zaroori hai (maintenance ya toolroom)")
+    tbl = table
     cols = list(_COLS) + ["andon_event_id", "power_cut"]
     vals = [_blank_to_none(flat.get(c)) for c in _COLS] + [event_id, bool(power_cut)]
     ph = ", ".join(["%s"] * len(cols))
@@ -313,7 +312,7 @@ def auto_slip_on_close(event_id, history_id, power_cut=False):
     nahi hua tha, isliye uska OK-time bharose ke laayak nahi.
     """
     try:
-        from routers.breakdown_slips import _ensure_table, AUTO_SLIP_TABLE
+        from routers.breakdown_slips import _ensure_table
         _ensure_table()
         with get_conn() as conn:
             cur = dict_cursor(conn)
@@ -402,7 +401,7 @@ def _slip_threshold_sweep():
                       FROM andon_system e
                       LEFT JOIN andon_departments dep ON dep.id = e.department_id
                      WHERE e.state = 'OPEN'
-                       AND REPLACE(LOWER(TRIM(COALESCE(dep.name, e.display_name))), ' ', '') = %s
+                       AND REPLACE(REPLACE(LOWER(TRIM(COALESCE(dep.name, e.display_name))), ' ', ''), '_', '') = %s
                        AND e.started_at IS NOT NULL
                        AND e.started_at <= NOW() - (%s * INTERVAL '1 minute')
                        AND NOT EXISTS (

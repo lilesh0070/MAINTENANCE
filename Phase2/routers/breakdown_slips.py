@@ -148,9 +148,10 @@ def _ensure_table():
     _ensured = True
 
 
-def _ensure_auto_table(cur, AUTO_SLIP_TABLE: str):
+def _ensure_auto_table(cur, tbl: str):
     """Ek AUTO-slip table banao / upgrade karo (maintenance ya tool room —
     dono ka dhaancha bilkul same hai).  Idempotent."""
+    AUTO_SLIP_TABLE = tbl          # neeche ka poora block isi table par chalta hai
     if True:
         # LIKE ... se structure hu-ba-hu copy hota hai, isliye upar ke saare
         # columns/ALTER apne aap is table me bhi aa jaate hain.
@@ -163,6 +164,14 @@ def _ensure_auto_table(cur, AUTO_SLIP_TABLE: str):
         # table ko apna sequence do, warna dono ek hi counter share karengi.
         cur.execute(f"CREATE SEQUENCE IF NOT EXISTS {AUTO_SLIP_TABLE}_id_seq OWNED BY {AUTO_SLIP_TABLE}.id")
         cur.execute(f"ALTER TABLE {AUTO_SLIP_TABLE} ALTER COLUMN id SET DEFAULT nextval('{AUTO_SLIP_TABLE}_id_seq')")
+        # Sequence ko hamesha MAX(id) ke AAGE rakho.  Warna (DB restore, purane
+        # rows, ya explicit-id insert ke baad) sequence peeche reh jaati hai aur
+        # har naya INSERT "duplicate key" se fail hota — aur ANDON ke slip-paths
+        # exception ko sirf log karte hain, to slip banna CHUP-CHAAP band ho
+        # jaata.  Idempotent: har boot par safe.
+        cur.execute(f"""SELECT setval('{AUTO_SLIP_TABLE}_id_seq',
+                          GREATEST((SELECT COALESCE(MAX(id), 0) FROM {AUTO_SLIP_TABLE}),
+                                   (SELECT last_value FROM {AUTO_SLIP_TABLE}_id_seq)), true)""")
         cur.execute(f"""
             DO $$
             BEGIN
@@ -202,7 +211,8 @@ def _ensure_auto_table(cur, AUTO_SLIP_TABLE: str):
         #                                       MAIN DASHBOARD pe maintenance ko dikhe)
         #             Maintenance complete → 'COMPLETED'
         cur.execute("""SELECT 1 FROM information_schema.columns
-                        WHERE table_name=%s AND column_name='prod_stage'""", (AUTO_SLIP_TABLE,))
+                        WHERE table_name=%s AND column_name='prod_stage'
+                          AND table_schema = current_schema()""", (AUTO_SLIP_TABLE,))
         if not cur.fetchone():
             cur.execute(f"ALTER TABLE {AUTO_SLIP_TABLE} ADD COLUMN prod_stage VARCHAR(20)")
             # Ye feature se PEHLE bani saari slips maintenance-ready thi — unhe
@@ -546,7 +556,7 @@ def list_by_stage(stage: str, src: str = Query("maintenance"),
                        problem_reported_by_production, prod_stage, andon_event_id,
                        production_at, submitted_at
                   FROM {tbl}
-                 WHERE prod_stage = %s
+                 WHERE COALESCE(prod_stage, 'PENDING_MAINTENANCE') = %s
             """, (stage,))
             for r in cur.fetchall():
                 d = dict(r); d["src"] = s; out.append(d)
