@@ -231,6 +231,9 @@ def _slip_insert(conn, event_id, flat, power_cut=False, table=None):
         f"ON CONFLICT (andon_event_id) WHERE andon_event_id IS NOT NULL "
         f"DO NOTHING RETURNING id", vals)
     row = cur.fetchone()
+    if row:
+        from routers.breakdown_slips import sync_status
+        sync_status(cur, tbl, row[0])       # breakdown_status me line ban jaaye
     return row[0] if row else None
 
 
@@ -355,6 +358,11 @@ def auto_slip_on_close(event_id, history_id, power_cut=False):
                  flat["mc_down_time_minutes"], bool(power_cut),
                  flat["bd_received_time"], flat["response_time_minutes"], event_id))
             if cur2.rowcount:
+                from routers.breakdown_slips import sync_status
+                cur.execute(f"SELECT id FROM {_tbl} WHERE andon_event_id = %s", (event_id,))
+                _r = cur.fetchone()
+                if _r:
+                    sync_status(cur2, _tbl, _r["id"])   # state=RESOLVED + downtime
                 print(f"[ANDON-SLIP] call {event_id} band -> slip poori hui "
                       f"(ok {flat['bd_ok_time']}, down {flat['mc_down_time_minutes']} min"
                       f"{', POWER CUT' if power_cut else ''})")

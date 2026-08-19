@@ -170,63 +170,133 @@ def _ensure_table():
         for _T in (AUTO_SLIP_TABLE, TOOLROOM_SLIP_TABLE):
             _ensure_auto_table(cur, _T)
 
-        _ensure_status_view(cur)
+        _ensure_status_table(cur)
 
         conn.commit()
     _ensured = True
 
 
-def _ensure_status_view(cur):
+STATUS_TABLE = "breakdown_status"
+
+# Status row ke khaane slip row se kaise bante hain — EK hi jagah likha hai,
+# taaki insert/close/submit sab jagah bilkul same hisaab lage.
+#   {tbl} = slip table, {bd_for} = 'maintenance' | 'toolroom'
+_STATUS_SELECT = """
+    SELECT s.id, %(bd_for)s, s.andon_event_id,
+           s.bd_start_date, s.bd_start_time, s.zone, s.line, s.machine_no, s.shift,
+           s.mc_down_time_minutes,
+           CASE WHEN s.bd_ok_time IS NOT NULL THEN 'RESOLVED' ELSE 'OPEN' END,
+           CASE WHEN COALESCE(s.prod_stage,'PENDING_MAINTENANCE') = 'PENDING_PRODUCTION'
+                THEN 'PENDING' ELSE 'SUBMITTED' END,
+           CASE WHEN %(bd_for)s <> 'maintenance' THEN '-'
+                WHEN COALESCE(s.prod_stage,'PENDING_MAINTENANCE') = 'COMPLETED'
+                THEN 'SUBMITTED' ELSE 'PENDING' END,
+           CASE WHEN %(bd_for)s <> 'toolroom' THEN '-'
+                WHEN COALESCE(s.prod_stage,'PENDING_MAINTENANCE') = 'COMPLETED'
+                THEN 'SUBMITTED' ELSE 'PENDING' END,
+           s.production_at, s.submitted_at
+      FROM {tbl} s
+"""
+
+_STATUS_COLS = ("slip_id, bd_for, andon_event_id, bd_start_date, bd_start_time, zone, line, "
+                "machine_no, shift, total_downtime_min, state, prod, maint, toolroom, "
+                "production_at, submitted_at")
+
+_STATUS_UPSERT = """
+    INSERT INTO {status} ({cols})
+    {select} WHERE s.id = %(sid)s
+    ON CONFLICT (bd_for, slip_id) DO UPDATE SET
+        andon_event_id=EXCLUDED.andon_event_id, bd_start_date=EXCLUDED.bd_start_date,
+        bd_start_time=EXCLUDED.bd_start_time, zone=EXCLUDED.zone, line=EXCLUDED.line,
+        machine_no=EXCLUDED.machine_no, shift=EXCLUDED.shift,
+        total_downtime_min=EXCLUDED.total_downtime_min, state=EXCLUDED.state,
+        prod=EXCLUDED.prod, maint=EXCLUDED.maint, toolroom=EXCLUDED.toolroom,
+        production_at=EXCLUDED.production_at, submitted_at=EXCLUDED.submitted_at,
+        updated_at=NOW()
+"""
+
+
+def sync_status(cur, tbl: str, slip_id: int):
+    """Ek slip ki status-row bana/update kar do.  Har us jagah se call hota hai
+    jahan slip banti ya badalti hai (ANDON create / close / form submit)."""
+    bd_for = "toolroom" if tbl == TOOLROOM_SLIP_TABLE else "maintenance"
+    cur.execute(_STATUS_UPSERT.format(status=STATUS_TABLE, cols=_STATUS_COLS,
+                                      select=_STATUS_SELECT.format(tbl=tbl)),
+                {"bd_for": bd_for, "sid": slip_id})
+
+
+def resync_status_all(cur):
+    """Poori status table dono slip tables se dobara bana do — aur jinki slip hi
+    nahi rahi unki row hata do.  Har backend start par chalta hai, isliye agar
+    kabhi koi update chhoot bhi jaye to status apne aap theek ho jaata hai
+    (yahi is table ka sabse bada khatra tha)."""
+    for tbl in (AUTO_SLIP_TABLE, TOOLROOM_SLIP_TABLE):
+        bd_for = "toolroom" if tbl == TOOLROOM_SLIP_TABLE else "maintenance"
+        cur.execute(_STATUS_UPSERT.format(status=STATUS_TABLE, cols=_STATUS_COLS,
+                                          select=_STATUS_SELECT.format(tbl=tbl))
+                    .replace("WHERE s.id = %(sid)s", ""),
+                    {"bd_for": bd_for, "sid": None})
+        cur.execute(f"""DELETE FROM {STATUS_TABLE} st
+                         WHERE st.bd_for = %s
+                           AND NOT EXISTS (SELECT 1 FROM {tbl} s WHERE s.id = st.slip_id)""",
+                    (bd_for,))
+
+
+def _ensure_status_table(cur):
     """`breakdown_status` — har breakdown ki ek line me poori haalat.
 
-    Ye ek LIVE VIEW hai (asli table nahi): data seedha ANDON + dono slip tables
-    se banta hai, isliye hamesha sahi rehta — kahin alag copy rakhne (aur uske
-    purana pad jaane) ka sawaal hi nahi.  Query aise hi hoti hai:
         SELECT * FROM breakdown_status;
 
-    Ek row = ek breakdown jiski SLIP bani ho (2-min threshold paar).  Chhoti
-    calls (jinki slip banti hi nahi) ismein nahi aati.
+    Ek row = ek breakdown jiski SLIP bani ho (threshold paar).  Chhoti calls
+    (jinki slip banti hi nahi) ismein nahi aati.
 
-      state  : RESOLVED (call band ho chuki) ya OPEN (abhi chalu)
-      prod   : production ne apni half submit ki? (SUBMITTED / PENDING)
-      maint  : maintenance ne complete kiya?  (toolroom ki breakdown me '-')
-      toolroom: tool room ne complete kiya?   (maintenance ki breakdown me '-')
+      state   : RESOLVED (call band ho chuki) ya OPEN (abhi chalu)
+      prod    : production ne apni half submit ki?  (SUBMITTED / PENDING)
+      maint   : maintenance ne complete kiya?  (toolroom wali me '-')
+      toolroom: tool room ne complete kiya?     (maintenance wali me '-')
 
     Isse turant dikh jaata hai: "breakdown to resolve ho gaya, par slip kisi ne
-    nahi bhari" — teeno khaali honge.
+    nahi bhari" — prod/maint dono PENDING honge.
     """
+    # Pehle isi naam se VIEW tha — usse hata kar asli table banate hain.  DROP
+    # sirf tab jab wo SACH ME view ho: agar table ban chuki hai to `DROP VIEW`
+    # error deta hai (aur poora startup fail ho jaata).
     cur.execute(f"""
-        CREATE OR REPLACE VIEW breakdown_status AS
-        SELECT
-            s.andon_event_id,
-            'maintenance'::text                        AS bd_for,
-            s.bd_start_date, s.bd_start_time,
-            s.zone, s.line, s.machine_no, s.shift,
-            s.mc_down_time_minutes                     AS total_downtime_min,
-            CASE WHEN s.bd_ok_time IS NOT NULL THEN 'RESOLVED' ELSE 'OPEN' END AS state,
-            CASE WHEN COALESCE(s.prod_stage,'PENDING_MAINTENANCE') = 'PENDING_PRODUCTION'
-                 THEN 'PENDING' ELSE 'SUBMITTED' END   AS prod,
-            CASE WHEN COALESCE(s.prod_stage,'PENDING_MAINTENANCE') = 'COMPLETED'
-                 THEN 'SUBMITTED' ELSE 'PENDING' END   AS maint,
-            '-'::text                                  AS toolroom,
-            s.production_at, s.submitted_at, s.id      AS slip_id
-          FROM {AUTO_SLIP_TABLE} s
-        UNION ALL
-        SELECT
-            t.andon_event_id,
-            'toolroom'::text                           AS bd_for,
-            t.bd_start_date, t.bd_start_time,
-            t.zone, t.line, t.machine_no, t.shift,
-            t.mc_down_time_minutes                     AS total_downtime_min,
-            CASE WHEN t.bd_ok_time IS NOT NULL THEN 'RESOLVED' ELSE 'OPEN' END AS state,
-            CASE WHEN COALESCE(t.prod_stage,'PENDING_MAINTENANCE') = 'PENDING_PRODUCTION'
-                 THEN 'PENDING' ELSE 'SUBMITTED' END   AS prod,
-            '-'::text                                  AS maint,
-            CASE WHEN COALESCE(t.prod_stage,'PENDING_MAINTENANCE') = 'COMPLETED'
-                 THEN 'SUBMITTED' ELSE 'PENDING' END   AS toolroom,
-            t.production_at, t.submitted_at, t.id      AS slip_id
-          FROM {TOOLROOM_SLIP_TABLE} t
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_views WHERE viewname = '{STATUS_TABLE}') THEN
+                DROP VIEW {STATUS_TABLE};
+            END IF;
+        END $$;
     """)
+    cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS {STATUS_TABLE} (
+            id                 SERIAL PRIMARY KEY,
+            slip_id            INTEGER      NOT NULL,
+            bd_for             VARCHAR(20)  NOT NULL,   -- maintenance | toolroom
+            andon_event_id     INTEGER,
+            bd_start_date      DATE,
+            bd_start_time      VARCHAR(5),
+            zone               VARCHAR(60),
+            line               VARCHAR(60),
+            machine_no         VARCHAR(60),
+            shift              VARCHAR(20),
+            total_downtime_min INTEGER,
+            state              VARCHAR(12),             -- OPEN | RESOLVED
+            prod               VARCHAR(12),             -- PENDING | SUBMITTED
+            maint              VARCHAR(12),             -- PENDING | SUBMITTED | -
+            toolroom           VARCHAR(12),             -- PENDING | SUBMITTED | -
+            production_at      TIMESTAMP,
+            submitted_at       TIMESTAMP,
+            updated_at         TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    # ek breakdown = ek row (upsert ka key)
+    cur.execute(f"""CREATE UNIQUE INDEX IF NOT EXISTS {STATUS_TABLE}_slip_uq
+                      ON {STATUS_TABLE} (bd_for, slip_id)""")
+    cur.execute(f"""CREATE INDEX IF NOT EXISTS {STATUS_TABLE}_date_idx
+                      ON {STATUS_TABLE} (bd_start_date)""")
+    resync_status_all(cur)          # boot par poora data theek kar do
 
 
 def _ensure_auto_table(cur, tbl: str):
@@ -796,6 +866,8 @@ def fill_auto_slip(sid: int, body: AutoSlipFill, user=Depends(get_current_user))
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(f"UPDATE {tbl} SET {', '.join(sets)} WHERE {where}", vals)
+        if cur.rowcount:
+            sync_status(cur, tbl, sid)      # status table bhi turant update
         if cur.rowcount == 0:
             if stage_guard is not None:
                 raise HTTPException(409, "Slip ka stage abhi-abhi badal gaya — refresh karke dobara dekhein.")
