@@ -60,8 +60,9 @@ _FY_MONTHS = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Ja
 def _fy_range(fy: Optional[str], month: Optional[str]):
     import calendar
     from datetime import date
-    fy = (fy or "").strip()
-    month = (month or "").strip()[:3].title()
+    # sirf sach me string ho tabhi filter — warna "koi filter nahi"
+    fy    = fy.strip() if isinstance(fy, str) else ""
+    month = month.strip()[:3].title() if isinstance(month, str) else ""
     if not fy:
         return None, None
     try:
