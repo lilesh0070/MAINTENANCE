@@ -59,6 +59,10 @@ const MKT_TABS = [
 const MKT_MONTHS = ["Apr", "May", "Jun", "Jul", "Aug", "Sep",
                     "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
 
+// Annual roll-up of the 12 monthly targets: SUM for count/hour KPIs, AVERAGE
+// for time/rate KPIs (same rule as the Maintenance KPI dashboard).
+const MKT_SUM_KEYS = new Set(["breakdown_frequency", "total_breakdown_hours", "over_1hr_count"]);
+
 export function KpiTargetsPage({ toast, readOnly = false }) {
   const { token } = useAuth();
   const [master, setMaster] = useState([]);   // flat Machine Master List rows
@@ -376,6 +380,32 @@ export function KpiTargetsPage({ toast, readOnly = false }) {
       <div style={{margin:"14px 0 10px",fontWeight:800,fontSize:13,color:tabAccent,textTransform:"uppercase",letterSpacing:".05em"}}>
         Saved {MKT_TABS.find(t=>t.key===tab)?.label} Targets · {kpiLabel(kpiFilter)} · FY {form.fy}
       </div>
+
+      {/* Annual roll-up (MONTHLY tab): SUM for count/hour KPIs, AVERAGE for the rest. */}
+      {tab === "MONTHLY" && tabRows.length > 0 && (() => {
+        const vals   = tabRows.map(r => Number(r.target_value)).filter(v => !isNaN(v));
+        const isSum  = MKT_SUM_KEYS.has(kpiFilter);
+        const annual = vals.length
+          ? (isSum ? vals.reduce((s, x) => s + x, 0)
+                   : vals.reduce((s, x) => s + x, 0) / vals.length)
+          : 0;
+        return (
+          <div style={{margin:"0 0 12px",padding:"10px 16px",borderRadius:10,
+                       background:"#fff7ed",border:"1px solid #fed7aa",
+                       display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+            <span style={{fontSize:11,fontWeight:800,letterSpacing:".05em",textTransform:"uppercase",color:"#9a3412"}}>
+              Annual {kpiLabel(kpiFilter)} · FY {form.fy}
+            </span>
+            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:26,fontWeight:800,color:"#b45309",lineHeight:1}}>
+              {Math.round(annual * 100) / 100}
+            </span>
+            <span style={{fontSize:11,color:"#9a3412"}}>
+              ({isSum ? "sum of 12 months" : "monthly average"} · {vals.length}/12 month{vals.length === 1 ? "" : "s"} filled)
+            </span>
+          </div>
+        );
+      })()}
+
       <Card>
         {tabRows.length === 0 ? (
           <EmptyState text={`No ${tab.toLowerCase()} ${kpiLabel(kpiFilter)} targets saved yet`} sub={`for FY ${form.fy}`} />
