@@ -12,14 +12,12 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { PROD_ZONES } from "../constants/zones";
-import { api, Btn } from "./breakdown/shared";
+import { api, Btn, StatCard } from "./breakdown/shared";
 import { ClosureFormModal } from "./breakdown/ClosureFormModal";
 
 const TABS = [
-  { key: "PRODUCTION",  label: "🏭 Production",  stage: "PENDING_PRODUCTION",  phase: "production",  accent: "#1e40af",
-    hint: "Production apni half bhare — machine, operator, category, problem." },
-  { key: "MAINTENANCE", label: "🔧 Maintenance", stage: "PENDING_MAINTENANCE", phase: "maintenance", accent: "#0e7490",
-    hint: "Production ke baad — maintenance problem/action/spares bharke complete kare." },
+  { key: "PRODUCTION",  label: "🏭 Production",  stage: "PENDING_PRODUCTION",  phase: "production",  accent: "#1e40af" },
+  { key: "MAINTENANCE", label: "🔧 Maintenance", stage: "PENDING_MAINTENANCE", phase: "maintenance", accent: "#0e7490" },
 ];
 
 // Slip kitni purani hai.  Production bhare BINA slip maintenance ko dikhti hi
@@ -149,35 +147,22 @@ export default function ProductionBreakdownSlip() {
           })}
         </div>
 
-        <div style={{ fontSize: 12.5, color: "#64748b", fontWeight: 600, marginBottom: 12 }}>{T.hint}</div>
-
-        {/* ── Zone-wise open cards (click = us zone ki list) ───────────── */}
-        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase",
-                      color: "#64748b", margin: "4px 0 8px" }}>
-          {tab === "PRODUCTION"
-            ? "Zone-wise — production ne abhi tak nahi bhari"
-            : "Zone-wise — production submit ho chuki, maintenance pending"}
-        </div>
-        <div style={{ display: "grid", gap: 12, marginBottom: 18,
-                      gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
+        {/* Zone cards — app ka standard StatCard (click = us zone ki list) */}
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 18 }}>
           {PROD_ZONES.map((z) => {
             const n  = zoneCount[z];
             const on = zoneSel === z;
             return (
-              <button key={z} onClick={() => setZone(on ? "" : z)}
-                style={{ textAlign: "left", cursor: "pointer", padding: "12px 14px", borderRadius: 14,
-                         background: "#fff", fontFamily: "inherit", transition: "all .12s",
-                         border: `2px solid ${on ? T.accent : n > 0 ? "#fecaca" : "#e2e8f0"}`,
-                         boxShadow: on ? `0 0 0 3px ${T.accent}22` : "0 1px 4px rgba(15,23,42,.05)" }}>
-                <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".04em", color: "#64748b",
-                              textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden",
-                              textOverflow: "ellipsis" }}>{z.replace(/_/g, " ")}</div>
-                <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, fontSize: 34,
-                              lineHeight: 1.05, color: n > 0 ? T.accent : "#cbd5e1" }}>{n}</div>
-                <div style={{ fontSize: 10.5, fontWeight: 700, color: n > 0 ? "#dc2626" : "#16a34a" }}>
-                  {n > 0 ? "open" : "clear"}
-                </div>
-              </button>
+              <div key={z} style={{ display: "flex", flex: "1 1 130px", minWidth: 0, borderRadius: 12,
+                                    boxShadow: on ? `0 0 0 3px ${T.accent}` : undefined }}>
+                <StatCard
+                  label={z.replace(/_/g, " ")}
+                  value={n}
+                  sub={n > 0 ? "open" : "clear"}
+                  color={n > 0 ? "#dc2626" : "#16a34a"}
+                  onClick={() => setZone(on ? "" : z)}
+                />
+              </div>
             );
           })}
         </div>
