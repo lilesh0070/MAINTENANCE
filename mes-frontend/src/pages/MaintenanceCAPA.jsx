@@ -295,9 +295,9 @@ export default function MaintenanceCAPA() {
         .cp-sheet { background:#fff; padding:10px; box-shadow:0 3px 16px rgba(15,23,42,.18); min-width:1000px; }
         .cp-format { font-family:Arial, sans-serif; font-size:11.5px; font-weight:700; color:#7f1d1d; padding:8px 6px 3px; letter-spacing:.02em; }
         .qpr { width:100%; border-collapse:collapse; table-layout:fixed; font-family:Arial, sans-serif; color:#111; }
-        .qpr td { overflow:hidden; word-wrap:break-word; line-height:1.15; height:1px; }
+        .qpr td { overflow:hidden; word-wrap:break-word; line-height:1.15; }
         .qpr input.fin, .qpr textarea.fta { width:100%; box-sizing:border-box; border:none; outline:none; background:transparent; font:inherit; color:#1d4ed8; padding:1px 3px; }
-        .qpr textarea.fta { resize:none; overflow:hidden; line-height:1.15; height:100%; min-height:1.6em; }
+        .qpr textarea.fta { resize:none; overflow:hidden; line-height:1.15; field-sizing:content; min-height:1.6em; }
         .qpr input.fin:focus, .qpr textarea.fta:focus { background:#eff6ff; }
         .qpr input.fin[readonly], .qpr textarea.fta[readonly] { background:#eef2f7; cursor:not-allowed; }
         .qpr input.fcb { width:14px; height:14px; margin-left:5px; vertical-align:middle; cursor:pointer; accent-color:#1d4ed8; }
