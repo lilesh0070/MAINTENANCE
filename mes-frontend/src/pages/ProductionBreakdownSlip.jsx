@@ -22,6 +22,26 @@ const TABS = [
     hint: "Production ke baad — maintenance problem/action/spares bharke complete kare." },
 ];
 
+// Slip kitni purani hai.  Production bhare BINA slip maintenance ko dikhti hi
+// nahi (chahe kitni bhi purani ho) — isliye production ko saaf dikhna chahiye ki
+// kya latka pada hai.  1+ din purani → laal.
+const ageDays = (d) => {
+  if (!d) return 0;
+  const t = new Date(String(d).slice(0, 10) + "T00:00:00");
+  if (isNaN(t)) return 0;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.round((today - t) / 86400000));
+};
+const ageLabel = (d) => {
+  const n = ageDays(d);
+  return n === 0 ? "aaj" : n === 1 ? "1 din" : `${n} din`;
+};
+const fmtDate = (d) => {
+  if (!d) return "—";
+  const s = String(d).slice(0, 10).split("-");
+  return s.length === 3 ? `${s[2]}/${s[1]}/${s[0]}` : String(d);
+};
+
 export default function ProductionBreakdownSlip() {
   const { token } = useAuth();
   const nav = useNavigate();
@@ -192,8 +212,8 @@ export default function ProductionBreakdownSlip() {
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 800 }}>
                 <thead><tr>
-                  {["S.No", "Zone", "Line", "Machine", "Start", "Category", "Problem (Production)", ""].map((h, i) =>
-                    <th key={i} style={th}>{h}</th>)}
+                  {["S.No", "Zone", "Line", "Machine", "Date", "Start", "Pending", "Category", "Problem (Production)", ""]
+                    .map((h, i) => <th key={i} style={th}>{h}</th>)}
                 </tr></thead>
                 <tbody>
                   {rows.map((r, i) => (
@@ -202,7 +222,12 @@ export default function ProductionBreakdownSlip() {
                       <td style={{ ...td, fontWeight: 700, color: "#0f172a" }}>{r.zone || "—"}</td>
                       <td style={td}>{r.line || "—"}</td>
                       <td style={td}>{r.machine_no || "—"}</td>
+                      <td style={{ ...td, fontFamily: "monospace", whiteSpace: "nowrap" }}>{fmtDate(r.bd_start_date)}</td>
                       <td style={{ ...td, fontFamily: "monospace" }}>{r.bd_start_time || "—"}</td>
+                      <td style={{ ...td, fontWeight: 700, whiteSpace: "nowrap",
+                                   color: ageDays(r.bd_start_date) >= 1 ? "#dc2626" : "#16a34a" }}>
+                        {ageLabel(r.bd_start_date)}
+                      </td>
                       <td style={td}>{r.category || "—"}</td>
                       <td style={{ ...td, maxWidth: 240, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {r.problem_reported_by_production || "—"}</td>
