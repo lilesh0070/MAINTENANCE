@@ -27,6 +27,7 @@ import {
   CartesianGrid, Tooltip, LabelList, ReferenceLine,
 } from "recharts";
 import { usePortrait } from "./breakdown/shared";
+import { MaintenanceAnnualIndex } from "./MaintenanceAnnualIndex";
 
 const API = "";
 const api = {
@@ -309,6 +310,7 @@ export default function MaintenanceKPI() {
   //   { card:{…global…}, chart:{…global…}, kpi:{ <key>:{accent,bar,yMax} } }
   const [ui, setUi]             = useState({});
   const [showCust, setShowCust] = useState(false);
+  const [showIndex, setShowIndex] = useState(false);   // Annual Index report toggle
   const [custTab, setCustTab]   = useState("card");   // "card" | "chart"
   const [savingUi, setSavingUi] = useState(false);
   useEffect(() => {
@@ -512,6 +514,9 @@ export default function MaintenanceKPI() {
 
   const metrics = data?.metrics || null;
 
+  // "Annual Index" report (Book1-style) — opened by the toolbar button.
+  if (showIndex) return <MaintenanceAnnualIndex fy={fy} onBack={() => setShowIndex(false)} />;
+
   return (
     <>
       <style>{`
@@ -673,6 +678,7 @@ export default function MaintenanceKPI() {
                 <button onClick={() => setAspect("16:9")} title="Wide 16:9"
                         style={{ ...custBtn, marginRight: 0, ...(!portrait ? { background: "#1e40af", color: "#fff", border: "1px solid #1e40af" } : {}) }}>16:9</button>
               </div>
+              <button onClick={() => setShowIndex(true)} style={custBtn} title="Annual Maintenance Index (Book1 format)">📋 Annual Index</button>
               <button onClick={goFullscreen} style={custBtn} title="Fullscreen (TV)">⛶ Fullscreen</button>
               {isAdmin && (
                 <button onClick={() => setShowCust((v) => !v)} style={custBtn}>⚙ Customize</button>
