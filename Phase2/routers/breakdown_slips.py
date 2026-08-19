@@ -179,10 +179,16 @@ def _ensure_table():
             # Ye feature se PEHLE bani saari slips maintenance-ready thi — unhe
             # PENDING_MAINTENANCE karo taaki dashboard se gayab na ho jaayein.
             cur.execute(f"UPDATE {AUTO_SLIP_TABLE} SET prod_stage='PENDING_MAINTENANCE' WHERE prod_stage IS NULL")
-            # Aage se har NAYI ANDON slip PENDING_PRODUCTION se shuru hogi.
-            cur.execute(f"ALTER TABLE {AUTO_SLIP_TABLE} ALTER COLUMN prod_stage SET DEFAULT 'PENDING_PRODUCTION'")
+        # Aage se har NAYI ANDON slip PENDING_PRODUCTION se shuru hogi.  Ye
+        # JAAN-BUJH KE `if` ke BAAHAR hai (idempotent) — agar kabhi column to ban
+        # jaye par DEFAULT set na ho, to har nayi slip prod_stage=NULL bharti,
+        # aur NULL ko gate "dikhao" maanta hai → poora production-gate chup-chaap
+        # band pad jaata.
+        cur.execute(f"ALTER TABLE {AUTO_SLIP_TABLE} ALTER COLUMN prod_stage SET DEFAULT 'PENDING_PRODUCTION'")
         cur.execute(f"ALTER TABLE {AUTO_SLIP_TABLE} ADD COLUMN IF NOT EXISTS production_by_user_id INTEGER")
         cur.execute(f"ALTER TABLE {AUTO_SLIP_TABLE} ADD COLUMN IF NOT EXISTS production_at TIMESTAMP")
+        cur.execute(f"""CREATE INDEX IF NOT EXISTS {AUTO_SLIP_TABLE}_stage_idx
+                          ON {AUTO_SLIP_TABLE} (prod_stage)""")
 
         conn.commit()
     _ensured = True

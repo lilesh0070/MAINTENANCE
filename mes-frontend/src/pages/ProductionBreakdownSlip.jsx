@@ -11,7 +11,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { api, Btn, fmtClock } from "./breakdown/shared";
+import { PROD_ZONES } from "../constants/zones";
+import { api, Btn } from "./breakdown/shared";
 import { ClosureFormModal } from "./breakdown/ClosureFormModal";
 
 const TABS = [
@@ -30,8 +31,15 @@ export default function ProductionBreakdownSlip() {
   const [loading, setLoad]= useState(true);
   const [modal, setModal] = useState(null);   // { ticket, phase }
   const [err, setErr]     = useState("");
+  const [zoneSel, setZone]= useState("");     // zone card click -> list filter
 
   const T = TABS.find((t) => t.key === tab);
+
+  // Zone-wise open count (is tab ke stage ki slips me se)
+  const zoneCount = {};
+  PROD_ZONES.forEach((z) => { zoneCount[z] = 0; });
+  rows.forEach((r) => { const z = r.zone; if (z in zoneCount) zoneCount[z] += 1; });
+  const shown = zoneSel ? rows.filter((r) => r.zone === zoneSel) : rows;
 
   const loadCounts = useCallback(async () => {
     try {
@@ -65,13 +73,20 @@ export default function ProductionBreakdownSlip() {
   const onSave = async (slice, phase, prodExtra) => {
     const id = modal.ticket.id;
     const stage = phase === "production" ? "PENDING_MAINTENANCE" : "COMPLETED";
-    await api.post(`/api/breakdown-slips/auto/${id}/fill`, {
-      maintenance_data: phase === "maintenance" ? slice : undefined,
-      production_data:  phase === "production"  ? slice : (prodExtra || undefined),
-      stage,
-    }, token);
-    setModal(null);
-    load();
+    try {
+      await api.post(`/api/breakdown-slips/auto/${id}/fill`, {
+        maintenance_data: phase === "maintenance" ? slice : undefined,
+        production_data:  phase === "production"  ? slice : (prodExtra || undefined),
+        stage,
+      }, token);
+      setModal(null);
+      load();
+    } catch (e) {
+      // stage-conflict (409: koi aur pehle submit kar chuka) ya network — dikhao,
+      // modal khula rehne do taaki bhara hua data na ude.
+      setErr(e.message || "Submit failed");
+      throw e;
+    }
   };
 
   const th = { padding: "9px 12px", textAlign: "left", fontSize: 10.5, fontWeight: 800,
@@ -98,7 +113,7 @@ export default function ProductionBreakdownSlip() {
           {TABS.map((t) => {
             const on = t.key === tab;
             return (
-              <button key={t.key} onClick={() => setTab(t.key)}
+              <button key={t.key} onClick={() => { setTab(t.key); setZone(""); }}
                 style={{ padding: "12px 22px", borderRadius: 12, cursor: "pointer", fontFamily: "'Barlow Condensed',sans-serif",
                          fontWeight: 800, fontSize: 17, letterSpacing: ".02em", display: "inline-flex", alignItems: "center", gap: 10,
                          border: `2px solid ${on ? t.accent : "#e2e8f0"}`, background: on ? t.accent : "#fff",
@@ -116,6 +131,47 @@ export default function ProductionBreakdownSlip() {
 
         <div style={{ fontSize: 12.5, color: "#64748b", fontWeight: 600, marginBottom: 12 }}>{T.hint}</div>
 
+        {/* ── Zone-wise open cards (click = us zone ki list) ───────────── */}
+        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase",
+                      color: "#64748b", margin: "4px 0 8px" }}>
+          {tab === "PRODUCTION"
+            ? "Zone-wise — production ne abhi tak nahi bhari"
+            : "Zone-wise — production submit ho chuki, maintenance pending"}
+        </div>
+        <div style={{ display: "grid", gap: 12, marginBottom: 18,
+                      gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
+          {PROD_ZONES.map((z) => {
+            const n  = zoneCount[z];
+            const on = zoneSel === z;
+            return (
+              <button key={z} onClick={() => setZone(on ? "" : z)}
+                style={{ textAlign: "left", cursor: "pointer", padding: "12px 14px", borderRadius: 14,
+                         background: "#fff", fontFamily: "inherit", transition: "all .12s",
+                         border: `2px solid ${on ? T.accent : n > 0 ? "#fecaca" : "#e2e8f0"}`,
+                         boxShadow: on ? `0 0 0 3px ${T.accent}22` : "0 1px 4px rgba(15,23,42,.05)" }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".04em", color: "#64748b",
+                              textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden",
+                              textOverflow: "ellipsis" }}>{z.replace(/_/g, " ")}</div>
+                <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800, fontSize: 34,
+                              lineHeight: 1.05, color: n > 0 ? T.accent : "#cbd5e1" }}>{n}</div>
+                <div style={{ fontSize: 10.5, fontWeight: 700, color: n > 0 ? "#dc2626" : "#16a34a" }}>
+                  {n > 0 ? "open" : "clear"}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {zoneSel && (
+          <div style={{ marginBottom: 10, fontSize: 12.5, fontWeight: 700, color: T.accent }}>
+            Filter: {zoneSel.replace(/_/g, " ")}
+            <button onClick={() => setZone("")}
+              style={{ marginLeft: 10, border: "1px solid #cbd5e1", background: "#fff", color: "#475569",
+                       borderRadius: 8, padding: "3px 10px", fontSize: 11.5, fontWeight: 700,
+                       cursor: "pointer", fontFamily: "inherit" }}>✕ clear</button>
+          </div>
+        )}
+
         {err && <div style={{ color: "#dc2626", fontWeight: 700, marginBottom: 10 }}>⚠ {err}</div>}
 
         {/* list */}
@@ -123,11 +179,13 @@ export default function ProductionBreakdownSlip() {
                       boxShadow: "0 1px 4px rgba(15,23,42,.05)" }}>
           {loading ? (
             <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>Loading…</div>
-          ) : rows.length === 0 ? (
+          ) : shown.length === 0 ? (
             <div style={{ padding: 44, textAlign: "center", color: "#94a3b8" }}>
               <div style={{ fontSize: 34 }}>✅</div>
               <div style={{ fontWeight: 700, color: "#334155", marginTop: 6 }}>
-                {tab === "PRODUCTION" ? "Koi production-pending slip nahi." : "Koi maintenance-pending slip nahi."}
+                {zoneSel
+                  ? `${zoneSel.replace(/_/g, " ")} me koi pending slip nahi.`
+                  : tab === "PRODUCTION" ? "Koi production-pending slip nahi." : "Koi maintenance-pending slip nahi."}
               </div>
             </div>
           ) : (

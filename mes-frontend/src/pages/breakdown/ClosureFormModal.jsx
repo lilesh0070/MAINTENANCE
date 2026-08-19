@@ -453,8 +453,12 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   // for.  The parent passes this to its API call so the *other* half
   // doesn't get overwritten.
   const subsetForPhase = () => {
+    // AUTO slip me ANDON ke naape hue khaane (start/received/ok time, dates,
+    // down/response minutes) KABHI nahi bheje jaate — na production half se, na
+    // maintenance se.  Form khula ho aur usi waqt call band ho jaye, to form ki
+    // purani/khali value DB ki nayi (asli) value ko nahi mita sakti.
     const pick = (set) => Object.fromEntries(
-      Object.entries(data).filter(([k]) => set.has(k)),
+      Object.entries(data).filter(([k]) => set.has(k) && !(isAutoSlip && AUTO_LOCKED_FIELDS.has(k))),
     );
     if (isProduction)  return pick(PROD_FIELDS);
     if (isMaintenance) return pick(MAINT_FIELDS);
@@ -488,7 +492,12 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
     // block via the generic check — spares get their own rule right below.
     const OPTIONAL = new Set(["spares", "spares_used",
                               "response_time_minutes", "mc_down_time_minutes"]);
-    if (!Object.entries(slice).every(([k, v]) => OPTIONAL.has(k) || checkVal(v))) return false;
+    // Jo khaana user BHAR hi nahi sakta (AUTO slip ke ANDON-locked time/date, ya
+    // koi bhi locked field) wo Submit ko rok nahi sakta.  Warna live breakdown me
+    // (call abhi khuli → OK-time/end-date khali hi hain) production ka "Half
+    // Breakdown Submit" kabhi enable hi nahi hota.
+    if (!Object.entries(slice).every(([k, v]) =>
+          OPTIONAL.has(k) || !fieldEditable(k) || checkVal(v))) return false;
     // SPARE USED = YES → at least one spare row, and EVERY filled row must have
     // ALL 4 columns.  (When NO, the grid is hidden and spares don't block.)
     if (data.spare_used === "yes") {

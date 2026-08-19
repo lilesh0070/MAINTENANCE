@@ -36,6 +36,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 _AUTO_SLIP_TBL = "maintenance_auto_breakdown_slip"
 
+# 2-STAGE gate: jis slip me production ne apni half abhi nahi bhari
+# (prod_stage = 'PENDING_PRODUCTION') wo maintenance ke KISI bhi number me nahi
+# aati — na stat cards, na zone tiles, na pending list.  Warna tile "5" dikhata
+# aur khol kar dekho to list me 2 hi rows aati.  (NULL = feature se pehle ki
+# purani slips — wo hamesha dikhti hain.)  Har query me alias `s` hi use hota hai.
+_STAGE_VISIBLE = "(s.prod_stage IS NULL OR s.prod_stage <> 'PENDING_PRODUCTION')"
+
 
 def _stamp(d, t):
     """Slip me date aur time alag columns me hain (`bd_start_date` +
@@ -150,7 +157,8 @@ def _compute(conn, start: datetime, end: datetime, line_id: Optional[int],
     abhi problem/action nahi bhara.  zone/line filter seedha slip ke apne
     text columns par lagta hai — kisi JOIN ki zaroorat nahi."""
     cur = dict_cursor(conn)
-    where = "s.bd_start_date >= %s::date AND s.bd_start_date <= %s::date"
+    where = ("s.bd_start_date >= %s::date AND s.bd_start_date <= %s::date"
+             f" AND {_STAGE_VISIBLE}")
     params: list = [start.date(), (end - timedelta(seconds=1)).date()]
     if line_id is not None:
         pass
@@ -237,6 +245,7 @@ def _build_payload(conn, start: datetime, end: datetime,
         line_name = r["line_name"] if r else None
 
     zs_where = ["s.bd_start_date >= %s::date", "s.bd_start_date <= %s::date",
+                _STAGE_VISIBLE,
                 "COALESCE(NULLIF(TRIM(s.action_taken_on_problem), ''), '') = ''",
                 "COALESCE(NULLIF(TRIM(s.problem_observed_by_maintenance), ''), '') = ''"]
     zs_params: list = [start.date(), (end - timedelta(seconds=1)).date()]
@@ -256,7 +265,7 @@ def _build_payload(conn, start: datetime, end: datetime,
 
     # Per-zone TOTAL slips (bhari + pending, dono) — taaki tiles ka jod
     # "Total Breakdowns" card se mile.  Ye bhi ab AUTO slips se.
-    zt_where = ["s.bd_start_date >= %s::date", "s.bd_start_date <= %s::date"]
+    zt_where = ["s.bd_start_date >= %s::date", "s.bd_start_date <= %s::date", _STAGE_VISIBLE]
     zt_params: list = [start.date(), (end - timedelta(seconds=1)).date()]
     if line_name:
         zt_where.append("s.line = %s"); zt_params.append(line_name)
@@ -278,10 +287,7 @@ def _build_payload(conn, start: datetime, end: datetime,
         sl_where.append("s.line = %s"); sl_params.append(line_name)
     if zone_name:
         sl_where.append("s.zone = %s"); sl_params.append(zone_name)
-    # 2-STAGE: MAIN DASHBOARD pe wahi slip dikhe jo Production apni half submit kar
-    # chuka (PENDING_MAINTENANCE / COMPLETED).  Jo abhi PENDING_PRODUCTION hai (production
-    # ne nahi bhari) wo yahan NAHI aati.  NULL = feature se pehle wali purani slips.
-    sl_where.append("(s.prod_stage IS NULL OR s.prod_stage <> 'PENDING_PRODUCTION')")
+    sl_where.append(_STAGE_VISIBLE)     # 2-stage gate (upar _STAGE_VISIBLE dekho)
 
     cur.execute(f"""
         SELECT s.id,
