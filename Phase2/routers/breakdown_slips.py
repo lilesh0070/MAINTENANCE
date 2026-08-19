@@ -528,7 +528,10 @@ def fill_auto_slip(sid: int, body: AutoSlipFill, user=Depends(get_current_user))
 
     sent_prod  = set((body.production_data  or {}).keys())
     sent_maint = set((body.maintenance_data or {}).keys())
-    if not sent_prod and not sent_maint:          # form ne kuch bheja hi nahi
+    # form ne kuch bheja hi nahi AUR stage bhi nahi badalna -> kuch karne ko nahi.
+    # (stage aaya ho to aage badho — neeche uska poora validation hota hai, taaki
+    #  galat transition par saaf error mile, chup-chaap "ok" nahi.)
+    if not sent_prod and not sent_maint and not body.stage:
         return {"ok": True, "id": sid, "updated": 0}
 
     # Konsa flat column kis half ke kis field se banta hai
@@ -572,9 +575,33 @@ def fill_auto_slip(sid: int, body: AutoSlipFill, user=Depends(get_current_user))
             sets.append(f"{col} = %s")
             vals.append(_blank_to_none(value))
 
-    # 2-stage transition (stage-only update bhi allow — isliye `if not sets` se PEHLE)
+    # ── 2-stage transition ────────────────────────────────────────────────
+    # Sirf AAGE ki taraf, ek-ek karke:  PENDING_PRODUCTION → PENDING_MAINTENANCE
+    # → COMPLETED.  Isse production skip nahi ho sakti, stage peeche nahi jaa
+    # sakti, aur do log ek saath submit karein to bhi (WHERE prod_stage=<expected>)
+    # sirf pehla lagta hai — doosre ko saaf error milta hai.
     _uid = user.get("id") if isinstance(user, dict) else None
-    if body.stage in ("PENDING_PRODUCTION", "PENDING_MAINTENANCE", "COMPLETED"):
+    _ALLOWED_FROM = {                       # naya stage -> jis stage se aa sakta hai
+        "PENDING_MAINTENANCE": ("PENDING_PRODUCTION",),
+        "COMPLETED":           ("PENDING_MAINTENANCE",),
+    }
+    stage_guard = None
+    if body.stage:
+        if body.stage not in _ALLOWED_FROM:
+            raise HTTPException(400, f"stage '{body.stage}' set nahi kar sakte")
+        with get_conn() as _c:
+            _cur = dict_cursor(_c)
+            _cur.execute(f"SELECT prod_stage FROM {AUTO_SLIP_TABLE} WHERE id = %s", (sid,))
+            _row = _cur.fetchone()
+        if not _row:
+            raise HTTPException(404, "auto slip not found")
+        _cur_stage = _row["prod_stage"] or "PENDING_MAINTENANCE"   # purani slips
+        if _cur_stage == body.stage:
+            raise HTTPException(409, "Ye slip pehle hi submit ho chuki hai (refresh karein).")
+        if _cur_stage not in _ALLOWED_FROM[body.stage]:
+            raise HTTPException(409,
+                f"Abhi ye slip '{_cur_stage}' par hai — pehle uska step poora hona chahiye.")
+        stage_guard = _cur_stage            # UPDATE me WHERE clause banega (race-safe)
         sets.append("prod_stage = %s"); vals.append(body.stage)
         if body.stage == "PENDING_MAINTENANCE":     # production ne apni half di
             sets.append("production_by_user_id = %s"); vals.append(_uid)
@@ -587,10 +614,19 @@ def fill_auto_slip(sid: int, body: AutoSlipFill, user=Depends(get_current_user))
     vals.append(user.get("id") if isinstance(user, dict) else None)
     sets.append("submitted_at = NOW()")
     vals.append(sid)
+    # Race-safe: stage badal rahe hain to UPDATE tabhi lage jab row abhi bhi usi
+    # purane stage par ho (do log ek saath submit karein to doosra 409 paayega,
+    # dono ka data aadha-aadha mix nahi hoga).
+    where = "id = %s"
+    if stage_guard is not None:
+        where += " AND COALESCE(prod_stage, 'PENDING_MAINTENANCE') = %s"
+        vals.append(stage_guard)
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute(f"UPDATE {AUTO_SLIP_TABLE} SET {', '.join(sets)} WHERE id = %s", vals)
+        cur.execute(f"UPDATE {AUTO_SLIP_TABLE} SET {', '.join(sets)} WHERE {where}", vals)
         if cur.rowcount == 0:
+            if stage_guard is not None:
+                raise HTTPException(409, "Slip ka stage abhi-abhi badal gaya — refresh karke dobara dekhein.")
             raise HTTPException(404, "auto slip not found")
 
     # Spares master me bhi likh do (best-effort, manual slip jaisa hi)
