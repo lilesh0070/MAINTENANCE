@@ -503,6 +503,7 @@ def _plc_poll_once(dev):
     try:
         # ek hi cycle me: bit-mapping fetch + PLC read + apply (fast cycle)
         closed = []
+        acked  = []
         with get_conn() as conn:
             cur = dict_cursor(conn)
             cur.execute("""SELECT do_index, bit_type, bit_no FROM andon_plc_output_mapping
@@ -526,6 +527,8 @@ def _plc_poll_once(dev):
                 res = _apply_state(cur, dev, b["do_index"], val != 0, model=model, fault=fault)  # 1→ON, 0→OFF
                 if res and res.get("action") == "closed":            # call band -> slip poori karni hai
                     closed.append((res.get("event_id"), res.get("history_id")))
+                elif res and res.get("action") == "acknowledged":    # ACK aayi -> slip me RESPONSE bharo
+                    acked.append(res.get("event_id"))
             conn.commit()
         # commit ke BAAD (andon_history ab doosri connection ko dikhega) — har band
         # hui MAINTENANCE call ki slip me bd_ok_time / end-date / down-time bhar do.
@@ -535,6 +538,13 @@ def _plc_poll_once(dev):
             if _eid and _hid:
                 try: auto_slip_on_close(_eid, _hid)
                 except Exception as _e: print(f"[ANDON-SLIP] close-fill dikkat (call {_eid}): {_e}")
+        # commit ke BAAD — ACK ho chuki calls ki slip me RESPONSE TIME back-fill.
+        # (auto_slip_on_ack pehle kahin call hi nahi hota tha -> jab slip ACK se
+        #  PEHLE ban jaati, response_time_minutes hamesha khali reh jaata tha.)
+        for _eid in acked:
+            if _eid:
+                try: auto_slip_on_ack(_eid)
+                except Exception as _e: print(f"[ANDON-SLIP] ack-fill dikkat (call {_eid}): {_e}")
         return True, (bool(sub_mc) if has_sub else None)
     except Exception:
         _plc_drop(did)                                        # MAIN+SUB reconnect

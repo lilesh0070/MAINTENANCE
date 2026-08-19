@@ -275,9 +275,16 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
                       </thead>
                       <tbody>
                         {selSlips.map((b, i) => {
-                          const durSec = b.ended_at
-                            ? Math.max(0, Math.floor((new Date(b.ended_at) - new Date(b.started_at)) / 1000))
-                            : Math.max(0, Math.floor((Date.now() - new Date(b.started_at)) / 1000));
+                          // Duration = jab breakdown BAND ho chuka (down-time record
+                          // ho gayi) to WAHI recorded down-time dikhao — slip form +
+                          // ANDON ke final duration se exact match, live-timer nahi
+                          // (jo browser-clock se ANDON se alag dikhta tha).  Sirf call
+                          // abhi CHALU ho (down-time nahi aayi) tab live count.
+                          const durSec = b.mc_down_time_minutes != null
+                            ? Math.round(Number(b.mc_down_time_minutes) * 60)
+                            : b.ended_at
+                              ? Math.max(0, Math.floor((new Date(b.ended_at) - new Date(b.started_at)) / 1000))
+                              : Math.max(0, Math.floor((Date.now() - new Date(b.started_at)) / 1000));
                           // AUTO slip (ANDON se) ke do hi haal hote hain:
                           //   PENDING   → maintenance ne problem/action nahi bhara (amber)
                           //   COMPLETED → bhar diya (hara)
