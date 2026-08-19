@@ -392,19 +392,32 @@ export default function MaintenanceKPI() {
         if (scoped.length) {
           scoped.forEach((r) => { map[r.kpi_key] = Number(r.target_value); });
         } else if (!zoneName && !lineName && !machineNo) {
-          // "All Zones" view — combine the ZONE-level monthly targets:
-          // SUM for count/hour KPIs, AVERAGE for time/rate KPIs.
-          const SUM_KEYS = new Set(["breakdown_frequency", "total_breakdown_hours", "over_1hr_count"]);
-          const groups = {};
-          arr.filter((r) => r.level === "ZONE").forEach((r) => {
-            (groups[r.kpi_key] = groups[r.kpi_key] || []).push(Number(r.target_value));
+          // "All Zones" view — use the MONTHLY (all-zone) targets.  The chart is
+          // per-month, so each KPI's target line is its MONTHLY target (mean of
+          // the 12 months — a flat line when they're equal).
+          const mgroups = {};
+          arr.filter((r) => r.level === "MONTHLY").forEach((r) => {
+            (mgroups[r.kpi_key] = mgroups[r.kpi_key] || []).push(Number(r.target_value));
           });
-          Object.entries(groups).forEach(([k, vals]) => {
-            const v = SUM_KEYS.has(k)
-              ? vals.reduce((s, x) => s + x, 0)
-              : vals.reduce((s, x) => s + x, 0) / vals.length;
+          Object.entries(mgroups).forEach(([k, vals]) => {
+            const v = vals.reduce((s, x) => s + x, 0) / vals.length;   // per-month target
             map[k] = Math.round(v * 100) / 100;
           });
+          // Fallback (no MONTHLY targets saved): old behaviour — aggregate the
+          // ZONE targets (SUM for count/hour KPIs, AVERAGE for time/rate KPIs).
+          if (Object.keys(map).length === 0) {
+            const SUM_KEYS = new Set(["breakdown_frequency", "total_breakdown_hours", "over_1hr_count"]);
+            const groups = {};
+            arr.filter((r) => r.level === "ZONE").forEach((r) => {
+              (groups[r.kpi_key] = groups[r.kpi_key] || []).push(Number(r.target_value));
+            });
+            Object.entries(groups).forEach(([k, vals]) => {
+              const v = SUM_KEYS.has(k)
+                ? vals.reduce((s, x) => s + x, 0)
+                : vals.reduce((s, x) => s + x, 0) / vals.length;
+              map[k] = Math.round(v * 100) / 100;
+            });
+          }
         }
         setTargets(map);
       })
