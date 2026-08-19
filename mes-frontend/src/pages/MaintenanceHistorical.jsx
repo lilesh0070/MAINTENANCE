@@ -128,6 +128,8 @@ const fillMonthLabel = (ym) => { if (!ym) return ""; const [y, m] = ym.split("-"
 export default function MaintenanceHistorical() {
   const { token, theme, user } = useAuth();
   // ── filters (Machine Master List + FY/Month + exact Date) ──
+  // Upar ke buttons me se kaunsa chuna hua hai — ek waqt me wahi section dikhta
+  const [sec, setSec]       = useState("BD");
   const [years, setYears]   = useState([]);
   const [master, setMaster] = useState([]);
   const [fFy, setFFy]       = useState("");
@@ -370,6 +372,16 @@ export default function MaintenanceHistorical() {
   const dayList = useMemo(() => dayRows.filter((r) => r.status === "DONE" && planMatch(r)),
     [dayRows, fZone, fLine, fMachineNo, fMachineName]);   // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Upar ke chunav-buttons — naam, rang aur kitne record hain (filter ke hisaab se)
+  const SECTIONS = [
+    { key: "BD",   label: "Breakdown Slips",       color: "#16a34a", count: () => list.length },
+    { key: "AUTO", label: "Auto Slips (ANDON)",    color: "#dc2626", count: () => autoList.length },
+    { key: "PM",   label: "PM Check Sheets",       color: "#2563eb", count: () => pmList.length },
+    { key: "DMC",  label: "DMC Check Sheets",      color: "#0d9488", count: () => dmcList.length },
+    { key: "SUN",  label: "Sunday Plan Work",      color: "#d97706", count: () => sunList.length },
+    { key: "DAY",  label: "Daily Work Assign",     color: "#7c3aed", count: () => dayList.length },
+  ];
+
   const fmtD = (iso) => (iso ? String(iso).slice(0, 10) : "—");
   const fmtT = (iso) => { const d = iso ? new Date(iso) : null; return d ? d.toTimeString().slice(0, 5) : "—"; };
 
@@ -398,6 +410,18 @@ export default function MaintenanceHistorical() {
                     background:#f1f5f9; border:1px solid #e2e8f0; border-radius:8px; padding:9px 16px; cursor:pointer; }
 
         .hd-body { max-width:1500px; margin:18px auto 0; padding:0 22px; }
+        /* Upar ke chunav-buttons — filter lagao, phir jo dekhna hai us par click.
+           Ek waqt me sirf USI ka data dikhta hai (pehle saare ek saath niche
+           lage rehte the, jo bhara-bhara lagta tha). */
+        .hd-picks { max-width:1500px; margin:16px auto 0; padding:0 22px;
+                    display:flex; gap:8px; flex-wrap:wrap; }
+        .hd-pick { display:inline-flex; align-items:center; gap:8px; cursor:pointer;
+                   padding:8px 14px; border-radius:10px; font-family:inherit; font-size:12.5px;
+                   font-weight:700; color:#334155; background:#fff; border:1.5px solid #e2e8f0;
+                   box-shadow:0 1px 2px rgba(15,23,42,.04); transition:all .14s; }
+        .hd-pick .n { min-width:20px; height:18px; border-radius:99px; padding:0 6px; display:inline-flex;
+                      align-items:center; justify-content:center; font-size:11px; font-weight:800;
+                      background:#f1f5f9; color:#94a3b8; }
         .hd-sec { background:#fff; border:1px solid #e2e8f0; border-radius:14px;
                   box-shadow:0 1px 4px rgba(15,23,42,.06); overflow:hidden; }
         .hd-sec-h { display:flex; align-items:center; gap:10px; padding:14px 20px; border-bottom:1px solid #eef2f7; }
@@ -480,9 +504,27 @@ export default function MaintenanceHistorical() {
           </div>
         </div>
 
+        {/* ── kya dekhna hai — upar ke buttons (ek waqt me ek) ── */}
+        <div className="hd-picks">
+          {SECTIONS.map((x) => {
+            const on = sec === x.key, n = x.count();
+            return (
+              <button key={x.key} className="hd-pick" onClick={() => setSec(x.key)}
+                style={on ? { borderColor: x.color, background: x.color, color: "#fff",
+                              boxShadow: `0 3px 10px ${x.color}33` } : undefined}>
+                <span style={{ width: 9, height: 9, borderRadius: 3,
+                               background: on ? "rgba(255,255,255,.85)" : x.color }} />
+                {x.label}
+                <span className="n" style={on ? { background: "rgba(255,255,255,.24)", color: "#fff" }
+                                              : (n ? { color: x.color } : undefined)}>{n}</span>
+              </button>
+            );
+          })}
+        </div>
+
         {/* ── filled slips ── */}
         <div className="hd-body">
-          <div className="hd-sec">
+          <div className="hd-sec" style={{ display: sec === "BD" ? undefined : "none" }}>
             <div className="hd-sec-h">
               <span className="hd-sec-dot" />
               <span className="hd-sec-t">Filled Breakdown Slips</span>
@@ -527,7 +569,7 @@ export default function MaintenanceHistorical() {
           </div>
 
           {/* ── filled AUTO breakdown slips (ANDON) ── */}
-          <div className="hd-sec" style={{ marginTop:22 }}>
+          <div className="hd-sec" style={{ marginTop:22, display: sec === "AUTO" ? undefined : "none" }}>
             <div className="hd-sec-h">
               <span className="hd-sec-dot" style={{ background:"#dc2626" }} />
               <span className="hd-sec-t">Filled Auto Breakdown Slips (ANDON)</span>
@@ -571,7 +613,7 @@ export default function MaintenanceHistorical() {
           </div>
 
           {/* ── filled PM check sheets ── */}
-          <div className="hd-sec" style={{ marginTop:22 }}>
+          <div className="hd-sec" style={{ marginTop:22, display: sec === "PM" ? undefined : "none" }}>
             <div className="hd-sec-h">
               <span className="hd-sec-dot" style={{ background:"#2563eb" }} />
               <span className="hd-sec-t">Filled PM Check Sheets</span>
@@ -617,7 +659,7 @@ export default function MaintenanceHistorical() {
           </div>
 
           {/* ── filled DMC check sheets ── */}
-          <div className="hd-sec" style={{ marginTop:22 }}>
+          <div className="hd-sec" style={{ marginTop:22, display: sec === "DMC" ? undefined : "none" }}>
             <div className="hd-sec-h">
               <span className="hd-sec-dot" style={{ background:"#0d9488" }} />
               <span className="hd-sec-t">Filled DMC Check Sheets</span>
@@ -663,7 +705,7 @@ export default function MaintenanceHistorical() {
           </div>
 
           {/* ── sunday plan work ── */}
-          <div className="hd-sec" style={{ marginTop:22 }}>
+          <div className="hd-sec" style={{ marginTop:22, display: sec === "SUN" ? undefined : "none" }}>
             <div className="hd-sec-h">
               <span className="hd-sec-dot" style={{ background:"#d97706" }} />
               <span className="hd-sec-t">Sunday Plan Work</span>
@@ -716,7 +758,7 @@ export default function MaintenanceHistorical() {
           </div>
 
           {/* ── daily work assign ── */}
-          <div className="hd-sec" style={{ marginTop:22 }}>
+          <div className="hd-sec" style={{ marginTop:22, display: sec === "DAY" ? undefined : "none" }}>
             <div className="hd-sec-h">
               <span className="hd-sec-dot" style={{ background:"#0d9488" }} />
               <span className="hd-sec-t">Daily Work Assign</span>
