@@ -173,18 +173,29 @@ export default function MaintenanceCAPA() {
   }, [view]);
 
   // auto sentence-case: capitalize the first letter, and the first letter after a
-  // full-stop / ! / ? — rest of the text stays exactly as typed (comma doesn't count).
+  // full-stop / ! / ? (with or without a space) — rest stays as typed, comma doesn't
+  // count.  Skips date / code / number fields (label says No./Code/Date/Qty/Model/…).
   useEffect(() => {
     if (view !== "form" || !formRef.current) return;
     const form = formRef.current;
+    const CODE_LABEL = /(\bcode\b|\bno\.?\b|\bnos\b|\bnumber\b|\bqty\b|\bquantity\b|\bdate\b|\btime\b|\bmodel\b|\bbatch\b|\brev\b|\bserial\b|\bzone\b|\bline\b|\bshift\b|\bsr\b)/i;
+    const skipCap = (el) => {
+      if (el.type === "date") return true;
+      const td = el.closest("td");
+      let lab = td ? (td.textContent || "") : "";
+      if (td && td.previousElementSibling) lab += " " + (td.previousElementSibling.textContent || "");
+      return CODE_LABEL.test(lab.replace(/_/g, " "));      // MACHINE_NO → MACHINE NO
+    };
     const onInput = (e) => {
       if (e.isComposing) return;
       const el = e.target;
       const isText = el.classList && (el.classList.contains("fta") ||
                      (el.classList.contains("fin") && el.type !== "date"));
       if (!isText) return;
+      if (el._capSkip === undefined) el._capSkip = skipCap(el);   // decide once per field
+      if (el._capSkip) return;
       const v = el.value;
-      const nv = v.replace(/(^\s*|[.!?]\s+)([a-z])/g, (_m, p, c) => p + c.toUpperCase());
+      const nv = v.replace(/(^\s*|[.!?]\s*)([a-z])/g, (_m, p, c) => p + c.toUpperCase());
       if (nv !== v) {
         const pos = el.selectionStart;                 // length unchanged → caret stays valid
         el.value = nv;
