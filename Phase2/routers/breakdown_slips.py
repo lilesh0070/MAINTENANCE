@@ -170,10 +170,25 @@ def _ensure_table():
         for _T in (AUTO_SLIP_TABLE, TOOLROOM_SLIP_TABLE):
             _ensure_auto_table(cur, _T)
 
-        _ensure_status_table(cur)
-
         conn.commit()
     _ensured = True
+
+    # STATUS table ALAG transaction me — aur fail ho jaye to bhi sirf log.
+    #
+    # Ye jaan-bujh ke `_ensured = True` ke BAAD hai.  Pehle status wala kaam usi
+    # transaction me tha: ek baar wo fail hua (jab is naam ki cheez view se table
+    # ban gayi aur purana backend `CREATE OR REPLACE VIEW` maar raha tha) to
+    # `_ensure_table()` hamesha ke liye fail hone laga — aur chunki ANDON ke
+    # SAARE slip-paths pehle `_ensure_table()` bulate hain, **slip banna hi band
+    # ho gaya** (maintenance + toolroom dono ki).  Status ek report hai; uski
+    # dikkat kabhi breakdown slip ko nahi rokni chahiye.
+    try:
+        with get_conn() as conn2:
+            cur2 = conn2.cursor()
+            _ensure_status_table(cur2)
+            conn2.commit()
+    except Exception as ex:
+        print(f"[STATUS] breakdown_status ready karne me dikkat (slips par asar nahi): {ex}")
 
 
 STATUS_TABLE = "breakdown_status"
@@ -218,11 +233,22 @@ _STATUS_UPSERT = """
 
 def sync_status(cur, tbl: str, slip_id: int):
     """Ek slip ki status-row bana/update kar do.  Har us jagah se call hota hai
-    jahan slip banti ya badalti hai (ANDON create / close / form submit)."""
+    jahan slip banti ya badalti hai (ANDON create / close / form submit).
+
+    SAVEPOINT me chalta hai: status ek report hai — agar yahan kuch gadbad ho to
+    sirf ye step palat jaata hai, slip ka apna insert/update SAFE rehta hai.
+    (Har restart par `resync_status_all()` chhooti hui rows bhar deta hai.)"""
     bd_for = "toolroom" if tbl == TOOLROOM_SLIP_TABLE else "maintenance"
-    cur.execute(_STATUS_UPSERT.format(status=STATUS_TABLE, cols=_STATUS_COLS,
-                                      select=_STATUS_SELECT.format(tbl=tbl)),
-                {"bd_for": bd_for, "sid": slip_id})
+    try:
+        cur.execute("SAVEPOINT sp_status")
+        cur.execute(_STATUS_UPSERT.format(status=STATUS_TABLE, cols=_STATUS_COLS,
+                                          select=_STATUS_SELECT.format(tbl=tbl)),
+                    {"bd_for": bd_for, "sid": slip_id})
+        cur.execute("RELEASE SAVEPOINT sp_status")
+    except Exception as ex:
+        try: cur.execute("ROLLBACK TO SAVEPOINT sp_status")
+        except Exception: pass
+        print(f"[STATUS] slip #{slip_id} ({bd_for}) ki status row nahi bani: {ex}")
 
 
 def resync_status_all(cur):
