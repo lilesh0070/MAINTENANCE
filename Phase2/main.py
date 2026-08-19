@@ -312,10 +312,18 @@ def run_migrations():
         # (without kpi_key) is dropped; the new one is named uq_mkt_kpi.
         "ALTER TABLE maintenance_kpi_target ADD COLUMN IF NOT EXISTS kpi_key VARCHAR(40)",
         "DROP INDEX IF EXISTS uq_mkt",
+        # MONTHLY (all-zone) targets: a `month` column, and zone_name may be
+        # NULL for a MONTHLY row (it applies to every zone).  The unique key now
+        # includes month so it's one target per (fy, month, kpi) for monthly,
+        # while zone/line/machine rows (month NULL) keep their original key.
+        "ALTER TABLE maintenance_kpi_target ADD COLUMN IF NOT EXISTS month VARCHAR(8)",
+        "ALTER TABLE maintenance_kpi_target ALTER COLUMN zone_name DROP NOT NULL",
+        "DROP INDEX IF EXISTS uq_mkt_kpi",
         """
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_mkt_kpi
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_mkt_kpi2
           ON maintenance_kpi_target
-          (fy, zone_name, COALESCE(line_name,''), COALESCE(serial_no,0), kpi_key)
+          (fy, COALESCE(zone_name,''), COALESCE(line_name,''),
+           COALESCE(serial_no,0), COALESCE(month,''), kpi_key)
         """,
 
         """

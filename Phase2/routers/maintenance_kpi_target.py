@@ -44,12 +44,15 @@ class TargetIn(BaseModel):
     machine_name: Optional[str]   = None
     kpi_key:      Optional[str]   = None
     target_value: Optional[float] = None
+    month:        Optional[str]   = None   # MONTHLY level: Apr..Mar (all zones)
 
 
-def _level_of(line_name, serial_no) -> str:
-    if serial_no is not None:
+def _level_of(body: "TargetIn") -> str:
+    if body.month:
+        return "MONTHLY"
+    if body.serial_no is not None:
         return "MACHINE"
-    if line_name:
+    if body.line_name:
         return "LINE"
     return "ZONE"
 
@@ -57,15 +60,18 @@ def _level_of(line_name, serial_no) -> str:
 def _validate(body: TargetIn) -> str:
     if not body.fy:
         raise HTTPException(400, "Financial Year is required")
-    if not body.zone_name:
-        raise HTTPException(400, "Zone is required")
     if not body.kpi_key:
         raise HTTPException(400, "KPI is required")
     if body.target_value is None:
         raise HTTPException(400, "Target value is required")
+    # MONTHLY target — applies to every zone; needs a month, not a zone.
+    if body.month:
+        return "MONTHLY"
+    if not body.zone_name:
+        raise HTTPException(400, "Zone is required")
     if body.serial_no is not None and not body.line_name:
         raise HTTPException(400, "Machine target needs a Line selected too")
-    return _level_of(body.line_name, body.serial_no)
+    return _level_of(body)
 
 
 # ── Endpoints ────────────────────────────────────────────────────────
@@ -75,7 +81,7 @@ def list_targets(fy: Optional[str] = Query(None, description="e.g. 2025-2026"),
     """All saved rows, newest financial year first."""
     sql = """
         SELECT id, fy, zone_name, line_name, serial_no, machine_no, machine_name,
-               level, kpi_key, target_value, created_at, updated_at
+               level, kpi_key, target_value, month, created_at, updated_at
           FROM maintenance_kpi_target
     """
     params: list = []
@@ -109,28 +115,39 @@ def create_target(body: TargetIn, user=Depends(get_current_user)):
     with get_conn() as conn:
         cur = conn.cursor()
         try:
-            cur.execute("""
-                SELECT id FROM maintenance_kpi_target
-                 WHERE fy = %s AND zone_name = %s AND kpi_key = %s
-                   AND line_name IS NOT DISTINCT FROM %s
-                   AND serial_no IS NOT DISTINCT FROM %s
-            """, (body.fy, body.zone_name, body.kpi_key, body.line_name, body.serial_no))
-            row = cur.fetchone()
-            if row:
-                scope = body.zone_name + (f" / {body.line_name}" if body.line_name else "") \
-                        + (f" / {body.machine_no}" if body.machine_no else "")
-                raise HTTPException(409,
-                    f"Target already filled: {body.kpi_key} for {scope} in FY {body.fy}. "
-                    f"It can be filled only once per financial year — use Edit to change it.")
+            if level == "MONTHLY":
+                cur.execute("""
+                    SELECT id FROM maintenance_kpi_target
+                     WHERE fy = %s AND kpi_key = %s AND level = 'MONTHLY'
+                       AND month IS NOT DISTINCT FROM %s
+                """, (body.fy, body.kpi_key, body.month))
+                if cur.fetchone():
+                    raise HTTPException(409,
+                        f"Target already filled: {body.kpi_key} for month {body.month} in FY {body.fy}. "
+                        f"It can be filled only once — use Edit to change it.")
+            else:
+                cur.execute("""
+                    SELECT id FROM maintenance_kpi_target
+                     WHERE fy = %s AND zone_name = %s AND kpi_key = %s
+                       AND line_name IS NOT DISTINCT FROM %s
+                       AND serial_no IS NOT DISTINCT FROM %s
+                       AND month IS NULL
+                """, (body.fy, body.zone_name, body.kpi_key, body.line_name, body.serial_no))
+                if cur.fetchone():
+                    scope = body.zone_name + (f" / {body.line_name}" if body.line_name else "") \
+                            + (f" / {body.machine_no}" if body.machine_no else "")
+                    raise HTTPException(409,
+                        f"Target already filled: {body.kpi_key} for {scope} in FY {body.fy}. "
+                        f"It can be filled only once per financial year — use Edit to change it.")
             cur.execute("""
                 INSERT INTO maintenance_kpi_target
                     (fy, zone_name, line_name, serial_no, machine_no,
-                     machine_name, level, kpi_key, target_value)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                     machine_name, level, kpi_key, target_value, month)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 RETURNING id
             """, (body.fy, body.zone_name, body.line_name, body.serial_no,
                   body.machine_no, body.machine_name, level, body.kpi_key,
-                  body.target_value))
+                  body.target_value, body.month))
             new_id = cur.fetchone()[0]
             conn.commit()
         except HTTPException:
@@ -152,11 +169,11 @@ def update_target(target_id: int, body: TargetIn, user=Depends(get_current_user)
                 UPDATE maintenance_kpi_target
                    SET fy=%s, zone_name=%s, line_name=%s, serial_no=%s,
                        machine_no=%s, machine_name=%s, level=%s, kpi_key=%s,
-                       target_value=%s, updated_at=NOW()
+                       target_value=%s, month=%s, updated_at=NOW()
                  WHERE id=%s
             """, (body.fy, body.zone_name, body.line_name, body.serial_no,
                   body.machine_no, body.machine_name, level, body.kpi_key,
-                  body.target_value, target_id))
+                  body.target_value, body.month, target_id))
             if cur.rowcount == 0:
                 raise HTTPException(404, "Target not found")
             conn.commit()

@@ -51,7 +51,13 @@ const MKT_TABS = [
   { key: "ZONE",    label: "Zone",    accent: "#1e40af" },
   { key: "LINE",    label: "Line",    accent: "#6d28d9" },
   { key: "MACHINE", label: "Machine", accent: "#0e7490" },
+  { key: "MONTHLY", label: "Monthly", accent: "#b45309" },
 ];
+
+// Months in financial-year order (Apr → Mar) for the MONTHLY tab — one target
+// for the whole plant (all zones) per (FY, month, KPI).
+const MKT_MONTHS = ["Apr", "May", "Jun", "Jul", "Aug", "Sep",
+                    "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
 
 export function KpiTargetsPage({ toast, readOnly = false }) {
   const { token } = useAuth();
@@ -68,7 +74,7 @@ export function KpiTargetsPage({ toast, readOnly = false }) {
 
   const EMPTY = {
     fy: MKT_DEFAULT_FY,
-    zone_name: "", line_name: "", serial_no: "",
+    zone_name: "", line_name: "", serial_no: "", month: "",
     kpi_key: MKT_KPIS[0].key, target_value: "",
   };
   const [form, setForm] = useState(EMPTY);
@@ -132,6 +138,7 @@ export function KpiTargetsPage({ toast, readOnly = false }) {
       zone_name:    r.zone_name ?? "",
       line_name:    r.line_name ?? "",
       serial_no:    r.serial_no ?? "",
+      month:        r.month ?? "",
       kpi_key:      r.kpi_key ?? MKT_KPIS[0].key,
       target_value: r.target_value ?? "",
     });
@@ -139,37 +146,54 @@ export function KpiTargetsPage({ toast, readOnly = false }) {
 
   const save = async () => {
     if (!form.fy)        { toast("Select a Financial Year", "err"); return; }
-    if (!form.zone_name) { toast("Select a Zone", "err"); return; }
-    if (tab !== "ZONE"   && !form.line_name)        { toast("Select a Line", "err"); return; }
-    if (tab === "MACHINE" && form.serial_no === "") { toast("Select a Machine", "err"); return; }
+    const isMonthly = tab === "MONTHLY";
+    if (isMonthly) {
+      if (!form.month) { toast("Select a Month", "err"); return; }
+    } else {
+      if (!form.zone_name) { toast("Select a Zone", "err"); return; }
+      if (tab !== "ZONE"   && !form.line_name)        { toast("Select a Line", "err"); return; }
+      if (tab === "MACHINE" && form.serial_no === "") { toast("Select a Machine", "err"); return; }
+    }
     if (!form.kpi_key)   { toast("Select a KPI", "err"); return; }
     if (form.target_value === "" || form.target_value == null) {
       toast("Enter the Target value", "err"); return;
     }
-    const useLine = tab !== "ZONE";
+    const useLine = !isMonthly && tab !== "ZONE";
     const useMach = tab === "MACHINE";
     const sno = useMach && form.serial_no !== "" ? Number(form.serial_no) : null;
     const machine = sno != null
       ? machineOpts.find(m => String(m.serial_no) === String(form.serial_no))
       : null;
-    // One target per (FY + scope + KPI): block a duplicate fill with a popup.
+    // One target per (FY + scope|month + KPI): block a duplicate fill with a popup.
     if (!editId) {
-      const dup = rows.find(r =>
-        r.fy === form.fy &&
-        r.kpi_key === form.kpi_key &&
-        r.zone_name === form.zone_name &&
-        String(r.line_name ?? "") === String(useLine ? (form.line_name || "") : "") &&
-        String(r.serial_no ?? "") === String(sno ?? ""));
+      const dup = isMonthly
+        ? rows.find(r => r.level === "MONTHLY" && r.fy === form.fy
+                      && r.kpi_key === form.kpi_key && r.month === form.month)
+        : rows.find(r =>
+            r.level !== "MONTHLY" &&
+            r.fy === form.fy &&
+            r.kpi_key === form.kpi_key &&
+            r.zone_name === form.zone_name &&
+            String(r.line_name ?? "") === String(useLine ? (form.line_name || "") : "") &&
+            String(r.serial_no ?? "") === String(sno ?? ""));
       if (dup) {
-        const scope = form.zone_name + (useLine && form.line_name ? ` / ${form.line_name}` : "")
-                    + (machine?.machine_no ? ` / ${machine.machine_no}` : "");
-        window.alert(`⚠ Target already filled!\n\n${kpiLabel(form.kpi_key)} for ${scope} in FY ${form.fy} is already set (value: ${dup.target_value}).\n\nIt can be filled only ONCE per financial year — use the Edit button in the list to change it.`);
+        const scope = isMonthly ? `month ${form.month}`
+          : form.zone_name + (useLine && form.line_name ? ` / ${form.line_name}` : "")
+                            + (machine?.machine_no ? ` / ${machine.machine_no}` : "");
+        window.alert(`⚠ Target already filled!\n\n${kpiLabel(form.kpi_key)} for ${scope} in FY ${form.fy} is already set (value: ${dup.target_value}).\n\nIt can be filled only ONCE${isMonthly ? "" : " per financial year"} — use the Edit button in the list to change it.`);
         return;
       }
     }
     setSaving(true);
     try {
-      const body = {
+      const body = isMonthly ? {
+        fy:           form.fy,
+        month:        form.month,
+        zone_name:    null, line_name: null, serial_no: null,
+        machine_no:   null, machine_name: null,
+        kpi_key:      form.kpi_key,
+        target_value: Number(form.target_value),
+      } : {
         fy:           form.fy,
         zone_name:    form.zone_name,
         line_name:    useLine ? (form.line_name || null) : null,
@@ -193,7 +217,8 @@ export function KpiTargetsPage({ toast, readOnly = false }) {
   };
 
   const remove = async (r) => {
-    if (!confirm(`Delete this ${(r.level||"").toLowerCase()} target (${kpiLabel(r.kpi_key)} · ${r.zone_name})?`)) return;
+    const scope = r.level === "MONTHLY" ? `month ${r.month}` : r.zone_name;
+    if (!confirm(`Delete this ${(r.level||"").toLowerCase()} target (${kpiLabel(r.kpi_key)} · ${scope})?`)) return;
     try { await api.delete(`/api/maintenance-kpi-target/${r.id}`, token); toast("Removed"); loadRows(); }
     catch (e) { toast(e.message || "Delete failed", "err"); }
   };
@@ -211,9 +236,11 @@ export function KpiTargetsPage({ toast, readOnly = false }) {
   const tabAccent = MKT_TABS.find(t => t.key === tab)?.accent || "#1e40af";
   const tabRows   = rows.filter(r => r.level === tab && r.fy === form.fy
                                   && r.kpi_key === kpiFilter);
-  const headers = ["FY", "Zone"]
-    .concat(tab !== "ZONE"   ? ["Line"] : [])
-    .concat(tab === "MACHINE" ? ["Machine No"] : [])
+  const headers = (tab === "MONTHLY"
+      ? ["FY", "Month"]
+      : ["FY", "Zone"]
+          .concat(tab !== "ZONE"   ? ["Line"] : [])
+          .concat(tab === "MACHINE" ? ["Machine No"] : []))
     .concat(["KPI", "Target Value"])
     .concat(readOnly ? [] : ["Actions"]);
 
@@ -227,8 +254,9 @@ export function KpiTargetsPage({ toast, readOnly = false }) {
         <div>
           <div style={{fontWeight:700,fontSize:15,color:"#0f172a"}}>KPI Target</div>
           <div style={{fontSize:11,color:"#64748b",marginTop:2,maxWidth:760,lineHeight:1.5}}>
-            Pick a <b>Financial Year</b>, choose a tab (<b>Zone / Line / Machine</b>), set the scope
-            from the <b>Machine Master List</b>, pick a <b>KPI</b>, enter the <b>Target value</b> and Save.
+            Pick a <b>Financial Year</b>, choose a tab (<b>Zone / Line / Machine</b>) and set the scope from
+            the <b>Machine Master List</b> — or <b>Monthly</b> (all zones, just pick a month) — then choose a
+            <b>KPI</b>, enter the <b>Target value</b> and Save.
           </div>
           <div style={{marginTop:10}}>
             <Btn size="sm" onClick={() => setShowMtbf(true)}>📊 MTBF Calculation — machine running hours</Btn>
@@ -275,31 +303,43 @@ export function KpiTargetsPage({ toast, readOnly = false }) {
             </div>
           )}
           <div style={grid}>
-            <div>
-              <label style={lbl}>Zone *</label>
-              <Select value={form.zone_name} onChange={e=>onZone(e.target.value)}>
-                <option value="">Select zone…</option>
-                {zoneOpts.map(z => <option key={z} value={z}>{z}</option>)}
-              </Select>
-            </div>
-            {tab !== "ZONE" && (
+            {tab === "MONTHLY" ? (
               <div>
-                <label style={lbl}>Line *</label>
-                <Select value={form.line_name} disabled={!form.zone_name} onChange={e=>onLine(e.target.value)}>
-                  <option value="">Select line…</option>
-                  {lineOpts.map(l => <option key={l} value={l}>{l}</option>)}
+                <label style={lbl}>Month *</label>
+                <Select value={form.month} onChange={e=>setForm(f=>({...f,month:e.target.value}))}>
+                  <option value="">Select month…</option>
+                  {MKT_MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
                 </Select>
               </div>
-            )}
-            {tab === "MACHINE" && (
-              <div>
-                <label style={lbl}>Machine No *</label>
-                <Select value={form.serial_no} disabled={!form.line_name}
-                        onChange={e=>setForm(f=>({...f,serial_no:e.target.value}))}>
-                  <option value="">Select machine…</option>
-                  {machineOpts.map(m => <option key={m.id} value={m.serial_no}>{m.machine_no || `No. ${m.serial_no}`}</option>)}
-                </Select>
-              </div>
+            ) : (
+              <>
+                <div>
+                  <label style={lbl}>Zone *</label>
+                  <Select value={form.zone_name} onChange={e=>onZone(e.target.value)}>
+                    <option value="">Select zone…</option>
+                    {zoneOpts.map(z => <option key={z} value={z}>{z}</option>)}
+                  </Select>
+                </div>
+                {tab !== "ZONE" && (
+                  <div>
+                    <label style={lbl}>Line *</label>
+                    <Select value={form.line_name} disabled={!form.zone_name} onChange={e=>onLine(e.target.value)}>
+                      <option value="">Select line…</option>
+                      {lineOpts.map(l => <option key={l} value={l}>{l}</option>)}
+                    </Select>
+                  </div>
+                )}
+                {tab === "MACHINE" && (
+                  <div>
+                    <label style={lbl}>Machine No *</label>
+                    <Select value={form.serial_no} disabled={!form.line_name}
+                            onChange={e=>setForm(f=>({...f,serial_no:e.target.value}))}>
+                      <option value="">Select machine…</option>
+                      {machineOpts.map(m => <option key={m.id} value={m.serial_no}>{m.machine_no || `No. ${m.serial_no}`}</option>)}
+                    </Select>
+                  </div>
+                )}
+              </>
             )}
             <div>
               <label style={lbl}>KPI *</label>
@@ -357,9 +397,15 @@ export function KpiTargetsPage({ toast, readOnly = false }) {
                     ...((i === 0 || tabRows[i-1].kpi_key !== r.kpi_key)
                         ? {scrollSnapAlign:"start", scrollMarginTop:34} : {})}}>
                   <td style={{padding:"9px 12px",fontWeight:700,color:"#334155"}}>{r.fy}</td>
-                  <td style={{padding:"9px 12px",color:"#0f172a",fontWeight:700}}>{r.zone_name}</td>
-                  {tab !== "ZONE"   && <td style={{padding:"9px 12px",color:"#334155"}}>{r.line_name || "—"}</td>}
-                  {tab === "MACHINE" && <td style={{padding:"9px 12px",color:"#334155"}}>{machineCell(r)}</td>}
+                  {tab === "MONTHLY" ? (
+                    <td style={{padding:"9px 12px",color:"#0f172a",fontWeight:700}}>{r.month}</td>
+                  ) : (
+                    <>
+                      <td style={{padding:"9px 12px",color:"#0f172a",fontWeight:700}}>{r.zone_name}</td>
+                      {tab !== "ZONE"   && <td style={{padding:"9px 12px",color:"#334155"}}>{r.line_name || "—"}</td>}
+                      {tab === "MACHINE" && <td style={{padding:"9px 12px",color:"#334155"}}>{machineCell(r)}</td>}
+                    </>
+                  )}
                   <td style={{padding:"9px 12px",fontWeight:700,color:"#0f172a"}}>{kpiLabel(r.kpi_key)}</td>
                   <td style={{padding:"9px 12px",fontFamily:"'Barlow Condensed',sans-serif",fontSize:18,fontWeight:800,color:tabAccent}}>{r.target_value}</td>
                   {!readOnly && (
