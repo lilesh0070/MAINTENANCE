@@ -172,6 +172,29 @@ export default function MaintenanceCAPA() {
     return () => { form.removeEventListener("change", onChange); form.removeEventListener("click", onClick); };
   }, [view]);
 
+  // auto sentence-case: capitalize the first letter, and the first letter after a
+  // full-stop / ! / ? — rest of the text stays exactly as typed (comma doesn't count).
+  useEffect(() => {
+    if (view !== "form" || !formRef.current) return;
+    const form = formRef.current;
+    const onInput = (e) => {
+      if (e.isComposing) return;
+      const el = e.target;
+      const isText = el.classList && (el.classList.contains("fta") ||
+                     (el.classList.contains("fin") && el.type !== "date"));
+      if (!isText) return;
+      const v = el.value;
+      const nv = v.replace(/(^\s*|[.!?]\s+)([a-z])/g, (_m, p, c) => p + c.toUpperCase());
+      if (nv !== v) {
+        const pos = el.selectionStart;                 // length unchanged → caret stays valid
+        el.value = nv;
+        try { el.setSelectionRange(pos, pos); } catch (_) { /* detached */ }
+      }
+    };
+    form.addEventListener("input", onInput);
+    return () => form.removeEventListener("input", onInput);
+  }, [view]);
+
   // live camera — open the webcam when the modal is shown, stop it on close
   useEffect(() => {
     if (!cam) return;
