@@ -1953,6 +1953,17 @@ def monitor_board(user=Depends(get_current_user)):
             + (SELECT COUNT(*) FROM andon_history
                  WHERE started_at >= ({day_start}) AND started_at < {day_end}) AS today""")
         today = int((cur.fetchone() or {}).get("today") or 0)
+        # per-department today count (same 7 AM window) — for the scoped stat cards
+        cur.execute(f"""
+            SELECT COALESCE(dep.name, x.display_name) AS department, COUNT(*) AS n
+              FROM (SELECT department_id, display_name, started_at FROM andon_system
+                     WHERE started_at >= ({day_start}) AND started_at < {day_end}
+                    UNION ALL
+                    SELECT department_id, display_name, started_at FROM andon_history
+                     WHERE started_at >= ({day_start}) AND started_at < {day_end}) x
+              LEFT JOIN andon_departments dep ON dep.id = x.department_id
+             GROUP BY 1""")
+        today_by_dept = {(r["department"] or "").strip(): int(r["n"]) for r in cur.fetchall()}
     counts, longest = {}, 0
     for r in rows:
         k = (r["department"] or "").strip()
@@ -1960,7 +1971,9 @@ def monitor_board(user=Depends(get_current_user)):
         if (r["elapsed_seconds"] or 0) > longest:
             longest = r["elapsed_seconds"]
     for d in depts:
-        d["active"] = counts.get((d["name"] or "").strip(), 0)
+        name = (d["name"] or "").strip()
+        d["active"] = counts.get(name, 0)
+        d["today"]  = today_by_dept.get(name, 0)   # per-department today total
     return {"rows": rows, "departments": depts,
             "stats": {"active": len(rows), "longest_seconds": int(longest), "today": today}}
 

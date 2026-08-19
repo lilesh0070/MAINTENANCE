@@ -54,13 +54,17 @@ export default function AndonMonitor({ embedded = false }) {
   const pick = (name) => { touched.current = true; setSel(name); };
   const drift = () => (Date.now() - fetchedAt.current) / 1000;
   const liveElapsed = (r) => Math.max(0, Math.round((r.elapsed_seconds || 0) + drift()));
-  const longest = Math.max(0, Math.round((stats.longest_seconds || 0) + (rows.length ? drift() : 0)));
   const selRows = rows.filter((r) => (r.department || "") === sel);
+  // stat cards show ONLY the selected department's numbers (not all departments)
+  const selDept    = depts.find((d) => d.name === sel);
+  const selActive  = selDept?.active ?? selRows.length;
+  const selToday   = selDept?.today ?? 0;
+  const selLongest = selRows.length ? Math.max(...selRows.map((r) => liveElapsed(r))) : 0;
 
   const STAT = [
-    ["Total Calls",   stats.today ?? "—",                        "#1e40af", "today · 7 AM–6:30 AM"],
-    ["Active Calls",  stats.active ?? 0,                         (stats.active ? "#dc2626" : "#16a34a"), "abhi chalu"],
-    ["Longest Active", rows.length ? fmtDuration(longest) : "0s", "#7c3aed", "sabse lambi chalu call"],
+    ["Total Calls",    selToday,  "#1e40af", `${sel || "—"} · today · 7 AM–6:30 AM`],
+    ["Active Calls",   selActive, (selActive ? "#dc2626" : "#16a34a"), "abhi chalu"],
+    ["Longest Active", selRows.length ? fmtDuration(selLongest) : "0s", "#7c3aed", "sabse lambi chalu call"],
   ];
 
   return (
