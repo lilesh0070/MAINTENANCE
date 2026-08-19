@@ -419,6 +419,11 @@ export default function MaintenanceKPI() {
             });
           }
         }
+        // Count-based KPIs (breakdown frequency, >1hr count) show a WHOLE-NUMBER
+        // target on the chart — round half up (60.75 → 61, 2.17 → 2).
+        ["breakdown_frequency", "over_1hr_count"].forEach((k) => {
+          if (map[k] != null) map[k] = Math.round(map[k]);
+        });
         setTargets(map);
       })
       .catch(() => setTargets({}));
