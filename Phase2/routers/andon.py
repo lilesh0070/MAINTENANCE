@@ -308,15 +308,21 @@ def auto_slip_on_close(event_id, history_id, power_cut=False):
             # waise ke waise rehte hain.  Aur agar maintenance ne slip already
             # bhar di ho to bhi ye khaane safe hain (wo alag columns hain).
             cur2 = conn.cursor()
+            # Close par OK/down bharo, AUR (safety-net) agar ACK event kisi wajah se
+            # chhoot gaya ho to received/response bhi bhar do — par SIRF tab jab abhi
+            # khali ho (COALESCE), taaki ACK/maintenance ki value na miti.
             cur2.execute(f"""
                 UPDATE {AUTO_SLIP_TABLE}
                    SET bd_ok_time            = %s,
                        bd_end_date           = %s,
                        mc_down_time_minutes  = %s,
-                       power_cut             = %s
+                       power_cut             = %s,
+                       bd_received_time      = COALESCE(bd_received_time, %s),
+                       response_time_minutes = COALESCE(response_time_minutes, %s)
                  WHERE andon_event_id = %s""",
                 (flat["bd_ok_time"], flat["bd_end_date"],
-                 flat["mc_down_time_minutes"], bool(power_cut), event_id))
+                 flat["mc_down_time_minutes"], bool(power_cut),
+                 flat["bd_received_time"], flat["response_time_minutes"], event_id))
             if cur2.rowcount:
                 print(f"[ANDON-SLIP] call {event_id} band -> slip poori hui "
                       f"(ok {flat['bd_ok_time']}, down {flat['mc_down_time_minutes']} min"
@@ -374,6 +380,19 @@ def _slip_threshold_sweep():
                                     model=e.get("model"))
                 if _slip_insert(conn, e["id"], flat):
                     made += 1
+            # SELF-HEAL: koi OPEN call jiski slip to hai par RESPONSE abhi khali, aur
+            # ACK aa chuka — us call ki list.  ACK event kisi wajah se chhoot bhi jaye
+            # (poll ke beech chhota pulse, poller restart), to ye har second pakad lega.
+            cur.execute(f"""
+                SELECT e.id FROM andon_system e
+                  JOIN {AUTO_SLIP_TABLE} s ON s.andon_event_id = e.id
+                 WHERE e.state = 'OPEN' AND e.acknowledged_at IS NOT NULL
+                   AND s.bd_received_time IS NULL""")
+            heal = [r["id"] for r in cur.fetchall()]
+        # response back-fill wahi ek jagah wali sahi logic se (idempotent, sirf NULL par)
+        for _eid in heal:
+            try: auto_slip_on_ack(_eid)
+            except Exception as _e: print(f"[ANDON-SLIP] self-heal dikkat (call {_eid}): {_e}")
         if made:
             print(f"[ANDON-SLIP] threshold sweep -> {made} slip bani "
                   f"(call {thr} min se zyada khuli rahi)")
