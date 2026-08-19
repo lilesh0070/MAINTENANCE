@@ -104,14 +104,29 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (!token) { setLoading(false); return; }
-    fetch(`${API}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(_setUserFromMe)
-      .catch(() => {
-        setToken("");
-        for (const k of AUTH_KEYS) ss.remove(k);
-      })
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    // Load /me with retry.  Only a 401 (token really invalid) logs out; a
+    // transient failure (500/503/network) RETRIES instead of clearing the
+    // session — otherwise a DB hiccup would flash "Koi page assign nahi" or
+    // bounce the user to /login even though their access is fine.
+    const loadMe = async (tries = 0) => {
+      try {
+        const r = await fetch(`${API}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+        if (r.status === 401) {                       // genuine auth failure → logout
+          if (!cancelled) { setToken(""); for (const k of AUTH_KEYS) ss.remove(k); setLoading(false); }
+          return;
+        }
+        if (!r.ok) throw new Error(`me ${r.status}`); // transient → retry (keep session)
+        const me = await r.json();
+        if (!cancelled) { _setUserFromMe(me); setLoading(false); }
+      } catch {
+        if (cancelled) return;
+        if (tries < 5) setTimeout(() => loadMe(tries + 1), 700 * (tries + 1));  // backoff retry
+        else setLoading(false);                       // give up (rare true outage)
+      }
+    };
+    loadMe();
+    return () => { cancelled = true; };
   }, []);
 
   // ── Force-logout / password-change detect karo (har 10s) ──

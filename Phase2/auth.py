@@ -314,19 +314,31 @@ def me(user=Depends(get_current_user)):
     canAccess() / canWrite() can honor admin-configured overrides
     without an extra round-trip on every page load."""
     permissions = {}    # { page_key: perm_level }
-    with get_conn() as conn:
-        cur = dict_cursor(conn)
-        # Permissions table naye install par shayad na ho — /me kabhi na fate.
+    # A transient DB hiccup (busy pool / dropped connection / timeout) must NOT
+    # masquerade as "no pages assigned" — that was flashing the 'Koi page assign
+    # nahi' screen at users who DO have access.  So: RETRY on a connection error,
+    # and if it still fails, return 503 (frontend retries) instead of an EMPTY
+    # permission map.  Only a genuinely-missing table (fresh install) falls back
+    # to {} — that's a real "no permissions yet" state, not a hiccup.
+    err = None
+    for attempt in range(3):
         try:
-            cur.execute("""
-                SELECT page_key, perm_level
-                  FROM maintenance_user_permissions
-                 WHERE user_id = %s
-            """, (user["id"],))
-            for row in cur.fetchall():
-                permissions[row["page_key"]] = row["perm_level"]
-        except Exception:
-            pass
+            with get_conn() as conn:
+                cur = dict_cursor(conn)
+                cur.execute("""SELECT page_key, perm_level
+                                 FROM maintenance_user_permissions
+                                WHERE user_id = %s""", (user["id"],))
+                permissions = {r["page_key"]: r["perm_level"] for r in cur.fetchall()}
+            err = None
+            break
+        except psycopg2.ProgrammingError:                       # table missing (new install)
+            permissions = {}; err = None; break
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            err = e; time.sleep(0.15 * (attempt + 1))          # transient — retry
+        except Exception as e:
+            err = e; break
+    if err is not None:
+        raise HTTPException(503, "Permissions temporarily unavailable — please retry")
     return {
         "id":              user["id"],
         "username":        user["username"],
