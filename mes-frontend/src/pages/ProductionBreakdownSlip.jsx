@@ -23,16 +23,22 @@ const TABS = [
 // Slip kitni purani hai.  Production bhare BINA slip maintenance ko dikhti hi
 // nahi (chahe kitni bhi purani ho) — isliye production ko saaf dikhna chahiye ki
 // kya latka pada hai.  1+ din purani → laal.
-const ageDays = (d) => {
-  if (!d) return 0;
-  const t = new Date(String(d).slice(0, 10) + "T00:00:00");
-  if (isNaN(t)) return 0;
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  return Math.max(0, Math.round((today - t) / 86400000));
+// 24 ghante tak GHANTE me (2h, 17h), uske baad DIN me (1 day, 2 day).
+const ageMs = (d, t) => {
+  if (!d) return null;
+  const day  = String(d).slice(0, 10);
+  const time = /^\d{1,2}:\d{2}/.test(String(t || "")) ? String(t).slice(0, 5) : "00:00";
+  const at = new Date(`${day}T${time}:00`);
+  return isNaN(at) ? null : Math.max(0, Date.now() - at.getTime());
 };
-const ageLabel = (d) => {
-  const n = ageDays(d);
-  return n === 0 ? "aaj" : n === 1 ? "1 din" : `${n} din`;
+const ageHours = (d, t) => { const ms = ageMs(d, t); return ms == null ? 0 : ms / 3600000; };
+const ageLabel = (d, t) => {
+  const ms = ageMs(d, t);
+  if (ms == null) return "—";
+  const h = Math.floor(ms / 3600000);
+  if (h < 24) return h < 1 ? `${Math.floor(ms / 60000)}m` : `${h}h`;
+  const days = Math.floor(h / 24);
+  return `${days} day`;
 };
 const fmtDate = (d) => {
   if (!d) return "—";
@@ -210,8 +216,8 @@ export default function ProductionBreakdownSlip() {
                       <td style={{ ...td, fontFamily: "monospace", whiteSpace: "nowrap" }}>{fmtDate(r.bd_start_date)}</td>
                       <td style={{ ...td, fontFamily: "monospace" }}>{r.bd_start_time || "—"}</td>
                       <td style={{ ...td, fontWeight: 700, whiteSpace: "nowrap",
-                                   color: ageDays(r.bd_start_date) >= 1 ? "#dc2626" : "#16a34a" }}>
-                        {ageLabel(r.bd_start_date)}
+                                   color: ageHours(r.bd_start_date, r.bd_start_time) >= 24 ? "#dc2626" : "#16a34a" }}>
+                        {ageLabel(r.bd_start_date, r.bd_start_time)}
                       </td>
                       <td style={td}>{r.category || "—"}</td>
                       <td style={{ ...td, maxWidth: 240, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
