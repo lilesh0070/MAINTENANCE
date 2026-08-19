@@ -56,6 +56,7 @@ export function MaintenanceAnnualIndex({ fy, onBack }) {
   const [tmap, setTmap]     = useState({});
   const [loading, setLoad]  = useState(true);
   const [err, setErr]       = useState("");
+  const [tick, setTick]     = useState(null);   // last live-refresh time
 
   const load = useCallback(async () => {
     if (!token || !fy) return;
@@ -72,10 +73,16 @@ export function MaintenanceAnnualIndex({ fy, onBack }) {
       const m = {};
       Object.entries(g).forEach(([k, v]) => { m[k] = v.reduce((s, x) => s + x, 0) / v.length; });
       setTmap(m);
+      setTick(new Date());
     } catch (e) { setErr(e.message || "Load failed"); }
     finally { setLoad(false); }
   }, [fy, token]);
-  useEffect(() => { load(); }, [load]);
+  // load on open + FY change, and auto-refresh every 30s while open (live).
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 30000);
+    return () => clearInterval(t);
+  }, [load]);
 
   const y1 = parseInt(String(fy).slice(0, 4), 10) || new Date().getFullYear();
   const y2 = y1 + 1;
@@ -111,6 +118,7 @@ export function MaintenanceAnnualIndex({ fy, onBack }) {
         .ix-back:hover { background:#f8fafc; }
         .ix-h1 { font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:24px; color:#0f172a; letter-spacing:.02em; }
         .ix-h1 b { color:#1e40af; }
+        .ix-live { margin-left:auto; font-size:12px; font-weight:700; color:#16a34a; display:inline-flex; align-items:center; gap:6px; }
         .ix-sheet { background:#fff; border:1px solid #cbd5e1; border-radius:10px; padding:16px; max-width:1180px; box-shadow:0 2px 10px rgba(15,23,42,.05); overflow-x:auto; }
         .ix-sec { font-weight:800; font-size:14px; color:#fff; background:#334155; padding:7px 12px; border-radius:6px 6px 0 0; margin-top:22px; }
         .ix-sec:first-child { margin-top:0; }
@@ -133,6 +141,7 @@ export function MaintenanceAnnualIndex({ fy, onBack }) {
       <div className="ix-bar">
         <button className="ix-back" onClick={onBack}>← Back to KPI</button>
         <div className="ix-h1">Global Maintenance <b>Index</b> · TBDI · FY {fy}</div>
+        <span className="ix-live">🟢 Live{tick ? ` · updated ${tick.toLocaleTimeString("en-IN")}` : ""}</span>
       </div>
 
       {err && <div style={{ color: "#dc2626", fontWeight: 700, marginBottom: 12 }}>⚠ {err}</div>}
