@@ -50,6 +50,32 @@ _ALLOWED_SLIP_TABLES = {MANUAL_SLIP_TABLE, AUTO_SLIP_TABLE, TOOLROOM_SLIP_TABLE}
 SRC_TABLES = {"maintenance": AUTO_SLIP_TABLE, "toolroom": TOOLROOM_SLIP_TABLE}
 
 
+# ── Financial-year + month filter ────────────────────────────────────────
+# FY Apr→Mar chalta hai.  `fy` "2026-2027" ya "2026-27" dono chalte hain;
+# `month` "Apr".."Mar" (khali = poora saal).  Return: (start_date, end_date)
+# dono INCLUSIVE, ya (None, None) jab koi filter na ho.
+_FY_MONTHS = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"]
+
+
+def _fy_range(fy: Optional[str], month: Optional[str]):
+    import calendar
+    from datetime import date
+    fy = (fy or "").strip()
+    month = (month or "").strip()[:3].title()
+    if not fy:
+        return None, None
+    try:
+        y1 = int(fy.split("-")[0])
+    except Exception:
+        raise HTTPException(400, "fy format: 2026-2027")
+    if month and month in _FY_MONTHS:
+        i = _FY_MONTHS.index(month)                 # 0=Apr … 11=Mar
+        y = y1 + (1 if i >= 9 else 0)               # Jan/Feb/Mar agle saal me
+        m = ((3 + i) % 12) + 1
+        return date(y, m, 1), date(y, m, calendar.monthrange(y, m)[1])
+    return date(y1, 4, 1), date(y1 + 1, 3, 31)      # poora FY
+
+
 def _src_table(src: str) -> str:
     """'maintenance' / 'toolroom' -> table name (galat naam par 400)."""
     t = SRC_TABLES.get((src or "maintenance").strip().lower())
@@ -587,6 +613,7 @@ def get_auto_slip(sid: int, src: str = Query("maintenance"),
 
 @router.get("/stage/{stage}")
 def list_by_stage(stage: str, src: str = Query("maintenance"),
+                  fy: Optional[str] = Query(None), month: Optional[str] = Query(None),
                   user=Depends(get_current_user)) -> List[dict]:
     """2-stage flow ki list: PENDING_PRODUCTION (production tab), PENDING_MAINTENANCE
     (maintenance / tool room ko), COMPLETED (history).
@@ -599,11 +626,15 @@ def list_by_stage(stage: str, src: str = Query("maintenance"),
         raise HTTPException(400, "bad stage")
     srcs = (["maintenance", "toolroom"] if (src or "").strip().lower() == "all"
             else [(src or "maintenance").strip().lower()])
+    d0, d1 = _fy_range(fy, month)          # FY + month filter (khali = sab)
     out: List[dict] = []
     with get_conn() as conn:
         cur = dict_cursor(conn)
         for s in srcs:
             tbl = _src_table(s)
+            where, params = ["COALESCE(prod_stage, 'PENDING_MAINTENANCE') = %s"], [stage]
+            if d0:
+                where.append("bd_start_date >= %s AND bd_start_date <= %s"); params += [d0, d1]
             cur.execute(f"""
                 SELECT id, zone, line, machine_no, machine_name, shift, slip_date,
                        bd_start_date, bd_start_time, bd_received_time, bd_ok_time,
@@ -611,8 +642,8 @@ def list_by_stage(stage: str, src: str = Query("maintenance"),
                        problem_reported_by_production, prod_stage, andon_event_id,
                        production_at, submitted_at
                   FROM {tbl}
-                 WHERE COALESCE(prod_stage, 'PENDING_MAINTENANCE') = %s
-            """, (stage,))
+                 WHERE {' AND '.join(where)}
+            """, params)
             for r in cur.fetchall():
                 d = dict(r); d["src"] = s; out.append(d)
     # dono tables ke rows ek saath — naya pehle
@@ -622,18 +653,24 @@ def list_by_stage(stage: str, src: str = Query("maintenance"),
 
 
 @router.get("/status")
-def breakdown_status(limit: int = Query(300), user=Depends(get_current_user)) -> List[dict]:
+def breakdown_status(limit: int = Query(300),
+                     fy: Optional[str] = Query(None), month: Optional[str] = Query(None),
+                     user=Depends(get_current_user)) -> List[dict]:
     """`breakdown_status` view — har breakdown ki ek line me poori haalat:
     kab/kahan hua, kitna downtime, resolve hua ya nahi, aur prod / maint /
     toolroom me se kisne apni slip submit ki."""
     _ensure_table()
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("""
+        d0, d1 = _fy_range(fy, month)
+        where = "TRUE" if not d0 else "bd_start_date >= %s AND bd_start_date <= %s"
+        params = ([] if not d0 else [d0, d1]) + [max(1, min(limit, 2000))]
+        cur.execute(f"""
             SELECT * FROM breakdown_status
+             WHERE {where}
              ORDER BY bd_start_date DESC NULLS LAST, bd_start_time DESC NULLS LAST
              LIMIT %s
-        """, (max(1, min(limit, 2000)),))
+        """, params)
         return [dict(r) for r in cur.fetchall()]
 
 

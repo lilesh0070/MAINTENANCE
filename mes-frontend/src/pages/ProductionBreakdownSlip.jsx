@@ -56,6 +56,13 @@ const fmtDate = (d) => {
   return s.length === 3 ? `${s[2]}/${s[1]}/${s[0]}` : String(d);
 };
 
+// ── Financial year (Apr→Mar) + month filter ─────────────────────────────
+const FY_START = 2025;
+const CUR_FY_Y = (() => { const d = new Date(); return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1; })();
+const FY_LIST = Array.from({ length: Math.max(1, CUR_FY_Y - FY_START + 1) },
+                           (_, i) => { const y = FY_START + i; return `${y}-${y + 1}`; }).reverse();
+const FY_MONTHS = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
+
 // Status ka chhota rang-badge: ho gaya = hara, baaki hai = amber, laagu nahi = grey
 function Tag({ v }) {
   const s = String(v || "-");
@@ -80,6 +87,8 @@ export default function ProductionBreakdownSlip() {
   const [modal, setModal] = useState(null);   // { ticket, phase }
   const [err, setErr]     = useState("");
   const [zoneSel, setZone]= useState("");     // zone card click -> list filter
+  const [fy, setFy]       = useState(`${CUR_FY_Y}-${CUR_FY_Y + 1}`);   // FY filter
+  const [month, setMonth] = useState("");     // "" = poora FY
 
   const T = TABS.find((t) => t.key === tab);
 
@@ -89,29 +98,33 @@ export default function ProductionBreakdownSlip() {
   rows.forEach((r) => { const z = r.zone; if (z in zoneCount) zoneCount[z] += 1; });
   const shown = zoneSel ? rows.filter((r) => r.zone === zoneSel) : rows;
 
+  // FY + month har request me jaata hai — tab counts bhi usi filter ke hisaab se
+  const fq = `&fy=${encodeURIComponent(fy)}${month ? `&month=${month}` : ""}`;
+
   const loadCounts = useCallback(async () => {
     try {
+      const q = `&fy=${encodeURIComponent(fy)}${month ? `&month=${month}` : ""}`;
       const [p, m, t] = await Promise.all([
-        api.get("/api/breakdown-slips/stage/PENDING_PRODUCTION?src=all",          token),
-        api.get("/api/breakdown-slips/stage/PENDING_MAINTENANCE?src=maintenance", token),
-        api.get("/api/breakdown-slips/stage/PENDING_MAINTENANCE?src=toolroom",    token),
+        api.get(`/api/breakdown-slips/stage/PENDING_PRODUCTION?src=all${q}`,          token),
+        api.get(`/api/breakdown-slips/stage/PENDING_MAINTENANCE?src=maintenance${q}`, token),
+        api.get(`/api/breakdown-slips/stage/PENDING_MAINTENANCE?src=toolroom${q}`,    token),
       ]);
       setCount({ PRODUCTION: (p || []).length, MAINTENANCE: (m || []).length,
                  TOOLROOM: (t || []).length });
     } catch { /* ignore */ }
-  }, [token]);
+  }, [token, fy, month]);
 
   const load = useCallback(async () => {
     if (!token) return;
     setLoad(true); setErr("");
     try {
-      const url = T.status ? "/api/breakdown-slips/status"
-                           : `/api/breakdown-slips/stage/${T.stage}?src=${T.src}`;
+      const url = T.status ? `/api/breakdown-slips/status?limit=500${fq}`
+                           : `/api/breakdown-slips/stage/${T.stage}?src=${T.src}${fq}`;
       const r = await api.get(url, token);
       setRows(Array.isArray(r) ? r : []);
     } catch (e) { setErr(e.message || "Load failed"); }
     finally { setLoad(false); loadCounts(); }
-  }, [token, T.stage, T.src, T.status, loadCounts]);
+  }, [token, T.stage, T.src, T.status, fq, loadCounts]);
   useEffect(() => { load(); }, [load]);
 
   const openFill = async (row) => {
@@ -147,6 +160,8 @@ export default function ProductionBreakdownSlip() {
                letterSpacing: ".06em", textTransform: "uppercase", color: "#64748b",
                borderBottom: "2px solid #e2e8f0", whiteSpace: "nowrap" };
   const td = { padding: "9px 12px", fontSize: 13, color: "#334155", borderBottom: "1px solid #f1f5f9" };
+  const sel = { border: "1.5px solid #e2e8f0", borderRadius: 10, padding: "7px 10px", fontSize: 12.5,
+                fontWeight: 700, color: "#334155", background: "#fff", fontFamily: "inherit", cursor: "pointer" };
 
   return (
     <div style={{ minHeight: "100vh", background: "#f1f5f9", fontFamily: "'Barlow',sans-serif", paddingBottom: 50 }}>
@@ -162,8 +177,8 @@ export default function ProductionBreakdownSlip() {
       </div>
 
       <div style={{ maxWidth: 1300, margin: "20px auto 0", padding: "0 24px" }}>
-        {/* tabs */}
-        <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+        {/* tabs + FY/month filter (filter saare tabs par lagta hai) */}
+        <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
           {TABS.map((t) => {
             const on = t.key === tab;
             return (
@@ -189,6 +204,17 @@ export default function ProductionBreakdownSlip() {
               </button>
             );
           })}
+
+          {/* FY + Month — saare tabs (aur unke counts) par lagta hai */}
+          <div style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <select style={sel} value={fy} onChange={(e) => { setFy(e.target.value); setZone(""); }}>
+              {FY_LIST.map((y) => <option key={y} value={y}>FY {y}</option>)}
+            </select>
+            <select style={sel} value={month} onChange={(e) => { setMonth(e.target.value); setZone(""); }}>
+              <option value="">All months</option>
+              {FY_MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
         </div>
 
         {/* Zone cards — app ka standard StatCard (click = us zone ki list) */}
