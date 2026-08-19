@@ -16,8 +16,10 @@ import { api, Btn, StatCard } from "./breakdown/shared";
 import { ClosureFormModal } from "./breakdown/ClosureFormModal";
 
 const TABS = [
-  { key: "PRODUCTION",  label: "🏭 Production",  stage: "PENDING_PRODUCTION",  phase: "production",  accent: "#1e40af" },
-  { key: "MAINTENANCE", label: "🔧 Maintenance", stage: "PENDING_MAINTENANCE", phase: "maintenance", accent: "#0e7490" },
+  { key: "PRODUCTION",  icon: "🏭", label: "Production",  sub: "half slip pending",
+    stage: "PENDING_PRODUCTION",  phase: "production",  accent: "#1e40af" },
+  { key: "MAINTENANCE", icon: "🔧", label: "Maintenance", sub: "complete karni hai",
+    stage: "PENDING_MAINTENANCE", phase: "maintenance", accent: "#0e7490" },
 ];
 
 // Slip kitni purani hai.  Production bhare BINA slip maintenance ko dikhti hi
@@ -138,14 +140,25 @@ export default function ProductionBreakdownSlip() {
             const on = t.key === tab;
             return (
               <button key={t.key} onClick={() => { setTab(t.key); setZone(""); }}
-                style={{ padding: "12px 22px", borderRadius: 12, cursor: "pointer", fontFamily: "'Barlow Condensed',sans-serif",
-                         fontWeight: 800, fontSize: 17, letterSpacing: ".02em", display: "inline-flex", alignItems: "center", gap: 10,
-                         border: `2px solid ${on ? t.accent : "#e2e8f0"}`, background: on ? t.accent : "#fff",
-                         color: on ? "#fff" : "#334155" }}>
-                {t.label}
-                <span style={{ minWidth: 22, height: 22, borderRadius: 99, background: on ? "rgba(255,255,255,.25)" : t.accent,
-                               color: "#fff", fontSize: 12, fontWeight: 800, display: "inline-flex",
-                               alignItems: "center", justifyContent: "center", padding: "0 6px" }}>
+                style={{ display: "inline-flex", alignItems: "center", gap: 13, cursor: "pointer",
+                         padding: "11px 20px", borderRadius: 14, fontFamily: "inherit", textAlign: "left",
+                         transition: "all .14s",
+                         border: `1.5px solid ${on ? t.accent : "#e2e8f0"}`,
+                         background: on ? t.accent : "#fff",
+                         boxShadow: on ? `0 6px 16px ${t.accent}33` : "0 1px 3px rgba(15,23,42,.05)" }}>
+                <span style={{ fontSize: 21, lineHeight: 1, filter: on ? "none" : "grayscale(.35)" }}>{t.icon}</span>
+                <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
+                  <span style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 19, fontWeight: 800,
+                                 letterSpacing: ".05em", textTransform: "uppercase",
+                                 color: on ? "#fff" : "#0f172a" }}>{t.label}</span>
+                  <span style={{ fontSize: 10.5, fontWeight: 600, marginTop: 1,
+                                 color: on ? "rgba(255,255,255,.82)" : "#94a3b8" }}>{t.sub}</span>
+                </span>
+                <span style={{ minWidth: 30, height: 26, borderRadius: 99, padding: "0 9px",
+                               display: "inline-flex", alignItems: "center", justifyContent: "center",
+                               fontFamily: "'Barlow Condensed',sans-serif", fontSize: 17, fontWeight: 800,
+                               background: on ? "rgba(255,255,255,.22)" : "#f1f5f9",
+                               color: on ? "#fff" : count[t.key] > 0 ? t.accent : "#94a3b8" }}>
                   {count[t.key]}
                 </span>
               </button>
