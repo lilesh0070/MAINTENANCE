@@ -144,8 +144,63 @@ def _ensure_table():
         for _T in (AUTO_SLIP_TABLE, TOOLROOM_SLIP_TABLE):
             _ensure_auto_table(cur, _T)
 
+        _ensure_status_view(cur)
+
         conn.commit()
     _ensured = True
+
+
+def _ensure_status_view(cur):
+    """`breakdown_status` — har breakdown ki ek line me poori haalat.
+
+    Ye ek LIVE VIEW hai (asli table nahi): data seedha ANDON + dono slip tables
+    se banta hai, isliye hamesha sahi rehta — kahin alag copy rakhne (aur uske
+    purana pad jaane) ka sawaal hi nahi.  Query aise hi hoti hai:
+        SELECT * FROM breakdown_status;
+
+    Ek row = ek breakdown jiski SLIP bani ho (2-min threshold paar).  Chhoti
+    calls (jinki slip banti hi nahi) ismein nahi aati.
+
+      state  : RESOLVED (call band ho chuki) ya OPEN (abhi chalu)
+      prod   : production ne apni half submit ki? (SUBMITTED / PENDING)
+      maint  : maintenance ne complete kiya?  (toolroom ki breakdown me '-')
+      toolroom: tool room ne complete kiya?   (maintenance ki breakdown me '-')
+
+    Isse turant dikh jaata hai: "breakdown to resolve ho gaya, par slip kisi ne
+    nahi bhari" — teeno khaali honge.
+    """
+    cur.execute(f"""
+        CREATE OR REPLACE VIEW breakdown_status AS
+        SELECT
+            s.andon_event_id,
+            'maintenance'::text                        AS bd_for,
+            s.bd_start_date, s.bd_start_time,
+            s.zone, s.line, s.machine_no, s.shift,
+            s.mc_down_time_minutes                     AS total_downtime_min,
+            CASE WHEN s.bd_ok_time IS NOT NULL THEN 'RESOLVED' ELSE 'OPEN' END AS state,
+            CASE WHEN COALESCE(s.prod_stage,'PENDING_MAINTENANCE') = 'PENDING_PRODUCTION'
+                 THEN 'PENDING' ELSE 'SUBMITTED' END   AS prod,
+            CASE WHEN COALESCE(s.prod_stage,'PENDING_MAINTENANCE') = 'COMPLETED'
+                 THEN 'SUBMITTED' ELSE 'PENDING' END   AS maint,
+            '-'::text                                  AS toolroom,
+            s.production_at, s.submitted_at, s.id      AS slip_id
+          FROM {AUTO_SLIP_TABLE} s
+        UNION ALL
+        SELECT
+            t.andon_event_id,
+            'toolroom'::text                           AS bd_for,
+            t.bd_start_date, t.bd_start_time,
+            t.zone, t.line, t.machine_no, t.shift,
+            t.mc_down_time_minutes                     AS total_downtime_min,
+            CASE WHEN t.bd_ok_time IS NOT NULL THEN 'RESOLVED' ELSE 'OPEN' END AS state,
+            CASE WHEN COALESCE(t.prod_stage,'PENDING_MAINTENANCE') = 'PENDING_PRODUCTION'
+                 THEN 'PENDING' ELSE 'SUBMITTED' END   AS prod,
+            '-'::text                                  AS maint,
+            CASE WHEN COALESCE(t.prod_stage,'PENDING_MAINTENANCE') = 'COMPLETED'
+                 THEN 'SUBMITTED' ELSE 'PENDING' END   AS toolroom,
+            t.production_at, t.submitted_at, t.id      AS slip_id
+          FROM {TOOLROOM_SLIP_TABLE} t
+    """)
 
 
 def _ensure_auto_table(cur, tbl: str):
