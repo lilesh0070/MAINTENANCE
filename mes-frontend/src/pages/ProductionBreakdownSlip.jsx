@@ -16,9 +16,9 @@ import { api, Btn, StatCard } from "./breakdown/shared";
 import { ClosureFormModal } from "./breakdown/ClosureFormModal";
 
 const TABS = [
-  { key: "PRODUCTION",  icon: "🏭", label: "Production",  sub: "half slip pending",
+  { key: "PRODUCTION",  icon: "🏭", label: "Production",
     stage: "PENDING_PRODUCTION",  phase: "production",  accent: "#1e40af" },
-  { key: "MAINTENANCE", icon: "🔧", label: "Maintenance", sub: "complete karni hai",
+  { key: "MAINTENANCE", icon: "🔧", label: "Maintenance",
     stage: "PENDING_MAINTENANCE", phase: "maintenance", accent: "#0e7490" },
 ];
 
@@ -147,13 +147,9 @@ export default function ProductionBreakdownSlip() {
                          background: on ? t.accent : "#fff",
                          boxShadow: on ? `0 6px 16px ${t.accent}33` : "0 1px 3px rgba(15,23,42,.05)" }}>
                 <span style={{ fontSize: 21, lineHeight: 1, filter: on ? "none" : "grayscale(.35)" }}>{t.icon}</span>
-                <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
-                  <span style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 19, fontWeight: 800,
-                                 letterSpacing: ".05em", textTransform: "uppercase",
-                                 color: on ? "#fff" : "#0f172a" }}>{t.label}</span>
-                  <span style={{ fontSize: 10.5, fontWeight: 600, marginTop: 1,
-                                 color: on ? "rgba(255,255,255,.82)" : "#94a3b8" }}>{t.sub}</span>
-                </span>
+                <span style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 19, fontWeight: 800,
+                               letterSpacing: ".05em", textTransform: "uppercase",
+                               color: on ? "#fff" : "#0f172a" }}>{t.label}</span>
                 <span style={{ minWidth: 30, height: 26, borderRadius: 99, padding: "0 9px",
                                display: "inline-flex", alignItems: "center", justifyContent: "center",
                                fontFamily: "'Barlow Condensed',sans-serif", fontSize: 17, fontWeight: 800,
