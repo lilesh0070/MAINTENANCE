@@ -16,10 +16,15 @@ import { api, Btn, StatCard } from "./breakdown/shared";
 import { ClosureFormModal } from "./breakdown/ClosureFormModal";
 
 const TABS = [
+  // Production tab me DONO taraf (maintenance + tool room) ki pending slips
+  // ek saath aati hain — production dono bharti hai.  Submit ke baad har slip
+  // apni hi taraf jaati hai (ANDON ne jis department ko bulaya tha).
   { key: "PRODUCTION",  icon: "🏭", label: "Production",
-    stage: "PENDING_PRODUCTION",  phase: "production",  accent: "#1e40af" },
+    stage: "PENDING_PRODUCTION",  phase: "production",  src: "all",         accent: "#1e40af" },
   { key: "MAINTENANCE", icon: "🔧", label: "Maintenance",
-    stage: "PENDING_MAINTENANCE", phase: "maintenance", accent: "#0e7490" },
+    stage: "PENDING_MAINTENANCE", phase: "maintenance", src: "maintenance", accent: "#0e7490" },
+  { key: "TOOLROOM",    icon: "🧰", label: "Tool Room",
+    stage: "PENDING_MAINTENANCE", phase: "maintenance", src: "toolroom",    accent: "#b45309" },
 ];
 
 // Slip kitni purani hai.  Production bhare BINA slip maintenance ko dikhti hi
@@ -53,7 +58,7 @@ export default function ProductionBreakdownSlip() {
   const nav = useNavigate();
   const [tab, setTab]     = useState("PRODUCTION");
   const [rows, setRows]   = useState([]);
-  const [count, setCount] = useState({ PRODUCTION: 0, MAINTENANCE: 0 });
+  const [count, setCount] = useState({ PRODUCTION: 0, MAINTENANCE: 0, TOOLROOM: 0 });
   const [loading, setLoad]= useState(true);
   const [modal, setModal] = useState(null);   // { ticket, phase }
   const [err, setErr]     = useState("");
@@ -69,11 +74,13 @@ export default function ProductionBreakdownSlip() {
 
   const loadCounts = useCallback(async () => {
     try {
-      const [p, m] = await Promise.all([
-        api.get("/api/breakdown-slips/stage/PENDING_PRODUCTION",  token),
-        api.get("/api/breakdown-slips/stage/PENDING_MAINTENANCE", token),
+      const [p, m, t] = await Promise.all([
+        api.get("/api/breakdown-slips/stage/PENDING_PRODUCTION?src=all",          token),
+        api.get("/api/breakdown-slips/stage/PENDING_MAINTENANCE?src=maintenance", token),
+        api.get("/api/breakdown-slips/stage/PENDING_MAINTENANCE?src=toolroom",    token),
       ]);
-      setCount({ PRODUCTION: (p || []).length, MAINTENANCE: (m || []).length });
+      setCount({ PRODUCTION: (p || []).length, MAINTENANCE: (m || []).length,
+                 TOOLROOM: (t || []).length });
     } catch { /* ignore */ }
   }, [token]);
 
@@ -81,17 +88,18 @@ export default function ProductionBreakdownSlip() {
     if (!token) return;
     setLoad(true); setErr("");
     try {
-      const r = await api.get(`/api/breakdown-slips/stage/${T.stage}`, token);
+      const r = await api.get(`/api/breakdown-slips/stage/${T.stage}?src=${T.src}`, token);
       setRows(Array.isArray(r) ? r : []);
     } catch (e) { setErr(e.message || "Load failed"); }
     finally { setLoad(false); loadCounts(); }
-  }, [token, T.stage, loadCounts]);
+  }, [token, T.stage, T.src, loadCounts]);
   useEffect(() => { load(); }, [load]);
 
-  const openFill = async (id) => {
+  const openFill = async (row) => {
     try {
-      const ticket = await api.get(`/api/breakdown-slips/auto/${id}`, token);
-      setModal({ ticket, phase: T.phase });
+      const src = row.src || T.src || "maintenance";
+      const ticket = await api.get(`/api/breakdown-slips/auto/${row.id}?src=${src}`, token);
+      setModal({ ticket, phase: T.phase, src });
     } catch (e) { setErr(e.message || "Open failed"); }
   };
 
@@ -104,6 +112,7 @@ export default function ProductionBreakdownSlip() {
         maintenance_data: phase === "maintenance" ? slice : undefined,
         production_data:  phase === "production"  ? slice : (prodExtra || undefined),
         stage,
+        src: modal.src || "maintenance",   // slip apni hi table me update ho
       }, token);
       setModal(null);
       load();
@@ -205,23 +214,38 @@ export default function ProductionBreakdownSlip() {
               <div style={{ fontWeight: 700, color: "#334155", marginTop: 6 }}>
                 {zoneSel
                   ? `${zoneSel.replace(/_/g, " ")} me koi pending slip nahi.`
-                  : tab === "PRODUCTION" ? "Koi production-pending slip nahi." : "Koi maintenance-pending slip nahi."}
+                  : tab === "PRODUCTION" ? "Koi production-pending slip nahi."
+                  : tab === "TOOLROOM"   ? "Koi tool room-pending slip nahi."
+                                         : "Koi maintenance-pending slip nahi."}
               </div>
             </div>
           ) : (
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 800 }}>
                 <thead><tr>
-                  {["S.No", "Zone", "Line", "Machine", "Date", "Start", "Pending", "Category", "Problem (Production)", ""]
+                  {["S.No", "Zone", "Line", "Machine"]
+                    .concat(tab === "PRODUCTION" ? ["Related To"] : [])
+                    .concat(["Date", "Start", "Pending", "Category", "Problem (Production)", ""])
                     .map((h, i) => <th key={i} style={th}>{h}</th>)}
                 </tr></thead>
                 <tbody>
-                  {rows.map((r, i) => (
-                    <tr key={r.id}>
+                  {shown.map((r, i) => (
+                    <tr key={`${r.src || ""}-${r.id}`}>
                       <td style={{ ...td, fontWeight: 800, color: T.accent }}>{i + 1}</td>
                       <td style={{ ...td, fontWeight: 700, color: "#0f172a" }}>{r.zone || "—"}</td>
                       <td style={td}>{r.line || "—"}</td>
                       <td style={td}>{r.machine_no || "—"}</td>
+                      {tab === "PRODUCTION" && (
+                        /* ANDON ne kise bulaya — submit ke baad slip isi taraf jaayegi */
+                        <td style={td}>
+                          <span style={{ display: "inline-block", padding: "2px 9px", borderRadius: 99,
+                                         fontSize: 11, fontWeight: 800, whiteSpace: "nowrap",
+                                         background: r.src === "toolroom" ? "#fef3c7" : "#e0f2fe",
+                                         color:      r.src === "toolroom" ? "#b45309" : "#0e7490" }}>
+                            {r.src === "toolroom" ? "🧰 Tool Room" : "🔧 Maintenance"}
+                          </span>
+                        </td>
+                      )}
                       <td style={{ ...td, fontFamily: "monospace", whiteSpace: "nowrap" }}>{fmtDate(r.bd_start_date)}</td>
                       <td style={{ ...td, fontFamily: "monospace" }}>{r.bd_start_time || "—"}</td>
                       <td style={{ ...td, fontWeight: 700, whiteSpace: "nowrap",
@@ -232,7 +256,7 @@ export default function ProductionBreakdownSlip() {
                       <td style={{ ...td, maxWidth: 240, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {r.problem_reported_by_production || "—"}</td>
                       <td style={{ ...td, textAlign: "right" }}>
-                        <Btn variant="primary" size="sm" onClick={() => openFill(r.id)}>
+                        <Btn variant="primary" size="sm" onClick={() => openFill(r)}>
                           {tab === "PRODUCTION" ? "✏ Fill Production Half" : "🔧 Complete"}
                         </Btn>
                       </td>

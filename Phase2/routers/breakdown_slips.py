@@ -24,7 +24,7 @@ POST /api/breakdown-slips/auto/{id}/fill → maintenance ne form bhara → USI r
                                         me update (nayi row nahi banti)
 """
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from database import get_conn, dict_cursor
@@ -37,9 +37,25 @@ router = APIRouter(prefix="/api/breakdown-slips", tags=["breakdown-slips"])
 #   maintenance_auto_breakdown_slip  : AUTO slip (breakdown close par mirror)
 # Structure dono ka bilkul same hai, bas source alag hai — isse manual aur
 # auto ka data kabhi aapas me nahi milta.
-MANUAL_SLIP_TABLE = "maintenance_breakdown_data"
-AUTO_SLIP_TABLE   = "maintenance_auto_breakdown_slip"
-_ALLOWED_SLIP_TABLES = {MANUAL_SLIP_TABLE, AUTO_SLIP_TABLE}
+MANUAL_SLIP_TABLE   = "maintenance_breakdown_data"
+AUTO_SLIP_TABLE     = "maintenance_auto_breakdown_slip"
+# TOOL ROOM ka apna alag table — bilkul auto-slip jaisa hi dhaancha, par data
+# kabhi maintenance ke saath nahi milta.  ANDON ka Toolroom call yahan aata hai,
+# Maintenance call AUTO_SLIP_TABLE me.  Main dashboard sirf AUTO_SLIP_TABLE
+# padhta hai, isliye tool room ki slip wahan kabhi nahi dikhti.
+TOOLROOM_SLIP_TABLE = "toolroom_auto_breakdown_slip"
+_ALLOWED_SLIP_TABLES = {MANUAL_SLIP_TABLE, AUTO_SLIP_TABLE, TOOLROOM_SLIP_TABLE}
+
+# API me source ka naam -> asli table
+SRC_TABLES = {"maintenance": AUTO_SLIP_TABLE, "toolroom": TOOLROOM_SLIP_TABLE}
+
+
+def _src_table(src: str) -> str:
+    """'maintenance' / 'toolroom' -> table name (galat naam par 400)."""
+    t = SRC_TABLES.get((src or "maintenance").strip().lower())
+    if not t:
+        raise HTTPException(400, "src must be 'maintenance' or 'toolroom'")
+    return t
 
 _ensured = False
 
@@ -119,10 +135,23 @@ def _ensure_table():
         cur.execute("ALTER TABLE maintenance_breakdown_data ADD COLUMN IF NOT EXISTS response_time_minutes INTEGER")
         cur.execute("ALTER TABLE maintenance_breakdown_data ADD COLUMN IF NOT EXISTS frequency INTEGER DEFAULT 1")
 
-        # ── AUTO slip ki ALAG table ────────────────────────────────────────
-        # `maintenance_auto_breakdown_slip` — bilkul maintenance_breakdown_data jaisi hi, par
-        # ismein sirf AUTO (mirror) se bani slips jaati hain.  MANUAL slip
-        # hamesha maintenance_breakdown_data me hi jaati hai — dono kabhi nahi milte.
+        # ── AUTO slip ki ALAG tables ──────────────────────────────────────
+        # `maintenance_auto_breakdown_slip` (Maintenance call) aur
+        # `toolroom_auto_breakdown_slip` (Toolroom call) — dono bilkul
+        # maintenance_breakdown_data jaisi hi, par sirf AUTO (ANDON se bani)
+        # slips rakhti hain.  MANUAL slip hamesha maintenance_breakdown_data me
+        # hi jaati hai — teeno ka data kabhi aapas me nahi milta.
+        for _T in (AUTO_SLIP_TABLE, TOOLROOM_SLIP_TABLE):
+            _ensure_auto_table(cur, _T)
+
+        conn.commit()
+    _ensured = True
+
+
+def _ensure_auto_table(cur, AUTO_SLIP_TABLE: str):
+    """Ek AUTO-slip table banao / upgrade karo (maintenance ya tool room —
+    dono ka dhaancha bilkul same hai).  Idempotent."""
+    if True:
         # LIKE ... se structure hu-ba-hu copy hota hai, isliye upar ke saare
         # columns/ALTER apne aap is table me bhi aa jaate hain.
         cur.execute(f"""
@@ -189,9 +218,6 @@ def _ensure_table():
         cur.execute(f"ALTER TABLE {AUTO_SLIP_TABLE} ADD COLUMN IF NOT EXISTS production_at TIMESTAMP")
         cur.execute(f"""CREATE INDEX IF NOT EXISTS {AUTO_SLIP_TABLE}_stage_idx
                           ON {AUTO_SLIP_TABLE} (prod_stage)""")
-
-        conn.commit()
-    _ensured = True
 
 
 class BreakdownSlipIn(BaseModel):
@@ -473,50 +499,71 @@ class AutoSlipFill(BaseModel):
     # 2-stage flow: production apni half submit kare -> 'PENDING_MAINTENANCE',
     # maintenance complete kare -> 'COMPLETED'.  None = sirf save, stage na badle.
     stage:            Optional[str]  = None
+    # kis table ki slip: 'maintenance' (default) ya 'toolroom'
+    src:              Optional[str]  = None
 
 
 @router.get("/auto/{sid}")
-def get_auto_slip(sid: int, user=Depends(get_current_user)) -> dict:
-    """Ek AUTO slip — form ke `ticket` shape me."""
+def get_auto_slip(sid: int, src: str = Query("maintenance"),
+                  user=Depends(get_current_user)) -> dict:
+    """Ek AUTO slip — form ke `ticket` shape me.  `src` = maintenance | toolroom."""
     _ensure_table()
+    tbl = _src_table(src)
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute(f"SELECT * FROM {AUTO_SLIP_TABLE} WHERE id = %s", (sid,))
+        cur.execute(f"SELECT * FROM {tbl} WHERE id = %s", (sid,))
         r = cur.fetchone()
     if not r:
         raise HTTPException(404, "auto slip not found")
-    return _slip_to_ticket(dict(r))
+    t = _slip_to_ticket(dict(r))
+    t["src"] = "toolroom" if tbl == TOOLROOM_SLIP_TABLE else "maintenance"
+    return t
 
 
 @router.get("/stage/{stage}")
-def list_by_stage(stage: str, user=Depends(get_current_user)) -> List[dict]:
+def list_by_stage(stage: str, src: str = Query("maintenance"),
+                  user=Depends(get_current_user)) -> List[dict]:
     """2-stage flow ki list: PENDING_PRODUCTION (production tab), PENDING_MAINTENANCE
-    (maintenance ko), COMPLETED (history).  Har row me display fields + id."""
+    (maintenance / tool room ko), COMPLETED (history).
+
+    `src`: 'maintenance' | 'toolroom' | 'all'.  Production tab 'all' bhejta hai —
+    dono taraf ki pending slips ek hi jagah dikhti hain; har row me `src` bata deta
+    hai wo maintenance ki hai ya tool room ki (aage usi table me jaati hai)."""
     _ensure_table()
     if stage not in ("PENDING_PRODUCTION", "PENDING_MAINTENANCE", "COMPLETED"):
         raise HTTPException(400, "bad stage")
+    srcs = (["maintenance", "toolroom"] if (src or "").strip().lower() == "all"
+            else [(src or "maintenance").strip().lower()])
+    out: List[dict] = []
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute(f"""
-            SELECT id, zone, line, machine_no, machine_name, shift, slip_date,
-                   bd_start_date, bd_start_time, bd_received_time, bd_ok_time,
-                   mc_down_time_minutes, response_time_minutes, category,
-                   problem_reported_by_production, prod_stage, andon_event_id,
-                   production_at, submitted_at
-              FROM {AUTO_SLIP_TABLE}
-             WHERE prod_stage = %s
-             ORDER BY bd_start_date DESC NULLS LAST, bd_start_time DESC NULLS LAST, id DESC
-        """, (stage,))
-        return [dict(r) for r in cur.fetchall()]
+        for s in srcs:
+            tbl = _src_table(s)
+            cur.execute(f"""
+                SELECT id, zone, line, machine_no, machine_name, shift, slip_date,
+                       bd_start_date, bd_start_time, bd_received_time, bd_ok_time,
+                       mc_down_time_minutes, response_time_minutes, category,
+                       problem_reported_by_production, prod_stage, andon_event_id,
+                       production_at, submitted_at
+                  FROM {tbl}
+                 WHERE prod_stage = %s
+            """, (stage,))
+            for r in cur.fetchall():
+                d = dict(r); d["src"] = s; out.append(d)
+    # dono tables ke rows ek saath — naya pehle
+    out.sort(key=lambda d: (str(d.get("bd_start_date") or ""), str(d.get("bd_start_time") or ""),
+                            d.get("id") or 0), reverse=True)
+    return out
 
 
 @router.delete("/auto/{sid}")
-def delete_auto_slip(sid: int, admin=Depends(require_admin)):
+def delete_auto_slip(sid: int, src: str = Query("maintenance"), admin=Depends(require_admin)):
     """AUTO slip delete — galat/extra auto-generated slip hatane ke liye (admin-only)."""
     _ensure_table()
+    tbl = _src_table(src)
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute(f"DELETE FROM {AUTO_SLIP_TABLE} WHERE id = %s", (sid,))
+        cur.execute(f"DELETE FROM {tbl} WHERE id = %s", (sid,))
         if cur.rowcount == 0:
             raise HTTPException(404, "auto slip not found")
     return {"ok": True, "deleted": sid}
@@ -530,6 +577,7 @@ def fill_auto_slip(sid: int, body: AutoSlipFill, user=Depends(get_current_user))
     hi nahi, uski purani value (jo ANDON ne bhari thi) waise hi rehti hai —
     isliye time / machine kabhi khali nahi hote."""
     _ensure_table()
+    tbl = _src_table(body.src or "maintenance")   # maintenance ya tool room ki table
     flat = _halves_to_flat(body.production_data, body.maintenance_data)
 
     sent_prod  = set((body.production_data  or {}).keys())
@@ -597,7 +645,7 @@ def fill_auto_slip(sid: int, body: AutoSlipFill, user=Depends(get_current_user))
             raise HTTPException(400, f"stage '{body.stage}' set nahi kar sakte")
         with get_conn() as _c:
             _cur = dict_cursor(_c)
-            _cur.execute(f"SELECT prod_stage FROM {AUTO_SLIP_TABLE} WHERE id = %s", (sid,))
+            _cur.execute(f"SELECT prod_stage FROM {tbl} WHERE id = %s", (sid,))
             _row = _cur.fetchone()
         if not _row:
             raise HTTPException(404, "auto slip not found")
@@ -629,7 +677,7 @@ def fill_auto_slip(sid: int, body: AutoSlipFill, user=Depends(get_current_user))
         vals.append(stage_guard)
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute(f"UPDATE {AUTO_SLIP_TABLE} SET {', '.join(sets)} WHERE {where}", vals)
+        cur.execute(f"UPDATE {tbl} SET {', '.join(sets)} WHERE {where}", vals)
         if cur.rowcount == 0:
             if stage_guard is not None:
                 raise HTTPException(409, "Slip ka stage abhi-abhi badal gaya — refresh karke dobara dekhein.")

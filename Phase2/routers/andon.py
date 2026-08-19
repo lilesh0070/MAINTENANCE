@@ -123,6 +123,28 @@ def _is_maintenance(dept):
     return str(dept or "").strip().lower() == "maintenance"
 
 
+# Slip kis department ke call ki banti hai, aur kis TABLE me jaati hai.
+#   Maintenance call -> maintenance_auto_breakdown_slip  (main dashboard isi ko dekhta)
+#   Toolroom    call -> toolroom_auto_breakdown_slip     (dashboard pe kabhi nahi)
+# Baaki departments (Quality / Material / Other Loss / Model Setup) ki slip
+# nahi banti — unke liye None.
+def _related_to_for(tbl):
+    """Table se radio ki value — toolroom table ki slip = 'tool_room'."""
+    from routers.breakdown_slips import TOOLROOM_SLIP_TABLE
+    return "tool_room" if tbl == TOOLROOM_SLIP_TABLE else "maintenance"
+
+
+def _slip_table_for(dept):
+    d = str(dept or "").strip().lower()
+    if d == "maintenance":
+        from routers.breakdown_slips import AUTO_SLIP_TABLE
+        return AUTO_SLIP_TABLE
+    if d in ("toolroom", "tool room", "tool_room"):
+        from routers.breakdown_slips import TOOLROOM_SLIP_TABLE
+        return TOOLROOM_SLIP_TABLE
+    return None
+
+
 # ── AUTO slip ka threshold (default 2 min) ───────────────────────────────
 # Slip tabhi banti hai jab maintenance call itne minute se ZYADA khuli rahe.
 # Config har call par DB se padhna mehnga hai, isliye 10 sec cache rakhte hain.
@@ -158,7 +180,8 @@ def _open_long_enough(started, upto):
     return (upto - started).total_seconds() >= _slip_threshold_min() * 60
 
 
-def _slip_fields(zone, line, started, received, ended, dur_seconds=None, model=None):
+def _slip_fields(zone, line, started, received, ended, dur_seconds=None, model=None,
+                 related_to="maintenance"):
     """Call ke waqt se slip ke khaane banao.
 
     machine_no / machine_name JAAN-BUJH KE khali — PLC signal poori LINE par aata hai,
@@ -183,23 +206,29 @@ def _slip_fields(zone, line, started, received, ended, dur_seconds=None, model=N
         "response_time_minutes": resp_min,
         "frequency": 1,
         "model_no": model or None,          # Assign→Model se abhi ka model (PLC value match)
-        "problem_related_to": "maintenance",
+        # ANDON ne kis department ko bulaya, wahi tick hota hai — Maintenance call
+        # par 'maintenance', Toolroom call par 'tool_room'.  Form me ye LOCK rehta
+        # hai (production/maintenance ise badal nahi sakte).
+        "problem_related_to": related_to,
     }
 
 
-def _slip_insert(conn, event_id, flat, power_cut=False):
+def _slip_insert(conn, event_id, flat, power_cut=False, table=None):
     """Slip daalo aur use call se JOD do (`andon_event_id`).
 
     `ON CONFLICT DO NOTHING` + unique index = ek call ki EK hi slip.  PLC event
     dobara bheje, ACK do baar dabe, ya ack aur close ki race ho — duplicate slip
-    kabhi nahi banegi.  Return: nayi slip ka id, ya None (pehle se thi)."""
+    kabhi nahi banegi.  Return: nayi slip ka id, ya None (pehle se thi).
+
+    `table` = maintenance ya tool room ki AUTO table (dept se tay hoti hai)."""
     from routers.breakdown_slips import _COLS, _blank_to_none, AUTO_SLIP_TABLE
+    tbl = table or AUTO_SLIP_TABLE
     cols = list(_COLS) + ["andon_event_id", "power_cut"]
     vals = [_blank_to_none(flat.get(c)) for c in _COLS] + [event_id, bool(power_cut)]
     ph = ", ".join(["%s"] * len(cols))
     cur = conn.cursor()
     cur.execute(
-        f"INSERT INTO {AUTO_SLIP_TABLE} ({', '.join(cols)}) VALUES ({ph}) "
+        f"INSERT INTO {tbl} ({', '.join(cols)}) VALUES ({ph}) "
         f"ON CONFLICT (andon_event_id) WHERE andon_event_id IS NOT NULL "
         f"DO NOTHING RETURNING id", vals)
     row = cur.fetchone()
@@ -235,7 +264,8 @@ def auto_slip_on_ack(event_id):
                   LEFT JOIN andon_departments dep ON dep.id = e.department_id
                  WHERE e.id = %s""", (_slip_threshold_min(), event_id))
             e = cur.fetchone()
-            if not e or not _is_maintenance(e["dept"]):
+            _tbl = _slip_table_for(e["dept"]) if e else None
+            if not _tbl:
                 return
             # Call abhi tak threshold se KAM khuli hai to slip nahi banate.
             # Jaise-jaise call khuli rahegi, poller ka sweep use threshold paar
@@ -245,17 +275,17 @@ def auto_slip_on_ack(event_id):
             if not e["long_enough"]:
                 return
             flat = _slip_fields(e["zone"], e["line"],
-                                e["started_at"], e["acknowledged_at"], None)
-            new_id = _slip_insert(conn, event_id, flat)
+                                e["started_at"], e["acknowledged_at"], None,
+                                related_to=_related_to_for(_tbl))
+            new_id = _slip_insert(conn, event_id, flat, table=_tbl)
             # Slip pehle se ho sakti hai — sweep ne ACK aane se PEHLE bana di ho
             # (tab response khali thi).  Us haal me ab RESPONSE bhar dete hain.
             # Sirf tab jab abhi khali ho — maintenance ki apni edit ya baad ki
             # koi value overwrite na ho.
             if not new_id:
-                from routers.breakdown_slips import AUTO_SLIP_TABLE
                 cur2 = conn.cursor()
                 cur2.execute(f"""
-                    UPDATE {AUTO_SLIP_TABLE}
+                    UPDATE {_tbl}
                        SET bd_received_time      = %s,
                            response_time_minutes = %s
                      WHERE andon_event_id = %s
@@ -295,13 +325,15 @@ def auto_slip_on_close(event_id, history_id, power_cut=False):
                   LEFT JOIN andon_departments dep ON dep.id = h.department_id
                  WHERE h.id = %s""", (history_id,))
             h = cur.fetchone()
-            if not h or not _is_maintenance(h["dept"]):
+            _tbl = _slip_table_for(h["dept"]) if h else None
+            if not _tbl:
                 return
             started, ended = h["started_at"], h["ended_at"]
             received = (started + timedelta(seconds=int(h["response_seconds"]))
                         if h["response_seconds"] is not None and started else None)
             flat = _slip_fields(h["zone"], h["line"], started, received, ended,
-                                h["duration_seconds"])
+                                h["duration_seconds"],
+                                related_to=_related_to_for(_tbl))
 
             # Pehle jodi hui slip ko poora karo.  Sirf CLOSE wale khaane
             # chhedte hain — start/received/response jo ACK par bhare the wo
@@ -312,7 +344,7 @@ def auto_slip_on_close(event_id, history_id, power_cut=False):
             # chhoot gaya ho to received/response bhi bhar do — par SIRF tab jab abhi
             # khali ho (COALESCE), taaki ACK/maintenance ki value na miti.
             cur2.execute(f"""
-                UPDATE {AUTO_SLIP_TABLE}
+                UPDATE {_tbl}
                    SET bd_ok_time            = %s,
                        bd_end_date           = %s,
                        mc_down_time_minutes  = %s,
@@ -335,7 +367,7 @@ def auto_slip_on_close(event_id, history_id, power_cut=False):
             # gayi — ya call sweep se pehle hi band ho gayi.)
             if not _open_long_enough(started, ended):
                 return
-            new_id = _slip_insert(conn, event_id, flat, power_cut=power_cut)
+            new_id = _slip_insert(conn, event_id, flat, power_cut=power_cut, table=_tbl)
         if new_id:
             print(f"[ANDON-SLIP] call {event_id} bina acknowledge band hua -> slip #{new_id}"
                   f"{' (POWER CUT)' if power_cut else ''}")
@@ -355,40 +387,44 @@ def _slip_threshold_sweep():
     Best-effort: koi dikkat aaye to sirf log, ANDON kabhi nahi rukta."""
     try:
         thr = _slip_threshold_min()
-        from routers.breakdown_slips import _ensure_table, AUTO_SLIP_TABLE
+        from routers.breakdown_slips import _ensure_table, AUTO_SLIP_TABLE, TOOLROOM_SLIP_TABLE
         _ensure_table()
+        made, heal = 0, []
         with get_conn() as conn:
             cur = dict_cursor(conn)
-            # OPEN maintenance call, threshold paar, aur jiski slip abhi nahi hai
-            cur.execute(f"""
-                SELECT e.id, e.zone, e.line, e.started_at, e.acknowledged_at, e.model
-                  FROM andon_system e
-                  LEFT JOIN andon_departments dep ON dep.id = e.department_id
-                 WHERE e.state = 'OPEN'
-                   AND LOWER(TRIM(COALESCE(dep.name, e.display_name))) = 'maintenance'
-                   AND e.started_at IS NOT NULL
-                   AND e.started_at <= NOW() - (%s * INTERVAL '1 minute')
-                   AND NOT EXISTS (
-                        SELECT 1 FROM {AUTO_SLIP_TABLE} s
-                         WHERE s.andon_event_id = e.id)
-            """, (thr,))
-            due = cur.fetchall()
-            made = 0
-            for e in due:
-                flat = _slip_fields(e["zone"], e["line"],
-                                    e["started_at"], e["acknowledged_at"], None,
-                                    model=e.get("model"))
-                if _slip_insert(conn, e["id"], flat):
-                    made += 1
-            # SELF-HEAL: koi OPEN call jiski slip to hai par RESPONSE abhi khali, aur
-            # ACK aa chuka — us call ki list.  ACK event kisi wajah se chhoot bhi jaye
-            # (poll ke beech chhota pulse, poller restart), to ye har second pakad lega.
-            cur.execute(f"""
-                SELECT e.id FROM andon_system e
-                  JOIN {AUTO_SLIP_TABLE} s ON s.andon_event_id = e.id
-                 WHERE e.state = 'OPEN' AND e.acknowledged_at IS NOT NULL
-                   AND s.bd_received_time IS NULL""")
-            heal = [r["id"] for r in cur.fetchall()]
+            # Maintenance aur Toolroom — dono ke OPEN call ki slip banti hai, par
+            # apni-apni table me (dept se tay).  Baaki departments ki nahi.
+            for _dept, _tbl in (("maintenance", AUTO_SLIP_TABLE),
+                                ("toolroom",    TOOLROOM_SLIP_TABLE)):
+                # OPEN call, threshold paar, aur jiski slip abhi nahi hai
+                cur.execute(f"""
+                    SELECT e.id, e.zone, e.line, e.started_at, e.acknowledged_at, e.model
+                      FROM andon_system e
+                      LEFT JOIN andon_departments dep ON dep.id = e.department_id
+                     WHERE e.state = 'OPEN'
+                       AND REPLACE(LOWER(TRIM(COALESCE(dep.name, e.display_name))), ' ', '') = %s
+                       AND e.started_at IS NOT NULL
+                       AND e.started_at <= NOW() - (%s * INTERVAL '1 minute')
+                       AND NOT EXISTS (
+                            SELECT 1 FROM {_tbl} s
+                             WHERE s.andon_event_id = e.id)
+                """, (_dept, thr))
+                for e in cur.fetchall():
+                    flat = _slip_fields(e["zone"], e["line"],
+                                        e["started_at"], e["acknowledged_at"], None,
+                                        model=e.get("model"),
+                                        related_to=_related_to_for(_tbl))
+                    if _slip_insert(conn, e["id"], flat, table=_tbl):
+                        made += 1
+                # SELF-HEAL: koi OPEN call jiski slip to hai par RESPONSE abhi khali, aur
+                # ACK aa chuka — us call ki list.  ACK event kisi wajah se chhoot bhi jaye
+                # (poll ke beech chhota pulse, poller restart), to ye har second pakad lega.
+                cur.execute(f"""
+                    SELECT e.id FROM andon_system e
+                      JOIN {_tbl} s ON s.andon_event_id = e.id
+                     WHERE e.state = 'OPEN' AND e.acknowledged_at IS NOT NULL
+                       AND s.bd_received_time IS NULL""")
+                heal += [r["id"] for r in cur.fetchall()]
         # response back-fill wahi ek jagah wali sahi logic se (idempotent, sirf NULL par)
         for _eid in heal:
             try: auto_slip_on_ack(_eid)

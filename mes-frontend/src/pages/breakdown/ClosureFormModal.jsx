@@ -163,6 +163,10 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
     "bd_start_date", "bd_end_date",                      // ON ki date / OFF ki date
     "bd_start_time", "bd_received_time", "bd_ok_time",   // ON / ACK / OFF ka waqt
     "response_time_minutes", "mc_down_time_minutes",     // inhi se gine gaye totals
+    // ANDON ne kis department ko bulaya (Maintenance ya Tool Room) — wahi tick
+    // rehta hai.  Slip bhi usi hisaab se apni table me jaati hai, isliye ise
+    // badalna allowed nahi (warna slip galat table me reh jaati).
+    "problem_related_to",
   ]);
 
   const fieldEditable = (key) => {
@@ -838,8 +842,11 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
               phase="production" and sees only what they filled (upper
               half); maintenance + admin pass phase="maintenance" and see
               the full slip including this lower half. */}
-          {phase !== "production" && <>
           {/* ── Maintenance / Tool Room block divider ──────────── */}
+          {/* Divider + "PROBLEM RELATED TO" ab PRODUCTION ko bhi dikhta hai —
+              production ko pata rahe ki call kiski hai (Maintenance ya Tool
+              Room).  AUTO slip me ye ANDON se aata hai aur LOCK rehta hai
+              (AUTO_LOCKED_FIELDS), koi ise badal nahi sakta. */}
           <div className="bds-divider">TO BE FILLED BY MAINTENANCE/TOOL ROOM:-</div>
 
 {/* ── Problem related to (radio-style: only one of Maintenance /
@@ -863,6 +870,10 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
               TOOL ROOM
             </label>
           </div>
+
+          {/* Isse AAGE ka poora lower half sirf maintenance / tool room bharta
+              hai — production ko nahi dikhta. */}
+          {phase !== "production" && <>
 
           {/* ── Type of problem (multi-select: electrical / mechanical
                  can BOTH be ticked at the same time, unlike the radio
