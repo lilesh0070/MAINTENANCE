@@ -621,6 +621,22 @@ def list_by_stage(stage: str, src: str = Query("maintenance"),
     return out
 
 
+@router.get("/status")
+def breakdown_status(limit: int = Query(300), user=Depends(get_current_user)) -> List[dict]:
+    """`breakdown_status` view — har breakdown ki ek line me poori haalat:
+    kab/kahan hua, kitna downtime, resolve hua ya nahi, aur prod / maint /
+    toolroom me se kisne apni slip submit ki."""
+    _ensure_table()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""
+            SELECT * FROM breakdown_status
+             ORDER BY bd_start_date DESC NULLS LAST, bd_start_time DESC NULLS LAST
+             LIMIT %s
+        """, (max(1, min(limit, 2000)),))
+        return [dict(r) for r in cur.fetchall()]
+
+
 @router.delete("/auto/{sid}")
 def delete_auto_slip(sid: int, src: str = Query("maintenance"), admin=Depends(require_admin)):
     """AUTO slip delete — galat/extra auto-generated slip hatane ke liye (admin-only)."""

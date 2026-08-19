@@ -25,6 +25,9 @@ const TABS = [
     stage: "PENDING_MAINTENANCE", phase: "maintenance", src: "maintenance", accent: "#0e7490" },
   { key: "TOOLROOM",    icon: "🧰", label: "Tool Room",
     stage: "PENDING_MAINTENANCE", phase: "maintenance", src: "toolroom",    accent: "#b45309" },
+  // Status = sirf dekhne ke liye — har breakdown ki ek line (resolve hua ya
+  // nahi, aur kisne apni slip submit ki).  `breakdown_status` view se.
+  { key: "STATUS",      icon: "📊", label: "Status", status: true, accent: "#7c3aed" },
 ];
 
 // Slip kitni purani hai.  Production bhare BINA slip maintenance ko dikhti hi
@@ -52,6 +55,20 @@ const fmtDate = (d) => {
   const s = String(d).slice(0, 10).split("-");
   return s.length === 3 ? `${s[2]}/${s[1]}/${s[0]}` : String(d);
 };
+
+// Status ka chhota rang-badge: ho gaya = hara, baaki hai = amber, laagu nahi = grey
+function Tag({ v }) {
+  const s = String(v || "-");
+  const C = { SUBMITTED: ["#dcfce7", "#15803d"], RESOLVED: ["#dcfce7", "#15803d"],
+              PENDING: ["#fef3c7", "#b45309"],   OPEN: ["#fee2e2", "#b91c1c"] };
+  const [bg, fg] = C[s] || ["#f1f5f9", "#94a3b8"];
+  return (
+    <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 99, background: bg,
+                   color: fg, fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>
+      {s === "-" ? "—" : s}
+    </span>
+  );
+}
 
 export default function ProductionBreakdownSlip() {
   const { token } = useAuth();
@@ -88,11 +105,13 @@ export default function ProductionBreakdownSlip() {
     if (!token) return;
     setLoad(true); setErr("");
     try {
-      const r = await api.get(`/api/breakdown-slips/stage/${T.stage}?src=${T.src}`, token);
+      const url = T.status ? "/api/breakdown-slips/status"
+                           : `/api/breakdown-slips/stage/${T.stage}?src=${T.src}`;
+      const r = await api.get(url, token);
       setRows(Array.isArray(r) ? r : []);
     } catch (e) { setErr(e.message || "Load failed"); }
     finally { setLoad(false); loadCounts(); }
-  }, [token, T.stage, T.src, loadCounts]);
+  }, [token, T.stage, T.src, T.status, loadCounts]);
   useEffect(() => { load(); }, [load]);
 
   const openFill = async (row) => {
@@ -149,23 +168,24 @@ export default function ProductionBreakdownSlip() {
             const on = t.key === tab;
             return (
               <button key={t.key} onClick={() => { setTab(t.key); setZone(""); }}
-                style={{ display: "inline-flex", alignItems: "center", gap: 13, cursor: "pointer",
-                         padding: "11px 20px", borderRadius: 14, fontFamily: "inherit", textAlign: "left",
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer",
+                         padding: "7px 13px", borderRadius: 10, fontFamily: "inherit", textAlign: "left",
                          transition: "all .14s",
                          border: `1.5px solid ${on ? t.accent : "#e2e8f0"}`,
                          background: on ? t.accent : "#fff",
-                         boxShadow: on ? `0 6px 16px ${t.accent}33` : "0 1px 3px rgba(15,23,42,.05)" }}>
-                <span style={{ fontSize: 21, lineHeight: 1, filter: on ? "none" : "grayscale(.35)" }}>{t.icon}</span>
-                <span style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 19, fontWeight: 800,
-                               letterSpacing: ".05em", textTransform: "uppercase",
-                               color: on ? "#fff" : "#0f172a" }}>{t.label}</span>
-                <span style={{ minWidth: 30, height: 26, borderRadius: 99, padding: "0 9px",
-                               display: "inline-flex", alignItems: "center", justifyContent: "center",
-                               fontFamily: "'Barlow Condensed',sans-serif", fontSize: 17, fontWeight: 800,
-                               background: on ? "rgba(255,255,255,.22)" : "#f1f5f9",
-                               color: on ? "#fff" : count[t.key] > 0 ? t.accent : "#94a3b8" }}>
-                  {count[t.key]}
-                </span>
+                         boxShadow: on ? `0 3px 10px ${t.accent}33` : "0 1px 2px rgba(15,23,42,.04)" }}>
+                <span style={{ fontSize: 14, lineHeight: 1, filter: on ? "none" : "grayscale(.35)" }}>{t.icon}</span>
+                <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: ".01em",
+                               color: on ? "#fff" : "#334155" }}>{t.label}</span>
+                {!t.status && (
+                  <span style={{ minWidth: 20, height: 18, borderRadius: 99, padding: "0 6px",
+                                 display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                 fontSize: 11, fontWeight: 800,
+                                 background: on ? "rgba(255,255,255,.24)" : "#f1f5f9",
+                                 color: on ? "#fff" : count[t.key] > 0 ? t.accent : "#94a3b8" }}>
+                    {count[t.key]}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -213,11 +233,42 @@ export default function ProductionBreakdownSlip() {
               <div style={{ fontSize: 34 }}>✅</div>
               <div style={{ fontWeight: 700, color: "#334155", marginTop: 6 }}>
                 {zoneSel
-                  ? `${zoneSel.replace(/_/g, " ")} me koi pending slip nahi.`
+                  ? `${zoneSel.replace(/_/g, " ")} me kuch nahi.`
                   : tab === "PRODUCTION" ? "Koi production-pending slip nahi."
                   : tab === "TOOLROOM"   ? "Koi tool room-pending slip nahi."
+                  : tab === "STATUS"     ? "Abhi koi breakdown record nahi."
                                          : "Koi maintenance-pending slip nahi."}
               </div>
+            </div>
+          ) : T.status ? (
+            /* ── STATUS: har breakdown ki ek line (breakdown_status view) ── */
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
+                <thead><tr>
+                  {["S.No", "Date", "Start", "Zone", "Line", "Machine", "Shift",
+                    "Downtime", "State", "Production", "Maintenance", "Tool Room"]
+                    .map((h, i) => <th key={i} style={th}>{h}</th>)}
+                </tr></thead>
+                <tbody>
+                  {shown.map((r, i) => (
+                    <tr key={`${r.bd_for}-${r.slip_id}`}>
+                      <td style={{ ...td, fontWeight: 800, color: T.accent }}>{i + 1}</td>
+                      <td style={{ ...td, fontFamily: "monospace", whiteSpace: "nowrap" }}>{fmtDate(r.bd_start_date)}</td>
+                      <td style={{ ...td, fontFamily: "monospace" }}>{r.bd_start_time || "—"}</td>
+                      <td style={{ ...td, fontWeight: 700, color: "#0f172a" }}>{r.zone || "—"}</td>
+                      <td style={td}>{r.line || "—"}</td>
+                      <td style={td}>{r.machine_no || "—"}</td>
+                      <td style={td}>{r.shift || "—"}</td>
+                      <td style={{ ...td, fontWeight: 700, whiteSpace: "nowrap" }}>
+                        {r.total_downtime_min != null ? `${r.total_downtime_min} min` : "—"}</td>
+                      <td style={td}><Tag v={r.state} /></td>
+                      <td style={td}><Tag v={r.prod} /></td>
+                      <td style={td}><Tag v={r.maint} /></td>
+                      <td style={td}><Tag v={r.toolroom} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : (
             <div style={{ overflowX: "auto" }}>
