@@ -12,6 +12,7 @@ export const ADMIN_SECTIONS = [
       { key: "slipthreshold", label: "Slip Threshold", icon: "⏱" },
       { key: "pmchecksheet", label: "PM Check Sheet", icon: "📋" },
       { key: "machinedmc",   label: "Machine DMC",    icon: "🏷" },
+      { key: "breakdownmail", label: "Breakdown Mail", icon: "✉" },
       // adminOnly: panel kisi non-admin ko grant ho jaye tab bhi user-management
       // sirf admin ko dikhe (AdminShell tab-filter isko hide karta hai).
       { key: "users",        label: "Users & Access", icon: "👥", adminOnly: true },

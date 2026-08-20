@@ -14,6 +14,7 @@ import { UsersPage } from "./admin/org";
 import { KpiTargetsPage } from "./admin/mail-kpi";
 import { ADMIN_SECTIONS } from "./admin/system";
 import { SlipThresholdPage } from "./admin/slipthreshold";
+import { BreakdownMailPage } from "./admin/breakdownmail";
 import { LoginHistoryPage } from "./admin/loginhistory";
 
 // Render a tab's body.  Centralised so AdminPanel and DepartmentPanel
@@ -23,6 +24,7 @@ export function renderAdminTab(sectionKey, tabKey, props) {
   switch (`${sectionKey}/${tabKey}`) {
     case "maintenance/kpitarget":    return <KpiTargetsPage  {...t} readOnly={false} />;
     case "maintenance/slipthreshold": return <SlipThresholdPage {...t} />;
+    case "maintenance/breakdownmail": return <BreakdownMailPage {...t} />;
     case "maintenance/pmchecksheet": return <PMCheckSheetAdmin {...t} />;
     case "maintenance/machinedmc":   return <MachineDMCAdmin   {...t} />;
     case "admin/users":
