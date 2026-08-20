@@ -381,7 +381,16 @@ def _escalate_once():
         return 0
     sent = 0
     from routers.mailer import _send_email
+    # Ek sweep me itne se zyada mail nahi.  Normal haalat me 1-2 hi jaate hain,
+    # ye cap sirf ek soorat ke liye hai: feature ABHI ON kiya gaya ho aur pehle
+    # se kai calls khuli padi hon — tab har call ke saare level ek saath fire
+    # ho kar inbox bhar dete.  Bache hue agle sweep (30s) me chale jaayenge,
+    # kuch chhutta nahi — log table repeat rokta hai.
+    MAX_PER_SWEEP = 20
     for c in calls:
+        if sent >= MAX_PER_SWEEP:
+            print(f"[BD-MAIL] is sweep ki limit ({MAX_PER_SWEEP}) puri — baaki agle sweep me")
+            break
         for lv in levels:
             if c["mins"] < lv["after_minutes"]:
                 continue
