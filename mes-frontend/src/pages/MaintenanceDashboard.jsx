@@ -334,6 +334,13 @@ export default function MaintenanceDashboard() {
         .md-portrait .md-cols    { margin-bottom:12px !important; gap:12px !important; }
         /* both columns full-width — no empty space beside PM This Month */
         .md-portrait .md-col-a, .md-portrait .md-col-b { flex:1 1 100% !important; max-width:none !important; min-width:0 !important; }
+        /* Vertical TV par title lamba hota hai aur daayein 4 control baithe hote
+           hain — beech ka KHALI spacer (.md-logo) flex:1 leke jagah kha jaata
+           tha, jisse "Maintenance Dashboard" ellipsis me kat jaata.  Portrait me
+           spacer 0 kar diya aur user-pill hata di — title ko poori jagah. */
+        .md-portrait .md-logo      { flex:0 0 0 !important; padding:0 !important; }
+        .md-portrait .md-title     { flex:1 1 auto; text-align:left; padding-left:0; }
+        .md-portrait .md-user-pill { display:none !important; }
       `}</style>
 
       <div className={"md-root" + (portrait ? " md-portrait" : "")}>

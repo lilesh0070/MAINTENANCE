@@ -43,13 +43,31 @@ function PmThisMonth({ token }) {
   const [w, setW] = useState(0);
   useEffect(() => {
     const el = boxRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(([e]) => setW(Math.round(e.contentRect.width)));
-    ro.observe(el);
-    setW(el.getBoundingClientRect().width);
-    return () => ro.disconnect();
+    if (!el) return;
+    const measure = () => { if (boxRef.current) setW(Math.round(boxRef.current.getBoundingClientRect().width)); };
+    let ro;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(([e]) => setW(Math.round(e.contentRect.width)));
+      ro.observe(el);
+    }
+    // TV par TvFit apni scaling rAF + timeouts me karta hai, aur portrait class
+    // bhi mount ke baad lagti hai — pehli naap us waqt purane (patle) layout ki
+    // aa sakti hai.  Isliye kuch der baad dobara naapte hain + window resize par.
+    measure();
+    const t1 = requestAnimationFrame(measure);
+    const t2 = setTimeout(measure, 300);
+    const t3 = setTimeout(measure, 1200);
+    window.addEventListener("resize", measure);
+    window.addEventListener("mes-aspect-change", measure);
+    return () => {
+      ro && ro.disconnect();
+      cancelAnimationFrame(t1); clearTimeout(t2); clearTimeout(t3);
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("mes-aspect-change", measure);
+    };
   }, []);
-  const wide = w >= 760;              // itni jagah me poora table theek baithta hai
+  const wide  = w >= 620;             // itni jagah me table theek baithta hai
+  const roomy = w >= 900;             // ...aur itni me Window + Sheet column bhi
 
   const now      = new Date();
   const ym       = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -191,9 +209,11 @@ function PmThisMonth({ token }) {
       </div>
 
       <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 880 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse",
+                        minWidth: (roomy || inModal) ? 880 : 560 }}>
           <thead><tr style={{ background: "#f8fafc" }}>
-            {["Zone", "Line", "Machine No.", "Date", "Status", "Days Left", "Window", "Sheet"]
+            {["Zone", "Line", "Machine No.", "Date", "Status", "Days Left"]
+              .concat(roomy || inModal ? ["Window", "Sheet"] : [])
               .map((h) => <th key={h} style={{ ...th, padding: inModal ? "9px 10px" : "9px 16px" }}>{h}</th>)}
           </tr></thead>
           <tbody>
@@ -206,16 +226,18 @@ function PmThisMonth({ token }) {
                 <td style={td}>{dateTxt(r)}</td>
                 <td style={td}><Pill k={r.key} /></td>
                 <td style={{ ...td, fontWeight: 700, color: S[r.key].fg }}>{daysTxt(r)}</td>
-                <td style={td}><Bar r={r} /></td>
-                <td style={td}>
-                  {r.sheet_filled
-                    ? <span style={{ color: "#15803d", fontWeight: 800, fontSize: 11.5 }}>✓ Filled</span>
-                    : <span style={{ color: "#94a3b8", fontWeight: 700, fontSize: 11.5 }}>—</span>}
-                </td>
+                {(roomy || inModal) && <td style={td}><Bar r={r} /></td>}
+                {(roomy || inModal) && (
+                  <td style={td}>
+                    {r.sheet_filled
+                      ? <span style={{ color: "#15803d", fontWeight: 800, fontSize: 11.5 }}>✓ Filled</span>
+                      : <span style={{ color: "#94a3b8", fontWeight: 700, fontSize: 11.5 }}>—</span>}
+                  </td>
+                )}
               </tr>
             ))}
             {pageRows.length === 0 && (
-              <tr><td colSpan={8} style={{ ...td, textAlign: "center", color: "#94a3b8",
+              <tr><td colSpan={roomy || inModal ? 8 : 6} style={{ ...td, textAlign: "center", color: "#94a3b8",
                                            padding: 26 }}>Nothing matches this filter.</td></tr>
             )}
           </tbody>
