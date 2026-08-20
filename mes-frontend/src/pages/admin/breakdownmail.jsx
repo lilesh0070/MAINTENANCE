@@ -99,11 +99,6 @@ export function BreakdownMailPage({ toast }) {
                     gap: 16, marginBottom: 14, flexWrap: "wrap" }}>
         <div>
           <div style={{ fontWeight: 700, fontSize: 15, color: "#0f172a" }}>Breakdown Escalation Mail</div>
-          <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 2, maxWidth: 720, lineHeight: 1.5 }}>
-            Breakdown jitna lamba chalega, utne <b>upar tak apne aap mail</b> chala jaayega.
-            Har level ke saamne <b>minute</b> aur <b>email</b> bhar do. Ek level ka mail ek
-            breakdown me <b>sirf ek baar</b> jaata hai.
-          </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <label style={{ display: "inline-flex", alignItems: "center", gap: 9, cursor: "pointer",
@@ -123,14 +118,14 @@ export function BreakdownMailPage({ toast }) {
         <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412",
                       borderRadius: 10, padding: "10px 14px", fontSize: 12.5, fontWeight: 600,
                       marginBottom: 14 }}>
-          Abhi koi mail nahi jaayega. Ladder bhar kar upar wala switch <b>CHALU</b> karo.
+          Auto-mail band hai.
         </div>
       )}
       {auto && !anyEmail && (
         <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c",
                       borderRadius: 10, padding: "10px 14px", fontSize: 12.5, fontWeight: 600,
                       marginBottom: 14 }}>
-          Kisi bhi level me email nahi bhara — mail kahin nahi jaayega.
+          Kisi level me email nahi bhara.
         </div>
       )}
 
@@ -177,9 +172,6 @@ export function BreakdownMailPage({ toast }) {
         </div>
         <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <Btn size="sm" onClick={addLv}>+ Level add karo</Btn>
-          <span style={{ fontSize: 11.5, color: "#94a3b8" }}>
-            Test mail sirf save kiye hue level par chalta hai — naya level pehle Save karo.
-          </span>
         </div>
       </Card>
 
