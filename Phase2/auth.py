@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import bcrypt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from pydantic import BaseModel
@@ -194,8 +194,56 @@ from fastapi import APIRouter
 auth_router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+# ── Login throttle (brute-force rok) ──────────────────────────────────────
+# Pehle password anginat baar try kiye ja sakte the — LAN/Tailscale par koi bhi
+# chup-chaap dictionary attack chala sakta tha.  Ab ek hi (username, IP) se
+# lagataar galat password par thodi der ke liye rok lag jaati hai.
+# Sahi password milte hi counter saaf.  Sirf memory me hai (koi DB/table nahi).
+_LOGIN_FAILS: dict = {}
+_LOGIN_MAX_FAILS  = int(os.getenv("LOGIN_MAX_FAILS", "10") or 10)
+_LOGIN_WINDOW_S   = int(os.getenv("LOGIN_FAIL_WINDOW", "300") or 300)   # 5 min
+_LOGIN_BLOCK_S    = int(os.getenv("LOGIN_BLOCK_SECONDS", "120") or 120) # 2 min
+
+
+def _throttle_key(username, request):
+    ip = "?"
+    try:
+        ip = (request.client.host if request and request.client else "?") or "?"
+    except Exception:
+        pass
+    return (str(username or "").strip().lower(), ip)
+
+
+def _throttle_check(key):
+    """Abhi block hai to bache hue second lauta do, warna 0."""
+    rec = _LOGIN_FAILS.get(key)
+    if not rec:
+        return 0
+    fails, first, blocked_until = rec
+    now = time.time()
+    if blocked_until and now < blocked_until:
+        return int(blocked_until - now) + 1
+    if now - first > _LOGIN_WINDOW_S:          # window nikal gayi — reset
+        _LOGIN_FAILS.pop(key, None)
+    return 0
+
+
+def _throttle_fail(key):
+    now = time.time()
+    fails, first, _ = _LOGIN_FAILS.get(key, (0, now, 0))
+    if now - first > _LOGIN_WINDOW_S:
+        fails, first = 0, now
+    fails += 1
+    blocked_until = now + _LOGIN_BLOCK_S if fails >= _LOGIN_MAX_FAILS else 0
+    _LOGIN_FAILS[key] = (fails, first, blocked_until)
+    if len(_LOGIN_FAILS) > 5000:               # memory na badhe — purane hata do
+        for k, v in list(_LOGIN_FAILS.items()):
+            if now - v[1] > _LOGIN_WINDOW_S and now > (v[2] or 0):
+                _LOGIN_FAILS.pop(k, None)
+
+
 @auth_router.post("/login", response_model=Token)
-def login(form: OAuth2PasswordRequestForm = Depends()):
+def login(request: Request, form: OAuth2PasswordRequestForm = Depends()):
     """
     Exchange username+password for a JWT token.
     Returns token with user id, role, and expiry.
@@ -203,6 +251,14 @@ def login(form: OAuth2PasswordRequestForm = Depends()):
     # 2026-06-14 — DB unreachable ≠ bad credentials.  A connection failure
     # here must surface as a distinct 503 so the login UI shows "Server not
     # connected" instead of the misleading "Invalid credentials".
+    _tkey = _throttle_key(form.username, request)
+    _wait = _throttle_check(_tkey)
+    if _wait:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Bahut baar galat password. {_wait} second baad dobara koshish karein.",
+            headers={"Retry-After": str(_wait)},
+        )
     try:
         user = get_user_from_db(form.username)
     except (psycopg2.OperationalError, psycopg2.InterfaceError) as _exc:
@@ -212,10 +268,12 @@ def login(form: OAuth2PasswordRequestForm = Depends()):
             detail="Server not connected — database unreachable.",
         )
     if not user or not verify_password(form.password, user["password_hash"]):
+        _throttle_fail(_tkey)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
         )
+    _LOGIN_FAILS.pop(_tkey, None)          # sahi password -> counter saaf
 
     # Update last_login + write AUTH_LOGIN audit row in one round-trip
     # 2026-05-18 — Operator audit-log spec: every successful login lands

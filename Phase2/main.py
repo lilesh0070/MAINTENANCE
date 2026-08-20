@@ -65,12 +65,21 @@ from routers.machine_running_hours import router as machine_running_hours_router
 from routers.kpi_ui_settings import router as kpi_ui_settings_router
 
 # ── App ────────────────────────────────────────────────────────
+# SECURITY: /docs, /redoc aur /openapi.json bina login ke khulte hain — ye
+# poora API surface (har endpoint, har parameter) dikha dete hain.  Endpoints
+# khud auth-protected hain, isliye khatra sirf "information disclosure" ka hai,
+# par production me inki zaroorat nahi.  Band karne ke liye .env me:
+#     ENABLE_API_DOCS=false
+# (default true rakha hai taaki abhi ka koi kaam na ruke.)
+_DOCS_ON = (os.getenv("ENABLE_API_DOCS", "true") or "true").strip().lower() not in ("0", "false", "no", "off")
+
 app = FastAPI(
     title       = "Platform — Toyota Boshoku Device India",
     description = "Manufacturing Execution System API",
     version     = "2.0.0",
-    docs_url    = "/docs",
-    redoc_url   = "/redoc",
+    docs_url    = "/docs"  if _DOCS_ON else None,
+    redoc_url   = "/redoc" if _DOCS_ON else None,
+    openapi_url = "/openapi.json" if _DOCS_ON else None,
 )
 
 # ── Static assets ──────────────────────────────────────────────
@@ -673,9 +682,14 @@ def clear_login_history(date_from: str = "", date_to: str = "", user=Depends(req
 
 # ── Ping check (TCP connect test for camera/device IPs) ──────
 @app.get("/api/ping")
-def ping_host(ip: str, port: int = 554):
+def ping_host(ip: str, port: int = 554, user=Depends(get_current_user)):
     """TCP connect test. Returns {ok: true/false, ms: latency}.
-    Used by admin Camera List page to show online/offline status."""
+    Used by admin Camera List page to show online/offline status.
+
+    SECURITY: login ZAROORI hai.  Ye kisi bhi host:port par connect kar ke
+    bata deta hai wo khula hai ya nahi — bina auth ke ye poore andar ke
+    network ka free port-scanner ban jaata (koi bhi jo backend tak pahunch
+    sakta hai, PLC/DB/camera sab tatol leta)."""
     import socket, time as _t
     try:
         t0 = _t.time()
