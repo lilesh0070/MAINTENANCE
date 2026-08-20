@@ -13,7 +13,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { api } from "../../api/client";
-import { Card, Btn, Input, EmptyState, Spinner } from "./ui";
+import { Card, Btn, Input, Select, EmptyState, Spinner } from "./ui";
+import { PROD_ZONES } from "../../constants/zones";
 
 const lbl = { fontSize: 11, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase",
               color: "#64748b", marginBottom: 5, display: "block" };
@@ -21,6 +22,13 @@ const th  = { padding: "9px 10px", textAlign: "left", fontSize: 10.5, fontWeight
               letterSpacing: ".06em", textTransform: "uppercase", color: "#64748b",
               borderBottom: "2px solid #e2e8f0", whiteSpace: "nowrap" };
 const td  = { padding: "8px 10px", fontSize: 13, color: "#334155", borderBottom: "1px solid #f1f5f9" };
+
+// FY Apr->Mar; list 2025-26 se abhi tak
+const FY_START = 2025;
+const CUR_FY_Y = (() => { const d = new Date(); return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1; })();
+const FY_LIST  = Array.from({ length: Math.max(1, CUR_FY_Y - FY_START + 1) },
+                            (_, i) => { const y = FY_START + i; return `${y}-${y + 1}`; }).reverse();
+const FY_MONTHS = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar"];
 
 const fmtWhen = (t) => {
   if (!t) return "—";
@@ -39,22 +47,29 @@ export function BreakdownMailPage({ toast }) {
   const [loading, setLoad]  = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTest]  = useState(null);
+  // log ke filter
+  const [master, setMaster] = useState([]);        // machine master (line/machine dropdown)
+  const [f, setF] = useState({ fy: `${CUR_FY_Y}-${CUR_FY_Y + 1}`, month: "", zone: "", line: "", machine_no: "", role: "" });
 
   const load = useCallback(async () => {
     if (!token) return;
     setLoad(true);
     try {
-      const [c, l] = await Promise.all([
+      const q = new URLSearchParams({ limit: "200" });
+      Object.entries(f).forEach(([k, v]) => { if (v) q.set(k, v); });
+      const [c, l, m] = await Promise.all([
         api.get("/api/breakdown-mail/config", token),
-        api.get("/api/breakdown-mail/log?limit=25", token).catch(() => []),
+        api.get(`/api/breakdown-mail/log?${q}`, token).catch(() => []),
+        api.get("/api/machines/", token).catch(() => []),
       ]);
+      setMaster(Array.isArray(m) ? m : []);
       setAuto(!!c.auto_enabled);
       setCc(c.cc || "");
       setLevels((c.levels || []).map((x) => ({ ...x, emails: x.emails || "" })));
       setLog(Array.isArray(l) ? l : []);
     } catch (e) { toast?.(e.message || "Load failed", "err"); }
     finally { setLoad(false); }
-  }, [token, toast]);
+  }, [token, toast, f]);
   useEffect(() => { load(); }, [load]);
 
   const setLv = (i, k, v) => setLevels((p) => p.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
@@ -91,6 +106,14 @@ export function BreakdownMailPage({ toast }) {
 
   const sorted = [...levels];
   const anyEmail = levels.some((l) => (l.emails || "").includes("@"));
+  // Line / Machine ke option Machine Master se — zone chunne par hi bharte hain
+  const lineOpts = f.zone
+    ? [...new Set(master.filter((m) => m.zone_name === f.zone).map((m) => m.line_name).filter(Boolean))].sort()
+    : [];
+  const machineOpts = (f.zone && f.line)
+    ? [...new Set(master.filter((m) => m.zone_name === f.zone && m.line_name === f.line)
+                        .map((m) => m.machine_no).filter(Boolean))].sort()
+    : [];
 
   return (
     <div>
@@ -186,6 +209,46 @@ export function BreakdownMailPage({ toast }) {
                     textTransform: "uppercase", letterSpacing: ".05em" }}>
         Pichhle bheje gaye mail
       </div>
+
+      {/* filter — FY / month / zone / line / machine / level */}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
+        <div><label style={lbl}>Financial Year</label>
+          <Select value={f.fy} onChange={(e) => setF({ ...f, fy: e.target.value })}>
+            <option value="">All</option>
+            {FY_LIST.map((y) => <option key={y} value={y}>{y}</option>)}
+          </Select></div>
+        <div><label style={lbl}>Month</label>
+          <Select value={f.month} onChange={(e) => setF({ ...f, month: e.target.value })}>
+            <option value="">All months</option>
+            {FY_MONTHS.map((m) => <option key={m} value={m}>{m}</option>)}
+          </Select></div>
+        <div><label style={lbl}>Zone</label>
+          <Select value={f.zone} onChange={(e) => setF({ ...f, zone: e.target.value, line: "", machine_no: "" })}>
+            <option value="">All Zones</option>
+            {PROD_ZONES.map((z) => <option key={z} value={z}>{z}</option>)}
+          </Select></div>
+        <div><label style={lbl}>Line</label>
+          <Select value={f.line} disabled={!f.zone}
+                  onChange={(e) => setF({ ...f, line: e.target.value, machine_no: "" })}>
+            <option value="">All Lines</option>
+            {lineOpts.map((l) => <option key={l} value={l}>{l}</option>)}
+          </Select></div>
+        <div><label style={lbl}>Machine No.</label>
+          <Select value={f.machine_no} disabled={!f.line}
+                  onChange={(e) => setF({ ...f, machine_no: e.target.value })}>
+            <option value="">All Machine No.</option>
+            {machineOpts.map((m) => <option key={m} value={m}>{m}</option>)}
+          </Select></div>
+        <div><label style={lbl}>Level</label>
+          <Select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
+            <option value="">All levels</option>
+            {levels.map((l) => <option key={l.id || l.role_label} value={l.role_label}>{l.role_label}</option>)}
+          </Select></div>
+        <Btn size="sm" onClick={() => setF({ fy: "", month: "", zone: "", line: "", machine_no: "", role: "" })}>
+          ✕ Clear
+        </Btn>
+      </div>
+
       <Card>
         {log.length === 0 ? (
           <EmptyState text="Abhi tak koi escalation mail nahi gaya" />
@@ -193,7 +256,7 @@ export function BreakdownMailPage({ toast }) {
           <div style={{ overflowX: "auto", maxHeight: 300, overflowY: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
               <thead><tr>
-                {["Kab", "Level", "Zone", "Line", "Minute", "Kise gaya", "Status"]
+                {["Kab", "Level", "Zone", "Line", "Machine", "Minute", "Kise gaya", "Status"]
                   .map((h, i) => <th key={i} style={{ ...th, position: "sticky", top: 0, background: "#fff" }}>{h}</th>)}
               </tr></thead>
               <tbody>
@@ -203,6 +266,7 @@ export function BreakdownMailPage({ toast }) {
                     <td style={{ ...td, fontWeight: 700 }}>{r.role_label || "—"}</td>
                     <td style={td}>{r.zone || "—"}</td>
                     <td style={td}>{r.line || "—"}</td>
+                    <td style={td}>{r.machine_no || "—"}</td>
                     <td style={{ ...td, fontWeight: 700 }}>{r.minutes != null ? `${r.minutes} min` : "—"}</td>
                     <td style={{ ...td, maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis",
                                  whiteSpace: "nowrap" }}>{r.to_emails || "—"}</td>

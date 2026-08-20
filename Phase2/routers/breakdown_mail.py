@@ -91,6 +91,7 @@ def _ensure():
                 role_label     VARCHAR(60),
                 zone           VARCHAR(60),
                 line           VARCHAR(60),
+                machine_no     VARCHAR(60),
                 minutes        INTEGER,
                 to_emails      TEXT,
                 ok             BOOLEAN DEFAULT TRUE,
@@ -99,6 +100,7 @@ def _ensure():
             )
         """)
         # Ek call ke ek level ka mail SIRF EK BAAR — asli guarantee yahi index hai.
+        cur.execute("ALTER TABLE maintenance_escalation_log ADD COLUMN IF NOT EXISTS machine_no VARCHAR(60)")
         cur.execute("""CREATE UNIQUE INDEX IF NOT EXISTS maintenance_escalation_log_uq
                          ON maintenance_escalation_log (andon_event_id, level_id)""")
         cur.execute("SELECT COUNT(*) FROM maintenance_escalation_level")
@@ -187,12 +189,32 @@ def put_config(body: ConfigIn, admin=Depends(require_admin)):
 
 
 @router.get("/log")
-def get_log(limit: int = Query(50, ge=1, le=500), user=Depends(get_current_user)):
+def get_log(limit:      int = Query(200, ge=1, le=1000),
+            fy:         Optional[str] = Query(None),
+            month:      Optional[str] = Query(None),
+            zone:       Optional[str] = Query(None),
+            line:       Optional[str] = Query(None),
+            machine_no: Optional[str] = Query(None),
+            role:       Optional[str] = Query(None),
+            user=Depends(get_current_user)):
+    """Bheje gaye mail — FY / month / zone / line / machine / level se chhaan kar."""
     _ensure()
+    from routers.breakdown_slips import _fy_range          # ek hi FY hisaab, do jagah nahi
+    d0, d1 = _fy_range(fy, month)
+    where, params = ["1=1"], []
+    if d0:
+        # sent_at timestamp hai — poore aakhri din tak lena hai
+        where.append("sent_at >= %s AND sent_at < (%s::date + INTERVAL '1 day')")
+        params += [d0, d1]
+    if zone:       where.append("zone = %s");       params.append(zone)
+    if line:       where.append("line = %s");       params.append(line)
+    if machine_no: where.append("machine_no = %s"); params.append(machine_no)
+    if role:       where.append("role_label = %s"); params.append(role)
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("""SELECT * FROM maintenance_escalation_log
-                        ORDER BY sent_at DESC LIMIT %s""", (limit,))
+        cur.execute(f"""SELECT * FROM maintenance_escalation_log
+                         WHERE {' AND '.join(where)}
+                         ORDER BY sent_at DESC LIMIT %s""", params + [limit])
         return [dict(r) for r in cur.fetchall()]
 
 
@@ -310,11 +332,12 @@ def _escalate_once():
                 with get_conn() as conn2:
                     cur2 = conn2.cursor()
                     cur2.execute("""INSERT INTO maintenance_escalation_log
-                        (andon_event_id, level_id, role_label, zone, line, minutes, to_emails, ok, err)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        (andon_event_id, level_id, role_label, zone, line, machine_no,
+                         minutes, to_emails, ok, err)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                         ON CONFLICT (andon_event_id, level_id) DO NOTHING""",
                         (c["id"], lv["id"], lv["role_label"], c["zone"], c["line"],
-                         c["mins"], ", ".join(to), ok, err))
+                         c.get("machine_no"), c["mins"], ", ".join(to), ok, err))
                     conn2.commit()
             except Exception as ex:
                 print(f"[BD-MAIL] log likhne me dikkat: {ex}")
