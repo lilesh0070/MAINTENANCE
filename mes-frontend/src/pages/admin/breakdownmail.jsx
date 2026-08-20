@@ -30,6 +30,9 @@ const FY_LIST  = Array.from({ length: Math.max(1, CUR_FY_Y - FY_START + 1) },
                             (_, i) => { const y = FY_START + i; return `${y}-${y + 1}`; }).reverse();
 const FY_MONTHS = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar"];
 
+// Escalation ladder ke standard designations (dropdown me yahi aate hain).
+const ROLE_OPTIONS = ["Engineer", "Sr. Engineer", "AM", "DM", "HOD", "Plant Head"];
+
 const fmtWhen = (t) => {
   if (!t) return "—";
   const d = new Date(t);
@@ -91,6 +94,9 @@ export function BreakdownMailPage({ toast }) {
     const body = { auto_enabled: auto, cc,
                    levels: levels.map((l, i) => ({ ...l, seq: i + 1,
                                                    after_minutes: Number(l.after_minutes) || 0 })) };
+    if (body.levels.some((l) => !(l.role_label || "").trim())) {
+      toast?.("Select a level for every row", "err"); return;
+    }
     setSaving(true);
     try {
       await api.put("/api/breakdown-mail/config", body, token);
@@ -173,8 +179,15 @@ export function BreakdownMailPage({ toast }) {
                 <tr key={i} style={{ opacity: l.enabled ? 1 : 0.5 }}>
                   <td style={{ ...td, fontWeight: 800, color: "#b45309", width: 34 }}>{i + 1}</td>
                   <td style={{ ...td, width: 170 }}>
-                    <Input value={l.role_label} placeholder="Engineer"
-                           onChange={(e) => setLv(i, "role_label", e.target.value)} />
+                    <Select value={l.role_label}
+                            onChange={(e) => setLv(i, "role_label", e.target.value)}>
+                      <option value="">— select —</option>
+                      {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                      {/* pehle se saved koi custom naam list me na ho to bhi na ude */}
+                      {l.role_label && !ROLE_OPTIONS.includes(l.role_label) && (
+                        <option value={l.role_label}>{l.role_label}</option>
+                      )}
+                    </Select>
                   </td>
                   <td style={{ ...td, width: 140 }}>
                     <Input type="number" min="1" value={l.after_minutes}
