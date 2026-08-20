@@ -2,7 +2,7 @@
  * (headings, cards, buttons, form fields, modal, toast, excel importer).
  * Extracted from AdminPanel so each admin page file can import just these.
  */
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 function PageHeading({ title, sub }) {
   return (
@@ -167,7 +167,11 @@ function Toast({ msg, type, onDone }) {
 
 export function useToast() {
   const [toast, setToast] = useState(null);
-  const show = (msg, type = "ok") => setToast({ msg, type });
+  // useCallback ZAROORI hai: pages `toast` ko useCallback/useEffect ki deps me
+  // rakhte hain.  Agar ye har render par naya function bane, to ek failed load
+  // -> toast -> parent re-render -> naya toast fn -> load dobara -> phir fail...
+  // yani anant loop (page hamesha ghoomta rehta, request bhi bar-bar jaati).
+  const show = useCallback((msg, type = "ok") => setToast({ msg, type }), []);
   const el = toast ? <Toast msg={toast.msg} type={toast.type} onDone={() => setToast(null)} /> : null;
   return [show, el];
 }
