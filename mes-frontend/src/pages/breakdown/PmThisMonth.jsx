@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { api } from "./shared";
 
 /* ════════════════════════════════════════════════════════════════════
@@ -35,6 +35,21 @@ function PmThisMonth({ token }) {
   const [fStatus, setFStatus] = useState("");
   const [page, setPage]       = useState(1);
   const PER = 10;
+  // Card ko jitni jagah milti hai usi hisaab se layout: chaudi jagah -> poora
+  // table (filters + pagination), patli -> compact list.  Dashboard me kabhi ye
+  // saath wali column me hota hai, kabhi poori chaudai me — isliye naap kar tay
+  // karte hain, andaaze se nahi.
+  const boxRef = useRef(null);
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([e]) => setW(Math.round(e.contentRect.width)));
+    ro.observe(el);
+    setW(el.getBoundingClientRect().width);
+    return () => ro.disconnect();
+  }, []);
+  const wide = w >= 760;              // itni jagah me poora table theek baithta hai
 
   const now      = new Date();
   const ym       = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -149,9 +164,112 @@ function PmThisMonth({ token }) {
     </span>
   );
 
+  // Filters + table + paging + legend — EK hi jagah likha, inline (chaudi jagah)
+  // aur modal dono yahi use karte hain.
+  const FullBlock = ({ inModal }) => (
+    <>
+      <div style={{ display: "flex", gap: 10, padding: inModal ? "13px 22px" : "12px 16px",
+                    borderBottom: "1px solid #eef2f7", flexWrap: "wrap", alignItems: "center" }}>
+        <select style={selSt} value={fZone}
+                onChange={(e) => { setFZone(e.target.value); setFLine(""); setPage(1); }}>
+          <option value="">All Zones</option>
+          {zones.map((z) => <option key={z} value={z}>{z}</option>)}
+        </select>
+        <select style={selSt} value={fLine} disabled={!fZone}
+                onChange={(e) => { setFLine(e.target.value); setPage(1); }}>
+          <option value="">All Lines</option>
+          {lines.map((l) => <option key={l} value={l}>{l}</option>)}
+        </select>
+        <select style={selSt} value={fStatus}
+                onChange={(e) => { setFStatus(e.target.value); setPage(1); }}>
+          <option value="">All Status</option>
+          {ORDER.map((k) => <option key={k} value={k}>{S[k].label}</option>)}
+        </select>
+        <span style={{ marginLeft: "auto", fontSize: 12, color: "#8a94a6", fontWeight: 600 }}>
+          {shown.length} of {rows.length}
+        </span>
+      </div>
+
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 880 }}>
+          <thead><tr style={{ background: "#f8fafc" }}>
+            {["Zone", "Line", "Machine No.", "Date", "Status", "Days Left", "Window", "Sheet"]
+              .map((h) => <th key={h} style={{ ...th, padding: inModal ? "9px 10px" : "9px 16px" }}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {pageRows.map((r, i) => (
+              <tr key={i}>
+                <td style={{ ...td, paddingLeft: inModal ? 10 : 16 }}><ZoneTag z={r.zone_name} /></td>
+                <td style={{ ...td, fontWeight: 700, color: "#0f172a" }}>{r.line || "—"}</td>
+                <td style={{ ...td, fontWeight: 700, color: "#0f172a" }}
+                    title={r.machine_name || ""}>{r.machine_code || "—"}</td>
+                <td style={td}>{dateTxt(r)}</td>
+                <td style={td}><Pill k={r.key} /></td>
+                <td style={{ ...td, fontWeight: 700, color: S[r.key].fg }}>{daysTxt(r)}</td>
+                <td style={td}><Bar r={r} /></td>
+                <td style={td}>
+                  {r.sheet_filled
+                    ? <span style={{ color: "#15803d", fontWeight: 800, fontSize: 11.5 }}>✓ Filled</span>
+                    : <span style={{ color: "#94a3b8", fontWeight: 700, fontSize: 11.5 }}>—</span>}
+                </td>
+              </tr>
+            ))}
+            {pageRows.length === 0 && (
+              <tr><td colSpan={8} style={{ ...td, textAlign: "center", color: "#94a3b8",
+                                           padding: 26 }}>Nothing matches this filter.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12,
+                    padding: inModal ? "12px 22px" : "12px 16px",
+                    borderTop: "1px solid #eef2f7", flexWrap: "wrap" }}>
+        <span style={{ fontSize: 12, color: "#8a94a6", fontWeight: 600 }}>
+          {shown.length === 0 ? "0 entries"
+            : `Showing ${(Math.min(page, pages) - 1) * PER + 1} to ` +
+              `${Math.min(Math.min(page, pages) * PER, shown.length)} of ${shown.length}`}
+        </span>
+        <div style={{ display: "flex", gap: 5, marginLeft: "auto", alignItems: "center" }}>
+          <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}
+                  style={{ ...selSt, padding: "6px 11px", cursor: page <= 1 ? "default" : "pointer",
+                           opacity: page <= 1 ? .45 : 1 }}>‹</button>
+          {Array.from({ length: pages }, (_, i) => i + 1).slice(0, 7).map((p) => (
+            <button key={p} onClick={() => setPage(p)}
+                    style={{ ...selSt, padding: "6px 11px", cursor: "pointer",
+                             ...(p === Math.min(page, pages)
+                                 ? { background: "#2563eb", color: "#fff", borderColor: "#2563eb" } : {}) }}>
+              {p}
+            </button>
+          ))}
+          <button onClick={() => setPage((p) => Math.min(pages, p + 1))} disabled={page >= pages}
+                  style={{ ...selSt, padding: "6px 11px", cursor: page >= pages ? "default" : "pointer",
+                           opacity: page >= pages ? .45 : 1 }}>›</button>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap",
+                    padding: inModal ? "11px 22px" : "11px 16px",
+                    background: "#f8fafc", borderTop: "1px solid #eef2f7" }}>
+        {[["ON_TRACK", "PM will be completed on time"], ["DUE_SOON", "PM due within 7 days"],
+          ["DUE", "PM is due now"], ["OVERDUE", "PM window has passed"],
+          ["COMPLETED", "PM completed"]].map(([k, txt]) => (
+          <span key={k} style={{ display: "inline-flex", alignItems: "flex-start", gap: 7 }}>
+            <span style={{ width: 7, height: 7, borderRadius: 99, background: S[k].dot, marginTop: 4 }} />
+            <span>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: "#334155" }}>{S[k].label}</div>
+              <div style={{ fontSize: 10.5, color: "#8a94a6" }}>{txt}</div>
+            </span>
+          </span>
+        ))}
+      </div>
+    </>
+  );
+
   return (
     <>
-      <div style={{ background: "#fff", border: "1px solid #e8edf3", borderRadius: 14,
+      <div ref={boxRef}
+           style={{ background: "#fff", border: "1px solid #e8edf3", borderRadius: 14,
                     overflow: "hidden", boxShadow: "0 1px 3px rgba(15,23,42,.05)" }}>
         {/* header */}
         <div style={{ padding: "13px 16px", borderBottom: "1px solid #eef2f7",
@@ -166,12 +284,12 @@ function PmThisMonth({ token }) {
               {monthLbl} · {stats.total} Planned
             </div>
           </div>
-          <button onClick={() => { setFull(true); setPage(1); }}
+          {!wide && <button onClick={() => { setFull(true); setPage(1); }}
                   style={{ marginLeft: "auto", border: "1px solid #e2e8f0", background: "#fff",
                            color: "#475569", borderRadius: 8, padding: "6px 11px", fontSize: 11.5,
                            fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
             ⤢ Full view
-          </button>
+          </button>}
         </div>
 
         {/* stats */}
@@ -184,7 +302,11 @@ function PmThisMonth({ token }) {
           <Stat n={stats.pct}     label="Compliance" color="#2563eb" sub="%" />
         </div>
 
-        {/* rows */}
+        {/* Chaudi jagah -> wahi poora table yahin; patli -> compact list */}
+        {wide && data && !err && rows.length > 0 && <FullBlock inModal={false} />}
+
+        {/* rows (compact) */}
+        {!(wide && data && !err && rows.length > 0) &&
         <div style={{ maxHeight: 292, overflowY: "auto" }}>
           {err ? (
             <div style={{ padding: 20, color: "#dc2626", fontSize: 12.5 }}>Could not load PM schedule.</div>
@@ -219,9 +341,10 @@ function PmThisMonth({ token }) {
               </div>
             </div>
           ))}
-        </div>
+        </div>}
 
-        {/* legend */}
+        {/* legend — sirf compact view me (FullBlock ka apna legend hai) */}
+        {!(wide && data && !err && rows.length > 0) &&
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", padding: "9px 14px",
                       background: "#f8fafc", borderTop: "1px solid #eef2f7" }}>
           {ORDER.map((k) => (
@@ -231,7 +354,7 @@ function PmThisMonth({ token }) {
               {S[k].label}
             </span>
           ))}
-        </div>
+        </div>}
       </div>
 
       {/* ── FULL VIEW ─────────────────────────────────────────────── */}
@@ -268,101 +391,7 @@ function PmThisMonth({ token }) {
                                width: 32, height: 32, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>×</button>
             </div>
 
-            {/* filters */}
-            <div style={{ display: "flex", gap: 10, padding: "13px 22px", borderBottom: "1px solid #eef2f7",
-                          flexWrap: "wrap", alignItems: "center" }}>
-              <select style={selSt} value={fZone}
-                      onChange={(e) => { setFZone(e.target.value); setFLine(""); setPage(1); }}>
-                <option value="">All Zones</option>
-                {zones.map((z) => <option key={z} value={z}>{z}</option>)}
-              </select>
-              <select style={selSt} value={fLine} disabled={!fZone}
-                      onChange={(e) => { setFLine(e.target.value); setPage(1); }}>
-                <option value="">All Lines</option>
-                {lines.map((l) => <option key={l} value={l}>{l}</option>)}
-              </select>
-              <select style={selSt} value={fStatus}
-                      onChange={(e) => { setFStatus(e.target.value); setPage(1); }}>
-                <option value="">All Status</option>
-                {ORDER.map((k) => <option key={k} value={k}>{S[k].label}</option>)}
-              </select>
-              <span style={{ marginLeft: "auto", fontSize: 12, color: "#8a94a6", fontWeight: 600 }}>
-                {shown.length} of {rows.length}
-              </span>
-            </div>
-
-            {/* table */}
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 880 }}>
-                <thead><tr style={{ background: "#f8fafc" }}>
-                  {["Zone", "Line", "Machine No.", "Date", "Status", "Days Left", "Window", "Sheet"]
-                    .map((h) => <th key={h} style={th}>{h}</th>)}
-                </tr></thead>
-                <tbody>
-                  {pageRows.map((r, i) => (
-                    <tr key={i}>
-                      <td style={td}><ZoneTag z={r.zone_name} /></td>
-                      <td style={{ ...td, fontWeight: 700, color: "#0f172a" }}>{r.line || "—"}</td>
-                      <td style={{ ...td, fontWeight: 700, color: "#0f172a" }}
-                          title={r.machine_name || ""}>{r.machine_code || "—"}</td>
-                      <td style={td}>{dateTxt(r)}</td>
-                      <td style={td}><Pill k={r.key} /></td>
-                      <td style={{ ...td, fontWeight: 700, color: S[r.key].fg }}>{daysTxt(r)}</td>
-                      <td style={td}><Bar r={r} /></td>
-                      <td style={td}>
-                        {r.sheet_filled
-                          ? <span style={{ color: "#15803d", fontWeight: 800, fontSize: 11.5 }}>✓ Filled</span>
-                          : <span style={{ color: "#94a3b8", fontWeight: 700, fontSize: 11.5 }}>—</span>}
-                      </td>
-                    </tr>
-                  ))}
-                  {pageRows.length === 0 && (
-                    <tr><td colSpan={8} style={{ ...td, textAlign: "center", color: "#94a3b8",
-                                                 padding: 26 }}>Nothing matches this filter.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* footer: paging + legend */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 22px",
-                          borderTop: "1px solid #eef2f7", flexWrap: "wrap" }}>
-              <span style={{ fontSize: 12, color: "#8a94a6", fontWeight: 600 }}>
-                {shown.length === 0 ? "0 entries"
-                  : `Showing ${(Math.min(page, pages) - 1) * PER + 1} to ` +
-                    `${Math.min(Math.min(page, pages) * PER, shown.length)} of ${shown.length}`}
-              </span>
-              <div style={{ display: "flex", gap: 5, marginLeft: "auto", alignItems: "center" }}>
-                <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}
-                        style={{ ...selSt, padding: "6px 11px", cursor: page <= 1 ? "default" : "pointer",
-                                 opacity: page <= 1 ? .45 : 1 }}>‹</button>
-                {Array.from({ length: pages }, (_, i) => i + 1).slice(0, 7).map((p) => (
-                  <button key={p} onClick={() => setPage(p)}
-                          style={{ ...selSt, padding: "6px 11px", cursor: "pointer",
-                                   ...(p === Math.min(page, pages)
-                                       ? { background: "#2563eb", color: "#fff", borderColor: "#2563eb" } : {}) }}>
-                    {p}
-                  </button>
-                ))}
-                <button onClick={() => setPage((p) => Math.min(pages, p + 1))} disabled={page >= pages}
-                        style={{ ...selSt, padding: "6px 11px", cursor: page >= pages ? "default" : "pointer",
-                                 opacity: page >= pages ? .45 : 1 }}>›</button>
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 20, flexWrap: "wrap", padding: "11px 22px",
-                          background: "#f8fafc", borderTop: "1px solid #eef2f7" }}>
-              {[["ON_TRACK", "PM will be completed on time"], ["DUE_SOON", "PM due within 7 days"],
-                ["DUE", "PM is due now"], ["OVERDUE", "PM window has passed"],
-                ["COMPLETED", "PM completed"]].map(([k, txt]) => (
-                <span key={k} style={{ display: "inline-flex", alignItems: "flex-start", gap: 7 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: 99, background: S[k].dot, marginTop: 4 }} />
-                  <span>
-                    <div style={{ fontSize: 11.5, fontWeight: 800, color: "#334155" }}>{S[k].label}</div>
-                    <div style={{ fontSize: 10.5, color: "#8a94a6" }}>{txt}</div>
-                  </span>
-                </span>
-              ))}
-            </div>
+            <FullBlock inModal />
           </div>
         </div>
       )}
