@@ -57,12 +57,10 @@ export function BreakdownMailPage({ toast }) {
     try {
       const q = new URLSearchParams({ limit: "200" });
       Object.entries(f).forEach(([k, v]) => { if (v) q.set(k, v); });
-      const [c, l, m] = await Promise.all([
+      const [c, l] = await Promise.all([
         api.get("/api/breakdown-mail/config", token),
         api.get(`/api/breakdown-mail/log?${q}`, token).catch(() => []),
-        api.get("/api/machines/", token).catch(() => []),
       ]);
-      setMaster(Array.isArray(m) ? m : []);
       setAuto(!!c.auto_enabled);
       setCc(c.cc || "");
       setLevels((c.levels || []).map((x) => ({ ...x, emails: x.emails || "" })));
@@ -71,6 +69,16 @@ export function BreakdownMailPage({ toast }) {
     finally { setLoad(false); }
   }, [token, toast, f]);
   useEffect(() => { load(); }, [load]);
+
+  // Machine Master ALAG se — pehle ye teeno ek hi Promise.all me the, to config
+  // ke fail hote hi master bhi khali reh jaata aur Line/Machine ke dropdown
+  // kabhi bharte hi nahi the.
+  useEffect(() => {
+    if (!token) return;
+    api.get("/api/machines/", token)
+       .then((m) => setMaster(Array.isArray(m) ? m : []))
+       .catch(() => setMaster([]));
+  }, [token]);
 
   const setLv = (i, k, v) => setLevels((p) => p.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
   const addLv = () => setLevels((p) => [...p, {
