@@ -29,6 +29,47 @@ const S = {
 };
 const ORDER = ["OVERDUE", "DUE", "DUE_SOON", "ON_TRACK", "COMPLETED"];
 
+// Ye chhote tukde MODULE level par hain — render ke andar banate to React
+// har render par inhe naya component maanta aur andar ke <select> remount ho
+// kar focus/khula-hua-dropdown kho dete.
+
+function _ZoneTag({ z }) { return (
+  <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, background: "#eff6ff",
+                 color: "#1d4ed8", fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap" }}>
+    {z || "—"}
+  </span>
+); }
+
+function _Pill({ k }) { return (
+  <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px",
+                 borderRadius: 99, background: S[k].bg, color: S[k].fg,
+                 fontSize: 10, fontWeight: 800, letterSpacing: ".03em", whiteSpace: "nowrap" }}>
+    <span style={{ width: 5, height: 5, borderRadius: 99, background: S[k].dot }} />
+    {S[k].label}
+  </span>
+); }
+
+function _Bar({ r }) { return (
+  <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+    <span style={{ width: 62, height: 5, borderRadius: 99, background: "#eef2f7", overflow: "hidden" }}>
+      <span style={{ display: "block", height: "100%", width: `${r.used}%`, background: S[r.key].bar }} />
+    </span>
+    <span style={{ fontSize: 10.5, fontWeight: 700, color: "#64748b", minWidth: 26 }}>{r.used}%</span>
+  </span>
+); }
+
+
+function _Stat({ n, label, color, sub }) { return (
+  <div style={{ minWidth: 0, background: "#fff", border: "1px solid #e8edf3",
+                borderRadius: 10, padding: "8px 10px" }}>
+    <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 22, fontWeight: 800,
+                  lineHeight: 1.05, color }}>{n}{sub}</div>
+    <div style={{ fontSize: 9.5, fontWeight: 700, color: "#8a94a6", letterSpacing: ".04em",
+                  textTransform: "uppercase", marginTop: 1 }}>{label}</div>
+  </div>
+); }
+
+
 function PmThisMonth({ token }) {
   const [data, setData] = useState(null);
   const [err,  setErr]  = useState(false);
@@ -62,11 +103,11 @@ function PmThisMonth({ token }) {
     return () => { alive = false; };
   }, [token, ym]);
 
-  // Week 1 = 1-7, 2 = 8-14, 3 = 15-21, 4 = 22-end
-  const winOf = (wno) => ({ start: (wno - 1) * 7 + 1, end: wno === 4 ? lastDay : wno * 7 });
-
   const rows = useMemo(() => {
     if (!data?.weeks) return [];
+    // Week 1 = 1-7, 2 = 8-14, 3 = 15-21, 4 = 22-end  (yahin rakha hai taaki
+    // useMemo ki dependency list poori rahe)
+    const winOf = (wno) => ({ start: (wno - 1) * 7 + 1, end: wno === 4 ? lastDay : wno * 7 });
     const out = [];
     ["1", "2", "3", "4"].forEach((wno) =>
       (data.weeks[wno] || []).forEach((m) => {
@@ -117,33 +158,6 @@ function PmThisMonth({ token }) {
     : r.daysLeft === 0 ? "today"
     : r.daysLeft === 1 ? "1 day" : `${r.daysLeft} days`;
 
-  const Pill = ({ k }) => (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px",
-                   borderRadius: 99, background: S[k].bg, color: S[k].fg,
-                   fontSize: 10, fontWeight: 800, letterSpacing: ".03em", whiteSpace: "nowrap" }}>
-      <span style={{ width: 5, height: 5, borderRadius: 99, background: S[k].dot }} />
-      {S[k].label}
-    </span>
-  );
-  const Bar = ({ r }) => (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-      <span style={{ width: 62, height: 5, borderRadius: 99, background: "#eef2f7", overflow: "hidden" }}>
-        <span style={{ display: "block", height: "100%", width: `${r.used}%`, background: S[r.key].bar }} />
-      </span>
-      <span style={{ fontSize: 10.5, fontWeight: 700, color: "#64748b", minWidth: 26 }}>{r.used}%</span>
-    </span>
-  );
-
-  const Stat = ({ n, label, color, sub }) => (
-    <div style={{ minWidth: 0, background: "#fff", border: "1px solid #e8edf3",
-                  borderRadius: 10, padding: "8px 10px" }}>
-      <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 22, fontWeight: 800,
-                    lineHeight: 1.05, color }}>{n}{sub}</div>
-      <div style={{ fontSize: 9.5, fontWeight: 700, color: "#8a94a6", letterSpacing: ".04em",
-                    textTransform: "uppercase", marginTop: 1 }}>{label}</div>
-    </div>
-  );
-
   const th = { textAlign: "left", padding: "9px 10px", fontSize: 9.5, fontWeight: 800,
                letterSpacing: ".07em", textTransform: "uppercase", color: "#8a94a6",
                borderBottom: "1px solid #e8edf3", whiteSpace: "nowrap" };
@@ -152,16 +166,10 @@ function PmThisMonth({ token }) {
   const selSt = { border: "1px solid #e2e8f0", borderRadius: 9, padding: "7px 10px", fontSize: 12,
                   fontWeight: 600, color: "#334155", background: "#fff", fontFamily: "inherit" };
 
-  const ZoneTag = ({ z }) => (
-    <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 6, background: "#eff6ff",
-                   color: "#1d4ed8", fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap" }}>
-      {z || "—"}
-    </span>
-  );
 
   // Filters + table + paging + legend — EK hi jagah likha, inline (chaudi jagah)
   // aur modal dono yahi use karte hain.
-  const FullBlock = ({ inModal }) => (
+  const fullBlock = (inModal) => (
     <>
       <div style={{ display: "flex", gap: 10, padding: inModal ? "13px 22px" : "12px 16px",
                     borderBottom: "1px solid #eef2f7", flexWrap: "wrap", alignItems: "center" }}>
@@ -196,14 +204,14 @@ function PmThisMonth({ token }) {
           <tbody>
             {pageRows.map((r, i) => (
               <tr key={i}>
-                <td style={{ ...td, paddingLeft: inModal ? 10 : 16 }}><ZoneTag z={r.zone_name} /></td>
+                <td style={{ ...td, paddingLeft: inModal ? 10 : 16 }}><_ZoneTag z={r.zone_name} /></td>
                 <td style={{ ...td, fontWeight: 700, color: "#0f172a" }}>{r.line || "—"}</td>
                 <td style={{ ...td, fontWeight: 700, color: "#0f172a" }}
                     title={r.machine_name || ""}>{r.machine_code || "—"}</td>
                 <td style={td}>{dateTxt(r)}</td>
-                <td style={td}><Pill k={r.key} /></td>
+                <td style={td}><_Pill k={r.key} /></td>
                 <td style={{ ...td, fontWeight: 700, color: S[r.key].fg }}>{daysTxt(r)}</td>
-                {(roomy || inModal) && <td style={td}><Bar r={r} /></td>}
+                {(roomy || inModal) && <td style={td}><_Bar r={r} /></td>}
                 {(roomy || inModal) && (
                   <td style={td}>
                     {r.sheet_filled
@@ -267,8 +275,7 @@ function PmThisMonth({ token }) {
 
   return (
     <>
-      <div ref={boxRef}
-           style={{ background: "#fff", border: "1px solid #e8edf3", borderRadius: 14,
+      <div style={{ background: "#fff", border: "1px solid #e8edf3", borderRadius: 14,
                     overflow: "hidden", boxShadow: "0 1px 3px rgba(15,23,42,.05)" }}>
         {/* header */}
         <div style={{ padding: "13px 16px", borderBottom: "1px solid #eef2f7",
@@ -292,15 +299,15 @@ function PmThisMonth({ token }) {
                       /* paanchon HAMESHA ek line me — warna "Compliance" akela
                          agli line me chala jaata tha aur adhoora lagta tha */
                       gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}>
-          <Stat n={stats.total}   label="Planned"    color="#0f172a" sub="" />
-          <Stat n={stats.due}     label="Due"        color="#c2410c" sub="" />
-          <Stat n={stats.done}    label="Completed"  color="#15803d" sub="" />
-          <Stat n={stats.overdue} label="Overdue"    color="#b91c1c" sub="" />
-          <Stat n={stats.pct}     label="Compliance" color="#2563eb" sub="%" />
+          <_Stat n={stats.total}   label="Planned"    color="#0f172a" sub="" />
+          <_Stat n={stats.due}     label="Due"        color="#c2410c" sub="" />
+          <_Stat n={stats.done}    label="Completed"  color="#15803d" sub="" />
+          <_Stat n={stats.overdue} label="Overdue"    color="#b91c1c" sub="" />
+          <_Stat n={stats.pct}     label="Compliance" color="#2563eb" sub="%" />
         </div>
 
         {/* Chaudi jagah -> wahi poora table yahin; patli -> compact list */}
-        {wide && data && !err && rows.length > 0 && <FullBlock inModal={false} />}
+        {wide && data && !err && rows.length > 0 && fullBlock(false)}
 
         {/* rows (compact) */}
         {!(wide && data && !err && rows.length > 0) &&
