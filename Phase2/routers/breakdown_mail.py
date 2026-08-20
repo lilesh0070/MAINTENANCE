@@ -247,27 +247,101 @@ def send_test(body: TestIn, admin=Depends(require_admin)):
 
 # -- Mail body ------------------------------------------------------------
 def _mail_html(*, role, zone, line, machine, minutes, started, test=False):
-    tag = ('<div style="background:#fef3c7;color:#92400e;padding:8px 12px;border-radius:8px;'
-           'font-weight:700;margin-bottom:14px">TEST MAIL - this is not a real breakdown</div>'
-           ) if test else ""
-    return (
-        '<div style="font-family:Arial,sans-serif;max-width:640px">' + tag +
-        '<div style="background:#b91c1c;color:#fff;padding:14px 18px;border-radius:10px 10px 0 0">'
-        '<div style="font-size:19px;font-weight:800">BREAKDOWN ESCALATION</div>'
-        f'<div style="font-size:13px;opacity:.9">Notification for {role}</div></div>'
-        '<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 10px 10px;padding:16px 18px">'
-        '<p style="margin:0 0 14px;font-size:14px;color:#334155">The breakdown below has been running for '
-        f'<b>{minutes} minutes</b> and is still not resolved.</p>'
-        '<table style="border-collapse:collapse;font-size:14px">'
-        f'<tr><td style="padding:5px 14px 5px 0;color:#64748b">Zone</td><td style="font-weight:700">{zone or "-"}</td></tr>'
-        f'<tr><td style="padding:5px 14px 5px 0;color:#64748b">Line</td><td style="font-weight:700">{line or "-"}</td></tr>'
-        f'<tr><td style="padding:5px 14px 5px 0;color:#64748b">Machine</td><td style="font-weight:700">{machine or "-"}</td></tr>'
-        f'<tr><td style="padding:5px 14px 5px 0;color:#64748b">Started</td><td style="font-weight:700">{started}</td></tr>'
-        f'<tr><td style="padding:5px 14px 5px 0;color:#64748b">Elapsed</td>'
-        f'<td style="font-weight:800;color:#b91c1c">{minutes} min</td></tr></table>'
-        '<p style="margin:16px 0 0;font-size:12px;color:#94a3b8">Toyota Boshoku Device India — '
-        'sent automatically by the Maintenance MES.</p></div></div>'
-    )
+    """Escalation mail ka body.
+
+    OUTLOOK-SAFE: layout <table> se banaya hai aur saari CSS inline hai.
+    Outlook (Word engine) flex/grid, box-shadow aur border-radius nahi samajhta —
+    div-based design wahan bikhar jaata hai, isliye tables use kiye hain.
+    """
+    hrs = f"{minutes // 60} hr {minutes % 60} min" if minutes >= 60 else f"{minutes} min"
+    banner = ("""
+      <tr><td style="padding:0 32px 18px">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#fffbeb"
+               style="border:1px solid #fde68a;">
+          <tr><td style="padding:10px 14px;font:600 12px Arial,sans-serif;color:#92400e">
+            TEST MESSAGE &ndash; this is not a real breakdown.
+          </td></tr>
+        </table>
+      </td></tr>""") if test else ""
+
+    def row(label, value, strong=False, last=False):
+        border = "" if last else "border-bottom:1px solid #edf1f5;"
+        vs = "font:700 14px Arial,sans-serif;color:#0f172a" if strong else              "font:400 14px Arial,sans-serif;color:#334155"
+        return (f'<tr>'
+                f'<td width="132" style="padding:10px 0;{border}'
+                f'font:400 12px Arial,sans-serif;color:#8a94a6;">{label}</td>'
+                f'<td style="padding:10px 0;{border}{vs}">{value or "&ndash;"}</td></tr>')
+
+    return f"""<table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f4f6f9"
+       style="background:#f4f6f9;margin:0;padding:26px 0;">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff"
+           style="background:#ffffff;border:1px solid #e3e8ee;max-width:600px;width:100%;">
+
+      <!-- company bar -->
+      <tr><td bgcolor="#0f172a" style="background:#0f172a;padding:16px 32px;">
+        <span style="font:700 14px Arial,sans-serif;color:#ffffff;letter-spacing:.06em;">
+          TOYOTA BOSHOKU DEVICE INDIA
+        </span>
+      </td></tr>
+      <tr><td bgcolor="#c8102e" style="background:#c8102e;font-size:0;line-height:0;">&nbsp;</td></tr>
+
+      <!-- title -->
+      <tr><td style="padding:26px 32px 4px;">
+        <div style="font:700 20px Arial,sans-serif;color:#0f172a;">Breakdown Escalation Notice</div>
+        <div style="font:400 13px Arial,sans-serif;color:#6b7280;padding-top:5px;">
+          Escalation level: <span style="color:#0f172a;font-weight:700">{role}</span>
+        </div>
+      </td></tr>
+{banner}
+      <!-- duration -->
+      <tr><td style="padding:14px 32px 0;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#fdf2f4"
+               style="background:#fdf2f4;border-left:3px solid #c8102e;">
+          <tr><td style="padding:14px 18px;">
+            <div style="font:400 12px Arial,sans-serif;color:#8a94a6;">DOWNTIME SO FAR</div>
+            <div style="font:700 26px Arial,sans-serif;color:#c8102e;padding-top:2px;">{hrs}</div>
+            <div style="font:400 12px Arial,sans-serif;color:#6b7280;padding-top:4px;">
+              The breakdown is still open and has not been resolved.
+            </div>
+          </td></tr>
+        </table>
+      </td></tr>
+
+      <!-- details -->
+      <tr><td style="padding:22px 32px 6px;">
+        <div style="font:700 11px Arial,sans-serif;color:#8a94a6;letter-spacing:.09em;
+                    border-bottom:2px solid #e3e8ee;padding-bottom:7px;">BREAKDOWN DETAILS</div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          {row("Zone", zone)}
+          {row("Line", line, strong=True)}
+          {row("Machine No.", machine)}
+          {row("Started at", started)}
+          {row("Elapsed", hrs, strong=True, last=True)}
+        </table>
+      </td></tr>
+
+      <!-- action -->
+      <tr><td style="padding:18px 32px 26px;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f7f9fb"
+               style="background:#f7f9fb;border:1px solid #e3e8ee;">
+          <tr><td style="padding:12px 16px;font:400 13px Arial,sans-serif;color:#475569;">
+            Please review the breakdown and ensure recovery action is in progress.
+          </td></tr>
+        </table>
+      </td></tr>
+
+      <!-- footer -->
+      <tr><td bgcolor="#f7f9fb" style="background:#f7f9fb;border-top:1px solid #e3e8ee;padding:14px 32px;">
+        <div style="font:400 11px Arial,sans-serif;color:#8a94a6;line-height:1.6;">
+          Automated notification from the Maintenance MES &mdash; ANDON breakdown escalation.<br>
+          This is a system-generated message; please do not reply.
+        </div>
+      </td></tr>
+
+    </table>
+  </td></tr>
+</table>"""
 
 
 # -- Worker ---------------------------------------------------------------
