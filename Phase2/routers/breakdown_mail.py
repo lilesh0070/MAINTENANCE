@@ -166,12 +166,12 @@ def put_config(body: ConfigIn, admin=Depends(require_admin)):
     _ensure()
     for lv in body.levels:
         if not (lv.role_label or "").strip():
-            raise HTTPException(400, "Role ka naam khali nahi ho sakta")
+            raise HTTPException(400, "Role name cannot be empty")
         if lv.after_minutes is None or lv.after_minutes < 1:
-            raise HTTPException(400, f"{lv.role_label}: minute 1 se kam nahi ho sakte")
+            raise HTTPException(400, f"{lv.role_label}: minutes must be at least 1")
     # ON karne ja rahe ho to kam se kam ek chalu level me sahi email hona chahiye
     if body.auto_enabled and not any(_emails(l.emails) for l in body.levels if l.enabled):
-        raise HTTPException(400, "Auto-mail ON karne se pehle kisi ek level me email bharo")
+        raise HTTPException(400, "Add an email address to at least one active level before turning Auto Mail on")
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""UPDATE maintenance_escalation_config
@@ -231,42 +231,42 @@ def send_test(body: TestIn, admin=Depends(require_admin)):
                         (body.level_id,))
             r = cur.fetchone()
             if not r:
-                raise HTTPException(404, "Level nahi mila")
+                raise HTTPException(404, "Level not found")
             role, to = r["role_label"], _emails(r["emails"])
     if not to:
-        raise HTTPException(400, "Koi email address nahi mila")
+        raise HTTPException(400, "No email address found")
     html = _mail_html(role=role, zone="SEAT_SLIDER", line="YHB_SS", machine="-",
                       minutes=30, started="-", test=True)
     from routers.mailer import _send_email
     try:
         _send_email(f"[TEST] Breakdown Escalation - {role}", html, to, [])
     except Exception as ex:
-        raise HTTPException(400, f"Mail nahi gaya: {ex}")
+        raise HTTPException(400, f"Mail failed: {ex}")
     return {"ok": True, "sent_to": to}
 
 
 # -- Mail body ------------------------------------------------------------
 def _mail_html(*, role, zone, line, machine, minutes, started, test=False):
     tag = ('<div style="background:#fef3c7;color:#92400e;padding:8px 12px;border-radius:8px;'
-           'font-weight:700;margin-bottom:14px">TEST MAIL - ye asli breakdown nahi hai</div>'
+           'font-weight:700;margin-bottom:14px">TEST MAIL - this is not a real breakdown</div>'
            ) if test else ""
     return (
         '<div style="font-family:Arial,sans-serif;max-width:640px">' + tag +
         '<div style="background:#b91c1c;color:#fff;padding:14px 18px;border-radius:10px 10px 0 0">'
         '<div style="font-size:19px;font-weight:800">BREAKDOWN ESCALATION</div>'
-        f'<div style="font-size:13px;opacity:.9">{role} ko soochna</div></div>'
+        f'<div style="font-size:13px;opacity:.9">Notification for {role}</div></div>'
         '<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 10px 10px;padding:16px 18px">'
-        '<p style="margin:0 0 14px;font-size:14px;color:#334155">Neeche likha breakdown '
-        f'<b>{minutes} minute</b> se chalu hai aur abhi tak band nahi hua.</p>'
+        '<p style="margin:0 0 14px;font-size:14px;color:#334155">The breakdown below has been running for '
+        f'<b>{minutes} minutes</b> and is still not resolved.</p>'
         '<table style="border-collapse:collapse;font-size:14px">'
         f'<tr><td style="padding:5px 14px 5px 0;color:#64748b">Zone</td><td style="font-weight:700">{zone or "-"}</td></tr>'
         f'<tr><td style="padding:5px 14px 5px 0;color:#64748b">Line</td><td style="font-weight:700">{line or "-"}</td></tr>'
         f'<tr><td style="padding:5px 14px 5px 0;color:#64748b">Machine</td><td style="font-weight:700">{machine or "-"}</td></tr>'
-        f'<tr><td style="padding:5px 14px 5px 0;color:#64748b">Shuru hua</td><td style="font-weight:700">{started}</td></tr>'
-        f'<tr><td style="padding:5px 14px 5px 0;color:#64748b">Abhi tak</td>'
+        f'<tr><td style="padding:5px 14px 5px 0;color:#64748b">Started</td><td style="font-weight:700">{started}</td></tr>'
+        f'<tr><td style="padding:5px 14px 5px 0;color:#64748b">Elapsed</td>'
         f'<td style="font-weight:800;color:#b91c1c">{minutes} min</td></tr></table>'
-        '<p style="margin:16px 0 0;font-size:12px;color:#94a3b8">Toyota Boshoku Device India - '
-        'Maintenance MES se apne aap bheja gaya.</p></div></div>'
+        '<p style="margin:16px 0 0;font-size:12px;color:#94a3b8">Toyota Boshoku Device India — '
+        'sent automatically by the Maintenance MES.</p></div></div>'
     )
 
 

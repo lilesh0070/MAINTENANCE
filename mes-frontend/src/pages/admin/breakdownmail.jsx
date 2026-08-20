@@ -104,9 +104,9 @@ export function BreakdownMailPage({ toast }) {
     setTest(lv.id);
     try {
       const r = await api.post("/api/breakdown-mail/test", { level_id: lv.id }, token);
-      toast?.(`Test mail gaya: ${(r.sent_to || []).join(", ")}`);
+      toast?.(`Test mail sent to: ${(r.sent_to || []).join(", ")}`);
       load();
-    } catch (e) { toast?.(e.message || "Test mail fail", "err"); }
+    } catch (e) { toast?.(e.message || "Test mail failed", "err"); }
     finally { setTest(null); }
   };
 
@@ -139,7 +139,7 @@ export function BreakdownMailPage({ toast }) {
                           color: auto ? "#15803d" : "#475569" }}>
             <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)}
                    style={{ width: 16, height: 16, accentColor: "#16a34a", cursor: "pointer" }} />
-            {auto ? "Auto-mail CHALU" : "Auto-mail BAND"}
+            {auto ? "Auto Mail: ON" : "Auto Mail: OFF"}
           </label>
           <Btn variant="primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Btn>
         </div>
@@ -149,14 +149,14 @@ export function BreakdownMailPage({ toast }) {
         <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412",
                       borderRadius: 10, padding: "10px 14px", fontSize: 12.5, fontWeight: 600,
                       marginBottom: 14 }}>
-          Auto-mail band hai.
+          Auto mail is off — no escalation mails will be sent.
         </div>
       )}
       {auto && !anyEmail && (
         <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c",
                       borderRadius: 10, padding: "10px 14px", fontSize: 12.5, fontWeight: 600,
                       marginBottom: 14 }}>
-          Kisi level me email nahi bhara.
+          No email address configured on any active level.
         </div>
       )}
 
@@ -165,7 +165,7 @@ export function BreakdownMailPage({ toast }) {
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
             <thead><tr>
-              {["#", "Kis level ko", "Kitne minute baad", "Email (comma se alag)", "Chalu", ""]
+              {["#", "Level", "After (minutes)", "Email (comma separated)", "Active", ""]
                 .map((h, i) => <th key={i} style={th}>{h}</th>)}
             </tr></thead>
             <tbody>
@@ -202,20 +202,20 @@ export function BreakdownMailPage({ toast }) {
           </table>
         </div>
         <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <Btn size="sm" onClick={addLv}>+ Level add karo</Btn>
+          <Btn size="sm" onClick={addLv}>+ Add Level</Btn>
         </div>
       </Card>
 
       {/* CC */}
       <div style={{ marginTop: 16, maxWidth: 520 }}>
-        <label style={lbl}>CC — har mail me (optional)</label>
+        <label style={lbl}>CC (optional)</label>
         <Input value={cc} placeholder="head@toyota-boshoku.com, ..." onChange={(e) => setCc(e.target.value)} />
       </div>
 
       {/* bheje gaye mail */}
       <div style={{ margin: "22px 0 10px", fontWeight: 800, fontSize: 13, color: "#b45309",
                     textTransform: "uppercase", letterSpacing: ".05em" }}>
-        Pichhle bheje gaye mail
+        Sent Mail History
       </div>
 
       {/* filter — FY / month / zone / line / machine / level */}
@@ -259,12 +259,12 @@ export function BreakdownMailPage({ toast }) {
 
       <Card>
         {log.length === 0 ? (
-          <EmptyState text="Abhi tak koi escalation mail nahi gaya" />
+          <EmptyState text="No escalation mails sent yet" />
         ) : (
           <div style={{ overflowX: "auto", maxHeight: 300, overflowY: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
               <thead><tr>
-                {["Kab", "Level", "Zone", "Line", "Machine", "Minute", "Kise gaya", "Status"]
+                {["Sent At", "Level", "Zone", "Line", "Machine", "Duration", "Recipients", "Status"]
                   .map((h, i) => <th key={i} style={{ ...th, position: "sticky", top: 0, background: "#fff" }}>{h}</th>)}
               </tr></thead>
               <tbody>
@@ -284,7 +284,7 @@ export function BreakdownMailPage({ toast }) {
                                      background: r.ok ? "#dcfce7" : "#fee2e2",
                                      color: r.ok ? "#15803d" : "#b91c1c" }}
                             title={r.err || ""}>
-                        {r.ok ? "GAYA" : "FAIL"}
+                        {r.ok ? "SENT" : "FAILED"}
                       </span>
                     </td>
                   </tr>

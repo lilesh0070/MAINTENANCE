@@ -256,7 +256,7 @@ def login(request: Request, form: OAuth2PasswordRequestForm = Depends()):
     if _wait:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Bahut baar galat password. {_wait} second baad dobara koshish karein.",
+            detail=f"Too many failed attempts. Try again in {_wait} seconds.",
             headers={"Retry-After": str(_wait)},
         )
     try:
