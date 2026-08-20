@@ -140,7 +140,7 @@ function PmThisMonth({ token }) {
   );
 
   const Stat = ({ n, label, color, sub }) => (
-    <div style={{ flex: "1 1 82px", minWidth: 76, background: "#fff", border: "1px solid #e8edf3",
+    <div style={{ minWidth: 0, background: "#fff", border: "1px solid #e8edf3",
                   borderRadius: 10, padding: "8px 10px" }}>
       <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 22, fontWeight: 800,
                     lineHeight: 1.05, color }}>{n}{sub}</div>
@@ -293,8 +293,11 @@ function PmThisMonth({ token }) {
         </div>
 
         {/* stats */}
-        <div style={{ display: "flex", gap: 8, padding: "12px 14px", background: "#f8fafc",
-                      borderBottom: "1px solid #eef2f7", flexWrap: "wrap" }}>
+        <div style={{ display: "grid", gap: 8, padding: "12px 14px", background: "#f8fafc",
+                      borderBottom: "1px solid #eef2f7",
+                      /* paanchon HAMESHA ek line me — warna "Compliance" akela
+                         agli line me chala jaata tha aur adhoora lagta tha */
+                      gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}>
           <Stat n={stats.total}   label="Planned"    color="#0f172a" sub="" />
           <Stat n={stats.due}     label="Due"        color="#c2410c" sub="" />
           <Stat n={stats.done}    label="Completed"  color="#15803d" sub="" />
@@ -316,31 +319,47 @@ function PmThisMonth({ token }) {
             <div style={{ padding: 24, color: "#94a3b8", fontSize: 12.5, textAlign: "center" }}>
               No PM planned this month.
             </div>
-          ) : rows.map((r, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px",
-                                  borderBottom: "1px solid #f2f5f9" }}>
-              <div style={{ minWidth: 0, flex: "1 1 auto" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: "#0f172a",
-                                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                        title={r.machine_name || ""}>{r.machine_code || "—"}</span>
-                  {r.done && r.sheet_filled && (
-                    <span title="Check sheet filled" style={{ fontSize: 10, color: "#15803d" }}>✓ sheet</span>
-                  )}
-                </div>
-                <div style={{ fontSize: 10.5, color: "#8a94a6", marginTop: 2, overflow: "hidden",
-                              textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {r.zone_name || "—"} · {r.line || "—"} · {dateTxt(r)}
-                </div>
-              </div>
-              <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <Pill k={r.key} />
-                <div style={{ fontSize: 10.5, fontWeight: 700, marginTop: 3, color: S[r.key].fg }}>
-                  {daysTxt(r)}
-                </div>
-              </div>
-            </div>
-          ))}
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: "#f8fafc" }}>
+                {["Machine", "Date", "Status", "Due"].map((h, i) => (
+                  <th key={h} style={{ ...th, padding: "7px 12px",
+                                       textAlign: i >= 2 ? "right" : "left",
+                                       position: "sticky", top: 0, background: "#f8fafc", zIndex: 1 }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={i}>
+                    {/* Machine + (neeche chhote me) zone / line */}
+                    <td style={{ ...td, padding: "8px 12px", maxWidth: 150 }}>
+                      <div style={{ fontWeight: 700, color: "#0f172a", overflow: "hidden",
+                                    textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                           title={r.machine_name || ""}>
+                        {r.machine_code || "—"}
+                        {r.sheet_filled && <span style={{ color: "#15803d", fontSize: 10,
+                                                          marginLeft: 5 }} title="Check sheet filled">✓</span>}
+                      </div>
+                      <div style={{ fontSize: 10, color: "#8a94a6", overflow: "hidden",
+                                    textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {r.zone_name || "—"} · {r.line || "—"}
+                      </div>
+                    </td>
+                    <td style={{ ...td, padding: "8px 12px", fontSize: 11.5, color: "#475569" }}>
+                      {dateTxt(r)}
+                    </td>
+                    <td style={{ ...td, padding: "8px 12px", textAlign: "right" }}>
+                      <Pill k={r.key} />
+                    </td>
+                    <td style={{ ...td, padding: "8px 12px", textAlign: "right", fontWeight: 700,
+                                 fontSize: 11.5, color: S[r.key].fg, whiteSpace: "nowrap" }}>
+                      {daysTxt(r)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>}
 
         {/* legend — sirf compact view me (FullBlock ka apna legend hai) */}
