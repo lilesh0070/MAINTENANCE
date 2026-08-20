@@ -327,19 +327,21 @@ export default function MaintenanceDashboard() {
              Everything on ONE screen, full-width. ── */
         .md-root.md-portrait { padding-bottom:0; }
         .md-portrait .md-body    { max-width:none; padding:16px 26px 12px; }
-        .md-portrait .md-topbar  { padding:0 26px; }
+        /* Baayein 88px ki jagah HAR HAALAT me chahiye — sidebar ka logo button
+           position:fixed (left 30px, 45px chaudA) hai; ye padding hata do to
+           title uske NEECHE chala jaata hai.  (Portrait me maine hata di thi —
+           wahi galti thi.)  NOTE: is style block me backtick mat likhna, wo
+           template-literal hi band kar deta hai. */
+        .md-portrait .md-topbar  { padding:0 26px 0 88px; }
         .md-portrait .md-title   { font-size:28px; }
         .md-portrait .md-tiles   { grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px; margin-bottom:12px; }
         .md-portrait .md-section { margin-bottom:12px; }
         .md-portrait .md-cols    { margin-bottom:12px !important; gap:12px !important; }
         /* both columns full-width — no empty space beside PM This Month */
         .md-portrait .md-col-a, .md-portrait .md-col-b { flex:1 1 100% !important; max-width:none !important; min-width:0 !important; }
-        /* Vertical TV par title lamba hota hai aur daayein 4 control baithe hote
-           hain — beech ka KHALI spacer (.md-logo) flex:1 leke jagah kha jaata
-           tha, jisse "Maintenance Dashboard" ellipsis me kat jaata.  Portrait me
-           spacer 0 kar diya aur user-pill hata di — title ko poori jagah. */
-        .md-portrait .md-logo      { flex:0 0 0 !important; padding:0 !important; }
-        .md-portrait .md-title     { flex:1 1 auto; text-align:left; padding-left:0; }
+        /* Portrait TV par title ko jagah dene ke liye sirf user-pill hata dete
+           hain — title BEECH me hi rehta hai (dono taraf ke flex:1 spacer barabar
+           hain, isliye 9:16 aur 16:9 dono me center aata hai). */
         .md-portrait .md-user-pill { display:none !important; }
       `}</style>
 

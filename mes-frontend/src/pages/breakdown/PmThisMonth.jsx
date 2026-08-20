@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { api } from "./shared";
 
 /* ════════════════════════════════════════════════════════════════════
@@ -10,8 +10,11 @@ import { api } from "./shared";
  *              week_index, done, done_date, sheet_filled}
  *        top: {total, done, pending, sheet_pending}
  *
- *      Dashboard par ye ek PATLI column (380-500px) me baithta hai, isliye
- *      card compact rakha hai; poora chaudA table "Full view" me khulta hai.
+ *      Layout HAMESHA ek jaisa: poora table (Zone / Line / Machine / Date /
+ *      Status / Days Left / Window / Sheet) + filters + paging + legend.  Jagah
+ *      kam padi to table side me scroll ho jaata hai.  (Pehle width ke hisaab se
+ *      column chhupte the — TV par "Window column kahan gaya?" wali dikkat hui,
+ *      isliye ab koi width-guess nahi.)
  *
  *      Status / days-left / window% sab ISI data se nikalte hain (week ka
  *      din-range vs aaj) — kahin koi banaya hua number nahi.
@@ -29,7 +32,6 @@ const ORDER = ["OVERDUE", "DUE", "DUE_SOON", "ON_TRACK", "COMPLETED"];
 function PmThisMonth({ token }) {
   const [data, setData] = useState(null);
   const [err,  setErr]  = useState(false);
-  const [full, setFull] = useState(false);          // full-view modal
   const [fZone, setFZone]     = useState("");
   const [fLine, setFLine]     = useState("");
   const [fStatus, setFStatus] = useState("");
@@ -39,35 +41,10 @@ function PmThisMonth({ token }) {
   // table (filters + pagination), patli -> compact list.  Dashboard me kabhi ye
   // saath wali column me hota hai, kabhi poori chaudai me — isliye naap kar tay
   // karte hain, andaaze se nahi.
-  const boxRef = useRef(null);
-  const [w, setW] = useState(0);
-  useEffect(() => {
-    const el = boxRef.current;
-    if (!el) return;
-    const measure = () => { if (boxRef.current) setW(Math.round(boxRef.current.getBoundingClientRect().width)); };
-    let ro;
-    if (typeof ResizeObserver !== "undefined") {
-      ro = new ResizeObserver(([e]) => setW(Math.round(e.contentRect.width)));
-      ro.observe(el);
-    }
-    // TV par TvFit apni scaling rAF + timeouts me karta hai, aur portrait class
-    // bhi mount ke baad lagti hai — pehli naap us waqt purane (patle) layout ki
-    // aa sakti hai.  Isliye kuch der baad dobara naapte hain + window resize par.
-    measure();
-    const t1 = requestAnimationFrame(measure);
-    const t2 = setTimeout(measure, 300);
-    const t3 = setTimeout(measure, 1200);
-    window.addEventListener("resize", measure);
-    window.addEventListener("mes-aspect-change", measure);
-    return () => {
-      ro && ro.disconnect();
-      cancelAnimationFrame(t1); clearTimeout(t2); clearTimeout(t3);
-      window.removeEventListener("resize", measure);
-      window.removeEventListener("mes-aspect-change", measure);
-    };
-  }, []);
-  const wide  = w >= 620;             // itni jagah me table theek baithta hai
-  const roomy = w >= 900;             // ...aur itni me Window + Sheet column bhi
+  // Har jagah POORA table (saare column).  Jagah kam padi to table apne aap
+  // side me scroll ho jaata hai — pehle width ke hisaab se column chhupte the
+  // aur TV par "Window column kahan gaya?" wali dikkat aa jaati thi.
+  const wide = true, roomy = true;
 
   const now      = new Date();
   const ym       = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -306,12 +283,7 @@ function PmThisMonth({ token }) {
               {monthLbl} · {stats.total} Planned
             </div>
           </div>
-          {!wide && <button onClick={() => { setFull(true); setPage(1); }}
-                  style={{ marginLeft: "auto", border: "1px solid #e2e8f0", background: "#fff",
-                           color: "#475569", borderRadius: 8, padding: "6px 11px", fontSize: 11.5,
-                           fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
-            ⤢ Full view
-          </button>}
+
         </div>
 
         {/* stats */}
@@ -341,47 +313,7 @@ function PmThisMonth({ token }) {
             <div style={{ padding: 24, color: "#94a3b8", fontSize: 12.5, textAlign: "center" }}>
               No PM planned this month.
             </div>
-          ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead><tr style={{ background: "#f8fafc" }}>
-                {["Machine", "Date", "Status", "Due"].map((h, i) => (
-                  <th key={h} style={{ ...th, padding: "7px 12px",
-                                       textAlign: i >= 2 ? "right" : "left",
-                                       position: "sticky", top: 0, background: "#f8fafc", zIndex: 1 }}>{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {rows.map((r, i) => (
-                  <tr key={i}>
-                    {/* Machine + (neeche chhote me) zone / line */}
-                    <td style={{ ...td, padding: "8px 12px", maxWidth: 150 }}>
-                      <div style={{ fontWeight: 700, color: "#0f172a", overflow: "hidden",
-                                    textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                           title={r.machine_name || ""}>
-                        {r.machine_code || "—"}
-                        {r.sheet_filled && <span style={{ color: "#15803d", fontSize: 10,
-                                                          marginLeft: 5 }} title="Check sheet filled">✓</span>}
-                      </div>
-                      <div style={{ fontSize: 10, color: "#8a94a6", overflow: "hidden",
-                                    textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {r.zone_name || "—"} · {r.line || "—"}
-                      </div>
-                    </td>
-                    <td style={{ ...td, padding: "8px 12px", fontSize: 11.5, color: "#475569" }}>
-                      {dateTxt(r)}
-                    </td>
-                    <td style={{ ...td, padding: "8px 12px", textAlign: "right" }}>
-                      <Pill k={r.key} />
-                    </td>
-                    <td style={{ ...td, padding: "8px 12px", textAlign: "right", fontWeight: 700,
-                                 fontSize: 11.5, color: S[r.key].fg, whiteSpace: "nowrap" }}>
-                      {daysTxt(r)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          ) : null}
         </div>}
 
         {/* legend — sirf compact view me (FullBlock ka apna legend hai) */}
@@ -399,43 +331,6 @@ function PmThisMonth({ token }) {
       </div>
 
       {/* ── FULL VIEW ─────────────────────────────────────────────── */}
-      {full && (
-        <div onClick={() => setFull(false)}
-             style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 1000,
-                      display: "flex", alignItems: "flex-start", justifyContent: "center",
-                      padding: "34px 18px", overflowY: "auto" }}>
-          <div onClick={(e) => e.stopPropagation()}
-               style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 1180,
-                        boxShadow: "0 18px 50px rgba(15,23,42,.28)", overflow: "hidden" }}>
-            {/* head */}
-            <div style={{ display: "flex", alignItems: "center", gap: 13, padding: "16px 22px",
-                          borderBottom: "1px solid #eef2f7", flexWrap: "wrap" }}>
-              <span style={{ width: 40, height: 40, borderRadius: 11, background: "#2563eb", color: "#fff",
-                             display: "inline-flex", alignItems: "center", justifyContent: "center",
-                             fontSize: 20 }}>🛠</span>
-              <div>
-                <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 24, fontWeight: 800,
-                              color: "#0f172a", lineHeight: 1.1 }}>PM This Month</div>
-                <div style={{ fontSize: 12, color: "#8a94a6", fontWeight: 600 }}>
-                  {monthLbl} · {stats.total} Planned
-                </div>
-              </div>
-              <div style={{ marginLeft: "auto", display: "flex", gap: 9, flexWrap: "wrap" }}>
-                <Stat n={stats.total}   label="Total Planned" color="#0f172a" sub="" />
-                <Stat n={stats.due}     label="Due"           color="#c2410c" sub="" />
-                <Stat n={stats.done}    label="Completed"     color="#15803d" sub="" />
-                <Stat n={stats.overdue} label="Overdue"       color="#b91c1c" sub="" />
-                <Stat n={stats.pct}     label="Compliance"    color="#2563eb" sub="%" />
-              </div>
-              <button onClick={() => setFull(false)}
-                      style={{ border: "none", background: "#f1f5f9", color: "#475569", borderRadius: 9,
-                               width: 32, height: 32, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>×</button>
-            </div>
-
-            <FullBlock inModal />
-          </div>
-        </div>
-      )}
     </>
   );
 }
