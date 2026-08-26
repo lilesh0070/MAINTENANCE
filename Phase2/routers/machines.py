@@ -235,7 +235,7 @@ def master_list(include_inactive: bool = Query(True), user=Depends(get_current_u
             SELECT id, serial_no, zone_name, line_name, machine_no, machine_name,
                    ip, is_active, created_at, updated_at
               FROM maintenance_machines {where}
-             ORDER BY zone_name, line_name, machine_no
+             ORDER BY serial_no NULLS LAST, id
         """)
         return cur.fetchall()
 
