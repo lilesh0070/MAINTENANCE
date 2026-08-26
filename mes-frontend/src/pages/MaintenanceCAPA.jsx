@@ -23,7 +23,13 @@ const PREFILL = (bd) => ({
   f_mname: bd.machine_name || "",   // MACHINE_NAME
   f_10_4:  bd.model_no     || "",   // Model
   f_2_13:  bd.bd_date      || "",   // QPR DATE
-  f_16_3:  bd.problem      || "",   // Reported Problem
+  // Reported Problem — MAINTENANCE ne jo dekha wahi.  QPR ek technical
+  // analysis hai, isliye yahan maintenance ka observation chahiye, production
+  // ka symptom nahi.  Pehle yahan `bd.problem` tha jo backend me
+  // COALESCE(maintenance, production) hai — nateeja aaj wahi aata hai, par wo
+  // fallback tha, pakki baat nahi.  Ab saaf-saaf maintenance ka khaana pehle;
+  // wo sach me khali ho tabhi production ka, taaki QPR khali na khule.
+  f_16_3:  bd.problem_maintenance || bd.problem || "",
   f_zone:  bd.zone_name    || "",   // ZONE
   f_line:  bd.line_name    || "",   // LINE
 });
