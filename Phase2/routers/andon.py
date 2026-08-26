@@ -77,7 +77,52 @@ _DEFAULT_OUTPUTS = [
 
 # DO2 / DO4 acknowledge DO1 / DO3: their ON edge stamps the parent call's
 # response time (call-ON → ACK-ON) and nothing else — no duration of their own.
+#
+# Ye sirf FALLBACK hai — asli jodi ab `_ack_map()` mapping se NIKALTI hai.
+# Pehle yahi hardcoded dict aakhri sach tha, aur wo khatarnak tha: agar koi UI
+# se DO ka kram badal deta (jaise Quality ko DO2 par le aata) to DO2 ka ON
+# chupchaap DO1 ki call par response-time chipka deta — galat call, aur kisi
+# ko pata bhi na chalta.
 _ACK_OF = {2: 1, 4: 3}
+
+
+def _ack_map(cur, plc_id):
+    """Is PLC ke liye {ack_do: parent_do} — MAPPING se nikala, maana nahi.
+
+    Niyam wahi hai jo form me dikhta hai: jis DO ka koi DEPARTMENT nahi hai wo
+    call nahi, ACK hai — aur wo apne se theek pehle wale asli call ka ACK hai.
+    (DO1 Maintenance → DO2 Maintenance ACC, DO3 Toolroom → DO4 Tool ACC.)
+
+    Effective mapping wahi tareeke se banti hai jo `_resolve_output` use karta
+    hai: per-PLC row pehle, uska khaali khaana shared default se bhara jaata hai.
+    Kuch nikal hi na paye (mapping hi na ho) to `_ACK_OF` par gir jaate hain,
+    taaki purana behaviour kabhi na tootey.
+    """
+    eff = {}
+    try:
+        cur.execute("""SELECT do_index, department_id, display_name
+                         FROM andon_plc_output_mapping WHERE plc_id IS NULL""")
+        for r in cur.fetchall():
+            eff[r["do_index"]] = {"dept": r["department_id"], "name": r["display_name"]}
+        cur.execute("""SELECT do_index, department_id, display_name
+                         FROM andon_plc_output_mapping WHERE plc_id = %s""", (plc_id,))
+        for r in cur.fetchall():
+            base = eff.get(r["do_index"], {})
+            eff[r["do_index"]] = {
+                "dept": r["department_id"] if r["department_id"] is not None else base.get("dept"),
+                "name": r["display_name"] or base.get("name"),
+            }
+    except Exception as e:
+        print(f"[ANDON] ack-map padhne me dikkat (fallback use kar rahe): {e}")
+        return dict(_ACK_OF)
+
+    out, last_call = {}, None
+    for do in sorted(eff):
+        if eff[do].get("dept") is not None:
+            last_call = do                      # ye asli call hai
+        elif last_call is not None:
+            out[do] = last_call                 # bina department = upar wale call ka ACK
+    return out or dict(_ACK_OF)
 
 
 # ── PLC connectivity status ──────────────────────────────────────────
@@ -2068,10 +2113,11 @@ def _apply_state(cur, dev, do_index, on, dur_override=None, model=None, fault=No
     dur_override (seconds): on OFF, use this hardware-measured duration instead
     of the server-computed one — so a call that was closed WHILE the PLC was
     disconnected (event flushed later on reconnect) still gets its true length."""
-    if do_index in _ACK_OF:
+    ack_map = _ack_map(cur, dev["id"])
+    if do_index in ack_map:
         if not on:
             return {"do_index": do_index, "action": "ack_off_ignored"}
-        parent = _ACK_OF[do_index]
+        parent = ack_map[do_index]
         cur.execute("""SELECT id, started_at FROM andon_system
                         WHERE plc_id=%s AND do_index=%s AND state='OPEN'
                               AND acknowledged_at IS NULL
