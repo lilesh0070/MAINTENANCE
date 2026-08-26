@@ -386,12 +386,23 @@ def _escalate_once():
     # se kai calls khuli padi hon — tab har call ke saare level ek saath fire
     # ho kar inbox bhar dete.  Bache hue agle sweep (30s) me chale jaayenge,
     # kuch chhutta nahi — log table repeat rokta hai.
+    #
+    # Ginti KOSHISH ki hoti hai, kamyabi ki nahi.  Agar SMTP hi kharab ho to
+    # har koshish 15s ke timeout par latakti hai — kamyabi ginte to cap kabhi
+    # lagta hi nahi aur ye 30s wala worker minton block ho jaata.  Cap andar
+    # wale (level) loop me bhi check hota hai, warna ek hi call apne saare
+    # level ek sweep me nikaal deti.
     MAX_PER_SWEEP = 20
+    tried = 0
+    capped = False
     for c in calls:
-        if sent >= MAX_PER_SWEEP:
-            print(f"[BD-MAIL] is sweep ki limit ({MAX_PER_SWEEP}) puri — baaki agle sweep me")
+        if capped:
             break
         for lv in levels:
+            if tried >= MAX_PER_SWEEP:
+                print(f"[BD-MAIL] is sweep ki limit ({MAX_PER_SWEEP}) puri — baaki agle sweep me")
+                capped = True
+                break
             if c["mins"] < lv["after_minutes"]:
                 continue
             if (c["id"], lv["id"]) in done:
@@ -405,6 +416,7 @@ def _escalate_once():
             subject = (f"BREAKDOWN {c['mins']} min - "
                        f"{c['line'] or c['zone'] or 'Line'} ({lv['role_label']})")
             ok, err = True, None
+            tried += 1
             try:
                 _send_email(subject, html, to, cc)
             except Exception as ex:
