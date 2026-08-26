@@ -181,8 +181,14 @@ function AppRoutes() {
         <Protected requiredAccess="maintenance-breakdown-slip"><BreakdownSlipRoute /></Protected>
       } />
       {/* Production Breakdown Slip — 2-stage (Production half → Maintenance complete). */}
+      {/* Production Breakdown Slip ki apni ALAG permission key hai.  Pehle ye
+          `maintenance-breakdown-slip` par chalta tha — wahi key purane manual
+          slip (/maintenance-breakdown/new-slip) ki bhi hai aur wo Breakdown ka
+          sub-page hai.  Nateeja: Breakdown ka access milte hi ye page bhi
+          apne aap mil jaata tha, jabki ye alag page hai (production pehle
+          aadhi slip bharti hai).  Ab ise alag se dena padta hai. */}
       <Route path="/production-breakdown-slip" element={
-        <Protected requiredAccess="maintenance-breakdown-slip"><ProductionBreakdownSlip /></Protected>
+        <Protected requiredAccess="production-breakdown-slip"><ProductionBreakdownSlip /></Protected>
       } />
       {/* Breakdown → BD History — read-only list of "Breakdown" entries. */}
       <Route path="/maintenance-breakdown/bd-history" element={
