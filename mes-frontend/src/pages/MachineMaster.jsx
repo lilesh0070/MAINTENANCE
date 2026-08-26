@@ -98,7 +98,6 @@ export default function MachineMaster() {
       .finally(() => setBusy(false));
   }, [token]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   // toast apne aap gayab
