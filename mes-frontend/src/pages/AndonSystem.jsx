@@ -110,6 +110,29 @@ function PlcState({ online, reason, dot = 10, glow = false, title = "" }) {
   );
 }
 
+/* Machine ka IP ab MACHINE MASTER se aata hai (maintenance_machines.ip).
+   Machine chunte hi PLC IP apne aap bhar jaata hai, taaki ek hi IP do jagah
+   alag-alag na ho jaye.  Field editable rakha hai (kabhi PLC ka IP machine se
+   alag ho sakta hai), par alag hote hi neeche saaf likha aata hai ki master
+   me kya hai — warna farak chupchaap baith jaata aur baad me "connect kyun
+   nahi ho raha" wali maathapachi hoti. */
+function IpNote({ masterIp, value }) {
+  const v = (value || "").trim();
+  if (!masterIp) {
+    return <div style={{ fontSize: 10.5, color: "#94a3b8", marginTop: 3 }}>
+      No IP in Machine Master for this machine — add it there to auto-fill.
+    </div>;
+  }
+  if (v === masterIp) {
+    return <div style={{ fontSize: 10.5, color: "#16a34a", fontWeight: 700, marginTop: 3 }}>
+      ✓ From Machine Master
+    </div>;
+  }
+  return <div style={{ fontSize: 10.5, color: "#b45309", fontWeight: 700, marginTop: 3 }}>
+    ⚠ Machine Master has {masterIp}
+  </div>;
+}
+
 export default function AndonSystem() {
   const { token, theme, user, canAccess } = useAuth();
   const nav = useNavigate();
@@ -323,9 +346,25 @@ export default function AndonSystem() {
   const plcZones    = useMemo(() => [...new Set(master.map((m) => m.zone_name).filter(Boolean))].sort(), [master]);
   const plcLines    = useMemo(() => plcForm.zone ? [...new Set(master.filter((m) => m.zone_name === plcForm.zone).map((m) => m.line_name).filter(Boolean))].sort() : [], [master, plcForm.zone]);
   const plcMachines = useMemo(() => (plcForm.zone && plcForm.line) ? [...new Set(master.filter((m) => m.zone_name === plcForm.zone && m.line_name === plcForm.line).map((m) => m.machine_no).filter(Boolean))].sort() : [], [master, plcForm.zone, plcForm.line]);
+  // Machine Master me us machine ka IP (na ho to "")
+  const masterIpOf = (mno) => {
+    const m = master.find((x) => x.zone_name === plcForm.zone && x.line_name === plcForm.line
+                                 && String(x.machine_no) === String(mno));
+    return (m?.ip || "").trim();
+  };
+
   const onPlcMachine = (v) => {
     const m = master.find((x) => x.zone_name === plcForm.zone && x.line_name === plcForm.line && String(x.machine_no) === String(v));
-    setPlcForm((f) => ({ ...f, machine_no: v, machine_name: m?.machine_name || "" }));
+    const ip = (m?.ip || "").trim();
+    // Master me IP hai to wahi bhar do.  Na ho to jo pehle se type kiya hai
+    // use mitate nahi — warna user ki bhari hui value gayab ho jaati.
+    setPlcForm((f) => ({ ...f, machine_no: v, machine_name: m?.machine_name || "",
+                         ip: ip || f.ip }));
+  };
+
+  const onSubMachine = (v) => {
+    const ip = masterIpOf(v);
+    setPlcForm((f) => ({ ...f, sub_machine_no: v, sub_ip: ip || f.sub_ip }));
   };
   const startPlcEdit = (e) => { setPlcEdit(e.id); setPlcForm({ ...blankPlc, ...e, series: e.series || "Q", zone: e.zone || "", line: e.line || "", machine_no: e.machine_no || "", machine_name: e.machine_name || "",
       sub_on: !!e.sub_ip, sub_ip: e.sub_ip || "", sub_port: e.sub_port || 5007, sub_series: e.sub_series || "Q", sub_machine_no: e.sub_machine_no || "" }); setCfg("plc"); };
@@ -583,7 +622,8 @@ export default function AndonSystem() {
                         </select>
                         {plcForm.machine_name && <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>{plcForm.machine_name}</div>}
                       </div>
-                      <div><label className="an-lbl">PLC IP</label><input className="an-in" style={{ width:"100%" }} value={plcForm.ip} onChange={(e) => setPlcForm({ ...plcForm, ip: e.target.value })} placeholder="192.168.30.101" /></div>
+                      <div><label className="an-lbl">PLC IP</label><input className="an-in" style={{ width:"100%" }} value={plcForm.ip} onChange={(e) => setPlcForm({ ...plcForm, ip: e.target.value })} placeholder="192.168.30.101" />
+                        {plcForm.machine_no && <IpNote masterIp={masterIpOf(plcForm.machine_no)} value={plcForm.ip} />}</div>
                       <div><label className="an-lbl">Port</label><input className="an-in" style={{ width:"100%" }} type="number" value={plcForm.port} onChange={(e) => setPlcForm({ ...plcForm, port: e.target.value })} placeholder="5007" /></div>
                       <div><label className="an-lbl">Series</label>
                         <select className="an-in" style={{ width:"100%" }} value={plcForm.series || "Q"} onChange={(e) => setPlcForm({ ...plcForm, series: e.target.value })}>
@@ -600,11 +640,12 @@ export default function AndonSystem() {
                       {plcForm.sub_on && (
                         <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10, marginTop:12 }}>
                           <div><label className="an-lbl">Sub Machine No</label>
-                            <select className="an-in" style={{ width:"100%" }} value={plcForm.sub_machine_no} onChange={(e) => setPlcForm({ ...plcForm, sub_machine_no: e.target.value })} disabled={!plcMachines.length}>
+                            <select className="an-in" style={{ width:"100%" }} value={plcForm.sub_machine_no} onChange={(e) => onSubMachine(e.target.value)} disabled={!plcMachines.length}>
                               <option value="">select</option>
                               {plcMachines.map((m) => <option key={m} value={m}>{m}</option>)}
                             </select></div>
-                          <div><label className="an-lbl">Sub PLC IP</label><input className="an-in" style={{ width:"100%" }} value={plcForm.sub_ip} onChange={(e) => setPlcForm({ ...plcForm, sub_ip: e.target.value })} placeholder="192.168.30.108" /></div>
+                          <div><label className="an-lbl">Sub PLC IP</label><input className="an-in" style={{ width:"100%" }} value={plcForm.sub_ip} onChange={(e) => setPlcForm({ ...plcForm, sub_ip: e.target.value })} placeholder="192.168.30.108" />
+                          {plcForm.sub_machine_no && <IpNote masterIp={masterIpOf(plcForm.sub_machine_no)} value={plcForm.sub_ip} />}</div>
                           <div><label className="an-lbl">Sub Port</label><input className="an-in" style={{ width:"100%" }} type="number" value={plcForm.sub_port} onChange={(e) => setPlcForm({ ...plcForm, sub_port: e.target.value })} placeholder="5007" /></div>
                           <div><label className="an-lbl">Sub Series</label>
                             <select className="an-in" style={{ width:"100%" }} value={plcForm.sub_series || "Q"} onChange={(e) => setPlcForm({ ...plcForm, sub_series: e.target.value })}>

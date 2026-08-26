@@ -139,7 +139,12 @@ def list_machines(zone: Optional[str] = None,
                   line: Optional[str] = None,
                   user=Depends(get_current_user)):
     """Raw lookup by zone_name + line_name.  Either or both can be omitted
-    to widen the result.  Used for ad-hoc admin browsing."""
+    to widen the result.  Used for ad-hoc admin browsing.
+
+    `ip` bhi lautata hai.  Jahan bhi machine ka IP chahiye (jaise ANDON ka PLC
+    config) wahan Machine Master hi ek source rahe — koi doosri jagah IP dobara
+    na bharna pade, aur do jagah alag-alag IP na ho jayein."""
+    _ensure_master()                     # `ip` column pakka maujood ho
     where = ["is_active = TRUE"]
     params: list = []
     if zone:
@@ -150,7 +155,7 @@ def list_machines(zone: Optional[str] = None,
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute(f"""
-            SELECT id, zone_name, line_name, serial_no, machine_no, machine_name
+            SELECT id, zone_name, line_name, serial_no, machine_no, machine_name, ip
               FROM maintenance_machines
              WHERE {' AND '.join(where)}
              ORDER BY zone_name, line_name, serial_no
