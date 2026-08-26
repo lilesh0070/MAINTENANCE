@@ -482,12 +482,20 @@ export default function MaintenanceHistorical() {
         /* Upar ke chunav-buttons — filter lagao, phir jo dekhna hai us par click.
            Ek waqt me sirf USI ka data dikhta hai (pehle saare ek saath niche
            lage rehte the, jo bhara-bhara lagta tha). */
-        .hd-picks { max-width:1500px; margin:16px auto 0; padding:0 22px;
-                    display:flex; gap:8px; flex-wrap:wrap; }
-        .hd-pick { display:inline-flex; align-items:center; gap:8px; cursor:pointer;
-                   padding:8px 14px; border-radius:10px; font-family:inherit; font-size:12.5px;
+        /* Saare section-button EK hi line me.  nowrap ke saath thoda tight
+           padding/gap, taaki saaton aaram se aa jayein.  Bahut chhoti screen
+           par ye row side me scroll hoti hai — button kate nahi, aur page ka
+           apna horizontal scroll bhi nahi aata (overflow-x yahin par hai).
+           NOTE: is CSS template-literal ke andar BACKTICK mat likhna —
+           literal wahin band ho jaata hai aur build tootti hai. */
+        .hd-picks { max-width:1500px; margin:16px auto 0; padding:0 22px 2px;
+                    display:flex; gap:7px; flex-wrap:nowrap;
+                    overflow-x:auto; scrollbar-width:thin; }
+        .hd-pick { display:inline-flex; align-items:center; gap:7px; cursor:pointer;
+                   padding:8px 12px; border-radius:10px; font-family:inherit; font-size:12.5px;
                    font-weight:700; color:#334155; background:#fff; border:1.5px solid #e2e8f0;
-                   box-shadow:0 1px 2px rgba(15,23,42,.04); transition:all .14s; }
+                   box-shadow:0 1px 2px rgba(15,23,42,.04); transition:all .14s;
+                   white-space:nowrap; flex:0 0 auto; }
         .hd-pick .n { min-width:20px; height:18px; border-radius:99px; padding:0 6px; display:inline-flex;
                       align-items:center; justify-content:center; font-size:11px; font-weight:800;
                       background:#f1f5f9; color:#94a3b8; }
