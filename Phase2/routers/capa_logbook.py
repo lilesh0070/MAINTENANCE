@@ -349,3 +349,48 @@ def delete_capa_sheet(sid: int, user=Depends(get_current_user)):
             raise HTTPException(404, "QPR sheet not found")
         conn.commit()
     return {"ok": True}
+
+
+@router.get("/closed")
+def closed_capa(user=Depends(get_current_user)):
+    """CLOSE ho chuki CAPA — Historical Data ka "CAPA (Closed)" section isi se
+    bharta hai.
+
+    Sirf `status = 'CLOSED'` wali sheets.  Jab tak koi CAPA close nahi hoti,
+    ye khali rehta hai — yahi user ki shart thi ("close hone ke BAAD hi yahan
+    aayega").
+
+    Date breakdown ki hoti hai (jab dikkat hui), sheet ke save-time ki nahi —
+    Historical ke baaki saare section bhi kaam ki date par filter hote hain.
+    """
+    _ensure_capa_sheet()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""
+            SELECT s.id, s.qpr_no, s.title, s.status, s.breakdown_id,
+                   COALESCE(NULLIF(TRIM(s.machine_no),''), bd.machine_no) AS machine_no,
+                   -- zone_name / line_name naam se bhejte hain: Historical Data ka
+                   -- `planMatch()` inhi naamo par filter karta hai (baaki sab section
+                   -- bhi yahi bhejte hain), to wahan koi alag handling nahi chahiye.
+                   COALESCE(NULLIF(TRIM(s.zone),''),  bd.zone)  AS zone_name,
+                   COALESCE(NULLIF(TRIM(s.line),''),  bd.line)  AS line_name,
+                   bd.machine_name,
+                   COALESCE(bd.slip_date, bd.bd_start_date) AS bd_date,
+                   bd.mc_down_time_minutes AS duration_min,
+                   COALESCE(NULLIF(bd.problem_observed_by_maintenance,''),
+                            bd.problem_reported_by_production, '') AS problem,
+                   s.updated_by AS closed_by, s.updated_at AS closed_at,
+                   s.created_by, s.created_at
+              FROM maintenance_capa_sheet s
+              LEFT JOIN maintenance_breakdown_data bd ON bd.id = s.breakdown_id
+             WHERE UPPER(COALESCE(s.status,'')) = 'CLOSED'
+             ORDER BY COALESCE(bd.slip_date, bd.bd_start_date, s.created_at::date) DESC NULLS LAST,
+                      s.id DESC
+        """)
+        rows = cur.fetchall()
+    for r in rows:
+        for k in ("bd_date", "closed_at", "created_at"):
+            if r.get(k) is not None and hasattr(r[k], "isoformat"):
+                r[k] = r[k].isoformat()
+        r["duration_min"] = _num(r["duration_min"])
+    return {"rows": rows, "total": len(rows)}

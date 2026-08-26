@@ -170,6 +170,9 @@ export default function MaintenanceHistorical() {
   // ── sunday plan work + daily work assign ──
   const [sunRows, setSunRows]       = useState([]);
   const [sunLoading, setSunLoading] = useState(true);
+  // CAPA jo CLOSE ho chuki hain (khuli hui yahan NAHI aati — user ki shart)
+  const [capaRows, setCapaRows]       = useState([]);
+  const [capaLoading, setCapaLoading] = useState(true);
   const [dayRows, setDayRows]       = useState([]);
   const [dayLoading, setDayLoading] = useState(true);
 
@@ -403,6 +406,18 @@ export default function MaintenanceHistorical() {
     }
   };
 
+  // Closed CAPA — apna alag effect, taaki kisi doosri call ka fail hona ise na roke
+  useEffect(() => {
+    if (!token) return;
+    let ignore = false;
+    setCapaLoading(true);
+    api.get(`/api/capa-lb/closed`, token)
+      .then((d) => { if (!ignore) setCapaRows(Array.isArray(d?.rows) ? d.rows : []); })
+      .catch(() => { if (!ignore) setCapaRows([]); })
+      .finally(() => { if (!ignore) setCapaLoading(false); });
+    return () => { ignore = true; };
+  }, [token]);
+
   const planMatch = (r) => {
     if (fZone && norm(r.zone_name) !== norm(fZone)) return false;
     if (fLine && norm(r.line_name) !== norm(fLine)) return false;
@@ -416,6 +431,15 @@ export default function MaintenanceHistorical() {
   const dayList = useMemo(() => dayRows.filter((r) => r.status === "DONE" && planMatch(r)),
     [dayRows, fZone, fLine, fMachineNo, fMachineName]);   // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* CAPA ki date breakdown ki hoti hai (jab dikkat hui) — sheet kab save hui
+     wo nahi.  Baaki section bhi kaam ki date par chalte hain. */
+  const capaList = useMemo(() => capaRows.filter((r) => {
+    const d = String(r.bd_date || "").slice(0, 10);
+    if (fDate) { if (d !== fDate) return false; }
+    else if (win && d) { if (d < win.start || d > win.end) return false; }
+    return planMatch(r);
+  }), [capaRows, win, fDate, fZone, fLine, fMachineNo, fMachineName]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   // Upar ke chunav-buttons — naam, rang aur kitne record hain (filter ke hisaab se)
   const SECTIONS = [
     { key: "BD",   label: "Breakdown Slips",       color: "#16a34a", count: () => list.length },
@@ -424,6 +448,7 @@ export default function MaintenanceHistorical() {
     { key: "DMC",  label: "DMC Check Sheets",      color: "#0d9488", count: () => dmcList.length },
     { key: "SUN",  label: "Sunday Plan Work",      color: "#d97706", count: () => sunList.length },
     { key: "DAY",  label: "Daily Work Assign",     color: "#7c3aed", count: () => dayList.length },
+    { key: "CAPA", label: "CAPA (Closed)",          color: "#be185d", count: () => capaList.length },
   ];
 
   const fmtD = (iso) => (iso ? String(iso).slice(0, 10) : "—");
@@ -842,6 +867,53 @@ export default function MaintenanceHistorical() {
                       </td>
                       <td style={{ maxWidth:220 }}>{r.status === "DONE" ? r.work_done : "—"}</td>
                       <td style={{ fontWeight:700, color:"#334155" }}>{r.status === "DONE" ? r.done_by : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* ── CAPA (Closed) ──────────────────────────────────────────
+              Sirf wo CAPA jinki QPR sheet CLOSE kar di gayi ho.  Khuli /
+              draft CAPA yahan NAHI aati — wo CAPA page par hi rehti hai. */}
+          <div className="hd-sec" style={{ display: sec === "CAPA" ? undefined : "none" }}>
+            <div className="hd-sec-h">
+              <span className="hd-sec-dot" style={{ background:"#be185d" }} />
+              <span className="hd-sec-t">CAPA (Closed)</span>
+              <span className="hd-sec-c" style={{ background:"#be185d" }}>{capaList.length}</span>
+              <span style={{ marginLeft:"auto", fontSize:11.5, color:"#94a3b8" }}>
+                closed on CAPA → QPR (Close CAPA)
+              </span>
+            </div>
+            <div className={capaList.length > 4 ? "hd-scroll" : undefined}>
+              <table className="hd-tbl">
+                <thead><tr>
+                  <th>#</th><th>Date</th><th>Zone</th><th>Line</th><th>M/C No</th><th>Machine</th>
+                  <th>QPR No</th><th>Problem</th>
+                  <th style={{ textAlign:"center" }}>Down Time (min)</th>
+                  <th>Closed By</th><th>Closed On</th>
+                </tr></thead>
+                <tbody>
+                  {capaLoading && <tr><td colSpan={11} className="hd-empty">Loading…</td></tr>}
+                  {!capaLoading && capaList.length === 0 &&
+                    <tr><td colSpan={11} className="hd-empty">
+                      {capaRows.length ? "No closed CAPA for this filter."
+                                       : "No CAPA closed yet — close one on the CAPA page and it will show here."}
+                    </td></tr>}
+                  {!capaLoading && capaList.map((r, i) => (
+                    <tr key={r.id}>
+                      <td>{i + 1}</td>
+                      <td>{fmtD(r.bd_date)}</td>
+                      <td>{r.zone_name || "—"}</td>
+                      <td>{r.line_name || "—"}</td>
+                      <td className="hd-mno">{r.machine_no || "—"}</td>
+                      <td>{r.machine_name || "—"}</td>
+                      <td style={{ fontWeight:700, color:"#334155" }}>{r.qpr_no || `#${r.id}`}</td>
+                      <td style={{ maxWidth:240 }}>{r.problem || "—"}</td>
+                      <td style={{ textAlign:"center", fontWeight:800 }}>{r.duration_min ?? "—"}</td>
+                      <td style={{ fontWeight:700, color:"#334155" }}>{r.closed_by || "—"}</td>
+                      <td style={{ whiteSpace:"nowrap" }}>{fmtD(r.closed_at)}</td>
                     </tr>
                   ))}
                 </tbody>

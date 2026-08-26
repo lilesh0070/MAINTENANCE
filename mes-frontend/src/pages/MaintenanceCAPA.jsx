@@ -77,6 +77,7 @@ export default function MaintenanceCAPA() {
   const [master, setMaster] = useState([]);
 
   const [sid, setSid] = useState(null);            // current saved-sheet id
+  const [sStatus, setSStatus] = useState("DRAFT"); // khuli hui sheet ka status
   const [bdId, setBdId] = useState(null);          // current breakdown id
   const [prefill, setPrefill] = useState({});      // {cell: value} to apply on open
   const [saving, setSaving] = useState(false);
@@ -301,24 +302,37 @@ export default function MaintenanceCAPA() {
       try {
         const s = await api(`/sheet/${row.sheet_id}`);
         setPrefill(s.data || {}); setSid(s.id); setBdId(s.breakdown_id || row.bd_id);
+        setSStatus((s.status || "DRAFT").toUpperCase());
       } catch (e) { flash("Open failed: " + (e.message || "")); return; }
     } else {                                       // fresh → pre-fill from the breakdown
-      setPrefill(PREFILL(row)); setSid(null); setBdId(row.bd_id);
+      setPrefill(PREFILL(row)); setSid(null); setBdId(row.bd_id); setSStatus("DRAFT");
     }
     setView("form");
   };
 
-  const save = async () => {
+  /* `status` ab hamesha bheja jaata hai.  Pehle nahi bhejte the, isliye backend
+     har sheet ko DRAFT kar deta tha aur CAPA kabhi CLOSE ho hi nahi sakti thi —
+     Historical ka "CAPA (Closed)" section hamesha khali rehta. */
+  const saveWith = async (status) => {
     setSaving(true);
     try {
       const r = await api(`/sheet`, { method: "POST",
-        body: JSON.stringify({ id: sid, breakdown_id: bdId, data: collect() }) });
-      setSid(r.id); flash(`Saved ✓ (QPR #${r.id})`);
-    } catch (e) { flash("Save failed: " + (e.message || "")); }
+        body: JSON.stringify({ id: sid, breakdown_id: bdId, data: collect(), status }) });
+      setSid(r.id); setSStatus(status);
+      flash(status === "CLOSED" ? `Closed ✓ (QPR #${r.id})`
+            : sid ? `Saved ✓ (QPR #${r.id})` : `Saved ✓ (QPR #${r.id})`);
+      return true;
+    } catch (e) { flash("Save failed: " + (e.message || "")); return false; }
     finally { setSaving(false); }
   };
+  const save = () => saveWith(sStatus === "CLOSED" ? "CLOSED" : "DRAFT");
+  const closeCapa = async () => {
+    if (!window.confirm("Close this CAPA? It will move to Historical Data → CAPA (Closed).")) return;
+    await saveWith("CLOSED");
+  };
+  const reopenCapa = async () => { await saveWith("DRAFT"); };
 
-  const backToList = () => { setView("list"); setSid(null); setBdId(null); setPrefill({}); loadPending(); };
+  const backToList = () => { setView("list"); setSid(null); setBdId(null); setSStatus("DRAFT"); setPrefill({}); loadPending(); };
 
   const btn = { border:"1px solid #cbd5e1", background:"#fff", cursor:"pointer", borderRadius:8, padding:"8px 14px", fontSize:13, fontWeight:700, color:"#334155" };
   // Machine master — zone/line/machine ke dropdown iske hi bharte hain.
@@ -359,7 +373,11 @@ export default function MaintenanceCAPA() {
     return true;
   }), [rows, fFy, fMonth, fZone, fLine, fMno]);
 
-  const open   = shown.filter((r) => !r.sheet_id).length;   // QPR abhi bhari nahi
+  /* "Closed" ka matlab sheet ka status CLOSED hona hai — sirf sheet ban jaana
+     nahi.  Ek DRAFT sheet abhi kaam baaki hai, isliye wo OPEN hi ginti hai
+     (aur Historical me bhi nahi jaati). */
+  const isClosed = (r) => String(r.sheet_status || "").toUpperCase() === "CLOSED";
+  const open   = shown.filter((r) => !isClosed(r)).length;
   const closed = shown.length - open;
 
   /* Zone-wise open/close — sirf un zones ka jinme is filter par kuch hai. */
@@ -368,7 +386,7 @@ export default function MaintenanceCAPA() {
     shown.forEach((r) => {
       const k = r.zone_name || "—";
       const e = m.get(k) || { zone: k, open: 0, closed: 0 };
-      if (r.sheet_id) e.closed += 1; else e.open += 1;
+      if (isClosed(r)) e.closed += 1; else e.open += 1;
       m.set(k, e);
     });
     return [...m.values()].sort((a, b) => (b.open + b.closed) - (a.open + a.closed));
@@ -463,10 +481,22 @@ export default function MaintenanceCAPA() {
           {view === "form" ? (<>
             <button style={btn} onClick={backToList}>← Pending CAPA</button>
             <button className="cp-save" onClick={save} disabled={saving}>{saving ? "Saving…" : (sid ? "💾 Update" : "💾 Save")}</button>
+            {sStatus === "CLOSED" ? (
+              <button style={{ ...btn, color:"#15803d", borderColor:"#bbf7d0", background:"#f0fdf4" }}
+                      onClick={reopenCapa} disabled={saving} title="Reopen — Historical se hat jayegi">
+                ✓ Closed · Reopen
+              </button>
+            ) : (
+              <button style={{ ...btn, color:"#15803d", borderColor:"#86efac" }}
+                      onClick={closeCapa} disabled={saving}
+                      title="Close this CAPA — it will appear in Historical Data">
+                ✓ Close CAPA
+              </button>
+            )}
             <button style={btn} onClick={() => window.print()}>🖨 Print</button>
             {sid && <span style={{ fontSize:12, color:"#64748b", fontWeight:700 }}>QPR #{sid}</span>}
           </>) : (
-            <button style={btn} onClick={() => { setPrefill({}); setSid(null); setBdId(null); setView("form"); }}>+ Blank QPR</button>
+            <button style={btn} onClick={() => { setPrefill({}); setSid(null); setBdId(null); setSStatus("DRAFT"); setView("form"); }}>+ Blank QPR</button>
           )}
           {msg && <span className="cp-msg">{msg}</span>}
           <span style={{ marginLeft:"auto", fontSize:12, color:"#64748b", fontWeight:600 }}>{user?.username ? <>Signed in as <b>{user.username}</b></> : ""}</span>
@@ -581,9 +611,11 @@ export default function MaintenanceCAPA() {
                       <td className="cp-dur">{r.duration_min}</td>
                       <td style={{ whiteSpace:"nowrap" }}>{r.attended_by}</td>
                       <td style={{ textAlign:"center" }}>
-                        {r.sheet_id
-                          ? <span className="cp-badge" style={{ background:"#dcfce7", color:"#166534" }}>Filled</span>
-                          : <span className="cp-badge" style={{ background:"#fee2e2", color:"#b91c1c" }}>Pending</span>}
+                        {isClosed(r)
+                          ? <span className="cp-badge" style={{ background:"#dcfce7", color:"#166534" }}>Closed</span>
+                          : r.sheet_id
+                            ? <span className="cp-badge" style={{ background:"#fef3c7", color:"#b45309" }}>Draft</span>
+                            : <span className="cp-badge" style={{ background:"#fee2e2", color:"#b91c1c" }}>Pending</span>}
                       </td>
                       <td className="cp-stick" style={{ textAlign:"center" }}>
                         {r.sheet_id
