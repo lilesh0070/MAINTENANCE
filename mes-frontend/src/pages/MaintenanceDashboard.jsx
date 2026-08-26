@@ -392,8 +392,17 @@ export default function MaintenanceDashboard() {
                     toggleFullscreen={toggleFullscreen}
                   />
                 </div>
-                {/* right column: PM This Month — aligned to the very top */}
-                <div className="md-col-b" style={{ flex: "1 1 380px", minWidth: 320, maxWidth: 500 }}>
+                {/* PM This Month — HAMESHA apni poori line par (ANDON ke neeche).
+                    Pehle ye daayin taraf 500px ke column me baithta tha, par
+                    landscape me .md-body sirf 1280px (padding hata kar 1200px)
+                    hai — PM ka poora table 880px maangta hai, to 380px kat
+                    jaata tha.  TV par TvFit body ka overflow hidden kar deta
+                    hai, yaani us kate hue hisse tak pahunchne ka koi zariya
+                    hi nahi — Status/Days Left/Window/Sheet gayab.  flex-basis
+                    100% se ye apne aap agli line par chala jaata hai (wahi
+                    behaviour jo portrait me pehle se tha), aur poore 1200px
+                    milte hain.  Yahan maxWidth mat lagana. */}
+                <div className="md-col-b" style={{ flex: "1 1 100%", minWidth: 0 }}>
                   <PmThisMonth token={token} />
                 </div>
               </div>
