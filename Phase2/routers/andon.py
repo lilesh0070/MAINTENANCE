@@ -1681,20 +1681,26 @@ def plc_recheck(dev_id: int, user=Depends(get_current_user)):
 
     out = {"id": dev_id, "online": None, "online_reason": None,
            "sub_online": None, "sub_online_reason": None}
+    # NOTE: `_PLC_STATUS` me kuch NAHI likhte — ye jaan-boojh kar hai.
+    #
+    # Pehle yahan likha jaata tha, aur usse ULTA nuksan hua: list sabse pehle
+    # `_PLC_STATUS` padhti hai aur `True` dekh kar probe hi nahi karti.  To ek
+    # baar ka kamyab Retry hamesha ke liye "Connected" chipka deta tha — PLC
+    # baad me gir jaye tab bhi UI green hi dikhata (jhoothi green light).
+    #
+    # Zaroorat bhi nahi thi: `force=True` wala probe `_PROBE_CACHE` bhar deta
+    # hai (TTL ke saath), aur poller band hone par list wahi cache padhti hai —
+    # to Retry ka nateeja apne aap list me aa jaata hai, aur TTL khatm hote hi
+    # taaza bhi ho jaata hai.
+    #
+    # Aur jahan poller CHALU hai wahan `_PLC_STATUS` me uska asli MC-level sach
+    # hota hai; use ek mamooli TCP probe se overwrite karna galat hi hota.
     if d.get("ip"):
         ok, why = _probe_cached(d["ip"], d.get("port") or 5007, timeout=3.0, force=True)
         out["online"], out["online_reason"] = ok, why
-        # Poller ka purana faisla bhi refresh kar do, warna list phir se
-        # uska stale "down" dikha degi aur Retry bekaar lagega.
-        st = _PLC_STATUS.setdefault(dev_id, {})
-        st["online"] = ok
-        st["checked"] = datetime.now().isoformat(timespec="seconds")
-        if ok:
-            st["last_seen"] = st["checked"]
     if (d.get("sub_ip") or "").strip():
         ok2, why2 = _probe_cached(d["sub_ip"], d.get("sub_port") or 5007, timeout=3.0, force=True)
         out["sub_online"], out["sub_online_reason"] = ok2, why2
-        _PLC_STATUS.setdefault(dev_id, {})["sub_online"] = ok2
     return out
 
 
