@@ -13,7 +13,7 @@ export default function Login() {
 
   const { login, token } = useAuth();
   const navigate  = useNavigate();
-  useEffect(() => { document.title = "Login"; }, []);
+  useEffect(() => { document.title = "Sign In · Maintenance MES"; }, []);
 
   // Every user — admin, plant_head, department, production, operator —
   // ALWAYS lands on /dashboard after sign-in.  The Dashboard route is a
@@ -427,24 +427,29 @@ export default function Login() {
             </div>
 
             <div className="login-hero">
+              {/* Ye deployment sirf Maintenance ka hai — App.jsx me /dashboard
+                  seedha MaintenanceDashboard par jaata hai, koi production
+                  dashboard hai hi nahi.  Isliye branding bhi Maintenance ki.
+                  Headline ka split "Manu-fac-turing" jaisa hi rakha hai
+                  (Main-ten-ance) taaki design ka rhythm na toote. */}
               <div className="login-mes-label">Platform</div>
-              <div className="login-headline">Manu<span>fac</span>turing</div>
-              <div className="login-sub-headline">Execution System</div>
+              <div className="login-headline">Main<span>ten</span>ance</div>
+              <div className="login-sub-headline">Management System</div>
               <div className="login-desc">
-                Centralized production control. Real-time data. Fully automated line provisioning.
+                Centralized breakdown control. Real-time ANDON. Preventive maintenance on schedule.
               </div>
               <div className="login-stats">
                 <div className="login-stat-pill">
-                  <div className="val">v2.0</div>
-                  <div className="lbl">Version</div>
+                  <div className="val">ANDON</div>
+                  <div className="lbl">Live</div>
                 </div>
                 <div className="login-stat-pill">
-                  <div className="val">24/7</div>
-                  <div className="lbl">Uptime</div>
-                </div>
-                <div className="login-stat-pill">
-                  <div className="val">OEE</div>
+                  <div className="val">MTTR</div>
                   <div className="lbl">Tracked</div>
+                </div>
+                <div className="login-stat-pill">
+                  <div className="val">PM</div>
+                  <div className="lbl">Planned</div>
                 </div>
               </div>
             </div>
@@ -460,7 +465,7 @@ export default function Login() {
               }}
             >
               <div className="login-form-title">Sign In</div>
-              <div className="login-form-sub">Enter your credentials to access the control panel</div>
+              <div className="login-form-sub">Enter your credentials to access the maintenance panel</div>
 
               <form onSubmit={handleSubmit}>
                 <div className="login-field">
