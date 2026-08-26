@@ -61,6 +61,7 @@ export default function SlideNav() {
           { key: "maintenance-machine-manual", label: "Machine Manual",     icon: "📖",                   path: "/maintenance-machine-manual" },
           { key: "maintenance-machine-dmc",    label: "Machine DMC",        icon: "🏷",                   path: "/maintenance-machine-dmc" },
           { key: "maintenance-spare",          label: "Spare",              icon: "🔩",                   path: "/maintenance-spare" },
+          { key: "machine-master",             label: "Machine Master",     icon: "🏭",                   path: "/machine-master" },
         ],
       };
       return [adminMaint, ...NAV_ITEMS];
@@ -89,6 +90,7 @@ export default function SlideNav() {
         { key: "maintenance-machine-manual", label: "Machine Manual",     icon: "📖",                   path: "/maintenance-machine-manual" },
         { key: "maintenance-machine-dmc",    label: "Machine DMC",        icon: "🏷",                   path: "/maintenance-machine-dmc" },
         { key: "maintenance-spare",          label: "Spare",              icon: "🔩",                   path: "/maintenance-spare" },
+        { key: "machine-master",             label: "Machine Master",     icon: "🏭",                   path: "/machine-master" },
       ],
     };
     return [adminMaint, ...NAV_ITEMS];

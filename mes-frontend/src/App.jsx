@@ -41,6 +41,7 @@ import DMCSupervisorVerify   from "./pages/DMCSupervisorVerify";
 import DMCMaintenanceVerify  from "./pages/DMCMaintenanceVerify";
 import DMCNgPoint            from "./pages/DMCNgPoint";
 import Spare                 from "./pages/Spare";
+import MachineMaster         from "./pages/MachineMaster";
 import { MaintenanceAdminPanel } from "./pages/AdminPanel";
 
 // ─── Protected Route ───────────────────────────────────────────────────────
@@ -259,6 +260,13 @@ function AppRoutes() {
       <Route path="/maintenance-dmc-ng" element={
         <Protected requiredAccess="maintenance-dmc-ng"><DMCNgPoint /></Protected>
       } />
+      {/* Machine Master — maintenance_machines ka aamne-saamne wala roop.
+          Zone/Line/Machine No/Machine Name/IP dekho, naya jodo, badlo, ya
+          disable karo.  Likhna sirf admin (backend bhi wahi maanta hai). */}
+      <Route path="/machine-master" element={
+        <Protected requiredAccess="machine-master"><MachineMaster /></Protected>
+      } />
+
       {/* Spare — spare details (placeholder; content TBD). */}
       <Route path="/maintenance-spare" element={
         <Protected requiredAccess="maintenance-spare"><Spare /></Protected>
