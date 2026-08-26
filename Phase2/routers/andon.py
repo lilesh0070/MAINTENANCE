@@ -116,13 +116,22 @@ def _ack_map(cur, plc_id):
         print(f"[ANDON] ack-map padhne me dikkat (fallback use kar rahe): {e}")
         return dict(_ACK_OF)
 
+    # Mapping mili hi nahi (koi row nahi) -> tabhi fallback.  Pehle yahan
+    # `return out or _ACK_OF` tha, aur wo GALAT tha: agar har DO ka apna
+    # department ho (yaani ACK hai hi nahi) to `out` khali {} hota, jo falsy
+    # hai — aur code chupchaap {2:1, 4:3} laga deta, yaani DO2/DO4 ko ACK maan
+    # leta jabki wo asli call hain.  Ab "ACK nahi hai" aur "mapping nahi mili"
+    # do alag baatein hain.
+    if not eff:
+        return dict(_ACK_OF)
+
     out, last_call = {}, None
     for do in sorted(eff):
         if eff[do].get("dept") is not None:
             last_call = do                      # ye asli call hai
         elif last_call is not None:
             out[do] = last_call                 # bina department = upar wale call ka ACK
-    return out or dict(_ACK_OF)
+    return out
 
 
 # ── PLC connectivity status ──────────────────────────────────────────
