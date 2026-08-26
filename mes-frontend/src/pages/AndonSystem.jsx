@@ -460,7 +460,11 @@ export default function AndonSystem() {
       else { setOutFor({ type: "none", id: null, name: `No PLC on ${zone} / ${line}` }); setOutRows([]); }
     } else { setOutFor({ type: "pick", id: null, name: "Select a line" }); setOutRows([]); }
   };
-  useEffect(() => { if (token && cfg === "outputs" && !outRows.length) loadOutputs({ type: "default", id: null, name: "Default template" }); /* eslint-disable-next-line */ }, [cfg, token]);
+  // Naye PLC ke abhi koi output nahi hote.  Pehle ye effect `!outRows.length`
+  // dekh kar Default template chadha deta tha — yaani button se PLC kholte hi
+  // target badal kar Default ho jaata aur user doosri jagah bharne lagta.
+  // Ab jab target pehle se koi PLC hai to haath nahi lagate.
+  useEffect(() => { if (token && cfg === "outputs" && outFor.type !== "plc" && !outRows.length) loadOutputs({ type: "default", id: null, name: "Default template" }); /* eslint-disable-next-line */ }, [cfg, token]);
   const setOut = (i, k, v) => setOutRows((rs) => rs.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
   const saveOutputs = () => wrap(async () => {
     const body = { rows: outRows.map((r) => ({ do_index: r.do_index, display_name: r.display_name,
@@ -597,7 +601,14 @@ export default function AndonSystem() {
           {tab === "config" && canAccess("andon-config") && (
             <>
               <div className="an-ctabs">
-                {[["plc","PLC Devices"],["outputs","Assign"]].map(([k, l]) => (
+                {/* "Assign" tab hataya (user ki request).  Wo apne aap me adhoora
+                    tha — usme zone/line chunne ka picker hai hi nahi (uska
+                    `pickOutTarget` dead pada hai), isliye wo sirf shared
+                    "Default template" dikhata tha aur kisi PLC tak pahunchta
+                    hi nahi tha.  PLC ka mapping ab neeche list me har row ke
+                    "📍 Assign" se khulta hai — `loadOutputs` khud `cfg` ko
+                    "outputs" kar deta hai, to wahi ek click kaafi hai. */}
+                {[["plc","PLC Devices"]].map(([k, l]) => (
                   <button key={k} className={`an-ctab${cfg === k ? " on" : ""}`} onClick={() => setCfg(k)}>{l}</button>
                 ))}
               </div>
