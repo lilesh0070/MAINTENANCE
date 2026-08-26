@@ -13,7 +13,7 @@
  * Regenerate the grid from the xlsx:  <scratchpad>\gen_capa_html.py
  * Routing: /maintenance-capa
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { CAPA_QPR_GRID } from "./capaGrid";
 
@@ -28,6 +28,28 @@ const PREFILL = (bd) => ({
   f_line:  bd.line_name    || "",   // LINE
 });
 
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+/* FY Apr→Mar.  "2026-27" ka matlab 1-Apr-2026 se 31-Mar-2027. */
+const fyOf = (ymd) => {
+  const m = /^(\d{4})-(\d{2})/.exec(String(ymd || ""));
+  if (!m) return "";
+  const y = +m[1], mo = +m[2];
+  const start = mo >= 4 ? y : y - 1;
+  return `${start}-${String(start + 1).slice(2)}`;
+};
+const fyMonthList = (fy) => {
+  const y = parseInt(String(fy).split("-")[0], 10);
+  if (isNaN(y)) return [];
+  const out = [];
+  for (let i = 0; i < 12; i++) {
+    const mo = ((3 + i) % 12) + 1;            // 4,5,…,12,1,2,3
+    const yr = mo >= 4 ? y : y + 1;
+    out.push({ value: `${yr}-${String(mo).padStart(2, "0")}`, label: `${MONTHS[mo - 1]} ${yr}` });
+  }
+  return out;
+};
+
 export default function MaintenanceCAPA() {
   const { token, theme, user } = useAuth();
   const formRef = useRef(null);
@@ -38,8 +60,21 @@ export default function MaintenanceCAPA() {
   const drawing = useRef(false);
   const [view, setView]   = useState("list");      // "list" | "form"
   const [rows, setRows]   = useState([]);
-  const [counts, setCounts] = useState({ total: 0, pending: 0, done: 0 });
   const [loading, setLoading] = useState(true);
+
+  /* ── Filters ──────────────────────────────────────────────────
+     Zone / Line / Machine ke option MACHINE MASTER se aate hain (data se
+     nahi) — poore app ka yahi niyam hai, taaki jis machine par abhi tak
+     koi CAPA nahi bani wo bhi list me dikhe.
+     Default: CHAALU MAHINA. */
+  const nowYm = (() => { const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; })();
+  const [fFy, setFFy]     = useState(fyOf(nowYm));
+  const [fMonth, setFMonth] = useState(nowYm);
+  const [fZone, setFZone] = useState("");
+  const [fLine, setFLine] = useState("");
+  const [fMno, setFMno]   = useState("");
+  const [master, setMaster] = useState([]);
 
   const [sid, setSid] = useState(null);            // current saved-sheet id
   const [bdId, setBdId] = useState(null);          // current breakdown id
@@ -62,7 +97,9 @@ export default function MaintenanceCAPA() {
   const loadPending = useCallback(() => {
     setLoading(true);
     api(`/pending`)
-      .then((d) => { setRows(d.rows || []); setCounts({ total: d.total || 0, pending: d.pending || 0, done: d.done || 0 }); })
+      // ginti ab client par `shown` se banti hai (filter ke hisaab se), isliye
+      // API ke total/pending/done ki zaroorat nahi rahi.
+      .then((d) => setRows(d.rows || []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
   }, [api]);
@@ -284,6 +321,61 @@ export default function MaintenanceCAPA() {
   const backToList = () => { setView("list"); setSid(null); setBdId(null); setPrefill({}); loadPending(); };
 
   const btn = { border:"1px solid #cbd5e1", background:"#fff", cursor:"pointer", borderRadius:8, padding:"8px 14px", fontSize:13, fontWeight:700, color:"#334155" };
+  // Machine master — zone/line/machine ke dropdown iske hi bharte hain.
+  // Alag effect me hai: /pending fail ho jaye to bhi dropdown khali na rahein.
+  useEffect(() => {
+    if (!token) return;
+    fetch("/api/machines/", { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => setMaster(Array.isArray(d) ? d : []))
+      .catch(() => setMaster([]));
+  }, [token]);
+
+  const fyOpts = useMemo(() => {
+    const set = new Set(rows.map((r) => fyOf(r.bd_date)).filter(Boolean));
+    set.add(fyOf(nowYm));
+    return [...set].sort().reverse();
+  }, [rows, nowYm]);
+
+  const zoneOpts = useMemo(
+    () => [...new Set(master.map((m) => m.zone_name).filter(Boolean))].sort(), [master]);
+  const lineOpts = useMemo(() => fZone
+    ? [...new Set(master.filter((m) => m.zone_name === fZone).map((m) => m.line_name).filter(Boolean))].sort()
+    : [], [master, fZone]);
+  const mnoOpts = useMemo(() => (fZone && fLine)
+    ? [...new Set(master.filter((m) => m.zone_name === fZone && m.line_name === fLine)
+                        .map((m) => m.machine_no).filter(Boolean))].sort()
+    : [], [master, fZone, fLine]);
+
+  /* Filter lagne ke baad ki list — cards aur table DONO isi se bante hain,
+     warna upar ki ginti aur neeche ki list alag-alag baat kehti. */
+  const shown = useMemo(() => rows.filter((r) => {
+    const d = r.bd_date || "";
+    if (fMonth) { if (d.slice(0, 7) !== fMonth) return false; }
+    else if (fFy && fyOf(d) !== fFy) return false;
+    if (fZone && r.zone_name !== fZone) return false;
+    if (fLine && r.line_name !== fLine) return false;
+    if (fMno  && r.machine_no !== fMno) return false;
+    return true;
+  }), [rows, fFy, fMonth, fZone, fLine, fMno]);
+
+  const open   = shown.filter((r) => !r.sheet_id).length;   // QPR abhi bhari nahi
+  const closed = shown.length - open;
+
+  /* Zone-wise open/close — sirf un zones ka jinme is filter par kuch hai. */
+  const byZone = useMemo(() => {
+    const m = new Map();
+    shown.forEach((r) => {
+      const k = r.zone_name || "—";
+      const e = m.get(k) || { zone: k, open: 0, closed: 0 };
+      if (r.sheet_id) e.closed += 1; else e.open += 1;
+      m.set(k, e);
+    });
+    return [...m.values()].sort((a, b) => (b.open + b.closed) - (a.open + a.closed));
+  }, [shown]);
+
+  const clearFilters = () => { setFFy(fyOf(nowYm)); setFMonth(nowYm); setFZone(""); setFLine(""); setFMno(""); };
+
   const tile = (label, val, color, sub) => (
     <div style={{ background:"#fff", border:"1px solid #e2e8f0", borderTop:`3px solid ${color}`, borderRadius:14, padding:"14px 18px", minWidth:150 }}>
       <div style={{ fontSize:11.5, fontWeight:800, letterSpacing:".05em", textTransform:"uppercase", color:"#64748b" }}>{label}</div>
@@ -306,6 +398,14 @@ export default function MaintenanceCAPA() {
         .cp-save:disabled { opacity:.5; cursor:default; }
         .cp-msg { font-size:12.5px; font-weight:700; color:#16a34a; }
         .cp-body { max-width:1280px; margin:16px auto; padding:0 24px; }
+        .cp-fld { display:flex; flex-direction:column; gap:5px; }
+        .cp-fld label { font-size:10.5px; font-weight:800; letter-spacing:.05em;
+                        text-transform:uppercase; color:#64748b; }
+        .cp-sel { border:1.5px solid #cbd5e1; border-radius:9px; padding:8px 11px; font-size:13px;
+                  font-weight:600; color:#0f172a; outline:none; background:#fff;
+                  font-family:'Barlow',sans-serif; min-width:140px; }
+        .cp-sel:focus { border-color:${theme.accent}; }
+        .cp-sel:disabled { background:#f1f5f9; color:#94a3b8; cursor:not-allowed; }
 
         .cp-tbl-wrap { background:#fff; border:1px solid #e2e8f0; border-radius:14px; overflow-x:auto; box-shadow:0 1px 3px rgba(15,23,42,.05); }
         .cp-tbl { width:100%; border-collapse:collapse; }
@@ -377,11 +477,86 @@ export default function MaintenanceCAPA() {
             <div style={{ fontSize:12.5, color:"#64748b", marginBottom:14 }}>
               Manual Slip ke har breakdown jiska repair <b>60 min ya usse zyada</b> hai wo ek CAPA hai. QPR bharke close karo.
             </div>
-            <div style={{ display:"flex", gap:14, marginBottom:16, flexWrap:"wrap" }}>
-              {tile("Total CAPA", counts.total, "#2563eb", "≥ 60-min breakdowns")}
-              {tile("Pending", counts.pending, "#dc2626", "QPR baaki")}
-              {tile("Filled", counts.done, "#16a34a", "QPR started")}
+            {/* ── Filters — default CHAALU MAHINA.  Zone/Line/Machine ke
+                   option Machine Master se aate hain. ── */}
+            <div style={{ display:"flex", gap:12, flexWrap:"wrap", alignItems:"flex-end", marginBottom:16 }}>
+              <div className="cp-fld">
+                <label>Financial Year</label>
+                <select className="cp-sel" value={fFy}
+                        onChange={(e) => { setFFy(e.target.value); setFMonth(""); }}>
+                  {fyOpts.map((f) => <option key={f} value={f}>{f}{f === fyOf(nowYm) ? " (current)" : ""}</option>)}
+                </select>
+              </div>
+              <div className="cp-fld">
+                <label>Month</label>
+                <select className="cp-sel" value={fMonth} onChange={(e) => setFMonth(e.target.value)}>
+                  <option value="">Full year</option>
+                  {fyMonthList(fFy).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </div>
+              <div className="cp-fld">
+                <label>Zone</label>
+                <select className="cp-sel" value={fZone}
+                        onChange={(e) => { setFZone(e.target.value); setFLine(""); setFMno(""); }}>
+                  <option value="">All Zones</option>
+                  {zoneOpts.map((z) => <option key={z} value={z}>{z}</option>)}
+                </select>
+              </div>
+              <div className="cp-fld">
+                <label>Line</label>
+                <select className="cp-sel" value={fLine} disabled={!fZone}
+                        onChange={(e) => { setFLine(e.target.value); setFMno(""); }}>
+                  <option value="">All Lines</option>
+                  {lineOpts.map((l) => <option key={l} value={l}>{l}</option>)}
+                </select>
+              </div>
+              <div className="cp-fld">
+                <label>Machine No</label>
+                <select className="cp-sel" value={fMno} disabled={!fLine}
+                        onChange={(e) => setFMno(e.target.value)}>
+                  <option value="">All Machines</option>
+                  {mnoOpts.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <button style={btn} onClick={clearFilters}>✕ Reset</button>
             </div>
+
+            {/* Cards ab FILTER ke hisaab se — upar ki ginti aur neeche ki
+                list hamesha ek hi baat kahein. */}
+            <div style={{ display:"flex", gap:14, marginBottom:16, flexWrap:"wrap" }}>
+              {tile("Total CAPA", shown.length, "#2563eb", "≥ 60-min breakdowns")}
+              {tile("Open", open, "#dc2626", "QPR abhi baaki")}
+              {tile("Closed", closed, "#16a34a", "QPR bhari hui")}
+              {tile("Of All", rows.length, "#64748b", "filter hatane par")}
+            </div>
+
+            {/* ── Zone-wise open / close ── */}
+            {byZone.length > 0 && (
+              <div style={{ background:"#fff", border:"1px solid #e2e8f0", borderRadius:14,
+                            padding:"14px 18px", marginBottom:16 }}>
+                <div style={{ fontSize:13.5, fontWeight:800, color:"#0f172a" }}>Zone-wise</div>
+                <div style={{ fontSize:11, color:"#94a3b8", marginBottom:10 }}>
+                  Is filter par har zone me kitni CAPA open hain aur kitni close
+                </div>
+                <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+                  {byZone.map((z) => (
+                    <div key={z.zone} style={{ border:"1px solid #e8edf3", borderRadius:11,
+                                               padding:"9px 13px", minWidth:150, background:"#fafbfc" }}>
+                      <div style={{ fontSize:11.5, fontWeight:800, color:"#334155",
+                                    whiteSpace:"nowrap" }}>{z.zone}</div>
+                      <div style={{ display:"flex", gap:14, marginTop:5, alignItems:"baseline" }}>
+                        <span style={{ fontSize:11, color:"#94a3b8", fontWeight:700 }}>
+                          Open <b style={{ fontSize:17, color: z.open ? "#dc2626" : "#94a3b8" }}>{z.open}</b>
+                        </span>
+                        <span style={{ fontSize:11, color:"#94a3b8", fontWeight:700 }}>
+                          Closed <b style={{ fontSize:17, color: z.closed ? "#16a34a" : "#94a3b8" }}>{z.closed}</b>
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="cp-tbl-wrap">
               <table className="cp-tbl">
                 <thead><tr>
@@ -393,8 +568,8 @@ export default function MaintenanceCAPA() {
                 </tr></thead>
                 <tbody>
                   {loading && <tr><td colSpan={11} style={{ textAlign:"center", color:"#94a3b8", padding:30 }}>Loading…</td></tr>}
-                  {!loading && rows.length === 0 && <tr><td colSpan={11} style={{ textAlign:"center", color:"#94a3b8", padding:30 }}>No ≥60-min breakdowns.</td></tr>}
-                  {!loading && rows.map((r, i) => (
+                  {!loading && shown.length === 0 && <tr><td colSpan={11} style={{ textAlign:"center", color:"#94a3b8", padding:30 }}>{rows.length ? "In filters par koi CAPA nahi." : "No ≥60-min breakdowns."}</td></tr>}
+                  {!loading && shown.map((r, i) => (
                     <tr key={r.bd_id} onClick={() => fillQpr(r)} title="Click to open QPR">
                       <td>{i + 1}</td>
                       <td style={{ whiteSpace:"nowrap" }}>{r.bd_date}</td>
