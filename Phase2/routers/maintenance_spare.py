@@ -52,6 +52,11 @@ def _ensure_table():
             ("source", "VARCHAR(20)"), ("zone", "VARCHAR(120)"), ("line", "VARCHAR(120)"),
             ("machine_no", "VARCHAR(60)"), ("machine_name", "VARCHAR(160)"),
             ("spare_qty", "VARCHAR(40)"), ("used_date", "DATE"),
+            # Kis slip se aayi — admin slip edit kare to us slip ki purani
+            # spare entries hata kar nayi likhni padti hain.  Iske bina pata
+            # hi nahi chalta ki kaunsi rows us slip ki thi, aur report me
+            # duplicate chadh jaate.  Purani rows me NULL rahega (chhedte nahi).
+            ("slip_id", "INTEGER"),
         ]:
             cur.execute(f"ALTER TABLE maintenance_spare ADD COLUMN IF NOT EXISTS {col} {typ}")
         cur.execute("DROP INDEX IF EXISTS uq_maintenance_spare")
@@ -76,8 +81,9 @@ def record_usage(conn, source: str, ctx: dict, spares):
         cur.execute("""
             INSERT INTO maintenance_spare
                 (source, zone, line, machine_no, machine_name,
-                 spare_name, spare_model_no, spare_cnmm_no, spare_qty, used_date)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                 spare_name, spare_model_no, spare_cnmm_no, spare_qty, used_date,
+                 slip_id)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
             source, ctx.get("zone"), ctx.get("line"),
             ctx.get("machine_no"), ctx.get("machine_name"),
@@ -86,7 +92,20 @@ def record_usage(conn, source: str, ctx: dict, spares):
             (s.get("spare_cnmm_no") or "").strip() or None,
             (str(s.get("spare_qty") or "").strip() or None),
             used_date or None,
+            ctx.get("slip_id"),          # None bhi chalega (log book vagairah)
         ))
+
+
+def clear_usage(conn, slip_id: int):
+    """Ek slip ki purani spare entries hata do — slip edit hone par pehle ye,
+    phir record_usage() se nayi.  Warna har edit par report me duplicate
+    chadhte jaate.  slip_id NULL wali (purani) rows kabhi nahi chhuti."""
+    _ensure_table()
+    if not slip_id:
+        return 0
+    cur = conn.cursor()
+    cur.execute("DELETE FROM maintenance_spare WHERE slip_id = %s", (int(slip_id),))
+    return cur.rowcount
 
 
 @router.get("/")

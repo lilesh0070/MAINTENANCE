@@ -19,6 +19,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { ClosureFormModal } from "./breakdown/ClosureFormModal";
+import { slipPayload } from "./breakdown/slipPayload";
 import { FormatSheet } from "./pm/FormatSheet";
 import { DmcSheet, groupDmcPoints } from "./DmcSheet";
 import { onlyProdZones } from "../constants/zones";
@@ -26,6 +27,16 @@ import { onlyProdZones } from "../constants/zones";
 const api = {
   async get(path, token) {
     const r = await fetch(path, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
+    return r.json();
+  },
+  // admin slip edit ke liye
+  async put(path, body, token) {
+    const r = await fetch(path, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
     if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
     return r.json();
   },
@@ -126,7 +137,7 @@ const _MON = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
 const fillMonthLabel = (ym) => { if (!ym) return ""; const [y, m] = ym.split("-"); return `${_MON[parseInt(m, 10)] || m} ${y}`; };
 
 export default function MaintenanceHistorical() {
-  const { token, theme, user } = useAuth();
+  const { token, theme, user, isAdmin } = useAuth();
   // ── filters (Machine Master List + FY/Month + exact Date) ──
   // Upar ke buttons me se kaunsa chuna hua hai — ek waqt me wahi section dikhta
   const [sec, setSec]       = useState("BD");
@@ -218,6 +229,13 @@ export default function MaintenanceHistorical() {
     return null;
   }, [fFy, fMonth]);
 
+  // Admin slip edit save hone par breakdown list dobara mangwane ke liye.
+  // Ye us effect se UPAR hona zaroori hai jo ise deps me padhta hai — `const`
+  // ka TDZ hai, aur deps array RENDER ke waqt padha jaata hai.  Neeche rakha
+  // to page hi ReferenceError se blank ho jaata (build/eslint ise pakadte
+  // bhi nahi, kyunki naam file me maujood to hai).
+  const [bdReload, setBdReload] = useState(0);
+
   useEffect(() => {
     if (!token) return;
     // `ignore`: jab `win` badalta hai (jaise boot pe null → current-month window),
@@ -232,7 +250,7 @@ export default function MaintenanceHistorical() {
       .catch(() => { if (!ignore) setRows([]); })
       .finally(() => { if (!ignore) setLoading(false); });
     return () => { ignore = true; };
-  }, [token, win]);
+  }, [token, win, bdReload]);
 
   // filled PM check sheets (maintenance_pm_check_sheet_filled) + the sheet layout
   useEffect(() => {
@@ -358,6 +376,32 @@ export default function MaintenanceHistorical() {
   // View: dashboard jaisa hi — auto slip fetch karke ClosureFormModal (read-only).
   const openAuto = (id) =>
     api.get(`/api/breakdown-slips/auto/${id}`, token).then(setViewAuto).catch(() => {});
+
+  /* ── Admin edit — bhari hui MANUAL slip ko wahin theek karo ────────
+     Slip khulti read-only hi hai; admin ko header me "✎ Edit" milta hai,
+     dabate hi wahi modal fill-mode me chala jaata hai.  Sirf admin ko:
+     `onEdit` tabhi bhejte hain jab isAdmin ho, isliye faisla ek jagah
+     rehta hai aur modal har doosri jagah pehle jaisa hi hai.
+     AUTO (ANDON) slip par ye NAHI dete — uske time/date hardware ke naape
+     hue hain, unhe haath se badalna asli record bigaad dega. */
+  const [editing, setEditing] = useState(false);
+  const [editErr, setEditErr] = useState("");
+
+  const saveSlipEdit = async (maintSlice, _phase, prodExtra) => {
+    const id = viewTicket?.id;
+    if (!id) return;
+    setEditErr("");
+    try {
+      const all = { ...(prodExtra || {}), ...(maintSlice || {}) };
+      await api.put(`/api/breakdown-slips/${id}`, slipPayload(all), token);
+      setEditing(false);
+      setViewTicket(null);
+      setBdReload((k) => k + 1);    // table turant nayi value dikhaye
+    } catch (e) {
+      setEditErr(e?.message || "Save failed");
+      throw e;                      // modal ka saving-flag reset ho jaye
+    }
+  };
 
   const planMatch = (r) => {
     if (fZone && norm(r.zone_name) !== norm(fZone)) return false;
@@ -870,11 +914,22 @@ export default function MaintenanceHistorical() {
       {viewTicket && (
         <ClosureFormModal
           ticket={viewTicket}
-          mode="view"
-          onClose={() => setViewTicket(null)}
-          onSave={() => {}}
+          mode={editing ? "fill" : "view"}
+          phase="maintenance"
+          onEdit={isAdmin && !viewTicket.auto_slip ? () => setEditing(true) : null}
+          onClose={() => { setEditing(false); setEditErr(""); setViewTicket(null); }}
+          onSave={saveSlipEdit}
           token={token}
         />
+      )}
+      {editErr && (
+        <div style={{ position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)",
+                      zIndex: 9600, background: "#fee2e2", color: "#991b1b",
+                      border: "1px solid #fecaca", borderRadius: 10, padding: "10px 16px",
+                      fontSize: 12.5, fontWeight: 700 }}
+             onClick={() => setEditErr("")}>
+          {editErr}
+        </div>
       )}
 
       {viewAuto && (

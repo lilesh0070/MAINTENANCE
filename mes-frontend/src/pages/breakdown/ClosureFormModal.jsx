@@ -65,8 +65,33 @@ const diffMinsDT = (startDate, startHHMM, endDate, endHHMM) => {
   };
   const a = parse(startDate, startHHMM), b = parse(endDate, endHHMM);
   if (a == null || b == null) return "";
-  const mins = Math.round((b - a) / 60000);
+  let mins = Math.round((b - a) / 60000);
+  // USI DIN ka OK time start se pehle ka ho => raat 12 baje paar hui hai.
+  // 23:20 shuru -> 00:00 OK ka matlab 40 min hai, -1400 nahi.  Pehle ye
+  // negative aakar BLANK ho jaata tha, isliye us slip ka down-time khali
+  // reh gaya (T_REC_01, 24-Aug-2026).  diffMins() pehle se yahi karta hai.
+  // Sirf tabhi jodte hain jab dono DATE barabar hon — agar end date sach me
+  // start se PEHLE ki hai to wo asli data galti hai aur blank hi rehna
+  // chahiye, taaki dikh jaye aur theek ho.
+  if (mins < 0 && String(startDate).trim() === String(endDate).trim()) mins += 24 * 60;
   return mins >= 0 ? String(mins) : "";
+};
+
+// OK time start se pehle ka hai? (yaani raat 12 baje paar hui)
+const rolledMidnight = (startHHMM, endHHMM) => {
+  const p = (t) => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || "").trim());
+    return m ? (+m[1]) * 60 + (+m[2]) : null;
+  };
+  const a = p(startHHMM), b = p(endHHMM);
+  return a != null && b != null && b < a;
+};
+
+// "YYYY-MM-DD" ka agla din, UTC arithmetic se (DST/timezone ka koi lafda nahi)
+const nextDay = (dstr) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dstr || "").trim());
+  if (!m) return dstr;
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + 1)).toISOString().slice(0, 10);
 };
 
 /* ════════════════════════════════════════════════════════════════════
@@ -111,7 +136,7 @@ const diffMinsDT = (startDate, startHHMM, endDate, endHHMM) => {
  *     is instantaneous and works offline of the lookup endpoint after
  *     the first fetch.
  */
-export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose, onSave, token, pickLine = false }) {
+export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose, onSave, token, pickLine = false, onEdit = null }) {
   // mode  : "fill" | "view"
   // phase : "production" → user can edit only the upper half (Production)
   //         "maintenance" → user can edit only the lower half (Maintenance)
@@ -385,14 +410,26 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   //   RESPONSE TIME  = Received − Start        (same-day, minutes-scale)
   //   M/C DOWN TIME  = (End date + OK) − (Start date + Start)  — DATE-AWARE, so
   //                    an OK on a later day is counted in full.
-  const recalcTotals = (d) => ({
-    ...d,
-    response_time_minutes: diffMins(d.bd_start_time, d.bd_received_time),
-    mc_down_time_minutes:
-      (d.bd_start_date && d.bd_end_date)
-        ? diffMinsDT(d.bd_start_date, d.bd_start_time, d.bd_end_date, d.bd_ok_time)
-        : diffMins(d.bd_start_time, d.bd_ok_time),
-  });
+  const recalcTotals = (d) => {
+    // Raat 12 paar hui hai (usi din ka OK time start se pehle) to END DATE
+    // ko agle din kar dete hain.  Sirf down-time theek karna kaafi nahi tha —
+    // galat end date DB me baith jaati aur baad me har report use hi padhti.
+    // Form pehle se aisa hi karta hai (start date aage badhe to end date bhi),
+    // isliye ye us hi aadat ke mutabik hai.
+    let end = d.bd_end_date;
+    if (d.bd_start_date && end && end === d.bd_start_date && rolledMidnight(d.bd_start_time, d.bd_ok_time)) {
+      end = nextDay(d.bd_start_date);
+    }
+    return {
+      ...d,
+      bd_end_date: end,
+      response_time_minutes: diffMins(d.bd_start_time, d.bd_received_time),
+      mc_down_time_minutes:
+        (d.bd_start_date && end)
+          ? diffMinsDT(d.bd_start_date, d.bd_start_time, end, d.bd_ok_time)
+          : diffMins(d.bd_start_time, d.bd_ok_time),
+    };
+  };
 
   // Changing any of the 3 times re-computes both auto totals.
   const setTime = (k, v) => setData(d => recalcTotals({ ...d, [k]: v }));
@@ -598,7 +635,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
     width: 297mm !important;
     margin: 0 !important; padding: 6mm !important; box-sizing: border-box !important;
   }
-  .bds-close-x, .bds-print-btn, .bds-footer { display: none !important; }
+  .bds-close-x, .bds-print-btn, .bds-edit-btn, .bds-footer { display: none !important; }
   .bds-body { max-height: none !important; overflow: visible !important; padding: 0 !important; }
 
   /* ── Print-only size shrink ─────────────────────────────────────────
@@ -725,6 +762,14 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
           {readOnly && (
             <div className="bds-print-btn" onClick={() => printSlip()} title="Print this slip">
               🖨 Print
+            </div>
+          )}
+          {/* Edit — sirf tab dikhta hai jab caller ne `onEdit` diya ho.
+              Historical Data ise SIRF admin ko deta hai, isliye faisla wahin
+              ek jagah rehta hai aur ye modal har jagah pehle jaisa hi hai. */}
+          {readOnly && onEdit && (
+            <div className="bds-edit-btn" onClick={onEdit} title="Edit this slip">
+              ✎ Edit
             </div>
           )}
           <div className="bds-close-x" onClick={onClose} title="Close">×</div>
@@ -1164,6 +1209,13 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
           padding:0 16px; cursor:pointer; display:flex; align-items:center;
           gap:8px; font-size:12px; font-weight:700; color:#1e40af;
           border-left:1.5px solid #0f172a; background:#f8fafc;
+          letter-spacing:.04em; user-select:none;
+          font-family:'Barlow',sans-serif;
+        }
+        .bds-edit-btn {
+          padding:0 16px; cursor:pointer; display:flex; align-items:center;
+          gap:8px; font-size:12px; font-weight:700; color:#b45309;
+          border-left:1.5px solid #0f172a; background:#fffbeb;
           letter-spacing:.04em; user-select:none;
           font-family:'Barlow',sans-serif;
         }

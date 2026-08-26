@@ -593,10 +593,77 @@ def create_slip(body: BreakdownSlipIn, user=Depends(get_current_user)):
                 "zone": body.zone, "line": body.line,
                 "machine_no": body.machine_no, "machine_name": body.machine_name,
                 "used_date": body.slip_date or body.bd_start_date,
+                "slip_id": new_id,      # edit hone par inhi rows ko badla jayega
             }, body.spares)
     except Exception as e:
         print(f"[SPARE-MASTER] record failed (slip): {e}")
     return {"id": new_id, "ok": True}
+
+
+@router.put("/{sid}")
+def update_slip(sid: int, body: BreakdownSlipIn, admin=Depends(require_admin)):
+    """Ek bhari hui MANUAL slip ko badlo — SIRF admin.
+
+    Historical Data me slip kholne par admin ko "Edit" milta hai; galat bhara
+    hua khaana (time, problem, spare, naam) wahin theek ho jata hai — pehle
+    iska koi raasta hi nahi tha, DB me haath dalna padta.
+
+    Sirf wahi khaane badalte hain jo form ne SACH ME bheje (`exclude_unset`).
+    Isse aadha bhara hua form baaki khaano ko khali nahi kar deta — jo is
+    tarah ke edit me sabse aam nuksan hai.
+
+    Spare bhi saath chalte hain: is slip ki purani spare entries hata kar nayi
+    likhi jaati hain, warna Spare report me har edit par duplicate chadhte.
+    """
+    _ensure_table()
+    flat = body.model_dump(exclude_unset=True)
+    flat.pop("spares", None)                       # ye alag (JSONB) jaata hai
+    sets = {c: _blank_to_none(flat[c]) for c in _COLS if c in flat}
+    for c in ("mc_down_time_minutes", "response_time_minutes", "frequency"):
+        if c in sets:
+            sets[c] = _to_int(sets[c])
+
+    send_spares = "spares" in body.model_fields_set
+    spares = [x for x in (body.spares or [])
+              if isinstance(x, dict) and any(str(v or "").strip() for v in x.values())]
+
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute(f"SELECT id FROM {MANUAL_SLIP_TABLE} WHERE id = %s", (sid,))
+        if not cur.fetchone():
+            raise HTTPException(404, "Slip not found")
+
+        if sets or send_spares:
+            from psycopg2.extras import Json
+            cols, vals = list(sets.keys()), list(sets.values())
+            if send_spares:
+                cols.append("spares"); vals.append(Json(spares) if spares else None)
+            cur.execute(
+                f"UPDATE {MANUAL_SLIP_TABLE} SET " + ", ".join(f"{c} = %s" for c in cols)
+                + " WHERE id = %s", vals + [sid])
+        # badli hui row wapas do taaki UI turant sahi dikhaye
+        cur.execute(f"SELECT * FROM {MANUAL_SLIP_TABLE} WHERE id = %s", (sid,))
+        row = dict(cur.fetchone())
+        conn.commit()
+
+    # Spare master dobara likho — apne alag txn me, best-effort (slip ka save
+    # kabhi spare ki wajah se fail na ho; baaki jagah bhi yahi tareeka hai).
+    if send_spares:
+        try:
+            from routers.maintenance_spare import record_usage, clear_usage
+            with get_conn() as sconn:
+                clear_usage(sconn, sid)
+                record_usage(sconn, "Manual Slip", {
+                    "zone": row.get("zone"), "line": row.get("line"),
+                    "machine_no": row.get("machine_no"), "machine_name": row.get("machine_name"),
+                    "used_date": row.get("slip_date") or row.get("bd_start_date"),
+                    "slip_id": sid,
+                }, spares)
+                sconn.commit()
+        except Exception as e:
+            print(f"[SPARE-MASTER] re-record failed (slip {sid}): {e}")
+
+    return {"ok": True, "id": sid}
 
 
 @router.get("/")
