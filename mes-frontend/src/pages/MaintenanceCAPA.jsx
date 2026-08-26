@@ -454,7 +454,20 @@ export default function MaintenanceCAPA() {
         .cp-format { font-family:Arial, sans-serif; font-size:11.5px; font-weight:700; color:#7f1d1d; padding:8px 6px 3px; letter-spacing:.02em; }
         .qpr { width:100%; border-collapse:collapse; table-layout:fixed; font-family:Arial, sans-serif; color:#111; }
         .qpr td { overflow:hidden; word-wrap:break-word; line-height:1.15; }
-        .qpr input.fin, .qpr textarea.fta { width:100%; box-sizing:border-box; border:none; outline:none; background:transparent; font:inherit; color:#1d4ed8; padding:1px 3px; }
+        /* height:100% dono par.  Bina iske box sirf apne text jitna rehta hai,
+           to lambe cell (Effective Batch Code / Resp. / Tgt. Date 272px, For
+           Occurrence 88px) me box upar ek line ka reh jaata aur neeche ka poora
+           hissa dabane par kuch nahi hota — dikhta bhara-poora khaana tha, par
+           bhara nahi ja raha tha.  100% se box poori cell le leta hai; chhote
+           khaano me kuch nahi badalta aur textarea ka auto-grow bhi chalta hai. */
+        .qpr input.fin, .qpr textarea.fta { width:100%; height:100%; box-sizing:border-box; border:none; outline:none; background:transparent; font:inherit; color:#1d4ed8; padding:1px 3px; }
+        /* height:100% zaroori hai.  field-sizing:content akela box ko sirf
+           uske text jitna rakhta hai — to jo cell lambe hain (For
+           Occurrence 88px, Effective Batch Code / Resp. 272px) unme box
+           upar ek line ka reh jaata tha aur neeche ka poora hissa dabane
+           par kuch nahi hota — dikhta bhara-poora box tha, par bhara nahi
+           ja raha tha.  100% se box cell ki poori unchai le leta hai, aur
+           chhote khaano me auto-grow pehle jaisa hi chalta rehta hai. */
         .qpr textarea.fta { resize:none; overflow:hidden; line-height:1.15; field-sizing:content; min-height:1.6em; }
         .qpr input.fin:focus, .qpr textarea.fta:focus { background:#eff6ff; }
         .qpr input.fin[readonly], .qpr textarea.fta[readonly] { background:#eef2f7; cursor:not-allowed; }
