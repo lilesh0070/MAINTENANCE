@@ -215,12 +215,24 @@ export default function AndonSystem() {
   const [tlLoad, setTlLoad] = useState(false);
   const [tlFrom, setTlFrom] = useState("");
   const [tlTo,   setTlTo]   = useState("");
-  const loadTotalLoss = useCallback(async (from, to) => {
+  // Total Loss ke filter — FY / Month / Zone / Line.  Month sabse pakka
+  // (server par bhi wahi kram), phir FY, phir From-To.
+  const [tlFy, setTlFy]       = useState("");
+  const [tlMonth, setTlMonth] = useState("");
+  const [tlZone, setTlZone]   = useState("");
+  const [tlLine, setTlLine]   = useState("");
+
+  const loadTotalLoss = useCallback(async (from, to, extra) => {
     setTlLoad(true);
     try {
       const q = new URLSearchParams();
       if (from) q.set("from", from);
       if (to)   q.set("to", to);
+      const ex = extra || {};
+      if (ex.fy)    q.set("fy", ex.fy);
+      if (ex.month) q.set("month", ex.month);
+      if (ex.zone)  q.set("zone", ex.zone);
+      if (ex.line)  q.set("line", ex.line);
       const d = await api(`/total-loss${q.toString() ? "?" + q.toString() : ""}`);
       setTlData(d || null);
       setTlFrom(d?.from || ""); setTlTo(d?.to || "");
@@ -237,10 +249,16 @@ export default function AndonSystem() {
       const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
       const n = new Date(); const d = new Date(n); if (n.getHours() < 7) d.setDate(d.getDate()-1);
       const today = ymd(d);
-      if (alive && tlFrom === today && tlTo === today) loadTotalLoss(tlFrom, tlTo);
+      // Auto-refresh sirf tab jab range AAJ ho — aur zone/line filter SAATH
+      // le jaana zaroori hai, warna har 3 second me filter apne aap ud jaata.
+      // FY/Month lagi ho to wo range aaj ki hai hi nahi, isliye refresh chhoot
+      // jaata hai — wahi theek hai (purani range live nahi badalti).
+      if (alive && tlFrom === today && tlTo === today && !tlFy && !tlMonth) {
+        loadTotalLoss(tlFrom, tlTo, { zone: tlZone, line: tlLine });
+      }
     }, 3000);
     return () => { alive = false; clearInterval(id); };
-  }, [token, tab, tlFrom, tlTo, tlData, loadTotalLoss]);
+  }, [token, tab, tlFrom, tlTo, tlData, loadTotalLoss, tlFy, tlMonth, tlZone, tlLine]);
 
   const load = useCallback(async () => {
     try {
@@ -1109,6 +1127,23 @@ export default function AndonSystem() {
             const plantToday = () => { const n = new Date(); const d = new Date(n); if (n.getHours() < 7) d.setDate(d.getDate()-1); return ymd(d); };
             const addDays = (s, n) => { if (!s) return plantToday(); const [y,m,dd] = s.split("-").map(Number); const dt = new Date(y, m-1, dd); dt.setDate(dt.getDate()+n); return ymd(dt); };
             const sameRange = tlData && tlFrom === tlTo;
+            // FY list: is saal se 3 saal peeche tak (Apr-Mar)
+            const nowD = new Date();
+            const fyStart = nowD.getMonth() + 1 >= 4 ? nowD.getFullYear() : nowD.getFullYear() - 1;
+            const tlFyOpts = [0, 1, 2, 3].map((k) => `${fyStart - k}-${String(fyStart - k + 1).slice(2)}`);
+            // Month list: chuni hui FY (ya chaalu FY) ke 12 mahine, Apr se Mar
+            const MN = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+            const fyForMonths = parseInt((tlFy || tlFyOpts[0]).split("-")[0], 10);
+            const tlMonthOpts = Array.from({ length: 12 }, (_, i) => {
+              const mo = ((3 + i) % 12) + 1;
+              const yr = mo >= 4 ? fyForMonths : fyForMonths + 1;
+              return `${yr}-${String(mo).padStart(2, "0")}`;
+            });
+            // Zone / Line — MACHINE MASTER se (project ka niyam), data se nahi
+            const tlZoneOpts = [...new Set(master.map((m) => m.zone_name).filter(Boolean))].sort();
+            const tlLineOpts = tlZone
+              ? [...new Set(master.filter((m) => m.zone_name === tlZone).map((m) => m.line_name).filter(Boolean))].sort()
+              : [];
             const overlap = tlData ? Math.max(0, (tlData.raw_sum_seconds || 0) - (tlData.total_loss_seconds || 0)) : 0;
             return (
             <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
@@ -1139,9 +1174,50 @@ export default function AndonSystem() {
                       <input type="date" value={tlTo} min={tlFrom} onChange={(e) => setTlTo(e.target.value)}
                              style={{ marginLeft:6, padding:"5px 8px", border:"1px solid #cbd5e1", borderRadius:7, fontSize:12.5 }} />
                     </label>
-                    <button onClick={() => loadTotalLoss(tlFrom, tlTo)}
+                    <button onClick={() => { setTlFy(""); setTlMonth("");
+                              loadTotalLoss(tlFrom, tlTo, { zone: tlZone, line: tlLine }); }}
                             style={{ border:"none", background:"#1e40af", color:"#fff", borderRadius:8,
                                      padding:"6px 14px", fontWeight:700, fontSize:12.5, cursor:"pointer" }}>View</button>
+                  </div>
+
+                  {/* ── FY · Month · Zone · Line ──
+                      Zone/Line ke option MACHINE MASTER se (project ka niyam).
+                      FY ya Month chuno to From-To ki jagah wahi window chalti hai. */}
+                  <div style={{ display:"flex", alignItems:"flex-end", gap:10, flexWrap:"wrap", marginTop:12 }}>
+                    {[["Financial Year", tlFy, (v) => { setTlFy(v); setTlMonth("");
+                          loadTotalLoss(null, null, { fy: v, zone: tlZone, line: tlLine }); },
+                       ["", ...tlFyOpts]],
+                      ["Month", tlMonth, (v) => { setTlMonth(v);
+                          loadTotalLoss(null, null, { fy: v ? "" : tlFy, month: v, zone: tlZone, line: tlLine }); },
+                       ["", ...tlMonthOpts]],
+                      ["Zone", tlZone, (v) => { setTlZone(v); setTlLine("");
+                          loadTotalLoss(tlFy || tlMonth ? null : tlFrom, tlFy || tlMonth ? null : tlTo,
+                                        { fy: tlFy, month: tlMonth, zone: v }); },
+                       ["", ...tlZoneOpts]],
+                      ["Line", tlLine, (v) => { setTlLine(v);
+                          loadTotalLoss(tlFy || tlMonth ? null : tlFrom, tlFy || tlMonth ? null : tlTo,
+                                        { fy: tlFy, month: tlMonth, zone: tlZone, line: v }); },
+                       ["", ...tlLineOpts]],
+                    ].map(([lbl, val, on, opts]) => (
+                      <div key={lbl} style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                        <label style={{ fontSize:10.5, fontWeight:800, letterSpacing:".04em",
+                                        textTransform:"uppercase", color:"#94a3b8" }}>{lbl}</label>
+                        <select value={val} onChange={(e) => on(e.target.value)}
+                                disabled={lbl === "Line" && !tlZone}
+                                style={{ padding:"6px 9px", border:"1px solid #cbd5e1", borderRadius:7,
+                                         fontSize:12.5, fontWeight:600, minWidth:132,
+                                         background: (lbl === "Line" && !tlZone) ? "#f1f5f9" : "#fff" }}>
+                          {opts.map((o) => <option key={o} value={o}>{o || `All ${lbl === "Financial Year" ? "FY" : lbl}s`}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                    {(tlFy || tlMonth || tlZone || tlLine) && (
+                      <button onClick={() => { setTlFy(""); setTlMonth(""); setTlZone(""); setTlLine("");
+                                               loadTotalLoss(tlFrom, tlTo); }}
+                              style={{ border:"1px solid #cbd5e1", background:"#fff", borderRadius:8,
+                                       padding:"6px 12px", fontWeight:700, fontSize:12.5, cursor:"pointer",
+                                       color:"#475569" }}>✕ Clear</button>
+                    )}
                   </div>
                 </div>
                 {/* value */}
@@ -1171,6 +1247,55 @@ export default function AndonSystem() {
                           <div style={{ fontSize:18, fontWeight:800, color:"#0d9488" }}>{fmtClock(overlap)}</div>
                         </div>
                       </div>
+
+                      {/* Department-wise — jo call BAAD me dabi wo us lamhe ki
+                          maalik.  Purani call, agar abhi khuli hai, nayi ke
+                          khatam hote hi phir se ginne lagti hai — isliye in
+                          tukdon ka JOD upar wale TOTAL ke barabar rehta hai. */}
+                      {(tlData?.by_department || []).length > 0 && (
+                        <div style={{ marginTop:18, borderTop:"1px solid #f1f5f9", paddingTop:14 }}>
+                          <div style={{ fontSize:11, color:"#94a3b8", fontWeight:700,
+                                        textTransform:"uppercase", marginBottom:8 }}>
+                            Department-wise (kis par kitna waqt gina)
+                          </div>
+                          <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                            <tbody>
+                              {tlData.by_department.map((d) => {
+                                const pct = tlData.total_loss_seconds
+                                  ? Math.round((d.seconds / tlData.total_loss_seconds) * 100) : 0;
+                                return (
+                                  <tr key={d.department}>
+                                    <td style={{ padding:"5px 0", fontSize:13, fontWeight:700, color:"#334155",
+                                                 whiteSpace:"nowrap", width:150 }}>{d.department}</td>
+                                    <td style={{ padding:"5px 8px", width:"100%" }}>
+                                      <div style={{ background:"#f1f5f9", borderRadius:99, height:8 }}>
+                                        <div style={{ width:`${pct}%`, background:"#dc2626",
+                                                      height:8, borderRadius:99 }} />
+                                      </div>
+                                    </td>
+                                    <td style={{ padding:"5px 0", fontSize:13, fontWeight:800, color:"#0f172a",
+                                                 textAlign:"right", whiteSpace:"nowrap",
+                                                 fontVariantNumeric:"tabular-nums" }}>{fmtClock(d.seconds)}</td>
+                                    <td style={{ padding:"5px 0 5px 10px", fontSize:11.5, color:"#94a3b8",
+                                                 textAlign:"right", width:44 }}>{pct}%</td>
+                                  </tr>
+                                );
+                              })}
+                              <tr>
+                                <td style={{ paddingTop:9, fontSize:13, fontWeight:800, color:"#0f172a",
+                                             borderTop:"1px solid #e2e8f0" }}>Total</td>
+                                <td style={{ borderTop:"1px solid #e2e8f0" }} />
+                                <td style={{ paddingTop:9, fontSize:13, fontWeight:900, color:"#dc2626",
+                                             textAlign:"right", borderTop:"1px solid #e2e8f0",
+                                             fontVariantNumeric:"tabular-nums" }}>
+                                  {fmtClock(tlData.by_department.reduce((a, b) => a + b.seconds, 0))}
+                                </td>
+                                <td style={{ borderTop:"1px solid #e2e8f0" }} />
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

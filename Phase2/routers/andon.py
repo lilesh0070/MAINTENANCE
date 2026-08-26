@@ -2465,9 +2465,74 @@ def today_totals(user=Depends(get_current_user)):
     return {"departments": out}
 
 
+def _fy_window(fy: str):
+    """"2026-27" -> (2026-04-01, 2027-03-31).  Galat ho to (None, None)."""
+    try:
+        y = int(str(fy).split("-")[0])
+        return f"{y}-04-01", f"{y+1}-03-31"
+    except Exception:
+        return None, None
+
+
+def _month_window(month: str):
+    """"2026-08" -> (2026-08-01, 2026-08-31)."""
+    try:
+        y, m = (int(x) for x in str(month).split("-")[:2])
+        import calendar
+        return f"{y}-{m:02d}-01", f"{y}-{m:02d}-{calendar.monthrange(y, m)[1]:02d}"
+    except Exception:
+        return None, None
+
+
+def _preempt_split(rows):
+    """Har lamhe par SIRF EK call ginti hai — jo sabse BAAD me shuru hui.
+
+    Requirement (user): Maintenance chal raha hai aur beech me Tool Room daba
+    diya → Maintenance ka counting wahin ruk jaata hai aur Tool Room se shuru;
+    usi beech Quality daba to Tool Room ruk jaata hai.  Jab naya call khatam
+    hota hai to purana (agar abhi tak khula hai) **phir se ginne lagta hai** —
+    warna line down rehne ke bawajood wo waqt kisi ke khaate me na jaata aur
+    total asli down-time se kam nikalta.
+
+    Isi wajah se in tukdon ka JOD hamesha union ke barabar hota hai — yaani
+    "kis department ka kitna" ka batwara total ko badalta nahi, sirf baant'ta
+    hai.  ACC (DO2/DO4) yahan aati hi nahi: wo kabhi call-row banati hi nahi.
+
+    rows: [{s, e, dept, zone, line}]  ->  ({dept: seconds}, total_seconds)
+    """
+    iv = [(r["s"], r["e"], r["dept"]) for r in rows
+          if r["s"] and r["e"] and r["e"] > r["s"]]
+    if not iv:
+        return {}, 0.0
+    marks = sorted({t for s, e, _ in iv for t in (s, e)})
+    per, total = {}, 0.0
+    for i in range(len(marks) - 1):
+        a, b = marks[i], marks[i + 1]
+        span = (b - a).total_seconds()
+        if span <= 0:
+            continue
+        # is tukde me jo calls khuli hain, unme se sabse BAAD wali jeetegi
+        live = [(s, e, d) for s, e, d in iv if s <= a and e >= b]
+        if not live:
+            continue                      # kuch khula hi nahi → line down nahi
+        # Jeet SABSE BAAD me shuru hui call ki.  Barabari par? — ek hi poll me do
+        # bit badlein to dono ka `started_at` BILKUL ek hota hai (NOW() poore
+        # transaction me ek hi rehta hai), isliye ye sach me ho sakta hai.  Aise
+        # me (end, naam) se tod dete hain — sirf isliye ki nateeja HAR BAAR EK
+        # jaisa aaye; total to waise bhi nahi badalta, sirf batwara tay hota hai.
+        winner = max(live, key=lambda x: (x[0], x[1], str(x[2])))[2]
+        per[winner] = per.get(winner, 0.0) + span
+        total += span
+    return per, total
+
+
 @router.get("/total-loss")
 def total_loss(frm: Optional[str] = Query(None, alias="from"),
                to:  Optional[str] = None,
+               fy:    Optional[str] = None,
+               month: Optional[str] = None,
+               zone:  Optional[str] = None,
+               line:  Optional[str] = None,
                user=Depends(get_current_user)):
     """LINE ka TOTAL LOSS — jitni der line down rahi (chahe kitne bhi department
     ne button dabaya ho).
@@ -2486,20 +2551,45 @@ def total_loss(frm: Optional[str] = Query(None, alias="from"),
         cur.execute("""SELECT (CASE WHEN NOW()::time >= TIME '07:00' THEN CURRENT_DATE
                                     ELSE CURRENT_DATE - INTERVAL '1 day' END)::date AS d""")
         today_pd = cur.fetchone()["d"].isoformat()
-        f = frm or today_pd
-        t = to or f
-        # window: from-date 07:00 se (to-date + 1 din) 06:30
-        cur.execute("""
-            SELECT started_at AS s, ended_at AS e FROM andon_history
-             WHERE started_at >= (%s::date + TIME '07:00')
-               AND started_at <  ((%s::date + INTERVAL '1 day') + TIME '06:30')
-               AND ended_at IS NOT NULL
+        # Filter ka kram: MONTH sabse pakka, phir FY, phir from/to, phir aaj.
+        # (Month FY ke andar hi hota hai, isliye month upar rakha.)
+        wf = wt = None
+        if month:
+            wf, wt = _month_window(month)
+        if not wf and fy:
+            wf, wt = _fy_window(fy)
+        f = wf or frm or today_pd
+        t = wt or to or f
+
+        # zone/line ka filter — dono tables par ek jaisa lagta hai
+        cond, args = "", []
+        if zone:
+            cond += " AND TRIM(LOWER(COALESCE(zone,''))) = TRIM(LOWER(%s))"; args.append(zone)
+        if line:
+            cond += " AND TRIM(LOWER(COALESCE(line,''))) = TRIM(LOWER(%s))"; args.append(line)
+
+        # window: from-date 07:00 se (to-date + 1 din) 06:30  (plant-day)
+        cur.execute(f"""
+            SELECT h.started_at AS s, h.ended_at AS e,
+                   COALESCE(d.name, h.display_name, 'DO' || h.do_index) AS dept,
+                   h.zone, h.line
+              FROM andon_history h
+              LEFT JOIN andon_departments d ON d.id = h.department_id
+             WHERE h.started_at >= (%s::date + TIME '07:00')
+               AND h.started_at <  ((%s::date + INTERVAL '1 day') + TIME '06:30')
+               AND h.ended_at IS NOT NULL
+               {cond.replace('zone', 'h.zone').replace('line', 'h.line')}
             UNION ALL
-            SELECT started_at AS s, NOW()::timestamp AS e FROM andon_system
-             WHERE state='OPEN'
-               AND started_at >= (%s::date + TIME '07:00')
-               AND started_at <  ((%s::date + INTERVAL '1 day') + TIME '06:30')
-        """, (f, t, f, t))
+            SELECT e.started_at AS s, NOW()::timestamp AS e,
+                   COALESCE(d.name, e.display_name, 'DO' || e.do_index) AS dept,
+                   e.zone, e.line
+              FROM andon_system e
+              LEFT JOIN andon_departments d ON d.id = e.department_id
+             WHERE e.state='OPEN'
+               AND e.started_at >= (%s::date + TIME '07:00')
+               AND e.started_at <  ((%s::date + INTERVAL '1 day') + TIME '06:30')
+               {cond.replace('zone', 'e.zone').replace('line', 'e.line')}
+        """, [f, t] + args + [f, t] + args)
         rows = cur.fetchall()
 
     # intervals ko waqt se sort karke MERGE karo (union) — overlap ek baar
@@ -2521,10 +2611,22 @@ def total_loss(frm: Optional[str] = Query(None, alias="from"),
     if cur_e is not None:
         union_sec += (cur_e - cur_s).total_seconds()
 
+    # Department-wise batwara — preemption ke hisaab se (jo baad me dabi wahi
+    # us lamhe ginegi).  Iska JOD union ke barabar hi rehta hai, isliye total
+    # nahi badalta — sirf pata chalta hai kis department ka kitna hissa hai.
+    per, split_total = _preempt_split(rows)
+    by_dept = sorted(
+        ({"department": k, "seconds": int(round(v))} for k, v in per.items()),
+        key=lambda x: -x["seconds"])
+
     return {"from": f, "to": t,
+            "fy": fy or "", "month": month or "", "zone": zone or "", "line": line or "",
             "total_loss_seconds": int(round(union_sec)),   # UNION (overlap ek baar) — asli line down time
             "raw_sum_seconds":    int(round(raw_sec)),      # saade jod (overlap do baar) — reference
-            "calls": len(ivals)}
+            "calls": len(ivals),
+            "by_department": by_dept,
+            # jaanch ke liye: ye union se match karna chahiye
+            "split_total_seconds": int(round(split_total))}
 
 
 @router.get("/dept-history")
