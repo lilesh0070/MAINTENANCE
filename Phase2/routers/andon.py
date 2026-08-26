@@ -2614,17 +2614,60 @@ def total_loss(frm: Optional[str] = Query(None, alias="from"),
     # Department-wise batwara — preemption ke hisaab se (jo baad me dabi wahi
     # us lamhe ginegi).  Iska JOD union ke barabar hi rehta hai, isliye total
     # nahi badalta — sirf pata chalta hai kis department ka kitna hissa hai.
-    per, split_total = _preempt_split(rows)
-    by_dept = sorted(
-        ({"department": k, "seconds": int(round(v))} for k, v in per.items()),
-        key=lambda x: -x["seconds"])
+
+    # ── DATE x ZONE x LINE ka breakdown ──────────────────────────────
+    # Har LINE apni alag hai: ek line par jo call chal rahi hai wo doosri line
+    # ko nahi rokti.  Isliye preemption HAR (date, zone, line) ke andar alag se
+    # lagti hai — sab ko ek saath merge karna galat hota (do alag line ek waqt
+    # par down ho sakti hain, aur dono ka loss ginna chahiye).
+    # Plant-day: 07:00 se agle din 06:30 — isliye 7 ghante peeche karke date
+    # nikalte hain (subah 6 baje wali call PICHHLE din ki hai).
+    from collections import defaultdict
+    buckets = defaultdict(list)
+    for r in rows:
+        if not (r["s"] and r["e"] and r["e"] > r["s"]):
+            continue
+        pd = (r["s"] - timedelta(hours=7)).date()
+        buckets[(pd, r.get("zone") or "—", r.get("line") or "—")].append(r)
+
+    by_line = []
+    for (pd, z, ln), rs in buckets.items():
+        p2, tot2 = _preempt_split(rs)
+        by_line.append({
+            "date": pd.isoformat(), "zone": z, "line": ln,
+            "seconds": int(round(tot2)), "calls": len(rs),
+            "departments": sorted(
+                ({"department": k, "seconds": int(round(v))} for k, v in p2.items()),
+                key=lambda x: -x["seconds"]),
+        })
+    by_line.sort(key=lambda x: (x["date"], x["zone"], x["line"]), reverse=True)
+    lines_total = sum(x["seconds"] for x in by_line)
+
+    # Department-wise bhi PER-LINE ke tukdon ka jod hai, global union ka nahi.
+    # Wajah wahi: do alag line ek hi waqt down ho sakti hain aur dono ka loss
+    # asli hai; global union unhe ek maan kar kam bata deta.  Isse
+    # by_department ka jod = by_line ka jod = lines_total — teeno ek rehte hain.
+    agg = {}
+    for bl in by_line:
+        for d in bl["departments"]:
+            agg[d["department"]] = agg.get(d["department"], 0) + d["seconds"]
+    by_dept = sorted(({"department": k, "seconds": v} for k, v in agg.items()),
+                     key=lambda x: -x["seconds"])
+    _, split_total = _preempt_split(rows)   # sirf reference (poori line ek maan kar)
 
     return {"from": f, "to": t,
             "fy": fy or "", "month": month or "", "zone": zone or "", "line": line or "",
-            "total_loss_seconds": int(round(union_sec)),   # UNION (overlap ek baar) — asli line down time
+            # TOTAL = har line ka apna loss jodkar.  Ek hi line ho to ye global
+            # union ke barabar hi hota hai; kai line hon to yahi sahi hai —
+            # do line ek saath down hon to dono ka waqt ginna chahiye.
+            "total_loss_seconds": int(lines_total),
+            "union_seconds":      int(round(union_sec)),   # sab line ek maan kar (reference)
             "raw_sum_seconds":    int(round(raw_sec)),      # saade jod (overlap do baar) — reference
             "calls": len(ivals),
             "by_department": by_dept,
+            # har (date, zone, line) ka apna total — table iske se banti hai
+            "by_line": by_line,
+            "lines_total_seconds": int(lines_total),
             # jaanch ke liye: ye union se match karna chahiye
             "split_total_seconds": int(round(split_total))}
 

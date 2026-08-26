@@ -14,6 +14,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import AndonMonitor from "./AndonMonitor";
+import { PROD_ZONES } from "../constants/zones";
 
 const PRIORITIES = ["Critical", "High", "Normal", "Low"];
 const PRIO_COLOR = { Critical: "#dc2626", High: "#ea580c", Normal: "#2563eb", Low: "#64748b" };
@@ -244,7 +245,9 @@ export default function AndonSystem() {
   useEffect(() => {
     if (!token || tab !== "reports") return;
     let alive = true;
-    if (!tlData) loadTotalLoss();
+    // Pehla load bhi FILTERS ke saath — warna dropdown me "Aug 2026" dikhta
+    // aur data aaj ka aata, jo aapas me mel nahi khaata.
+    if (!tlData) loadTotalLoss(null, null, { fy: tlFy, month: tlMonth, zone: tlZone, line: tlLine });
     const id = setInterval(() => {
       const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
       const n = new Date(); const d = new Date(n); if (n.getHours() < 7) d.setDate(d.getDate()-1);
@@ -451,7 +454,12 @@ export default function AndonSystem() {
           setFhFy(cur.fy);
           const now = new Date();
           const cm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-          if (fyMonthsList(cur.fy).some((m) => m.value === cm)) setFhMonth(cm);
+          const inFy = fyMonthsList(cur.fy).some((m) => m.value === cm);
+          if (inFy) setFhMonth(cm);
+          // Total Loss ke filter bhi CHAALU FY + CHAALU MAHINE par khulein,
+          // taaki page kholte hi is mahine ka poora data (line-wise) dikhe.
+          setTlFy(cur.fy);
+          if (inFy) setTlMonth(cm);
         }
       }).catch(() => {});
   }, [token]);
@@ -1127,29 +1135,24 @@ export default function AndonSystem() {
             const plantToday = () => { const n = new Date(); const d = new Date(n); if (n.getHours() < 7) d.setDate(d.getDate()-1); return ymd(d); };
             const addDays = (s, n) => { if (!s) return plantToday(); const [y,m,dd] = s.split("-").map(Number); const dt = new Date(y, m-1, dd); dt.setDate(dt.getDate()+n); return ymd(dt); };
             const sameRange = tlData && tlFrom === tlTo;
-            // FY list: is saal se 3 saal peeche tak (Apr-Mar)
-            const nowD = new Date();
-            const fyStart = nowD.getMonth() + 1 >= 4 ? nowD.getFullYear() : nowD.getFullYear() - 1;
-            const tlFyOpts = [0, 1, 2, 3].map((k) => `${fyStart - k}-${String(fyStart - k + 1).slice(2)}`);
-            // Month list: chuni hui FY (ya chaalu FY) ke 12 mahine, Apr se Mar
-            const MN = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-            const fyForMonths = parseInt((tlFy || tlFyOpts[0]).split("-")[0], 10);
-            const tlMonthOpts = Array.from({ length: 12 }, (_, i) => {
-              const mo = ((3 + i) % 12) + 1;
-              const yr = mo >= 4 ? fyForMonths : fyForMonths + 1;
-              return `${yr}-${String(mo).padStart(2, "0")}`;
-            });
-            // Zone / Line — MACHINE MASTER se (project ka niyam), data se nahi
-            const tlZoneOpts = [...new Set(master.map((m) => m.zone_name).filter(Boolean))].sort();
+            // FY / Month — wahi list aur wahi label jo poore app me hai
+            // (`fhYears` = /api/maintenance-kpi/financial-years, `fyMonthsList`
+            // = "Apr 2026" wale labels).  Alag list banana bhram paida karta.
+            const tlFyOpts    = fhYears.map((y) => ({ value: y.fy, label: (y.label || y.fy) + (y.is_current ? "  (current)" : "") }));
+            const tlMonthOpts = fyMonthsList(tlFy || (fhYears.find((y) => y.is_current) || fhYears[0] || {}).fy || "");
+            // Zone — sirf PRODUCTION zones (PROD_ZONES), jaisa baaki app me.
+            // Line uske andar Machine Master se.
+            const tlZoneOpts = PROD_ZONES.map((z) => ({ value: z, label: z }));
             const tlLineOpts = tlZone
-              ? [...new Set(master.filter((m) => m.zone_name === tlZone).map((m) => m.line_name).filter(Boolean))].sort()
+              ? [...new Set(master.filter((m) => m.zone_name === tlZone).map((m) => m.line_name).filter(Boolean))]
+                  .sort().map((l) => ({ value: l, label: l }))
               : [];
             const overlap = tlData ? Math.max(0, (tlData.raw_sum_seconds || 0) - (tlData.total_loss_seconds || 0)) : 0;
             return (
             <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
               {/* Total Loss card */}
               <div style={{ background:"#fff", border:"1px solid #e2e8f0", borderRadius:16,
-                            boxShadow:"0 1px 3px rgba(0,0,0,.06)", overflow:"hidden", maxWidth:640 }}>
+                            boxShadow:"0 1px 3px rgba(0,0,0,.06)", overflow:"hidden", maxWidth:820 }}>
                 {/* header + date filter */}
                 <div style={{ padding:"16px 20px", borderBottom:"1px solid #f1f5f9" }}>
                   <div style={{ fontSize:16, fontWeight:800, color:"#0f172a" }}>Total Loss</div>
@@ -1186,18 +1189,18 @@ export default function AndonSystem() {
                   <div style={{ display:"flex", alignItems:"flex-end", gap:10, flexWrap:"wrap", marginTop:12 }}>
                     {[["Financial Year", tlFy, (v) => { setTlFy(v); setTlMonth("");
                           loadTotalLoss(null, null, { fy: v, zone: tlZone, line: tlLine }); },
-                       ["", ...tlFyOpts]],
+                       [{ value:"", label:"All FY" }, ...tlFyOpts]],
                       ["Month", tlMonth, (v) => { setTlMonth(v);
                           loadTotalLoss(null, null, { fy: v ? "" : tlFy, month: v, zone: tlZone, line: tlLine }); },
-                       ["", ...tlMonthOpts]],
+                       [{ value:"", label:"All Months" }, ...tlMonthOpts]],
                       ["Zone", tlZone, (v) => { setTlZone(v); setTlLine("");
                           loadTotalLoss(tlFy || tlMonth ? null : tlFrom, tlFy || tlMonth ? null : tlTo,
                                         { fy: tlFy, month: tlMonth, zone: v }); },
-                       ["", ...tlZoneOpts]],
+                       [{ value:"", label:"All Zones" }, ...tlZoneOpts]],
                       ["Line", tlLine, (v) => { setTlLine(v);
                           loadTotalLoss(tlFy || tlMonth ? null : tlFrom, tlFy || tlMonth ? null : tlTo,
                                         { fy: tlFy, month: tlMonth, zone: tlZone, line: v }); },
-                       ["", ...tlLineOpts]],
+                       [{ value:"", label:"All Lines" }, ...tlLineOpts]],
                     ].map(([lbl, val, on, opts]) => (
                       <div key={lbl} style={{ display:"flex", flexDirection:"column", gap:4 }}>
                         <label style={{ fontSize:10.5, fontWeight:800, letterSpacing:".04em",
@@ -1207,7 +1210,7 @@ export default function AndonSystem() {
                                 style={{ padding:"6px 9px", border:"1px solid #cbd5e1", borderRadius:7,
                                          fontSize:12.5, fontWeight:600, minWidth:132,
                                          background: (lbl === "Line" && !tlZone) ? "#f1f5f9" : "#fff" }}>
-                          {opts.map((o) => <option key={o} value={o}>{o || `All ${lbl === "Financial Year" ? "FY" : lbl}s`}</option>)}
+                          {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                       </div>
                     ))}
@@ -1294,6 +1297,62 @@ export default function AndonSystem() {
                               </tr>
                             </tbody>
                           </table>
+                        </div>
+                      )}
+
+                      {/* ── Date x Zone x Line ──
+                          HAR LINE apni alag hai: ek line ki call doosri line ko
+                          nahi rokti, isliye preemption har line ke ANDAR alag
+                          lagti hai aur yahan ka Total un sab ka JOD hai.  Kal
+                          naye ANDON jude to unki line apne aap is table me
+                          aa jayegi — kuch badalna nahi padega. */}
+                      {(tlData?.by_line || []).length > 0 && (
+                        <div style={{ marginTop:18, borderTop:"1px solid #f1f5f9", paddingTop:14 }}>
+                          <div style={{ fontSize:11, color:"#94a3b8", fontWeight:700,
+                                        textTransform:"uppercase", marginBottom:8 }}>
+                            Line-wise loss
+                          </div>
+                          <div style={{ overflowX:"auto" }}>
+                            <table style={{ width:"100%", borderCollapse:"collapse", minWidth:420 }}>
+                              <thead>
+                                <tr>
+                                  {["Date","Zone","Line","Calls","Total Loss"].map((h,i) => (
+                                    <th key={h} style={{ textAlign: i>2 ? "right" : "left",
+                                                         padding:"6px 8px", fontSize:10.5, fontWeight:800,
+                                                         letterSpacing:".04em", textTransform:"uppercase",
+                                                         color:"#64748b", background:"#f8fafc",
+                                                         borderBottom:"1px solid #e2e8f0", whiteSpace:"nowrap" }}>{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {tlData.by_line.map((r, i) => (
+                                  <tr key={`${r.date}|${r.zone}|${r.line}`}
+                                      style={{ background: i % 2 ? "#fafbfc" : "#fff" }}>
+                                    <td style={{ padding:"6px 8px", fontSize:12.5, whiteSpace:"nowrap" }}>{r.date}</td>
+                                    <td style={{ padding:"6px 8px", fontSize:12.5 }}>{r.zone}</td>
+                                    <td style={{ padding:"6px 8px", fontSize:12.5, fontWeight:700, color:"#334155" }}>{r.line}</td>
+                                    <td style={{ padding:"6px 8px", fontSize:12.5, textAlign:"right", color:"#64748b" }}>{r.calls}</td>
+                                    <td style={{ padding:"6px 8px", fontSize:13, fontWeight:800, color:"#0f172a",
+                                                 textAlign:"right", fontVariantNumeric:"tabular-nums" }}>{fmtClock(r.seconds)}</td>
+                                  </tr>
+                                ))}
+                                <tr>
+                                  <td colSpan={3} style={{ padding:"9px 8px", fontSize:13, fontWeight:800,
+                                                           color:"#0f172a", borderTop:"1.5px solid #cbd5e1" }}>Total</td>
+                                  <td style={{ padding:"9px 8px", fontSize:12.5, textAlign:"right", color:"#64748b",
+                                               borderTop:"1.5px solid #cbd5e1" }}>
+                                    {tlData.by_line.reduce((a,b) => a + (b.calls || 0), 0)}
+                                  </td>
+                                  <td style={{ padding:"9px 8px", fontSize:14, fontWeight:900, color:"#dc2626",
+                                               textAlign:"right", borderTop:"1.5px solid #cbd5e1",
+                                               fontVariantNumeric:"tabular-nums" }}>
+                                    {fmtClock(tlData.by_line.reduce((a,b) => a + b.seconds, 0))}
+                                  </td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
                       )}
                     </>
