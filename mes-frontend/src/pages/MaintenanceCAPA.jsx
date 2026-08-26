@@ -251,7 +251,7 @@ export default function MaintenanceCAPA() {
     navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment" }, audio: false })
       .then((s) => { stream = s;
         if (videoRef.current) { videoRef.current.srcObject = s; videoRef.current.play().catch(() => {}); } })
-      .catch((e) => { flash("Camera nahi khula: " + (e?.message || e)); setCam(null); });
+      .catch((e) => { flash("Could not open the camera: " + (e?.message || e)); setCam(null); });
     return () => { if (stream) stream.getTracks().forEach((t) => t.stop()); };
   }, [cam]);
 
@@ -483,7 +483,7 @@ export default function MaintenanceCAPA() {
             <button className="cp-save" onClick={save} disabled={saving}>{saving ? "Saving…" : (sid ? "💾 Update" : "💾 Save")}</button>
             {sStatus === "CLOSED" ? (
               <button style={{ ...btn, color:"#15803d", borderColor:"#bbf7d0", background:"#f0fdf4" }}
-                      onClick={reopenCapa} disabled={saving} title="Reopen — Historical se hat jayegi">
+                      onClick={reopenCapa} disabled={saving} title="Reopen this CAPA — it will be removed from Historical Data">
                 ✓ Closed · Reopen
               </button>
             ) : (
@@ -504,9 +504,6 @@ export default function MaintenanceCAPA() {
 
         {view === "list" ? (
           <div className="cp-body">
-            <div style={{ fontSize:12.5, color:"#64748b", marginBottom:14 }}>
-              Manual Slip ke har breakdown jiska repair <b>60 min ya usse zyada</b> hai wo ek CAPA hai. QPR bharke close karo.
-            </div>
             {/* ── Filters — default CHAALU MAHINA.  Zone/Line/Machine ke
                    option Machine Master se aate hain. ── */}
             <div style={{ display:"flex", gap:12, flexWrap:"wrap", alignItems:"flex-end", marginBottom:16 }}>
@@ -554,10 +551,10 @@ export default function MaintenanceCAPA() {
             {/* Cards ab FILTER ke hisaab se — upar ki ginti aur neeche ki
                 list hamesha ek hi baat kahein. */}
             <div style={{ display:"flex", gap:14, marginBottom:16, flexWrap:"wrap" }}>
-              {tile("Total CAPA", shown.length, "#2563eb", "≥ 60-min breakdowns")}
-              {tile("Open", open, "#dc2626", "QPR abhi baaki")}
-              {tile("Closed", closed, "#16a34a", "QPR bhari hui")}
-              {tile("Of All", rows.length, "#64748b", "filter hatane par")}
+              {tile("Total CAPA", shown.length, "#2563eb", "Breakdowns of 60 min or more")}
+              {tile("Open", open, "#dc2626", "QPR not closed yet")}
+              {tile("Closed", closed, "#16a34a", "QPR filled and closed")}
+              {tile("All CAPA", rows.length, "#64748b", "Ignoring the filters above")}
             </div>
 
             {/* ── Zone-wise open / close ── */}
@@ -566,7 +563,7 @@ export default function MaintenanceCAPA() {
                             padding:"14px 18px", marginBottom:16 }}>
                 <div style={{ fontSize:13.5, fontWeight:800, color:"#0f172a" }}>Zone-wise</div>
                 <div style={{ fontSize:11, color:"#94a3b8", marginBottom:10 }}>
-                  Is filter par har zone me kitni CAPA open hain aur kitni close
+                  Open and closed CAPA per zone, for the current filter
                 </div>
                 <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
                   {byZone.map((z) => (
@@ -598,7 +595,7 @@ export default function MaintenanceCAPA() {
                 </tr></thead>
                 <tbody>
                   {loading && <tr><td colSpan={11} style={{ textAlign:"center", color:"#94a3b8", padding:30 }}>Loading…</td></tr>}
-                  {!loading && shown.length === 0 && <tr><td colSpan={11} style={{ textAlign:"center", color:"#94a3b8", padding:30 }}>{rows.length ? "In filters par koi CAPA nahi." : "No ≥60-min breakdowns."}</td></tr>}
+                  {!loading && shown.length === 0 && <tr><td colSpan={11} style={{ textAlign:"center", color:"#94a3b8", padding:30 }}>{rows.length ? "No CAPA matches these filters." : "No breakdowns of 60 min or more."}</td></tr>}
                   {!loading && shown.map((r, i) => (
                     <tr key={r.bd_id} onClick={() => fillQpr(r)} title="Click to open QPR">
                       <td>{i + 1}</td>
