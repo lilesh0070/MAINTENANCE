@@ -482,6 +482,20 @@ export default function AndonSystem() {
   const loadModels = useCallback(async (eid) => { const r = (await api(`/plc-devices/${eid}/models`)) || []; setModelRows(r.length ? r : [{ device_type: "D", device_no: "", value: "", name: "" }]); }, [api]);
   const loadFaults = useCallback(async (eid) => { const r = (await api(`/plc-devices/${eid}/faults`)) || []; setFaultRows(r.length ? r : [{ device_type: "D", device_no: "", value: "", name: "" }]); }, [api]);
   const openAssign = (e) => { setAssignTab("andon"); loadOutputs({ type: "plc", id: e.id, name: e.name }); loadModels(e.id); loadFaults(e.id); };
+
+  // "Retry" — us PLC ko ABHI dobara jaancho.  List wala status cache se aata
+  // hai (server PLC ko har 10s nahi thakthakata), isliye jab user khud kehta
+  // hai "dobara dekho" tab ye taaza probe karwata hai aur sirf usi row ko
+  // update karta hai — poori list dobara nahi mangwate.
+  const [rechecking, setRechecking] = useState(null);   // jis PLC ki jaanch chal rahi hai
+  const recheckPlc = async (id) => {
+    setRechecking(id);
+    try {
+      const r = await api(`/plc-devices/${id}/recheck`, { method: "POST" });
+      setPlcs((list) => list.map((x) => (x.id === id ? { ...x, ...r } : x)));
+    } catch { /* toast wrap() nahi — chup-chaap, agli jaanch phir ho jayegi */ }
+    finally { setRechecking(null); }
+  };
   const pickMap = (which) => (which === "model" ? setModelRows : setFaultRows);
   const setMap = (which, i, k, v) => pickMap(which)((rs) => rs.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
   const addMap = (which) => pickMap(which)((rs) => [...rs, { device_type: "D", device_no: "", value: "", name: "" }]);
@@ -689,8 +703,17 @@ export default function AndonSystem() {
                             <td>{[e.zone, e.line, e.machine_no].filter(Boolean).join(" / ") || "—"}</td>
                             <td>
                               {!e.enabled ? <span style={{ color:"#94a3b8", fontSize:12 }}>— off —</span> : (
-                                <PlcState online={e.online} reason={e.online_reason} dot={10} glow
-                                          title={e.last_seen ? `last seen ${e.last_seen}` : (e.checked ? `checked ${e.checked}` : "")} />
+                                <span style={{ display:"inline-flex", alignItems:"center", gap:8 }}>
+                                  <PlcState online={e.online} reason={e.online_reason} dot={10} glow
+                                            title={e.last_seen ? `last seen ${e.last_seen}` : (e.checked ? `checked ${e.checked}` : "")} />
+                                  {e.online === false && (
+                                    <button className="an-btn gh sm" disabled={rechecking === e.id}
+                                            onClick={() => recheckPlc(e.id)}
+                                            title="Check this PLC again right now">
+                                      {rechecking === e.id ? "Checking…" : "↻ Retry"}
+                                    </button>
+                                  )}
+                                </span>
                               )}
                             </td>
                             <td><span className="an-chip" style={{ padding:"2px 9px", background: e.enabled ? "#dcfce7" : "#fee2e2", color: e.enabled ? "#16a34a" : "#dc2626" }}>{e.enabled ? "Enabled" : "Disabled"}</span></td>
@@ -706,8 +729,17 @@ export default function AndonSystem() {
                               <td style={{ paddingTop:0 }}>{e.sub_ip}:{e.sub_port}{e.sub_series && <span style={{ marginLeft:6, fontSize:10, fontWeight:700, color:"#64748b", background:"#f1f5f9", padding:"1px 6px", borderRadius:99 }}>{e.sub_series}</span>}</td>
                               <td style={{ color:"#94a3b8", fontSize:11.5, paddingTop:0 }}>Model / Fault{e.sub_machine_no ? ` · ${e.sub_machine_no}` : ""}</td>
                               <td style={{ paddingTop:0 }}>
-                                <PlcState online={e.sub_online} reason={e.sub_online_reason} dot={9}
-                                          title="Sub PLC (Model/Fault) connection" />
+                                <span style={{ display:"inline-flex", alignItems:"center", gap:8 }}>
+                                  <PlcState online={e.sub_online} reason={e.sub_online_reason} dot={9}
+                                            title="Sub PLC (Model/Fault) connection" />
+                                  {e.sub_online === false && (
+                                    <button className="an-btn gh sm" disabled={rechecking === e.id}
+                                            onClick={() => recheckPlc(e.id)}
+                                            title="Check this PLC again right now">
+                                      {rechecking === e.id ? "Checking…" : "↻ Retry"}
+                                    </button>
+                                  )}
+                                </span>
                               </td>
                               <td colSpan={2} style={{ paddingTop:0 }} />
                             </tr>

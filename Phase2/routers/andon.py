@@ -528,6 +528,34 @@ def _probe(ip, port, timeout=1.5):
         return False, "error"
 
 
+# Probe ka nateeja thodi der ke liye yaad rakho.
+#
+# UI har 10 second me PLC list maangta hai, aur poller band hone par har
+# un-healthy address dobara probe hota tha — yaani lagataar, jab tak page
+# khula hai, har PLC par 6 connect/minute.  PLC koi web server nahi hota:
+# Mitsubishi Q me MC ke connection giney-chuney hote hain, aur itni khatkhat
+# se uska connection table bhar sakta hai (phir wo NAYE connection REFUSE
+# karne lagta hai — wahi "port refused").
+#
+# Ab nateeja _PROBE_TTL second tak yaad rehta hai, to 10s wali list PLC ko
+# chhuti hi nahi.  Taaza jaanch chahiye to /recheck (Retry button) chalao.
+_PROBE_CACHE = {}          # (ip, port) -> (kab, ok, wajah)
+_PROBE_TTL   = 60.0        # second
+
+
+def _probe_cached(ip, port, timeout=3.0, force=False):
+    """`_probe` ka cache-wala roop.  force=True par seedha naya probe."""
+    key = (str(ip), int(port))
+    now = _time.time()
+    if not force:
+        hit = _PROBE_CACHE.get(key)
+        if hit and (now - hit[0]) < _PROBE_TTL:
+            return hit[1], hit[2]
+    ok, why = _probe(ip, port, timeout=timeout)
+    _PROBE_CACHE[key] = (now, ok, why)
+    return ok, why
+
+
 def _reachable(ip, port, timeout=1.5):
     """Fast TCP probe — PLC ka port pahunch me hai ya nahi (connected indicator)."""
     return _probe(ip, port, timeout)[0]
@@ -1620,7 +1648,7 @@ def list_plc(user=Depends(get_current_user)):
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=min(16, len(todo))) as ex:
             for (r, which, _ip, _pt), (ok, why) in zip(
-                    todo, ex.map(lambda t: _probe(t[2], t[3], timeout=3.0), todo)):
+                    todo, ex.map(lambda t: _probe_cached(t[2], t[3], timeout=3.0), todo)):
                 key   = "online" if which == "main" else "sub_online"
                 known = r[key]                       # poller ka faisla (agar hai)
                 if known is None:
@@ -1631,6 +1659,43 @@ def list_plc(user=Depends(get_current_user)):
                     # par PLC MC-protocol ka jawab nahi de raha (alag hi kharabi).
                     r[key + "_reason"] = "mc" if ok else why
     return rows
+
+
+@router.post("/plc-devices/{dev_id}/recheck")
+def plc_recheck(dev_id: int, user=Depends(get_current_user)):
+    """Us PLC (aur uske sub) ko ABHI dobara jaancho — cache ko andekha karke.
+
+    UI ka "Retry" button yahi maarta hai.  List wala probe cache se chalta hai
+    (taaki PLC ko har 10 second na thakthakayein), isliye jab user khud kehta
+    hai "abhi dekho" tab yahan se taaza probe hota hai.  Cache bhi is naye
+    nateeje se bhar jaata hai, to list turant wahi dikhane lagti hai.
+    """
+    _ensure_tables()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT id, name, ip, port, sub_ip, sub_port, enabled
+                         FROM andon_plc_devices WHERE id = %s""", (dev_id,))
+        d = cur.fetchone()
+    if not d:
+        raise HTTPException(404, "PLC not found")
+
+    out = {"id": dev_id, "online": None, "online_reason": None,
+           "sub_online": None, "sub_online_reason": None}
+    if d.get("ip"):
+        ok, why = _probe_cached(d["ip"], d.get("port") or 5007, timeout=3.0, force=True)
+        out["online"], out["online_reason"] = ok, why
+        # Poller ka purana faisla bhi refresh kar do, warna list phir se
+        # uska stale "down" dikha degi aur Retry bekaar lagega.
+        st = _PLC_STATUS.setdefault(dev_id, {})
+        st["online"] = ok
+        st["checked"] = datetime.now().isoformat(timespec="seconds")
+        if ok:
+            st["last_seen"] = st["checked"]
+    if (d.get("sub_ip") or "").strip():
+        ok2, why2 = _probe_cached(d["sub_ip"], d.get("sub_port") or 5007, timeout=3.0, force=True)
+        out["sub_online"], out["sub_online_reason"] = ok2, why2
+        _PLC_STATUS.setdefault(dev_id, {})["sub_online"] = ok2
+    return out
 
 
 @router.get("/plc-status")
