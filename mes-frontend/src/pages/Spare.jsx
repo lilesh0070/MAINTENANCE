@@ -32,6 +32,7 @@ const SOURCES = ["Manual Slip", "Log Book", "PM"];   // real source values (back
 // source string above (what maintenance_spare stores), only the label changes.
 const SRC_LABEL = { "Manual Slip": "Breakdown", "Log Book": "Plan Work", "PM": "Preventive Maintenance" };
 const ONE_HUE = "#2563eb";               // single-series charts: one hue, no legend
+const TOP_HUE = "#b45309";               // "Most Used Spare" card — green Total se alag dikhe
 const MONTHS = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
 
 /* FY (Apr→Mar) → the date window the API filters on */
@@ -178,6 +179,71 @@ export default function Spare() {
     })).sort((a, b) => a.key.localeCompare(b.key));
   }, [rows]);
 
+  /* ── spare-wise rollup: kaunsa spare kitna gaya, kitni baar, kitni machine par ──
+     qty AUR entries dono rakhte hain kyunki dono alag kahani kehte hain:
+     ek 46 ka single entry (CAM SUPPORT JIG — ek hi machine, ek hi baar) aur
+     baar-baar aane wala chhota spare (CYLINDER — 6 baar, 4 machine).  Sirf qty
+     dikhate to doosri wali kahani chhup jaati, jo maintenance ke liye zyada
+     kaam ki hai.  Sab kuch UNHI rows se banta hai jo table/charts use karte
+     hain — koi alag API call nahi, filter badle to ye bhi apne aap badalta hai. */
+  const spareRank = useMemo(() => {
+    const m = new Map();
+    rows.forEach(r => {
+      const name = (r.spare_name || "").trim() || "(no name)";
+      let o = m.get(name);
+      if (!o) { o = { name, qty: 0, entries: 0, mset: new Set(), last: "" }; m.set(name, o); }
+      o.qty     += Number(r.qty) || 0;
+      o.entries += 1;
+      if (r.machine_no) o.mset.add(r.machine_no);
+      if ((r.used_date || "") > o.last) o.last = r.used_date || "";
+    });
+    return [...m.values()]
+      .map(o => ({ name: o.name, qty: o.qty, entries: o.entries, machines: o.mset.size, last: o.last }))
+      .sort((a, b) => b.qty - a.qty || b.entries - a.entries);
+  }, [rows]);
+
+  const topSpare = spareRank[0] || null;
+
+  // Ye cards/modal poore FILTER KIYE HUE window ka data dikhate hain (wahi jo
+  // Total card aur neeche ki table dikhati hai) — zone-chart wale focus month
+  // ka nahi.  Isliye period saaf likh dete hain, warna 64 aur 53 me bhram hota.
+  const windowLabel = useMemo(() => {
+    if (fFy && fMon !== "") return focusLabel;
+    if (fFy) return `FY ${fFy}`;
+    return "all data";
+  }, [fFy, fMon, focusLabel]);
+
+  // kis spare ka machine-wise breakdown khula hai (null = modal band)
+  const [drill, setDrill] = useState(null);
+  const drillRows = useMemo(() => {
+    if (!drill) return [];
+    const m = new Map();
+    rows.forEach(r => {
+      if (((r.spare_name || "").trim() || "(no name)") !== drill) return;
+      const k = `${r.zone || "-"}|${r.line || "-"}|${r.machine_no || "-"}`;
+      let o = m.get(k);
+      if (!o) {
+        o = { zone: r.zone || "—", line: r.line || "—", mno: r.machine_no || "—",
+              mname: r.machine_name || "—", qty: 0, entries: 0, last: "" };
+        m.set(k, o);
+      }
+      o.qty     += Number(r.qty) || 0;
+      o.entries += 1;
+      if ((r.used_date || "") > o.last) o.last = r.used_date || "";
+    });
+    return [...m.values()].sort((a, b) => b.qty - a.qty || b.entries - a.entries);
+  }, [rows, drill]);
+
+  const drillInfo = useMemo(() => spareRank.find(x => x.name === drill) || null, [spareRank, drill]);
+
+  // Esc se band — modal khula ho tabhi listener lagta hai
+  useEffect(() => {
+    if (!drill) return;
+    const onKey = (e) => { if (e.key === "Escape") setDrill(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drill]);
+
   const exportCsv = () => {
     const head = ["Source", "Date", "Zone", "Line", "Machine No", "Machine Name",
                   "Model No", "Spare ERP No", "Spare Name", "Quantity", "Qty From"];
@@ -311,17 +377,44 @@ export default function Spare() {
         </div>
 
         <div className="sp-body">
-          {/* ── Total spare consumption (only KPI) ── */}
-          <div style={{ marginBottom: 14 }}>
-            <div className="sp-card" style={{ borderTop: "3px solid #16a34a", display: "inline-block", minWidth: 240, padding: "12px 22px" }}>
+          {/* ── KPI cards: kul consumption + sabse zyada use hua spare ── */}
+          <div style={{ marginBottom: 14, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "stretch" }}>
+            <div className="sp-card" style={{ borderTop: "3px solid #16a34a", minWidth: 240, padding: "12px 22px" }}>
               <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase" }}>Total Spare Consumption</div>
               <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 40, fontWeight: 800, color: "#16a34a", lineHeight: 1.05 }}>
                 {data?.qty_total ?? "—"}
               </div>
               <div style={{ fontSize: 10.5, color: "#94a3b8", fontWeight: 700 }}>
-                {data ? `${data.total} entries${data.qty_unknown ? ` · ${data.qty_unknown} me qty nahi thi` : ""}` : ""}
+                {data ? `${data.total} entries${data.qty_unknown ? ` · ${data.qty_unknown} without qty` : ""}` : ""}
               </div>
             </div>
+
+            {/* Click par machine-wise breakdown.  Poora card hi button hai
+                (keyboard se bhi khulta hai) — chhote "view" link se click
+                karna TV/tablet par mushkil hota hai. */}
+            {topSpare && (
+              <div className="sp-card sp-top" role="button" tabIndex={0}
+                   onClick={() => setDrill(topSpare.name)}
+                   onKeyDown={(e) => {
+                     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setDrill(topSpare.name); }
+                   }}
+                   title="Click to see which machines used this spare"
+                   style={{ borderTop: `3px solid ${TOP_HUE}`, minWidth: 268, maxWidth: 430,
+                            padding: "12px 22px", cursor: "pointer" }}>
+                <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase" }}>Most Used Spare</div>
+                <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 27, fontWeight: 800,
+                              color: TOP_HUE, lineHeight: 1.12, wordBreak: "break-word" }}>
+                  {topSpare.name}
+                </div>
+                <div style={{ fontSize: 10.5, color: "#94a3b8", fontWeight: 700 }}>
+                  {topSpare.qty} qty · {topSpare.entries} {topSpare.entries === 1 ? "entry" : "entries"}
+                  {" · "}{topSpare.machines} {topSpare.machines === 1 ? "machine" : "machines"}
+                </div>
+                <div style={{ fontSize: 10.5, color: TOP_HUE, fontWeight: 800, marginTop: 5 }}>
+                  View machines →
+                </div>
+              </div>
+            )}
           </div>
 
           {err && <div className="sp-card" style={{ marginBottom: 14, color: "#dc2626", fontWeight: 700, fontSize: 12.5 }}>{err}</div>}
@@ -442,6 +535,98 @@ export default function Spare() {
           </div>
         </div>
       </div>
+
+      {/* ── Machine-wise breakdown (Most Used Spare card se khulta hai) ──
+          Backdrop par click / Esc se band.  Upar wale chips se doosre spare
+          par switch kar sakte hain — sirf top wale par atakna theek nahi
+          lagta, kyunki "sabse zyada" qty se aur "sabse baar-baar" entries se
+          alag spare nikal sakta hai. */}
+      {drill && (
+        <div onClick={() => setDrill(null)}
+             style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)",
+                      backdropFilter: "blur(2px)", zIndex: 9000, display: "flex",
+                      alignItems: "flex-start", justifyContent: "center",
+                      overflowY: "auto", padding: "32px 12px" }}>
+          <div onClick={(e) => e.stopPropagation()}
+               style={{ width: "100%", maxWidth: 880, background: "#fff", borderRadius: 12,
+                        boxShadow: "0 20px 60px rgba(0,0,0,.35)", overflow: "hidden" }}>
+
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12,
+                          padding: "16px 20px", borderBottom: "1px solid #e2e8f0" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 10.5, color: "#64748b", fontWeight: 800,
+                              letterSpacing: ".04em", textTransform: "uppercase" }}>
+                  Spare used on
+                </div>
+                <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 26,
+                              fontWeight: 800, color: "#0f172a", lineHeight: 1.15,
+                              wordBreak: "break-word" }}>{drill}</div>
+                {drillInfo && (
+                  <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 700 }}>
+                    {drillInfo.qty} qty · {drillInfo.entries} {drillInfo.entries === 1 ? "entry" : "entries"}
+                    {" · "}{drillRows.length} {drillRows.length === 1 ? "machine" : "machines"}
+                    {windowLabel ? ` · ${windowLabel}` : ""}
+                  </div>
+                )}
+              </div>
+              <button onClick={() => setDrill(null)}
+                      style={{ border: "1px solid #e2e8f0", background: "#f8fafc", borderRadius: 8,
+                               width: 30, height: 30, cursor: "pointer", fontSize: 15,
+                               color: "#475569", lineHeight: 1, flexShrink: 0 }}
+                      title="Close">✕</button>
+            </div>
+
+            {spareRank.length > 1 && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap",
+                            padding: "10px 20px", borderBottom: "1px solid #eef2f7",
+                            background: "#fafbfc" }}>
+                {spareRank.slice(0, 10).map(sp => (
+                  <button key={sp.name} onClick={() => setDrill(sp.name)}
+                          title={`${sp.qty} qty · ${sp.entries} entries · ${sp.machines} machines`}
+                          style={{ border: "1px solid " + (sp.name === drill ? TOP_HUE : "#e2e8f0"),
+                                   background: sp.name === drill ? TOP_HUE : "#fff",
+                                   color: sp.name === drill ? "#fff" : "#475569",
+                                   borderRadius: 99, padding: "4px 11px", fontSize: 11,
+                                   fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                    {sp.name} <span style={{ opacity: .75 }}>({sp.qty})</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div style={{ maxHeight: "58vh", overflowY: "auto", padding: "0 20px 18px" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
+                <thead>
+                  <tr>
+                    {["Zone", "Line", "Machine No", "Machine Name", "Qty", "Entries", "Last Used"].map(h => (
+                      <th key={h} style={th}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {drillRows.map((r, i) => (
+                    <tr key={i} className="sp-row">
+                      <td style={td}>{r.zone}</td>
+                      <td style={td}>{r.line}</td>
+                      <td style={{ ...td, fontWeight: 700, whiteSpace: "nowrap" }}>{r.mno}</td>
+                      <td style={td}>{r.mname}</td>
+                      <td style={{ ...td, fontWeight: 800, color: TOP_HUE, textAlign: "right" }}>{r.qty}</td>
+                      <td style={{ ...td, textAlign: "right" }}>{r.entries}</td>
+                      <td style={{ ...td, whiteSpace: "nowrap" }}>{r.last || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {drillRows.length === 0 && (
+                <div style={{ padding: "26px 0", textAlign: "center", color: "#94a3b8",
+                              fontSize: 12.5, fontStyle: "italic" }}>
+                  No machine recorded for this spare.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
