@@ -394,21 +394,3 @@ export function UsersPage({ toast, readOnly = false }) {
     </div>
   );
 }
-
-// ─── MACHINES PAGE ────────────────────────────────────────────
-// parent_plc_id = null  → MAIN PLC (one per line, drives Dashboard tile + collector)
-// parent_plc_id = <id>  → SUB-MACHINE (auxiliary, listed under main on Dashboard)
-// nf2_camera_id        → bound NF2/CMS camera id (copy from NF2 Camera Master)
-// machine_seq          → admin-chosen display number (M-1, M-2, …) shown
-//                        as the big badge on Dashboard sub-machine tiles.
-const BLANK_MACHINE_PLC = { machine_name:"", plc_ip:"", plc_port:5002, protocol:"MC4E", ok_bit_address:"L108", ng_bit_address:"L109", status_address:"D6005", model_address:"D6048", sensor_ok_address:"", process_seq_address:"", override_address:"", ideal_cycle_time:15.0, max_allowed_cycle:16.0, ok_ng_pulse_min_gap:0.5, parent_plc_id:null, nf2_camera_id:"", machine_seq:null,
-  // 2026-05-29 - Count mode (Final Inspection main PLC only).
-  // 'bit' = legacy L108/L109 rising-edge counting.
-  // 'register' = poll D-register value, increment = +N OK/NG.
-  count_mode:"bit", ok_data_register:"", ng_data_register:"", shift_reset_bit:"",
-  // Semi-Auto data capture (sub-machine only, optional)
-  sa_enabled:false, sa_fetch_bit:"", sa_part_code_addr:"", sa_part_code_len:null,
-  sa_data_addr:"", sa_data_len:null, sa_time_addr:"", sa_time_len:null,
-  sa_register_names:[], sa_register_scales:[],
-  // Bottleneck marker — surfaces a badge on Dashboard tile + Submachine fullscreen.
-  is_bottleneck:false };
