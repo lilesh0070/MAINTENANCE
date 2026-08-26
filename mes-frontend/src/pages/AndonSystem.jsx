@@ -72,6 +72,44 @@ function fyMonthsList(fy) {
 const FH_LBL = { display: "flex", flexDirection: "column", gap: 3, fontSize: 10.5, fontWeight: 700, color: "#64748b" };
 const FH_SEL = { padding: "6px 8px", minWidth: 118 };
 
+/* PLC ki connection haalat.  Sirf "Disconnected" likhne se maintenance wale
+   ghanton phaste hain — ping chal rahi hoti hai, PLC ki light jal rahi hoti
+   hai, phir bhi UI red.  Backend ab WAJAH bhi bhejta hai (online_reason),
+   aur do wajahon ka ilaaj bilkul alag hai:
+     refused = PLC zinda hai par us port par kuch sun nahi raha  -> PLC ki setting
+     timeout = jawab hi nahi aaya                                -> cable/firewall/power
+   Isliye wajah UI par likh dete hain, warna har baar network hi shaq me aata hai. */
+const PLC_WHY = {
+  refused: { tag: "port refused",
+             tip: "The device replied but nothing is listening on this port. Open the MC protocol / Ethernet port setting on the PLC, or correct the port here. This is not a network fault — ping will still work." },
+  timeout: { tag: "no response",
+             tip: "No reply from this address. Check the cable, the firewall/VLAN, or whether the PLC is powered on." },
+  dns:     { tag: "bad address",
+             tip: "This address could not be resolved." },
+  mc:      { tag: "no MC reply",
+             tip: "The port is open and accepting connections, but the PLC is not answering MC protocol reads. Check the MC protocol settings, the series (Q / iQ-R / L), and that the configured device addresses exist on this PLC." },
+};
+
+function PlcState({ online, reason, dot = 10, glow = false, title = "" }) {
+  const why  = online === false ? PLC_WHY[reason] : null;
+  const col  = online === true ? "#16a34a" : online === false ? "#dc2626" : "#94a3b8";
+  const dotc = online === true ? "#16a34a" : online === false ? "#dc2626" : "#cbd5e1";
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 700,
+                   fontSize: 12, color: col }}
+          title={why ? why.tip : title}>
+      <span style={{ width: dot, height: dot, borderRadius: "50%", flex: "0 0 auto", background: dotc,
+                     boxShadow: !glow ? "none"
+                       : online === true  ? "0 0 0 3px rgba(22,163,74,.2)"
+                       : online === false ? "0 0 0 3px rgba(220,38,38,.2)" : "none" }} />
+      {online === true ? "Connected" : online === false ? "Disconnected" : "Checking…"}
+      {why && why.tag && (
+        <span style={{ fontWeight: 600, fontSize: 11, color: "#94a3b8" }}>· {why.tag}</span>
+      )}
+    </span>
+  );
+}
+
 export default function AndonSystem() {
   const { token, theme, user, canAccess } = useAuth();
   const nav = useNavigate();
@@ -599,14 +637,8 @@ export default function AndonSystem() {
                             <td>{[e.zone, e.line, e.machine_no].filter(Boolean).join(" / ") || "—"}</td>
                             <td>
                               {!e.enabled ? <span style={{ color:"#94a3b8", fontSize:12 }}>— off —</span> : (
-                                <span style={{ display:"inline-flex", alignItems:"center", gap:7, fontWeight:700, fontSize:12,
-                                               color: e.online === true ? "#16a34a" : e.online === false ? "#dc2626" : "#94a3b8" }}
-                                      title={e.last_seen ? `last seen ${e.last_seen}` : (e.checked ? `checked ${e.checked}` : "")}>
-                                  <span style={{ width:10, height:10, borderRadius:"50%", flex:"0 0 auto",
-                                                 background: e.online === true ? "#16a34a" : e.online === false ? "#dc2626" : "#cbd5e1",
-                                                 boxShadow: e.online === true ? "0 0 0 3px rgba(22,163,74,.2)" : e.online === false ? "0 0 0 3px rgba(220,38,38,.2)" : "none" }} />
-                                  {e.online === true ? "Connected" : e.online === false ? "Disconnected" : "Checking…"}
-                                </span>
+                                <PlcState online={e.online} reason={e.online_reason} dot={10} glow
+                                          title={e.last_seen ? `last seen ${e.last_seen}` : (e.checked ? `checked ${e.checked}` : "")} />
                               )}
                             </td>
                             <td><span className="an-chip" style={{ padding:"2px 9px", background: e.enabled ? "#dcfce7" : "#fee2e2", color: e.enabled ? "#16a34a" : "#dc2626" }}>{e.enabled ? "Enabled" : "Disabled"}</span></td>
@@ -622,13 +654,8 @@ export default function AndonSystem() {
                               <td style={{ paddingTop:0 }}>{e.sub_ip}:{e.sub_port}{e.sub_series && <span style={{ marginLeft:6, fontSize:10, fontWeight:700, color:"#64748b", background:"#f1f5f9", padding:"1px 6px", borderRadius:99 }}>{e.sub_series}</span>}</td>
                               <td style={{ color:"#94a3b8", fontSize:11.5, paddingTop:0 }}>Model / Fault{e.sub_machine_no ? ` · ${e.sub_machine_no}` : ""}</td>
                               <td style={{ paddingTop:0 }}>
-                                <span style={{ display:"inline-flex", alignItems:"center", gap:7, fontWeight:700, fontSize:12,
-                                               color: e.sub_online === true ? "#16a34a" : e.sub_online === false ? "#dc2626" : "#94a3b8" }}
-                                      title="Sub PLC (Model/Fault) connection">
-                                  <span style={{ width:9, height:9, borderRadius:"50%", flex:"0 0 auto",
-                                                 background: e.sub_online === true ? "#16a34a" : e.sub_online === false ? "#dc2626" : "#cbd5e1" }} />
-                                  {e.sub_online === true ? "Connected" : e.sub_online === false ? "Disconnected" : "Checking…"}
-                                </span>
+                                <PlcState online={e.sub_online} reason={e.sub_online_reason} dot={9}
+                                          title="Sub PLC (Model/Fault) connection" />
                               </td>
                               <td colSpan={2} style={{ paddingTop:0 }} />
                             </tr>

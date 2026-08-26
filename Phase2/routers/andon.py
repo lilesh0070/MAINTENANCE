@@ -487,14 +487,50 @@ def _read_one(mc, dtype, dno):
     return int(mc.batchread_wordunits(headdevice=head, readsize=1)[0])
 
 
-def _reachable(ip, port, timeout=1.5):
-    """Fast TCP probe — PLC ka port pahunch me hai ya nahi (connected indicator)."""
+def _probe(ip, port, timeout=1.5):
+    """TCP probe jo sirf haan/na nahi, WAJAH bhi lauta de.
+
+    Sirf "Disconnected" dikhane se maintenance wale ghanton phaste hain: ping
+    chal rahi hoti hai, PLC ki light jal rahi hoti hai, phir bhi UI red.  Do
+    bilkul alag kharabiyan hain aur dono ka ilaaj alag hai —
+
+      refused : host zinda hai, uske TCP stack ne RST bheja = us PORT par kuch
+                sun hi nahi raha.  Matlab PLC ka MC-protocol/Ethernet open
+                setting us port par configure nahi hai (ya port galat likha
+                hai).  NETWORK ki dikkat nahi hai — PLC ki setting ki hai.
+      timeout : koi jawab hi nahi — cable/firewall/VLAN ya PLC band.
+      dns     : hostname resolve nahi hua.
+
+    (Ek chauthi haalat list endpoint banata hai — "mc": TCP to jud gaya par
+     poller ka MC read fail hua, yaani port khula hai aur PLC protocol ka
+     jawab nahi de raha.)
+
+    Lautata hai (ok: bool, reason: str).
+    """
     try:
         s = socket.create_connection((ip, int(port)), timeout=timeout)
         s.close()
-        return True
+        return True, "ok"
+    except socket.timeout:
+        return False, "timeout"
+    except ConnectionRefusedError:
+        return False, "refused"
+    except socket.gaierror:
+        return False, "dns"
+    except OSError as e:
+        # Windows WSAETIMEDOUT (10060) socket.timeout ke bajaye OSError aata hai
+        if getattr(e, "winerror", None) == 10061 or getattr(e, "errno", None) == 111:
+            return False, "refused"
+        if getattr(e, "winerror", None) == 10060 or getattr(e, "errno", None) == 110:
+            return False, "timeout"
+        return False, "error"
     except Exception:
-        return False
+        return False, "error"
+
+
+def _reachable(ip, port, timeout=1.5):
+    """Fast TCP probe — PLC ka port pahunch me hai ya nahi (connected indicator)."""
+    return _probe(ip, port, timeout)[0]
 
 
 def _plc_drop(dev_id):
@@ -1541,18 +1577,59 @@ def list_plc(user=Depends(get_current_user)):
     # back to a quick TCP reachability probe so the Config page still shows
     # connected/disconnected.  A raw connect+close is NOT an MC poll — it never
     # reads bits / opens-closes calls, so it cannot cause the call flap.
+    # Jinka status poller se nahi mila unhe khud probe karna hoga.  Do baatein:
+    #
+    #  1) TIMEOUT 0.4s se badha kar 3.0s.  Do alag wajahein, dono naapi hui:
+    #     (a) sehatmand PLC steady state me 12-25 ms me judta hai, par PEHLI
+    #         (cold) connection ARP resolve ke saath 530 ms tak gayi thi —
+    #         0.4s us sehatmand PLC ko bhi "Disconnected" dikha deta tha.
+    #     (b) isse BADI baat: jis PLC ka port band hai, uska RST (refused)
+    #         is network par ~2050 ms me aata hai.  Isse chhote timeout par
+    #         probe pehle hi TIMEOUT maan leta hai aur hum "no response"
+    #         likh dete — jabki asli wajah "port refused" hai.  Dono ka ilaaj
+    #         ULTA hai (cable/firewall dekho vs PLC ki port setting kholo),
+    #         to galat wajah aadmi ko galat taraf daudati hai.
+    #     Isliye 3.0s se kam MAT karna.  Sust nahi padta: connect kamyab hote
+    #     hi turant lautta hai (~25 ms) — poora timeout sirf KHARAB wale par
+    #     lagta hai, aur wo bhi parallel me.  UI 10s par refresh hota hai,
+    #     to 3s aaram se samaa jaata hai.
+    #  2) Probe ab SAATH-SAATH (parallel) chalte hain, isliye der se sab ka
+    #     jod nahi lagta — chahe 2 PLC hon ya 40, page ek probe jitna hi
+    #     rukta hai.  Pehle ye ek-ek karke chalte the.
+    todo = []                                    # (row, "main"/"sub", ip, port)
     for r in rows:
         st = _PLC_STATUS.get(r["id"], {})
-        online = st.get("online")
-        if online is None and r.get("enabled") and r.get("ip"):
-            online = _reachable(r["ip"], r.get("port") or 5007, timeout=0.4)
-        r["online"] = online                      # True=connected · False=disconnected · None=disabled/unknown
-        sub_online = st.get("sub_online")
-        if sub_online is None and (r.get("sub_ip") or "").strip():
-            sub_online = _reachable(r["sub_ip"], r.get("sub_port") or 5007, timeout=0.4)
-        r["sub_online"] = sub_online               # None = koi sub PLC nahi
+        r["online"]     = st.get("online")
+        r["sub_online"] = st.get("sub_online")
+        r["online_reason"] = r["sub_online_reason"] = None
         r["last_seen"] = st.get("last_seen")
-        r["checked"] = st.get("checked")
+        r["checked"]   = st.get("checked")
+        # Probe DO haalaton me chalta hai:
+        #   None  -> poller band hai (dev box), status hai hi nahi
+        #   False -> poller keh raha hai "down", par WAJAH nahi batata.
+        # Production par poller asli MC-protocol read karta hai, isliye wahan
+        # `online` usi ka rehta hai — probe sirf WAJAH bharne ke liye chalta
+        # hai, faisla nahi badalta.  Sehatmand PLC (True) bilkul probe nahi
+        # hota, to normal haalat me ye kuch kharch hi nahi karta.
+        if r["online"] is not True and r.get("enabled") and r.get("ip"):
+            todo.append((r, "main", r["ip"], r.get("port") or 5007))
+        if r["sub_online"] is not True and (r.get("sub_ip") or "").strip():
+            todo.append((r, "sub", r["sub_ip"], r.get("sub_port") or 5007))
+
+    if todo:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(16, len(todo))) as ex:
+            for (r, which, _ip, _pt), (ok, why) in zip(
+                    todo, ex.map(lambda t: _probe(t[2], t[3], timeout=3.0), todo)):
+                key   = "online" if which == "main" else "sub_online"
+                known = r[key]                       # poller ka faisla (agar hai)
+                if known is None:
+                    r[key], r[key + "_reason"] = ok, why
+                else:
+                    # poller ne "down" kaha hai — us par bharosa, probe sirf wajah deta hai.
+                    # TCP jud gaya phir bhi poller down keh raha => port khula hai
+                    # par PLC MC-protocol ka jawab nahi de raha (alag hi kharabi).
+                    r[key + "_reason"] = "mc" if ok else why
     return rows
 
 
