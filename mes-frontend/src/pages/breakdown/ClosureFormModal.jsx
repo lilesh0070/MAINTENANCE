@@ -236,7 +236,19 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
     // legacy single closure_data blob for older rows.
     const prod  = ticket.production_data  || {};
     const maint = ticket.maintenance_data || {};
-    const legacy = readOnly ? (ticket.closure_data || {}) : {};
+    // `closure_data` HAR mode me padho — view me bhi, EDIT me bhi.
+    //
+    // Pehle ye sirf `readOnly` me padha jaata tha.  Historical se admin Edit
+    // dabata to legacy khali ho jaata, aur time `started_at` par gir jaata —
+    // jo un rows me sirf DATE hoti hai ("2026-08-24").  `new Date()` use
+    // midnight UTC maanta hai, jo IST me **05:30** ban jaata — isiliye Edit
+    // kholte hi time 05:30 ho jaata tha.
+    //
+    // Safe hai: `closure_data` sirf Historical ki rows me hota hai
+    // (breakdowns.py ka `_bdlog_serialize`) — auto slip aur blank slip me
+    // hai hi nahi.  Aur ye sirf KHAALI khaane bharta hai, kyunki prod/maint
+    // pehle padhe jaate hain (`prod.x ?? legacy.x ?? fallback`).
+    const legacy = ticket.closure_data || {};
 
     // Resolved times (used both for the raw cells AND the auto-computed
     // Response Time / Down Time below).
