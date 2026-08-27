@@ -390,7 +390,11 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
       • Frequency = SUM(frequency)
       • MTTR      = SUM(down_time) / SUM(frequency)
       • MTBF      = (elapsed_hours − total_down_hours) / SUM(frequency)
-      • >1 hour   = SUM(frequency) over slips whose down_time > 60 min
+      • >1 hour   = SUM(frequency) over slips whose down_time >= 60 min
+                    (60 BHI ginta hai — CAPA ka niyam bhi yahi hai, aur user ne
+                     dono jagah ek hi paribhasha rakhne ko kaha.  Pehle yahan
+                     `> 60` tha, isliye theek 60-minute wala breakdown KPI me
+                     nahi aata tha par CAPA me aata tha — 14 bनाम 15 ka farak.)
     Sums / maxes (Total Hours, LTTR) do not use frequency.  Live — recomputed
     on every call."""
     now = datetime.utcnow()
@@ -430,7 +434,7 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
                 COALESCE(SUM({st}), 0)                    AS total_min,
                 COALESCE(MAX({st}), 0)                    AS max_min,
                 -- >1hr count is frequency-weighted too (not a bare row count)
-                COALESCE(SUM(COALESCE(frequency, 1)) FILTER (WHERE ({st}) > 60), 0) AS over_1hr
+                COALESCE(SUM(COALESCE(frequency, 1)) FILTER (WHERE ({st}) >= 60), 0) AS over_1hr
               FROM maintenance_breakdown_data
              WHERE {where}
         """, params)
@@ -557,7 +561,7 @@ def fy_trend(fy:         Optional[str] = Query(None, description="e.g. 2025-26")
                    COALESCE(SUM(COALESCE(frequency, 1)), 0)      AS bd_count,
                    COALESCE(SUM({st}), 0)                        AS total_min,
                    COALESCE(MAX({st}), 0)                        AS max_min,
-                   COALESCE(SUM(COALESCE(frequency, 1)) FILTER (WHERE ({st}) > 60), 0) AS over_1hr
+                   COALESCE(SUM(COALESCE(frequency, 1)) FILTER (WHERE ({st}) >= 60), 0) AS over_1hr
               FROM maintenance_breakdown_data
              WHERE {where}
              GROUP BY 1

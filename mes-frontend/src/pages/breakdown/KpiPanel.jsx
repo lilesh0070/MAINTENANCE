@@ -292,7 +292,9 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
                           // taaki koi purana data ho to bhi theek dikhe.
                           const pending = b.state === "PENDING" || b.state === "RESOLVED" || b.state === "OPEN";
                           const stColor = b.state === "OPEN" ? "#dc2626" : pending ? "#b45309" : "#16a34a";
-                          const over60 = durSec > 60 * 60;   // > 1 hour → blink (like ANDON)
+                          // 60 min BHI ginta hai — wahi niyam jo KPI aur CAPA me hai
+                          // (pehle yahan `>` tha, to theek 1 ghante wali call blink nahi karti thi).
+                          const over60 = durSec >= 60 * 60;
                           return (
                             <tr key={b.id} style={{ borderBottom: "1px solid #f1f5f9",
                                                     background: over60 ? "rgba(220,38,38,.05)" : "transparent" }}>

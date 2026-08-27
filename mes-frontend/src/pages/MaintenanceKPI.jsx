@@ -125,7 +125,7 @@ const CARDS = [
   },
   {
     key: "over_1hr_count", label: "More than 1 Hour", accent: "#7c3aed",
-    unit: "breakdowns", sub: () => "duration > 60 min",
+    unit: "breakdowns", sub: () => "duration 60 min or more",
     val: (m) => fmt(m.over_1hr_count, 0),
     hint: "Breakdowns that took over an hour",
   },
