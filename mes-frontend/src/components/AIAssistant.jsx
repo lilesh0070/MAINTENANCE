@@ -423,10 +423,14 @@ export default function AIAssistant({ pageContext = {} }) {
         .qbtn:hover { background:#0d1a2e !important; border-color:#3b82f6 !important; color:#60a5fa !important; transform:translateY(-2px); box-shadow:0 4px 12px #3b82f630 !important; }
       `}</style>
 
-      {/* ── Floating Button ── */}
+      {/* ── Floating Button ──
+          Bottom-LEFT par hai.  zIndex 900 jaan-boojh kar: SlideNav ka drawer
+          999 (backdrop 998) par baithta hai aur khulne par left ke 260px ghera
+          leta hai — 10000 par rehta to ye uske UPAR taira dikhta.  Ab drawer
+          isko dhak leta hai, jo sahi hai (nav ek modal overlay hai). */}
       {!open && (
         <button onClick={() => openChat()} style={{
-          position:"fixed", bottom:24, right:24, zIndex:10000,
+          position:"fixed", bottom:24, left:24, zIndex:900,
           width:56, height:56, borderRadius:16,
           background:"linear-gradient(135deg,#060912,#0a0f1a)",
           border:"1.5px solid #3b82f650",
@@ -471,7 +475,7 @@ export default function AIAssistant({ pageContext = {} }) {
       {/* ── Chat Panel ── */}
       {open && (
         <div ref={panelRef} style={{
-          position:"fixed", bottom:24, right:24, zIndex:10000,
+          position:"fixed", bottom:24, left:24, zIndex:900,
           width:400, height:560,
           background:"linear-gradient(145deg,#060912 0%,#080e1a 50%,#060912 100%)",
           borderRadius:20,
