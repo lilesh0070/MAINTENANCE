@@ -28,11 +28,10 @@ export default function Layout({ children }) {
       <SlideNav />
 
       {/* Maintenance AI assistant — ek hi jagah lagi hai, isliye HAR page par
-          milti hai (Breakdown, ANDON, CAPA, PM, Spare, KPI...).  Wall-display
-          pages par nahi: wo TV par chalte hain, wahan koi type nahi karta aur
-          floating button sirf screen gandi karta.  Assistant ke andar ka UI
-          bilkul waisa hi hai — sirf ab har page par pahunch gaya. */}
-      {!isDisplay && <AIAssistant pageContext={{ page: pathname }} />}
+          milti hai: Breakdown, ANDON, CAPA, PM, Spare, KPI, wall-display, sab.
+          (Pehle wall-display do page chhode the, par user ne saaf kaha "saare
+          page par", isliye chhoot hata di.)  Bottom-RIGHT par baithti hai. */}
+      <AIAssistant pageContext={{ page: pathname }} />
 
       {/* Display controls — full toolbar on the wall-dashboard pages,
           otherwise just the full-screen toggle. */}
