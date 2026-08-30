@@ -924,9 +924,9 @@ export default function AndonSystem() {
                   );
                 })()}
                 <table className="an-tbl">
-                  <thead><tr><th>Department</th><th>Output PLC</th><th>Bit</th><th>Off trigger</th><th>Connection</th><th>Bit now</th><th>Status</th><th></th></tr></thead>
+                  <thead><tr><th>Department</th><th>Output PLC</th><th>Bit</th><th>Off trigger</th><th>Connection</th><th>Program bit</th><th>PLC bit</th><th>Status</th><th></th></tr></thead>
                   <tbody>
-                    {outs.length === 0 && <tr><td colSpan={8} style={{ color:"#94a3b8", padding:16, textAlign:"center" }}>Koi mapping nahi — upar se add karo.</td></tr>}
+                    {outs.length === 0 && <tr><td colSpan={9} style={{ color:"#94a3b8", padding:16, textAlign:"center" }}>Koi mapping nahi — upar se add karo.</td></tr>}
                     {outs.map((o) => (
                       <tr key={o.id}>
                         <td style={{ fontWeight:700 }}>{o.department}</td>
@@ -942,12 +942,23 @@ export default function AndonSystem() {
                             {o.reachable === true ? "Connected" : o.reachable === false ? "Disconnected" : "Checking…"}
                           </span>
                         </td>
+                        {/* PROGRAM BIT = software ne kya tay kiya (khuli calls se).  Ye hamesha
+                            pata hota hai — PLC se baat na ho tab bhi. */}
+                        <td>
+                          {o.should_be_on ? <span style={{ color:"#16a34a", fontWeight:800 }}>● ON</span>
+                           : <span style={{ color:"#94a3b8", fontWeight:700 }}>OFF</span>}
+                        </td>
+                        {/* PLC BIT = PLC par ASLI bit, likhne ke baad wapas padh kar.  Dono alag
+                            dikhane se turant pata chalta hai galti kis taraf hai: program ON aur
+                            PLC OFF = likha to gaya par PLC tak utra nahi (pending). */}
                         <td>
                           {o.bit_on === true ? <span style={{ color:"#16a34a", fontWeight:800 }}>● ON</span>
                            : o.bit_on === false ? <span style={{ color:"#94a3b8", fontWeight:700 }}>OFF</span>
                            : <span style={{ color:"#cbd5e1" }}>—</span>}
                           {o.should_be_on && o.bit_on !== true && (
-                            <span style={{ display:"block", fontSize:10, color:"#b45309", fontWeight:700, whiteSpace:"nowrap" }}>chahiye: ON</span>
+                            <span style={{ display:"block", fontSize:10, color:"#b45309", fontWeight:700, whiteSpace:"nowrap" }}>
+                              {o.bit_on === false ? "PLC pe pending" : "PLC padha nahi ja raha"}
+                            </span>
                           )}
                         </td>
                         <td><span className="an-chip" style={{ padding:"2px 9px", background: o.enabled ? "#dcfce7" : "#fee2e2", color: o.enabled ? "#16a34a" : "#dc2626" }}>{o.enabled ? "Enabled" : "Disabled"}</span></td>

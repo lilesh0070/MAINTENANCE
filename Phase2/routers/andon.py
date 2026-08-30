@@ -1162,6 +1162,15 @@ def _andon_output_write_once():
         prev = _OUT_STATE.get(m["id"], {})
         actual = _out_write_bit(m["plc_ip"], m["plc_port"], m["plc_series"],
                                 m["bit_type"], m["bit_no"], want)   # read-back: True/False/None
+        # HICHKI KO "DISCONNECTED" MAT DIKHAO.
+        # Naya _out_write_bit ek-do fail par connection todta nahi (3 lagataar par
+        # todta hai), par us cycle lautata None hi hai.  Us None ko seedha DB me
+        # daal dete to UI har hichki par "Disconnected" + PLC bit "—" bhadka deti,
+        # jabki connection bilkul zinda hai — screen par wahi jhilmilahat dikhti
+        # jiski shikayat thi.  Isliye: connection abhi bhi paas hai to pichhla
+        # sach rehne do; sirf ASLI teardown (connection chala gaya) par hi None.
+        if actual is None and (m["plc_ip"], int(m["plc_port"] or 5007)) in _OUT_CONN:
+            actual = prev.get("on")
         if want != prev.get("want"):
             print(f"[ANDON-OUT] {m['department']} {m['bit_type']}{m['bit_no']} "
                   f"-> {'ON' if want else 'OFF'} (readback={actual})", flush=True)
