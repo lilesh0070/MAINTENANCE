@@ -36,7 +36,7 @@ const api = {
   },
 };
 
-const BLANK = { category: "Basics", title: "", body: "", sort_order: 0, active: true };
+const BLANK = { category: "Basics", title: "", body: "", body_hi: "", sort_order: 0, active: true };
 
 export default function StudyMaterial() {
   const { token, theme, user, isAdmin } = useAuth();
@@ -47,6 +47,20 @@ export default function StudyMaterial() {
   const [pickId, setPickId]   = useState(null);
   const [msg, setMsg]         = useState("");
   const [q, setQ]             = useState("");
+  // Zubaan ka chunav yaad rehta hai (per-browser), taaki har baar dobara
+  // na chunna pade.  localStorage na chale to chup-chaap English par.
+  const [lang, setLang] = useState(() => {
+    try { return localStorage.getItem("sm_lang") === "hi" ? "hi" : "en"; }
+    catch { return "en"; }
+  });
+  const pickLang = (v) => {
+    setLang(v);
+    try { localStorage.setItem("sm_lang", v); } catch { /* private mode */ }
+  };
+  // Hindi chuni ho par us topic ka Hindi matter na ho to English dikhate
+  // hain — khali page dikhane se behtar hai, aur neeche note bhi de dete hain.
+  const bodyOf = (r) => (lang === "hi" ? (r?.body_hi || r?.body) : r?.body) || "";
+  const hiMissing = (r) => lang === "hi" && !(r?.body_hi || "").trim();
 
   // edit ka roop: null = band, {…} = form khula (id ho to edit, na ho to naya)
   const [form, setForm]   = useState(null);
@@ -80,6 +94,7 @@ export default function StudyMaterial() {
     return rows.filter((r) =>
       String(r.title || "").toLowerCase().includes(s) ||
       String(r.body || "").toLowerCase().includes(s) ||
+      String(r.body_hi || "").toLowerCase().includes(s) ||
       String(r.category || "").toLowerCase().includes(s));
   }, [rows, q]);
 
@@ -109,6 +124,7 @@ export default function StudyMaterial() {
         category:   (form.category || "General").trim(),
         title:      form.title.trim(),
         body:       form.body || "",
+        body_hi:    form.body_hi || "",
         sort_order: Number(form.sort_order) || 0,
         active:     form.active !== false,
       };
@@ -184,6 +200,14 @@ export default function StudyMaterial() {
                     background:#0f172a; color:#fff; padding:10px 20px; border-radius:10px; font-size:13px;
                     font-weight:700; box-shadow:0 10px 30px rgba(0,0,0,.25); }
         .sm-empty { padding:40px 10px; text-align:center; color:#94a3b8; font-size:13.5px; }
+        /* Zubaan ka switch — har page par upar, taaki jo jis zubaan me
+           padhna chahe wo ek click me badal le. */
+        .sm-lang { display:inline-flex; border:1.5px solid #cbd5e1; border-radius:99px; overflow:hidden; }
+        .sm-lang button { border:none; background:#fff; color:#64748b; cursor:pointer; padding:6px 16px;
+                          font-size:12.5px; font-weight:800; font-family:'Barlow',sans-serif; }
+        .sm-lang button.on { background:${theme.accent}; color:#fff; }
+        .sm-note { margin-top:10px; font-size:11.5px; font-weight:700; color:#92400e;
+                   background:#fef3c7; border:1px solid #fcd34d; border-radius:8px; padding:7px 12px; }
       `}</style>
 
       <div className="sm-root">
@@ -198,6 +222,10 @@ export default function StudyMaterial() {
             </div>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            <div className="sm-lang">
+              <button className={lang === "en" ? "on" : ""} onClick={() => pickLang("en")}>English</button>
+              <button className={lang === "hi" ? "on" : ""} onClick={() => pickLang("hi")}>हिंदी</button>
+            </div>
             {isAdmin && !form && (
               <button className="sm-btn" onClick={() => setForm({ ...BLANK })}>＋ Add Topic</button>
             )}
@@ -256,11 +284,20 @@ export default function StudyMaterial() {
                   </div>
                 </div>
 
+                {/* Dono zubaan alag-alag — Hindi khali chhod di to us topic par
+                    English hi dikhega (aur padhne wale ko note mil jayega). */}
                 <div className="sm-fld" style={{ marginTop:14 }}>
-                  <label className="sm-lbl">Matter</label>
-                  <textarea className="sm-in sm-ta" value={form.body}
-                            placeholder="Yahan poora matter likhein.  Khali line chhodne par paragraph ban jaata hai."
+                  <label className="sm-lbl">Matter — English</label>
+                  <textarea className="sm-in sm-ta" value={form.body || ""}
+                            placeholder="Write the full explanation here.  A blank line starts a new paragraph."
                             onChange={(e) => setForm({ ...form, body: e.target.value })} />
+                </div>
+
+                <div className="sm-fld" style={{ marginTop:14 }}>
+                  <label className="sm-lbl">Matter — हिंदी</label>
+                  <textarea className="sm-in sm-ta" value={form.body_hi || ""}
+                            placeholder="Yahan Hindi me likhein.  Khali chhod denge to is topic par English hi dikhega."
+                            onChange={(e) => setForm({ ...form, body_hi: e.target.value })} />
                 </div>
 
                 <label style={{ display:"flex", alignItems:"center", gap:8, marginTop:14,
@@ -293,7 +330,12 @@ export default function StudyMaterial() {
                     </div>
                   )}
                 </div>
-                <div className="sm-body">{pick.body || "—"}</div>
+                <div className="sm-body">{bodyOf(pick) || "—"}</div>
+                {hiMissing(pick) && (
+                  <div className="sm-note">
+                    इस टॉपिक का हिंदी अनुवाद अभी नहीं है — फ़िलहाल English दिखाया जा रहा है।
+                  </div>
+                )}
                 <div className="sm-meta">
                   Last updated by {pick.updated_by || "—"}
                   {pick.updated_at ? ` · ${String(pick.updated_at).slice(0, 10)}` : ""}
