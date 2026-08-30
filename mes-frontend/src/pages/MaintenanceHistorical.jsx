@@ -175,6 +175,9 @@ export default function MaintenanceHistorical() {
   const [capaLoading, setCapaLoading] = useState(true);
   const [dayRows, setDayRows]       = useState([]);
   const [dayLoading, setDayLoading] = useState(true);
+  // Break Down Log Book — maintenance_logbook_db_history
+  const [lbRows, setLbRows]         = useState([]);
+  const [lbLoading, setLbLoading]   = useState(true);
 
   const booted = useRef(false);
   useEffect(() => {
@@ -406,6 +409,25 @@ export default function MaintenanceHistorical() {
     }
   };
 
+  // Log Book — apna alag effect (baaki section ki tarah, taaki ek call fail ho
+  // to doosre na rukein).  NOTE: table me column `zone`/`line` hain, par is page
+  // ka planMatch `zone_name`/`line_name` dekhta hai — isliye yahin map kar dete
+  // hain.  Backend nahi chheda kyunki wahi endpoint Log Book page bhi use karti hai.
+  useEffect(() => {
+    if (!token) return;
+    let ignore = false;
+    setLbLoading(true);
+    api.get(`/api/breakdown-logbook/`, token)
+      .then((d) => {
+        if (ignore) return;
+        const rows = Array.isArray(d) ? d : (Array.isArray(d?.rows) ? d.rows : []);
+        setLbRows(rows.map((r) => ({ ...r, zone_name: r.zone, line_name: r.line })));
+      })
+      .catch(() => { if (!ignore) setLbRows([]); })
+      .finally(() => { if (!ignore) setLbLoading(false); });
+    return () => { ignore = true; };
+  }, [token]);
+
   // Closed CAPA — apna alag effect, taaki kisi doosri call ka fail hona ise na roke
   useEffect(() => {
     if (!token) return;
@@ -440,6 +462,14 @@ export default function MaintenanceHistorical() {
     return planMatch(r);
   }), [capaRows, win, fDate, fZone, fLine, fMachineNo, fMachineName]);   // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* Log Book ki date bhi kaam ki date hai (bd_date) — entry kab bani wo nahi. */
+  const lbList = useMemo(() => lbRows.filter((r) => {
+    const d = String(r.bd_date || "").slice(0, 10);
+    if (fDate) { if (d !== fDate) return false; }
+    else if (win && d) { if (d < win.start || d > win.end) return false; }
+    return planMatch(r);
+  }), [lbRows, win, fDate, fZone, fLine, fMachineNo, fMachineName]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   // Upar ke chunav-buttons — naam, rang aur kitne record hain (filter ke hisaab se)
   const SECTIONS = [
     { key: "BD",   label: "Breakdown Slips",       color: "#16a34a", count: () => list.length },
@@ -449,6 +479,7 @@ export default function MaintenanceHistorical() {
     { key: "SUN",  label: "Sunday Plan Work",      color: "#d97706", count: () => sunList.length },
     { key: "DAY",  label: "Daily Work Assign",     color: "#7c3aed", count: () => dayList.length },
     { key: "CAPA", label: "CAPA (Closed)",          color: "#be185d", count: () => capaList.length },
+    { key: "LOG",  label: "Log Book",               color: "#0891b2", count: () => lbList.length },
   ];
 
   const fmtD = (iso) => (iso ? String(iso).slice(0, 10) : "—");
@@ -507,6 +538,9 @@ export default function MaintenanceHistorical() {
         .hd-sec-c { font-size:12px; font-weight:700; color:#fff; background:#16a34a; border-radius:99px; padding:2px 10px; }
 
         .hd-scroll { max-height:270px; overflow-y:auto; }   /* ≈ 4 rows + header */
+        /* Log Book ki table chaudi hai (saare column), isliye ise side-scroll
+           chahiye — warna page hi daayen-baayen khisakne lagta. */
+        .hd-scroll-x { overflow-x:auto; }
         .hd-tbl { width:100%; border-collapse:collapse; }
         .hd-tbl th { background:#1e3a8a; color:#fff; font-size:11.5px; font-weight:700; padding:11px 14px;
                      text-align:left; white-space:nowrap; position:sticky; top:0; z-index:2; }
@@ -922,6 +956,61 @@ export default function MaintenanceHistorical() {
                       <td style={{ textAlign:"center", fontWeight:800 }}>{r.duration_min ?? "—"}</td>
                       <td style={{ fontWeight:700, color:"#334155" }}>{r.closed_by || "—"}</td>
                       <td style={{ whiteSpace:"nowrap" }}>{fmtD(r.closed_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {/* ── Log Book ─────────────────────────────────────────
+              maintenance_logbook_db_history — jo kaam Log Book me likha gaya.
+              Isme saare column dikhate hain, isliye table chaudi hai aur
+              hd-scroll-x se side me khisakti hai. */}
+          <div className="hd-sec" style={{ display: sec === "LOG" ? undefined : "none" }}>
+            <div className="hd-sec-h">
+              <span className="hd-sec-dot" style={{ background:"#0891b2" }} />
+              <span className="hd-sec-t">Break Down Log Book</span>
+              <span className="hd-sec-c" style={{ background:"#0891b2" }}>{lbList.length}</span>
+              <span style={{ marginLeft:"auto", fontSize:11.5, color:"#94a3b8" }}>
+                side me khiska kar baaki column dekhein
+              </span>
+            </div>
+            <div className={"hd-scroll-x" + (lbList.length > 4 ? " hd-scroll" : "")}>
+              <table className="hd-tbl">
+                <thead><tr>
+                  <th>#</th><th>Date</th><th>Shift</th><th>Zone</th><th>Line</th>
+                  <th>M/C No</th><th>Machine</th>
+                  <th>Problem Observed</th><th>Action Taken</th>
+                  <th>Start</th><th>OK Time</th>
+                  <th style={{ textAlign:"center" }}>Down Time (min)</th>
+                  <th style={{ textAlign:"center" }}>Solve (hr)</th>
+                  <th>Spares Used</th><th>Attended By</th><th>Created By</th>
+                </tr></thead>
+                <tbody>
+                  {lbLoading && <tr><td colSpan={16} className="hd-empty">Loading…</td></tr>}
+                  {!lbLoading && lbList.length === 0 &&
+                    <tr><td colSpan={16} className="hd-empty">
+                      {lbRows.length ? "No log book entries for this filter."
+                                     : "No log book entries yet."}
+                    </td></tr>}
+                  {!lbLoading && lbList.map((r, i) => (
+                    <tr key={r.id}>
+                      <td>{i + 1}</td>
+                      <td style={{ whiteSpace:"nowrap" }}>{fmtD(r.bd_date)}</td>
+                      <td>{r.shift || "—"}</td>
+                      <td>{r.zone || "—"}</td>
+                      <td>{r.line || "—"}</td>
+                      <td className="hd-mno">{r.machine_no || "—"}</td>
+                      <td>{r.machine_name || "—"}</td>
+                      <td style={{ maxWidth:240 }}>{r.problem_observed_by_maintenance || "—"}</td>
+                      <td style={{ maxWidth:240 }}>{r.action_taken_on_problem || "—"}</td>
+                      <td style={{ whiteSpace:"nowrap" }}>{r.bd_start_time || "—"}</td>
+                      <td style={{ whiteSpace:"nowrap" }}>{r.bd_ok_time || "—"}</td>
+                      <td className="hd-min">{r.mc_down_time_minutes || "—"}</td>
+                      <td style={{ textAlign:"center" }}>{r.solve_time_hours || "—"}</td>
+                      <td style={{ maxWidth:200 }}>{r.spares_used || "—"}</td>
+                      <td>{r.bd_attended_by || "—"}</td>
+                      <td>{r.created_by || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
