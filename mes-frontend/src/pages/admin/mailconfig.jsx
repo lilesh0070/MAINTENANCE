@@ -90,6 +90,7 @@ export const PAGE_PERM_GROUPS = [
       { key: "maintenance-pm-yearly",    label: "Yearly PM Schedule" },
     ]},
     { key: "maintenance-machine-manual", label: "Machine Manual" },
+    { key: "maintenance-study-material", label: "Study Material (writes are admin-only)" },
     { key: "maintenance-machine-dmc",    label: "Machine DMC", children: [
       { key: "maintenance-daily-dmc",  label: "Operator DMC Fill" },
       { key: "maintenance-dmc-verify", label: "Supervisor Verify" },

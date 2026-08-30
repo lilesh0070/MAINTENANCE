@@ -39,6 +39,7 @@ from auth import auth_router, get_current_user, require_admin, TOKEN_EXPIRE_HOUR
 from routers.users           import router as users_router
 from routers.breakdowns      import router as breakdowns_router
 from routers.machines        import router as machines_router
+from routers.study_material  import router as study_material_router
 from routers.deviations      import router as deviations_router
 from routers.maintenance_kpi import router as maintenance_kpi_router
 from routers.maintenance_kpi_target import router as maintenance_kpi_target_router
@@ -132,6 +133,7 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(breakdowns_router)
 app.include_router(machines_router)
+app.include_router(study_material_router)   # Study Material (padhai ka saamaan)
 app.include_router(deviations_router)    # Online Deviation Form (maintenance)
 app.include_router(maintenance_kpi_router)
 app.include_router(maintenance_kpi_target_router)

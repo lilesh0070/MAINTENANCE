@@ -35,6 +35,7 @@ import SkillMatrix           from "./pages/SkillMatrix";
 import OrganisationChart     from "./pages/OrganisationChart";
 import SkillUpgradation      from "./pages/SkillUpgradation";
 import MachineManual         from "./pages/MachineManual";
+import StudyMaterial        from "./pages/StudyMaterial";
 import MachineDMC            from "./pages/MachineDMC";
 import DailyDMCFill          from "./pages/DailyDMCFill";
 import DMCSupervisorVerify   from "./pages/DMCSupervisorVerify";
@@ -246,6 +247,11 @@ function AppRoutes() {
       {/* Machine Manual — pick a machine → view / upload its PDF manual. */}
       <Route path="/maintenance-machine-manual" element={
         <Protected requiredAccess="maintenance-machine-manual"><MachineManual /></Protected>
+      } />
+      {/* Study Material — maintenance ke concepts (MTTR/MTBF/KPI...).  Padhna
+          sab ke liye, likhna sirf admin ke liye (rok backend par bhi hai). */}
+      <Route path="/maintenance-study-material" element={
+        <Protected requiredAccess="maintenance-study-material"><StudyMaterial /></Protected>
       } />
       <Route path="/maintenance-machine-dmc" element={
         <Protected requiredAccess="maintenance-machine-dmc"><MachineDMC /></Protected>

@@ -1,0 +1,311 @@
+/* ───────────────────────────────────────────────────────────────────
+ * StudyMaterial.jsx — "Study Material" (sidebar, Maintenance section)
+ * ───────────────────────────────────────────────────────────────────
+ * Maintenance ki padhai ka saamaan — MTTR / MTBF / LTTR / KPI / Breakdown /
+ * PM / DMC / ANDON / CAPA sab ek jagah, taaki naya banda padh kar samajh sake.
+ *
+ * Left me category ke hisaab se topic ki list, right me us topic ka matter.
+ *
+ * ADMIN ke liye: naya topic jodo, kisi bhi topic ki HEADING ya MATTER badlo,
+ * category badlo, kram badlo, ya topic hata do.  Baaki sab sirf padh sakte
+ * hain (backend par bhi wahi rok hai — non-admin ko 403 milta hai).
+ *
+ * Saara content DB me hai (maintenance_study_material), code me nahi — isliye
+ * kal naya point jodna ho to sirf is page se jud jayega, deploy nahi chahiye.
+ *
+ * Routing: /maintenance-study-material
+ */
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+
+const api = {
+  async get(path, token) {
+    const r = await fetch(path, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
+    return r.json();
+  },
+  async send(path, token, method, body) {
+    const r = await fetch(path, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
+    return r.status === 204 ? null : r.json();
+  },
+};
+
+const BLANK = { category: "Basics", title: "", body: "", sort_order: 0, active: true };
+
+export default function StudyMaterial() {
+  const { token, theme, user, isAdmin } = useAuth();
+  const nav = useNavigate();
+
+  const [rows, setRows]       = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [pickId, setPickId]   = useState(null);
+  const [msg, setMsg]         = useState("");
+  const [q, setQ]             = useState("");
+
+  // edit ka roop: null = band, {…} = form khula (id ho to edit, na ho to naya)
+  const [form, setForm]   = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const flash = (m) => { setMsg(m); setTimeout(() => setMsg(""), 2600); };
+
+  const load = async () => {
+    if (!token) return;
+    setLoading(true);
+    try {
+      // admin ko band (inactive) topic bhi dikhein, taaki wapas chalu kar sake
+      const d = await api.get(`/api/study-material/?include_inactive=${isAdmin ? "true" : "false"}`, token);
+      const list = Array.isArray(d) ? d : [];
+      setRows(list);
+      setPickId((cur) => (cur && list.some((r) => r.id === cur) ? cur : (list[0]?.id ?? null)));
+    } catch {
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, [token, isAdmin]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // dhoondhne par heading AUR matter dono me dekhte hain — aksar yaad heading
+  // nahi rehti, ek shabd yaad rehta hai
+  const shown = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return rows;
+    return rows.filter((r) =>
+      String(r.title || "").toLowerCase().includes(s) ||
+      String(r.body || "").toLowerCase().includes(s) ||
+      String(r.category || "").toLowerCase().includes(s));
+  }, [rows, q]);
+
+  // category ke hisaab se guch, kram wahi jo sort_order se aaya
+  const groups = useMemo(() => {
+    const g = [];
+    shown.forEach((r) => {
+      const c = r.category || "General";
+      let bucket = g.find((x) => x.cat === c);
+      if (!bucket) { bucket = { cat: c, items: [] }; g.push(bucket); }
+      bucket.items.push(r);
+    });
+    return g;
+  }, [shown]);
+
+  const cats = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.category || "General"))).sort(),
+    [rows]);
+
+  const pick = rows.find((r) => r.id === pickId) || null;
+
+  const save = async () => {
+    if (!form?.title?.trim()) { flash("Heading likhna zaroori hai"); return; }
+    setSaving(true);
+    try {
+      const body = {
+        category:   (form.category || "General").trim(),
+        title:      form.title.trim(),
+        body:       form.body || "",
+        sort_order: Number(form.sort_order) || 0,
+        active:     form.active !== false,
+      };
+      const saved = form.id
+        ? await api.send(`/api/study-material/${form.id}`, token, "PUT", body)
+        : await api.send(`/api/study-material/`, token, "POST", body);
+      setForm(null);
+      await load();
+      if (saved?.id) setPickId(saved.id);
+      flash(form.id ? "Topic update ho gaya" : "Naya topic jud gaya");
+    } catch (e) {
+      flash(String(e.message || e).slice(0, 120));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (r) => {
+    if (!window.confirm(`"${r.title}" hata dein?  Ye wapas nahi aayega.`)) return;
+    try {
+      await api.send(`/api/study-material/${r.id}`, token, "DELETE");
+      await load();
+      flash("Topic hata diya");
+    } catch (e) {
+      flash(String(e.message || e).slice(0, 120));
+    }
+  };
+
+  return (
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@700;800&display=swap');
+        .sm-root { min-height:100vh; background:#eef2f7; font-family:'Barlow',sans-serif; padding-bottom:50px; }
+        .sm-top { background:#fff; border-bottom:1px solid #e2e8f0; height:56px; padding:0 28px 0 96px;
+                  display:flex; align-items:center; justify-content:space-between;
+                  position:sticky; top:0; z-index:50; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+        .sm-top::after { content:''; position:absolute; bottom:0; left:0; right:0; height:2px; background:${theme.gradient}; }
+        .sm-title { font-family:'Barlow Condensed',sans-serif; font-size:22px; font-weight:800; color:#0f172a; }
+        .sm-title span { color:${theme.accent}; }
+        .sm-sub { font-size:11px; color:#94a3b8; margin-top:-2px; }
+        .sm-back { display:flex; align-items:center; gap:6px; font-size:13px; font-weight:700; color:#475569;
+                   background:#f1f5f9; border:1px solid #e2e8f0; border-radius:8px; padding:7px 14px; cursor:pointer; }
+        .sm-wrap { max-width:1400px; margin:18px auto 0; padding:0 22px; display:flex; gap:18px; align-items:flex-start; }
+        .sm-side { flex:0 0 320px; background:#fff; border:1px solid #e2e8f0; border-radius:14px;
+                   box-shadow:0 1px 4px rgba(15,23,42,.06); overflow:hidden; }
+        .sm-search { width:100%; border:none; border-bottom:1px solid #e2e8f0; outline:none; padding:12px 16px;
+                     font-size:13px; font-family:'Barlow',sans-serif; color:#0f172a; box-sizing:border-box; }
+        .sm-cat { font-size:10px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; color:#94a3b8;
+                  padding:12px 16px 5px; }
+        .sm-item { display:block; width:100%; text-align:left; border:none; background:none; cursor:pointer;
+                   padding:9px 16px; font-size:13px; font-weight:600; color:#334155; font-family:'Barlow',sans-serif;
+                   border-left:3px solid transparent; }
+        .sm-item:hover { background:#f8fafc; }
+        .sm-item.on { background:#f1f5f9; border-left-color:${theme.accent}; color:#0f172a; font-weight:800; }
+        .sm-off { opacity:.45; font-style:italic; }
+        .sm-main { flex:1 1 0; min-width:0; background:#fff; border:1px solid #e2e8f0; border-radius:14px;
+                   box-shadow:0 1px 4px rgba(15,23,42,.06); padding:26px 30px; }
+        .sm-h { font-family:'Barlow Condensed',sans-serif; font-size:27px; font-weight:800; color:#0f172a; margin:0; }
+        .sm-chip { display:inline-block; font-size:9.5px; font-weight:800; letter-spacing:.07em; text-transform:uppercase;
+                   color:#3730a3; background:#e0e7ff; border-radius:99px; padding:3px 11px; margin-bottom:8px; }
+        .sm-body { white-space:pre-wrap; font-size:14.5px; line-height:1.75; color:#334155; margin-top:14px; }
+        .sm-meta { margin-top:22px; padding-top:12px; border-top:1px dashed #e2e8f0; font-size:11px; color:#94a3b8; }
+        .sm-btn { border:none; border-radius:9px; padding:9px 18px; font-size:13px; font-weight:800; cursor:pointer;
+                  font-family:'Barlow',sans-serif; background:${theme.accent}; color:#fff; }
+        .sm-btn.gh { background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; }
+        .sm-btn.dz { background:#fee2e2; color:#dc2626; border:1px solid #fecaca; }
+        .sm-fld { display:flex; flex-direction:column; gap:5px; }
+        .sm-lbl { font-size:10.5px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:#64748b; }
+        .sm-in { border:1.5px solid #cbd5e1; border-radius:9px; padding:9px 12px; font-size:13px; font-weight:600;
+                 color:#0f172a; outline:none; font-family:'Barlow',sans-serif; background:#fff; box-sizing:border-box; }
+        .sm-ta { min-height:340px; resize:vertical; line-height:1.7; font-weight:500; }
+        .sm-flash { position:fixed; left:50%; transform:translateX(-50%); bottom:26px; z-index:9000;
+                    background:#0f172a; color:#fff; padding:10px 20px; border-radius:10px; font-size:13px;
+                    font-weight:700; box-shadow:0 10px 30px rgba(0,0,0,.25); }
+        .sm-empty { padding:40px 10px; text-align:center; color:#94a3b8; font-size:13.5px; }
+      `}</style>
+
+      <div className="sm-root">
+        <div className="sm-top">
+          <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+            <button className="sm-back" onClick={() => nav("/dashboard")}>← Back</button>
+            <div>
+              <div className="sm-title">Study <span>Material</span></div>
+              <div className="sm-sub">
+                Maintenance ke concepts — MTTR, MTBF, LTTR, KPI, Breakdown, PM, DMC, ANDON, CAPA
+              </div>
+            </div>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            {isAdmin && !form && (
+              <button className="sm-btn" onClick={() => setForm({ ...BLANK })}>＋ Add Topic</button>
+            )}
+            {user?.username && (
+              <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>
+            )}
+          </div>
+        </div>
+
+        <div className="sm-wrap">
+          {/* ── left: topic list ── */}
+          <div className="sm-side">
+            <input className="sm-search" placeholder="Search topic or text…"
+                   value={q} onChange={(e) => setQ(e.target.value)} />
+            {loading && <div className="sm-empty">Loading…</div>}
+            {!loading && shown.length === 0 && (
+              <div className="sm-empty">{rows.length ? "Kuch nahi mila." : "Abhi koi topic nahi."}</div>
+            )}
+            {!loading && groups.map((g) => (
+              <div key={g.cat}>
+                <div className="sm-cat">{g.cat}</div>
+                {g.items.map((r) => (
+                  <button key={r.id}
+                          className={"sm-item" + (r.id === pickId ? " on" : "") + (r.active === false ? " sm-off" : "")}
+                          onClick={() => { setPickId(r.id); setForm(null); }}>
+                    {r.title}{r.active === false ? "  (hidden)" : ""}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+
+          {/* ── right: matter, ya admin ka form ── */}
+          <div className="sm-main">
+            {form ? (
+              <>
+                <h2 className="sm-h">{form.id ? "Edit Topic" : "New Topic"}</h2>
+                <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginTop:16 }}>
+                  <div className="sm-fld" style={{ flex:"1 1 200px" }}>
+                    <label className="sm-lbl">Category</label>
+                    <input className="sm-in" list="sm-cats" value={form.category}
+                           onChange={(e) => setForm({ ...form, category: e.target.value })} />
+                    <datalist id="sm-cats">
+                      {cats.map((c) => <option key={c} value={c} />)}
+                    </datalist>
+                  </div>
+                  <div className="sm-fld" style={{ flex:"3 1 340px" }}>
+                    <label className="sm-lbl">Heading</label>
+                    <input className="sm-in" value={form.title}
+                           onChange={(e) => setForm({ ...form, title: e.target.value })} />
+                  </div>
+                  <div className="sm-fld" style={{ flex:"0 0 110px" }}>
+                    <label className="sm-lbl">Order</label>
+                    <input className="sm-in" type="number" value={form.sort_order ?? 0}
+                           onChange={(e) => setForm({ ...form, sort_order: e.target.value })} />
+                  </div>
+                </div>
+
+                <div className="sm-fld" style={{ marginTop:14 }}>
+                  <label className="sm-lbl">Matter</label>
+                  <textarea className="sm-in sm-ta" value={form.body}
+                            placeholder="Yahan poora matter likhein.  Khali line chhodne par paragraph ban jaata hai."
+                            onChange={(e) => setForm({ ...form, body: e.target.value })} />
+                </div>
+
+                <label style={{ display:"flex", alignItems:"center", gap:8, marginTop:14,
+                                fontSize:13, fontWeight:700, color:"#475569" }}>
+                  <input type="checkbox" checked={form.active !== false}
+                         onChange={(e) => setForm({ ...form, active: e.target.checked })} />
+                  Sabko dikhe (hata kar sirf admin ko dikhega)
+                </label>
+
+                <div style={{ display:"flex", gap:10, marginTop:20 }}>
+                  <button className="sm-btn" onClick={save} disabled={saving}>
+                    {saving ? "Saving…" : "Save"}
+                  </button>
+                  <button className="sm-btn gh" onClick={() => setForm(null)}>Cancel</button>
+                </div>
+              </>
+            ) : !pick ? (
+              <div className="sm-empty">
+                {loading ? "Loading…" : "Left se koi topic chunein."}
+              </div>
+            ) : (
+              <>
+                <div className="sm-chip">{pick.category || "General"}</div>
+                <div style={{ display:"flex", alignItems:"flex-start", gap:14 }}>
+                  <h2 className="sm-h" style={{ flex:1 }}>{pick.title}</h2>
+                  {isAdmin && (
+                    <div style={{ display:"flex", gap:8, flex:"0 0 auto" }}>
+                      <button className="sm-btn gh" onClick={() => setForm({ ...pick })}>✎ Edit</button>
+                      <button className="sm-btn dz" onClick={() => remove(pick)}>🗑</button>
+                    </div>
+                  )}
+                </div>
+                <div className="sm-body">{pick.body || "—"}</div>
+                <div className="sm-meta">
+                  Last updated by {pick.updated_by || "—"}
+                  {pick.updated_at ? ` · ${String(pick.updated_at).slice(0, 10)}` : ""}
+                  {pick.active === false ? " · HIDDEN (sirf admin ko dikh raha hai)" : ""}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {msg && <div className="sm-flash">{msg}</div>}
+    </>
+  );
+}
