@@ -44,6 +44,15 @@ const deptColor = (ev) => {
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
   return FALLBACK[h % FALLBACK.length];
 };
+// Call History me tareekh + samay — "30-Aug 10:41:06" (chhota, nowrap-friendly)
+const fmtDT = (iso) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d)) return String(iso).slice(0, 19).replace("T", " ");
+  const p2 = (n) => String(n).padStart(2, "0");
+  const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${p2(d.getDate())}-${MON[d.getMonth()]} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+};
 const fmtClock = (s) => {
   s = Math.max(0, Math.floor(s || 0));
   const p2 = (n) => String(n).padStart(2, "0");
@@ -436,6 +445,53 @@ export default function AndonSystem() {
   const [fhLine, setFhLine] = useState("");
   const [fhMachine, setFhMachine] = useState("");
   const [fhFault, setFhFault] = useState("");
+  // ── Call History (raw andon_history) ────────────────────────────────
+  // Report sirf jod-ghata dikhati hai; yahan ASLI rows dikhti hain, taaki
+  // admin kachra row (testing ki 2-second call, galat department) hata sake.
+  const [chRows, setChRows]       = useState([]);
+  const [chLoading, setChLoading] = useState(false);
+  const [chSel, setChSel]         = useState(() => new Set());
+  const [chLimit, setChLimit]     = useState(200);
+  const isAdmin = user?.role === "admin";
+
+  const loadCallHistory = useCallback(async () => {
+    setChLoading(true);
+    try {
+      const d = await api(`/history?limit=${chLimit}`);
+      setChRows(Array.isArray(d) ? d : []);
+      setChSel(new Set());          // list badli to purana selection bekaar
+    } catch { setChRows([]); }
+    finally { setChLoading(false); }
+  }, [api, chLimit]);
+
+  useEffect(() => {
+    if (!token || tab !== "calls") return;
+    loadCallHistory();
+  }, [token, tab, loadCallHistory]);
+
+  const chToggle = (id) => setChSel((prev) => {
+    const n = new Set(prev);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  });
+
+  const chDelete = async () => {
+    const ids = [...chSel];
+    if (!ids.length) return;
+    // Delete wapas nahi aata — isliye ginti ke saath saaf poochte hain.
+    if (!window.confirm(
+      `${ids.length} call history row hamesha ke liye delete ho jayengi.
+` +
+      `Ye wapas nahi aayengi.  Aage badhein?`)) return;
+    try {
+      const r = await api("/history/delete", { method: "POST", body: JSON.stringify({ ids }) });
+      flash(`${r.deleted} row delete ho gayi`);
+      await loadCallHistory();
+    } catch (e) {
+      flash(String(e?.message || e).slice(0, 140));
+    }
+  };
+
   const [fhRows, setFhRows] = useState([]);
   const [fhFaultOpts, setFhFaultOpts] = useState([]);
   const [fhYears, setFhYears] = useState([]);
@@ -648,7 +704,7 @@ export default function AndonSystem() {
 
         <div className="an-body">
           <div className="an-tabs">
-            {[["board","Live Board"],["monitor","Monitor"],["faults","Fault History"],["config","Configuration"],["callout","Call → Output"],["reports","Reports"]]
+            {[["board","Live Board"],["monitor","Monitor"],["faults","Fault History"],["calls","Call History"],["config","Configuration"],["callout","Call → Output"],["reports","Reports"]]
               .filter(([k]) => canAccess(TAB_KEY[k]))
               .map(([k, l]) => (
               <button key={k} className={`an-tab${tab === k ? " on" : ""}`} onClick={() => setTab(k)}>{l}</button>
@@ -1163,6 +1219,95 @@ export default function AndonSystem() {
               </div>
             </>
           )}
+          {/* ── Call History ────────────────────────────────────────────
+              Raw andon_history rows.  Reports jod-ghata dikhati hai; yahan
+              ek-ek call dikhti hai, taaki admin kachra row hata sake
+              (testing ki 2-second call, ya galat department wali). */}
+          {tab === "calls" && canAccess("andon-reports") && (
+            <div className="an-card">
+              <div className="an-row" style={{ gap:10, flexWrap:"wrap", alignItems:"center", marginBottom:12 }}>
+                <b style={{ fontSize:15 }}>Call History</b>
+                <span style={{ color:"#94a3b8", fontSize:12 }}>
+                  {chLoading ? "load ho raha…" : `${chRows.length} row`}
+                </span>
+                <label style={{ fontSize:12, color:"#64748b", fontWeight:700 }}>
+                  {" "}dikhao{" "}
+                  <select className="an-in" style={{ padding:"4px 8px", width:90 }}
+                          value={chLimit} onChange={(e) => setChLimit(Number(e.target.value))}>
+                    {[100, 200, 500, 1000].map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </label>
+                <button className="an-btn gh sm" onClick={loadCallHistory}>↻ Refresh</button>
+                <span style={{ marginLeft:"auto", display:"flex", gap:10, alignItems:"center" }}>
+                  {isAdmin ? (
+                    <>
+                      <span style={{ fontSize:12, color:"#64748b", fontWeight:700 }}>
+                        {chSel.size} selected
+                      </span>
+                      <button className="an-btn" disabled={!chSel.size}
+                              style={{ background: chSel.size ? "#dc2626" : "#e2e8f0",
+                                       color: chSel.size ? "#fff" : "#94a3b8",
+                                       cursor: chSel.size ? "pointer" : "default" }}
+                              onClick={chDelete}>
+                        🗑 Delete selected
+                      </button>
+                    </>
+                  ) : (
+                    <span style={{ fontSize:11.5, color:"#94a3b8" }}>
+                      delete sirf admin kar sakta hai
+                    </span>
+                  )}
+                </span>
+              </div>
+
+              <div style={{ maxHeight:520, overflowY:"auto" }}>
+                <table className="an-tbl">
+                  <thead><tr>
+                    {isAdmin && <th style={{ width:34 }}>
+                      <input type="checkbox"
+                             checked={!!chRows.length && chSel.size === chRows.length}
+                             onChange={(e) => setChSel(e.target.checked
+                               ? new Set(chRows.map((r) => r.id)) : new Set())} />
+                    </th>}
+                    <th style={{ width:60 }}>ID</th>
+                    <th>Department</th><th>Zone</th><th>Line</th><th>Machine</th>
+                    <th>Aayi</th><th>Khatam</th>
+                    <th style={{ width:100, textAlign:"center" }}>Response</th>
+                    <th style={{ width:90, textAlign:"center" }}>Total</th>
+                  </tr></thead>
+                  <tbody>
+                    {chLoading && <tr><td colSpan={isAdmin ? 10 : 9} style={{ color:"#94a3b8" }}>Load ho raha…</td></tr>}
+                    {!chLoading && !chRows.length &&
+                      <tr><td colSpan={isAdmin ? 10 : 9} style={{ color:"#94a3b8" }}>Koi call history nahi.</td></tr>}
+                    {!chLoading && chRows.map((r) => (
+                      <tr key={r.id} style={{ background: chSel.has(r.id) ? "#fef2f2" : undefined }}>
+                        {isAdmin && <td>
+                          <input type="checkbox" checked={chSel.has(r.id)}
+                                 onChange={() => chToggle(r.id)} />
+                        </td>}
+                        <td style={{ color:"#94a3b8" }}>{r.id}</td>
+                        <td style={{ fontWeight:700 }}>{r.department || r.display_name || "—"}</td>
+                        <td>{r.zone || "—"}</td>
+                        <td>{r.line || "—"}</td>
+                        <td className="an-mno">{r.machine_no || "—"}</td>
+                        <td style={{ whiteSpace:"nowrap", fontSize:12 }}>{fmtDT(r.started_at)}</td>
+                        <td style={{ whiteSpace:"nowrap", fontSize:12 }}>{fmtDT(r.ended_at)}</td>
+                        <td style={{ textAlign:"center" }}>
+                          {r.response_seconds == null
+                            ? <span style={{ color:"#94a3b8" }}>—</span>
+                            : `${r.response_seconds}s`}
+                        </td>
+                        <td style={{ textAlign:"center", fontWeight:800 }}>
+                          {r.duration_seconds == null ? "—" : `${r.duration_seconds}s`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {tab === "reports" && canAccess("andon-reports") && (() => {
             const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
             const plantToday = () => { const n = new Date(); const d = new Date(n); if (n.getHours() < 7) d.setDate(d.getDate()-1); return ymd(d); };

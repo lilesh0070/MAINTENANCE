@@ -2927,6 +2927,64 @@ def dept_history(department: str,
             "total_loss_seconds": total, "calls": len(out), "rows": out}
 
 
+class HistoryDeleteIn(BaseModel):
+    ids: List[int]
+
+
+@router.post("/history/delete")
+def delete_history(body: HistoryDeleteIn, admin=Depends(require_admin)):
+    """ANDON history ki chuni hui rows hatao — SIRF admin.
+
+    Zaroorat: testing ya PLC ki kharabi se kabhi kachra rows ban jaati hain
+    (do-do second ki calls, ya galat department), aur wo report ke number
+    bigadti hain.  Admin unhe yahan se hata sakta hai.
+
+    Teen baatein jaan-boojh kar:
+
+    1. **Sirf `andon_history`.**  `andon_system` (abhi chalu calls) yahan se
+       nahi chhedi jaati — chalti call ko beech me mita dene par output bit
+       aur slip ka hisaab dono bigad jaate.  Call band hone do, phir hatao.
+
+    2. **Audit me likha jaata hai** — kisne, kab, kaunsi id, aur us row ka
+       saar.  Delete wapas nahi aata, isliye kam se kam nishan to rahe.
+
+    3. **Ek baar me 500 tak** — galti se poori table jaane se bachne ke liye.
+    """
+    ids = [int(i) for i in (body.ids or []) if i is not None]
+    if not ids:
+        raise HTTPException(400, "Koi row select nahi ki")
+    if len(ids) > 500:
+        raise HTTPException(400, "Ek baar me 500 se zyada nahi")
+    _ensure_tables()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        # pehle padho — audit me kya gaya, ye likhna hai
+        cur.execute("""SELECT h.id, COALESCE(dep.name, h.display_name) AS dept,
+                              h.zone, h.line, h.machine_no, h.started_at,
+                              h.duration_seconds
+                         FROM andon_history h
+                         LEFT JOIN andon_departments dep ON dep.id = h.department_id
+                        WHERE h.id = ANY(%s)""", (ids,))
+        rows = cur.fetchall()
+        if not rows:
+            raise HTTPException(404, "Ye rows mili hi nahi (shayad pehle hi hat chuki hain)")
+        cur.execute("DELETE FROM andon_history WHERE id = ANY(%s)", (ids,))
+        n = cur.rowcount
+        try:
+            from main import write_audit
+            summary = "; ".join(
+                f"#{r['id']} {r['dept']} {r['zone']}/{r['line']}/{r['machine_no']} "
+                f"{r['started_at']} {r['duration_seconds']}s" for r in rows[:20])
+            if len(rows) > 20:
+                summary += f" ... (+{len(rows) - 20} aur)"
+            write_audit(conn, action="ANDON_HISTORY_DELETE", entity_type="andon_history",
+                        entity_id=rows[0]["id"], details=summary, user=admin)
+        except Exception as e:                       # audit kabhi kaam na roke
+            print(f"[ANDON] history delete ka audit nahi likha: {e}")
+        conn.commit()
+    return {"ok": True, "deleted": n, "ids": [r["id"] for r in rows]}
+
+
 @router.get("/history")
 def event_history(limit: int = 200, user=Depends(get_current_user)):
     """Closed calls (duration / response) — for reports."""
