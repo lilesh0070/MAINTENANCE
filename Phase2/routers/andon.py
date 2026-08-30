@@ -506,6 +506,15 @@ def _slip_threshold_sweep():
 # routers.plc me tha; PLC Integration feature hatne par yahan aa gaya).
 # ═══════════════════════════════════════════════════════════════════════
 _PLC_POLL_INTERVAL = 0.1       # 100 ms — near real-time (press karte hi call)
+# Output writer ko BEECH ME jagane ka ghanti.  Warna wo har 1 second par hi
+# jaagta tha, to response (ACK) aane ke baad bit 0 se 1 second tak kabhi bhi
+# OFF hota — screen par saaf deri dikhti thi.  Input poller 100ms par chalta
+# hai, yaani ACK to turant pakda jaata tha; sust hissa yahi 1-second ka
+# intezaar tha.  Ab call khulte/ACK hote/band hote hi ghanti bajti hai aur
+# writer usi pal chal padta hai.  Steady state me kuch nahi badla — koi
+# extra PLC traffic nahi, sirf bekaar ka intezaar hat gaya.
+_OUT_WAKE = threading.Event()
+
 _PLC_RETRY_SECS    = 5         # offline PLC ko itni der baad dobara connect-try
 _plc_poller_started = False
 _PLC_CONN  = {}                # {dev_id: mc}  MAIN PLC (ANDON bits) persistent connection
@@ -685,6 +694,7 @@ def _plc_poll_once(dev):
         # ek hi cycle me: bit-mapping fetch + PLC read + apply (fast cycle)
         closed = []
         acked  = []
+        bit_changed = False        # call khuli / ACK hui / band hui?
         with get_conn() as conn:
             cur = dict_cursor(conn)
             cur.execute("""SELECT do_index, bit_type, bit_no FROM andon_plc_output_mapping
@@ -710,7 +720,13 @@ def _plc_poll_once(dev):
                     closed.append((res.get("event_id"), res.get("history_id")))
                 elif res and res.get("action") == "acknowledged":    # ACK aayi -> slip me RESPONSE bharo
                     acked.append(res.get("event_id"))
+                if res and res.get("action") in ("opened", "acknowledged", "closed"):
+                    bit_changed = True      # output bit ka faisla badal gaya
             conn.commit()
+        # commit ke BAAD ghanti bajao — pehle bajate to writer abhi tak
+        # bina-commit wali purani haalat padhta aur kuch farak na padta.
+        if bit_changed:
+            _OUT_WAKE.set()
         # commit ke BAAD (andon_history ab doosri connection ko dikhega) — har band
         # hui MAINTENANCE call ki slip me bd_ok_time / end-date / down-time bhar do.
         # (auto_slip_on_close pehle kahin call hi nahi hota tha -> OK-time khali reh
@@ -771,6 +787,8 @@ def _stale_call_sweep():
                     if res and res.get("action") == "closed":
                         closed.append((res.get("event_id"), res.get("history_id"), reason))
             conn.commit()
+        if closed:
+            _OUT_WAKE.set()            # ghost call band hui -> bit turant OFF
         for eid, hid, reason in closed:
             print(f"[ANDON] ghost call {eid} auto-closed ({reason}) -> timer band")
             if eid and hid:
@@ -1037,6 +1055,7 @@ _OUT_MAX_FAILS = 3       # itni baar LAGATAAR fail ho tabhi socket todo
 _OUT_RECONN_SEEN = {}    # {mapping_id: reconnect_req} — Retry do baar na chale
 
 
+
 def _out_drop(ip, port):
     """Ek output PLC ka connection band karo + backoff/fail-ginti saaf.
     Agla cycle bilkul naya connect banayega, bina intezaar ke."""
@@ -1232,14 +1251,24 @@ def _andon_output_write_once():
 
 
 def _andon_output_loop():
-    """DEDICATED thread — mirror ANDON calls onto output PLC bits every ~1s.
-    Started only from _start_plc_poller (i.e. only when polling is enabled)."""
+    """DEDICATED thread — ANDON calls ko output PLC ke bits par utaarta hai.
+
+    Jaagta hai DO me se jo pehle ho: ghanti (`_OUT_WAKE`) baje — yaani koi call
+    khuli / ACK hui / band hui — ya 1 second ka pehra poora ho.  Ghanti isliye
+    hai ki ACK ke baad bit turant OFF ho; sirf 1-second ke chakkar par chhodte
+    to bit 0 se 1 second tak kabhi bhi OFF hota aur saaf deri dikhti.
+    1-second wala pehra phir bhi rakha hai — safety net, taaki koi ghanti
+    kisi wajah se choot bhi jaye to bit zyada der galat na rahe.
+
+    Sirf _start_plc_poller se chalu hota hai (yaani jab polling on ho)."""
     while True:
+        _OUT_WAKE.clear()          # kaam se PEHLE saaf — kaam ke DAURAN aayi
+                                   # ghanti kho na jaye (turant dobara chalega)
         try:
             _andon_output_write_once()
         except Exception as e:
             print(f"[ANDON-OUT] {e}")
-        _time.sleep(1.0)
+        _OUT_WAKE.wait(timeout=1.0)   # ghanti baji to turant, warna 1s ka pehra
 
 
 class CallOutputIn(BaseModel):
