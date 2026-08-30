@@ -2563,7 +2563,7 @@ def today_calls(frm: Optional[str] = Query(None, alias="from"),
         t = to or f
         # window: from-date 07:00  se  (to-date + 1 din) 06:30
         cur.execute("""
-            SELECT h.zone, h.line, COALESCE(dep.name, h.display_name) AS department,
+            SELECT h.id, h.zone, h.line, COALESCE(dep.name, h.display_name) AS department,
                    h.started_at, h.ended_at, h.duration_seconds, FALSE AS is_live
               FROM andon_history h
               LEFT JOIN andon_departments dep ON dep.id = h.department_id
@@ -2571,7 +2571,11 @@ def today_calls(frm: Optional[str] = Query(None, alias="from"),
                AND h.started_at <  ((%s::date + INTERVAL '1 day') + TIME '06:30')
                AND COALESCE(dep.name, h.display_name) ILIKE 'maintenance'
             UNION ALL
-            SELECT e.zone, e.line, COALESCE(dep.name, e.display_name) AS department,
+            -- id sirf HISTORY rows ki aati hai.  Chalu call (andon_system) ki
+            -- id NULL rakhi hai jaan-boojh kar — UI use delete nahi karne deti,
+            -- aur backend bhi sirf andon_history se hi hatata hai.
+            SELECT NULL::int AS id,
+                   e.zone, e.line, COALESCE(dep.name, e.display_name) AS department,
                    e.started_at, NULL::timestamp AS ended_at,
                    EXTRACT(EPOCH FROM (NOW() - e.started_at))::int AS duration_seconds,
                    TRUE AS is_live
@@ -2592,6 +2596,9 @@ def today_calls(frm: Optional[str] = Query(None, alias="from"),
         dur = int(r["duration_seconds"] or 0)
         total += dur
         out.append({
+            # id sirf history rows ki — chalu call ki NULL.  UI isi se tay karti
+            # hai ki delete ka button dikhana hai ya nahi.
+            "id":         r["id"],
             "zone":       r["zone"], "line": r["line"],
             "department": r["department"],
             "date":       st.date().isoformat() if st else None,

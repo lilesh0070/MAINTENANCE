@@ -270,6 +270,32 @@ export default function MaintenanceDashboard() {
     try { setTodayData(await api.get("/api/andon/today-calls", token)); }
     catch { setTodayErr(true); }
   };
+  // Kachra call (testing ki 2-second wali, ya PLC ki kharabi se bani) hatane ke
+  // liye — SIRF admin, aur SIRF band ho chuki call.  Chalu call ki `id` NULL
+  // aati hai, isliye uspar button dikhta hi nahi: chalti call beech me mitane
+  // par output bit aur slip ka hisaab dono bigad jaate.
+  const [delBusy, setDelBusy] = useState(null);
+  const deleteTodayRow = async (r) => {
+    if (!r?.id) return;
+    if (!window.confirm(
+      `Ye call history se hamesha ke liye hat jayegi:
+
+` +
+      `${r.zone || "-"} / ${r.line || "-"} · ${r.department || "-"}
+` +
+      `${r.start_time || "-"} → ${r.end_time || "-"}
+
+Wapas nahi aayegi.  Aage badhein?`)) return;
+    setDelBusy(r.id);
+    try {
+      await api.post("/api/andon/history/delete", { ids: [r.id] }, token);
+      setTodayData(await api.get("/api/andon/today-calls", token));
+    } catch (e) {
+      let m = String(e?.message || e);
+      try { m = JSON.parse(m).detail || m; } catch { /* plain text */ }
+      window.alert("Delete nahi hua — " + m.slice(0, 200));
+    } finally { setDelBusy(null); }
+  };
 
   return (
     <TvFit designWidth={1280} bg="#f8fafc">
@@ -470,7 +496,7 @@ export default function MaintenanceDashboard() {
               ) : (
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
-                    <tr>{["Zone", "Line", "Department", "Start", "End", "Total"].map((h) => (
+                    <tr>{["Zone", "Line", "Department", "Start", "End", "Total", ...(isAdmin ? [""] : [])].map((h) => (
                       <th key={h} style={{ textAlign: "left", padding: "10px 14px", fontSize: 10,
                                            fontWeight: 800, letterSpacing: ".05em", textTransform: "uppercase",
                                            color: "#64748b", borderBottom: "2px solid #e2e8f0",
@@ -488,6 +514,23 @@ export default function MaintenanceDashboard() {
                           {r.is_live ? <span style={{ color: "#dc2626", fontWeight: 800 }}>● live</span> : (r.end_time || "—")}
                         </td>
                         <td style={{ padding: "9px 14px", fontFamily: "monospace", fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap" }}>{fmtDuration(r.duration_seconds)}</td>
+                        {isAdmin && (
+                          <td style={{ padding: "9px 14px", whiteSpace: "nowrap", textAlign: "right" }}>
+                            {r.id ? (
+                              <button onClick={() => deleteTodayRow(r)} disabled={delBusy === r.id}
+                                      title="Is call ko history se hata do"
+                                      style={{ border: "1px solid #fecaca", background: "#fff",
+                                               color: "#dc2626", borderRadius: 7, cursor: "pointer",
+                                               padding: "3px 9px", fontSize: 12, fontWeight: 800,
+                                               opacity: delBusy === r.id ? .5 : 1 }}>
+                                {delBusy === r.id ? "…" : "🗑"}
+                              </button>
+                            ) : (
+                              <span title="Chalu call — band hone par hi hat sakti hai"
+                                    style={{ color: "#cbd5e1", fontSize: 12 }}>—</span>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
