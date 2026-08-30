@@ -959,9 +959,6 @@ export default function AndonSystem() {
                     ))}
                   </tbody>
                 </table>
-                <div style={{ fontSize:11.5, color:"#94a3b8", marginTop:10 }}>
-                  <b>Connection</b> = output PLC TCP se reachable. <b>Bit now</b> = PLC pe bit ka <b>ACTUAL</b> state — active writer ne likha + read-back karke DB me daala, isliye <b>har backend</b> (dev/production) pe wahi sach dikhta. "chahiye: ON" = call ke hisaab se bit ON hona chahiye (jab writer band ho ya PLC write na le raha). <b>Sirf EK backend</b> ek waqt pe likhta hai (singleton lock) — production ki priority zyada, wo dev se lock apne aap le leta, koi manual on/off nahi. Departments aur bhi add kar sakte (Tool Room, Quality…) — sab isi loop me handle. Config save/edit yahin se.
-                </div>
               </div>
             </>
           )}
