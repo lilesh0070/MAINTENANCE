@@ -110,7 +110,7 @@ const nextDay = (dstr) => {
  *   {
  *     zone, line, machine_no, machine_name, date,
  *     shift, line_leader_name, model_no, machine_operator_name,
- *     category, // 'A' | 'B' | 'C'
+ *     category, // 'A' | 'B'   (C hata diya gaya — ab sirf do category)
  *     bd_start_time, bd_received_time, bd_ok_time,
  *     bd_start_date, bd_end_date, mc_down_time_minutes,
  *     problem_reported_by_production,
@@ -838,16 +838,18 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
           </div>
           {[
             { code: "A", desc: "MACHINE OR LINE HAS STOPPED AND PRODUCTION LOSS DIRECTLY" },
-            { code: "B", desc: "MACHINE RUNNING WITH PRODUCTION LOSS ( PRODUCTION EFFECTED )" },
-            { code: "C", desc: "WORK DONE WHEN MACHINE IDEAL I.E - DURING LUNCH & AFTER SHIFT END TIME." },
+            { code: "B", desc: "MACHINE RUNNING WITH PRODUCTION LOSS ( PRODUCTION EFFECTED ) ( ADJUSTMENT )" },
           ].map(c => (
             <div key={c.code} className="bds-cat-row">
               <div className="bds-cat-cell-code">{c.code} CATEGORY B/D :-</div>
               <div className="bds-cat-cell-desc">{c.desc}</div>
+              {/* trim: DB me ek row "B  " (peeche space ke saath) padi hai — seedhe
+                  === se uska tick lagta hi nahi tha.  Ab lagega, aur aage bhi kabhi
+                  space aa gaya to tootega nahi. */}
               <div className="bds-cat-cell-tick">
                 <input type="checkbox"
                        disabled={!fieldEditable("category")}
-                       checked={data.category === c.code}
+                       checked={String(data.category || "").trim() === c.code}
                        onChange={e => set("category", e.target.checked ? c.code : "")}/>
               </div>
             </div>
