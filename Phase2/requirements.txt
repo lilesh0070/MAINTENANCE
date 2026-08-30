@@ -17,7 +17,7 @@ requests==2.31.0
 openpyxl==3.1.2
 
 # ── AI chat (Anthropic Claude) ────────────────────────────────
-anthropic==0.39.0
+anthropic>=1.2.0          # 0.39 httpx 0.28 ke saath tootti hai (proxies= hat gaya)
 
 # ── PLC (Mitsubishi MC Protocol) — used by collector_engine.py ─
 pymcprotocol==0.3.0

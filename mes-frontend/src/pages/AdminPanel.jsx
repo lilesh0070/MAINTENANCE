@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api/client";
-import AIAssistant from "../components/AIAssistant";
 import PMCheckSheetAdmin from "./PMCheckSheetAdmin";
 import MachineDMCAdmin from "./MachineDMCAdmin";
 import {
@@ -252,7 +251,7 @@ export function AdminShell({
 // `editable` forces full-write for everyone who can reach this panel (not
 // just admins).  Used by the Maintenance Panel so department maintenance
 // users can edit, while Production / Quality stay read-only for non-admins.
-function _RoleScopedShell({ title, sectionKey, page, editable = false, accessKey }) {
+function _RoleScopedShell({ title, sectionKey, editable = false, accessKey }) {
   const { theme, isAdmin, canWrite } = useAuth();
   const sec = ADMIN_SECTIONS.filter(s => s.key === sectionKey);
   // editable panel (Maintenance): admin → full edit; jis non-admin ko panel
@@ -273,19 +272,18 @@ function _RoleScopedShell({ title, sectionKey, page, editable = false, accessKey
           }}>Read-only</span>
         ) : null}
       />
-      <AIAssistant pageContext={{ page }} />
     </>
   );
 }
 
 export function ProductionAdminPanel() {
-  return <_RoleScopedShell title="Production Panel"  sectionKey="production"  page="ProductionAdminPanel" />;
+  return <_RoleScopedShell title="Production Panel"  sectionKey="production" />;
 }
 export function MaintenanceAdminPanel() {
-  return <_RoleScopedShell title="Maintenance Panel" sectionKey="maintenance" page="MaintenanceAdminPanel" editable accessKey="admin-maintenance" />;
+  return <_RoleScopedShell title="Maintenance Panel" sectionKey="maintenance" editable accessKey="admin-maintenance" />;
 }
 export function QualityAdminPanel() {
-  return <_RoleScopedShell title="Quality Panel"     sectionKey="quality"     page="QualityAdminPanel" />;
+  return <_RoleScopedShell title="Quality Panel"     sectionKey="quality" />;
 }
 
 // Default export = the "Admin core" panel (System Map / Departments /
@@ -297,7 +295,6 @@ export default function AdminPanel() {
   return (
     <>
       <AdminShell title="Admin Panel" accent={theme.accent} sections={sec} />
-      <AIAssistant pageContext={{ page: "AdminPanel" }} />
     </>
   );
 }

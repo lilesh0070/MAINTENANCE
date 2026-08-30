@@ -2,6 +2,7 @@ import { useLocation } from "react-router-dom";
 import SlideNav from "./SlideNav";
 import FullscreenButton from "./FullscreenButton";
 import DisplayToolbar from "./DisplayToolbar";
+import AIAssistant from "./AIAssistant";
 
 // The wall-dashboard pages get the full display toolbar (Light/Dark + aspect +
 // fullscreen); every other page keeps just the plain full-screen button.
@@ -25,6 +26,13 @@ export default function Layout({ children }) {
 
       {/* Floating nav — always visible on top */}
       <SlideNav />
+
+      {/* Maintenance AI assistant — ek hi jagah lagi hai, isliye HAR page par
+          milti hai (Breakdown, ANDON, CAPA, PM, Spare, KPI...).  Wall-display
+          pages par nahi: wo TV par chalte hain, wahan koi type nahi karta aur
+          floating button sirf screen gandi karta.  Assistant ke andar ka UI
+          bilkul waisa hi hai — sirf ab har page par pahunch gaya. */}
+      {!isDisplay && <AIAssistant pageContext={{ page: pathname }} />}
 
       {/* Display controls — full toolbar on the wall-dashboard pages,
           otherwise just the full-screen toggle. */}

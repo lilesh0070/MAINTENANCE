@@ -741,17 +741,42 @@ def _get_ai_schema_info():
             schema_info = "ZONES / LINES (Machine Master se):\n"
             for l in lines:
                 schema_info += f"  {l['zone_name']} -> {l['line_name']}\n"
-            schema_info += (
-                "\nMAINTENANCE TABLES:\n"
-                "  andon_system / andon_history - ANDON calls (zone, line, "
-                "started_at, acknowledged_at, ended_at, duration_seconds)\n"
-                "  maintenance_auto_breakdown_slip - ANDON se auto bani slip\n"
-                "  maintenance_breakdown_data - manual Break Down Slip\n"
-                "  maintenance_yearly_pm_shedule / maintenance_pm_check_point - PM\n"
-                "  machine_dmc / machine_dmc_filled - daily machine check\n"
-                "  maintenance_spare, maintenance_qpr, maintenance_skill_eval\n"
-                "MASTER: maintenance_machines(zone_name, line_name, machine_no, machine_name)"
-            )
+            schema_info += """
+TABLES (asli column naam - inhi ka istemal karo):
+  maintenance_breakdown_data  <- MUKHYA breakdown slip table
+     id, zone, line, machine_no, machine_name, slip_date, shift,
+     category('A'/'B'), bd_start_date, bd_end_date, bd_start_time,
+     bd_received_time, bd_ok_time, mc_down_time_minutes,
+     response_time_minutes, frequency, problem_reported_by_production,
+     problem_observed_by_maintenance, action_taken_on_problem,
+     problem_related_to, type_electrical, type_mechanical,
+     spares(jsonb), spares_used, bd_attended_by, submitted_at
+  andon_history  <- band ho chuki ANDON calls
+     id, zone, line, machine_no, display_name(department), started_at,
+     ended_at, duration_seconds, response_seconds, model, fault
+  andon_system   <- ABHI khuli calls (wahi columns + acknowledged_at, state)
+  maintenance_spare
+     id, spare_name, spare_model_no, spare_cnmm_no, zone, line,
+     machine_no, machine_name, spare_qty, used_date, slip_id
+  maintenance_yearly_pm_shedule
+     machine_name, machine_code, zone_name, line, pm_frequency,
+     plan_weeks, actual_weeks, actual_dates, year_label
+  maintenance_pm_check_point, machine_dmc, machine_dmc_filled,
+  maintenance_qpr(qpr_no, title, payload, capa_status), maintenance_skill_eval
+  maintenance_auto_breakdown_slip  <- ANDON se auto bani slip
+MASTER: maintenance_machines(zone_name, line_name, machine_no,
+        machine_name, is_active, serial_no)
+
+DOMAIN NIYAM (in par app ke page bane hain - inhe mat todo):
+  - CAPA / more-than-1-hour breakdown = mc_down_time_minutes >= 60
+    (60 khud bhi GINTA hai; "> 60" mat likhna, warna number app se nahi milega)
+  - Plant din 07:00 se agle din 06:30 tak.  ANDON ki date
+    (started_at - interval '7 hours')::date se nikalo
+  - Financial year April se March.  2026-27 = 2026-04-01 .. 2027-03-31
+  - Breakdown ki date = COALESCE(slip_date, bd_start_date)
+  - Zone/line/machine ke naam HAMESHA maintenance_machines se milao
+  - downtime MINUTE me hai, ANDON ka duration_seconds SECOND me
+"""
             _AI_SCHEMA_CACHE["prompt"] = schema_info
             _AI_SCHEMA_CACHE["lines"]  = lines
             _AI_SCHEMA_CACHE["ts"]     = _t.time()
@@ -779,17 +804,25 @@ async def ai_chat(request: Request, user=Depends(get_current_user)):
     schema_info, _ = _get_ai_schema_info()
 
     # Compact prompt — fewer tokens = much faster response.
-    system_prompt = (
-        f"You are the production-data assistant for Toyota Boshoku Device India, Bawal.\n"
-        f"Today={today}  Yesterday={yesterday}  Page={context.get('page','Dashboard')}\n\n"
-        f"{schema_info}\n\n"
-        "RULES:\n"
-        "- ALWAYS use run_query for data; never guess numbers.\n"
-        "- SELECT only.  Use record_date='YYYY-MM-DD' and shift_name='A'/'B'.\n"
-        "- Be brief: one-line answer + short table or bullets. No preamble.\n"
-        "- Format OEE as %, times as HH:MM:SS.\n"
-        "- Prefer ONE well-written query over many small ones."
-    )
+    # Ye assistant SIRF MAINTENANCE ka hai.  Pehle ye production/OEE ka tha;
+    # us domain ki har baat (OEE, record_date, shift_name, output) hata di gayi
+    # hai, kyunki DB me un tables tak iski pahunch bhi nahi rakhi.
+    system_prompt = f"""You are the MAINTENANCE assistant for Toyota Boshoku Device India, Bawal.
+You answer about breakdowns, downtime, MTTR/MTBF, ANDON calls, spares, PM schedule,
+DMC checks, CAPA/QPR and the machine master.  You do NOT handle production, OEE or
+output data - if asked, say so in one line and stop.
+Today={today}  Yesterday={yesterday}  Page={context.get('page','Maintenance')}
+
+{schema_info}
+
+RULES:
+- ALWAYS use run_query for data; never guess numbers.
+- SELECT only.  Dates as YYYY-MM-DD.
+- Column ke naam upar di gayi list se hi lo - apne se mat banao.
+- Be brief: one-line answer + short table or bullets.  No preamble.
+- Downtime minute me batao; ANDON ka duration_seconds minute me badal kar dikhao.
+- Prefer ONE well-written query over many small ones.
+- Jawab usi zubaan me do jisme sawaal poocha gaya hai."""
 
     tools = [{
         "name": "run_query",
