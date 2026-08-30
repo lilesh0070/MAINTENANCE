@@ -522,6 +522,23 @@ export default function AndonSystem() {
     } catch { /* toast wrap() nahi — chup-chaap, agli jaanch phir ho jayegi */ }
     finally { setRechecking(null); }
   };
+  // Output mapping ka Retry.  Writer ka socket writer ke APNE process me hota
+  // hai (production), aur ye request koi doosra backend bhi serve kar sakta —
+  // isliye endpoint DB me nishan lagata hai aur writer agle cycle (~1s) me
+  // connection dobara banata hai.  Isliye button ke baad list refresh karte
+  // hain, taaki naya nateeja dikh jaye.
+  const [outRechecking, setOutRechecking] = useState(null);
+  const recheckOut = async (id) => {
+    setOutRechecking(id);
+    try {
+      const r = await api(`/call-outputs/${id}/recheck`, { method: "POST" });
+      flash(r.ok ? "PLC pahunch me hai — connection dobara ban raha hai"
+                 : `PLC tak nahi pahuncha — ${PLC_WHY[r.reason]?.tag || r.reason}`);
+      const o = await api("/call-outputs");
+      setOuts(o || []);
+    } catch { /* chup-chaap — writer agle cycle me khud bhi koshish karega */ }
+    finally { setOutRechecking(null); }
+  };
   const pickMap = (which) => (which === "model" ? setModelRows : setFaultRows);
   const setMap = (which, i, k, v) => pickMap(which)((rs) => rs.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
   const addMap = (which) => pickMap(which)((rs) => [...rs, { device_type: "D", device_no: "", value: "", name: "" }]);
@@ -941,6 +958,14 @@ export default function AndonSystem() {
                                            boxShadow: o.reachable === true ? "0 0 0 3px rgba(22,163,74,.2)" : o.reachable === false ? "0 0 0 3px rgba(220,38,38,.2)" : "none" }} />
                             {o.reachable === true ? "Connected" : o.reachable === false ? "Disconnected" : "Checking…"}
                           </span>
+                          {o.reachable === false && (
+                            <button className="an-btn gh sm" style={{ marginLeft:8 }}
+                                    disabled={outRechecking === o.id}
+                                    onClick={() => recheckOut(o.id)}
+                                    title="Is PLC se abhi dobara jodne ki koshish karo">
+                              {outRechecking === o.id ? "Checking…" : "↻ Retry"}
+                            </button>
+                          )}
                         </td>
                         {/* PROGRAM BIT = software ne kya tay kiya (khuli calls se).  Ye hamesha
                             pata hota hai — PLC se baat na ho tab bhi. */}

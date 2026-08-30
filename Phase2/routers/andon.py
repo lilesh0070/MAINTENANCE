@@ -960,9 +960,14 @@ def _ensure_output():
             )""")
         # live state the WRITER persists → koi bhi backend (dev/prod) ka GET asli
         # bit dikha sake (writer-only in-memory state par nahi).
+        # reconnect_req = UI ke "Retry" ka nishan.  Writer ka socket WRITER ke
+        # process me hota hai (production), aur API request koi doosra backend
+        # (dev) bhi serve kar sakta hai — to seedha socket todna mumkin nahi.
+        # Isliye button DB me nishan lagata hai, aur writer agle cycle me use
+        # dekh kar apna connection giraata hai.  (Wahi tareeqa jo writer lock ka.)
         for col, typ in (("last_bit", "BOOLEAN"), ("last_want", "BOOLEAN"),
                          ("last_online", "BOOLEAN"), ("last_at", "TIMESTAMP"),
-                         ("last_writer", "TEXT")):
+                         ("last_writer", "TEXT"), ("reconnect_req", "TIMESTAMP")):
             cur.execute(f"ALTER TABLE andon_call_output ADD COLUMN IF NOT EXISTS {col} {typ}")
         # singleton writer lock — sirf EK backend likhe (single-conn PLC pe do
         # writer = dono fail).  Ek hi row (id=1); holder + prio + heartbeat.
@@ -1029,6 +1034,19 @@ def _acquire_writer_lock():
 # Ek PLC par lagataar kitni baar fail hua — ek hichki par connection nahi todte.
 _OUT_FAILS = {}          # {(ip,port): consecutive failures}
 _OUT_MAX_FAILS = 3       # itni baar LAGATAAR fail ho tabhi socket todo
+_OUT_RECONN_SEEN = {}    # {mapping_id: reconnect_req} — Retry do baar na chale
+
+
+def _out_drop(ip, port):
+    """Ek output PLC ka connection band karo + backoff/fail-ginti saaf.
+    Agla cycle bilkul naya connect banayega, bina intezaar ke."""
+    key = (ip, int(port or 5007))
+    mc = _OUT_CONN.pop(key, None)
+    if mc is not None:
+        try: mc.close()
+        except Exception: pass
+    _OUT_RETRY.pop(key, None)
+    _OUT_FAILS.pop(key, None)
 
 
 def _out_write_bit(ip, port, series, bit_type, bit_no, value):
@@ -1135,7 +1153,8 @@ def _andon_output_write_once():
         return
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("""SELECT id, department, plc_ip, plc_port, plc_series, bit_type, bit_no
+        cur.execute("""SELECT id, department, plc_ip, plc_port, plc_series, bit_type, bit_no,
+                              reconnect_req
                          FROM andon_call_output WHERE enabled=TRUE""")
         maps = cur.fetchall()
         cur.execute("""SELECT COALESCE(dep.name, e.display_name) AS dept,
@@ -1158,6 +1177,14 @@ def _andon_output_write_once():
         # chalu ho aur usi department ki doosri machine se aur call aa jaye to
         # ginti badhti hai, bit ON hi rehta hai — koi jhatka nahi.  Bit tabhi
         # OFF hota hai jab us department ki AAKHRI call bhi nipat jaye.
+        # RETRY dabaya gaya tha? -> is PLC ka connection giraa do, backoff bhi
+        # saaf, taaki abhi is cycle me naya connect ho (intezaar nahi).
+        req = m.get("reconnect_req")
+        if req is not None and _OUT_RECONN_SEEN.get(m["id"]) != req:
+            _OUT_RECONN_SEEN[m["id"]] = req
+            _out_drop(m["plc_ip"], m["plc_port"])
+            print(f"[ANDON-OUT] Retry — {m['plc_ip']}:{m['plc_port']} ka connection "
+                  f"giraya, naya banayenge", flush=True)
         want = _want_bit(m["department"], live)
         prev = _OUT_STATE.get(m["id"], {})
         actual = _out_write_bit(m["plc_ip"], m["plc_port"], m["plc_series"],
@@ -1325,6 +1352,45 @@ def del_call_output(oid: int, user=Depends(get_current_user)):
         cur.execute("DELETE FROM andon_call_output WHERE id=%s", (oid,))
         conn.commit()
     return {"ok": True}
+
+
+@router.post("/call-outputs/{oid}/recheck")
+def call_output_recheck(oid: int, user=Depends(get_current_user)):
+    """Output PLC ko ABHI dobara jodne ki koshish karo — UI ka "Retry" button.
+
+    Do kaam karta hai:
+
+    1. **Taaza TCP probe** (cache andekha), taaki user ko turant jawab mile ki
+       port khula hai ya nahi, aur na ho to WAJAH kya hai.
+    2. **Writer ka connection giraane ka nishan** DB me lagata hai
+       (`reconnect_req = NOW()`).  Writer ka socket writer ke apne process me
+       hota hai — aur ye request koi doosra backend bhi serve kar sakta hai —
+       isliye seedha socket todna mumkin nahi.  Writer agle cycle (~1s) me
+       nishan dekhta hai, purana connection giraata hai aur naya banata hai.
+       Agar likhne wala YEHI process hua to hum turant bhi giraa dete hain.
+
+    NOTE: `last_bit`/`last_online`/`reachable` me kuch NAHI likhte — wo sirf
+    writer ka sach hai.  (Pehle input-PLC wale Retry me yahi galti hui thi:
+    status likh diya tha, aur list "Connected" par chipak kar reh gayi.)
+    """
+    _ensure_output()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT id, department, plc_ip, plc_port, enabled
+                         FROM andon_call_output WHERE id = %s""", (oid,))
+        m = cur.fetchone()
+        if not m:
+            raise HTTPException(404, "Mapping not found")
+        cur.execute("UPDATE andon_call_output SET reconnect_req = NOW() WHERE id=%s", (oid,))
+        conn.commit()
+
+    if _have_lock:                      # likhne wala yehi backend → turant giraa do
+        _out_drop(m["plc_ip"], m["plc_port"])
+
+    ok, why = _probe_cached(m["plc_ip"], m["plc_port"] or 5007, timeout=3.0, force=True)
+    # `reason` ka tarjuma UI karti hai (PLC_WHY) — wahi pattern jo input-PLC
+    # wale Retry me hai, taaki wajah ek hi jagah likhi rahe.
+    return {"id": oid, "ok": ok, "reason": why}
 
 
 def _ensure_tables():
