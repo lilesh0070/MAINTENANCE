@@ -23,13 +23,22 @@ api.interceptors.response.use(r => r, err => {
 const getStorageKey = () => {
   const uid = sessionStorage.getItem("user_id") || "guest";
   return `mes_ai_chat_session_${uid}`;
-};const QUICK_PROMPTS = [
-  { icon: "📊", text: "Today's OEE summary" },
-  { icon: "⚠️", text: "NG parts this shift" },
-  { icon: "🏭", text: "Lowest efficiency line" },
-  { icon: "⏱️", text: "Total loss time today" },
-  { icon: "🔄", text: "Compare shifts A vs B" },
-  { icon: "🛡️", text: "Poka yoke alerts" },
+};// Quick commands — SIRF MAINTENANCE ke.  `text` button par dikhta hai,
+// `prompt` asal me AI ko jaata hai (label chhota, sawaal poora).
+//
+// Har ek LIVE test kiya gaya hai aur jawab DB se milaya gaya hai.  Naye jodo
+// to yahi karna: khule-hue "sab list kar do" wale sawaal mat rakhna — query ka
+// nateeja pehli 20 row par kat jaata hai, aur model us list ko gin kar galat
+// number de deta hai (ek hi sawaal par 44 / 18 / 20 aaya tha).  Scope wale
+// aggregate sawaal ("...this month", "how many") sthir nikalte hain — inhe 3-3
+// baar chala kar dekha gaya, teeno baar wahi jawab.
+const QUICK_PROMPTS = [
+  { icon: "📉", text: "Breakdowns today",     prompt: "Breakdowns today" },
+  { icon: "⏱️", text: "Top downtime machines", prompt: "Top downtime machines" },
+  { icon: "🔴", text: "Open ANDON calls",     prompt: "Open ANDON calls" },
+  { icon: "🕐", text: "60 min+ this month",   prompt: "How many breakdowns over 60 min this month" },
+  { icon: "🔧", text: "MTTR this month",      prompt: "MTTR this month" },
+  { icon: "🧰", text: "Most used spares",     prompt: "Most used spares" },
 ];
 
 // ── Particle Network Background ───────────────────────────────────────────────
@@ -318,7 +327,7 @@ export default function AIAssistant({ pageContext = {} }) {
   } catch {}
   return [{
     role:"assistant",
-    content:"⚡ Neural Core online.\n\nI have live access to your production database. Ask me about OEE, losses, NG parts, shift performance — anything.\n\nReady to analyze.",
+    content:"⚡ Maintenance assistant online.\n\nI have live access to your maintenance data — breakdowns, downtime, MTTR/MTBF, ANDON calls, spares, PM schedule, DMC and CAPA.\n\nAsk away.",
     timestamp: Date.now(), id:"init",
   }];
   });
@@ -616,7 +625,7 @@ export default function AIAssistant({ pageContext = {} }) {
               </div>
               <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
                 {QUICK_PROMPTS.map(q => (
-                  <button key={q.text} className="qbtn" onClick={() => send(q.text)} style={{
+                  <button key={q.text} className="qbtn" onClick={() => send(q.prompt || q.text)} style={{
                     background:"#0a0f1a", border:"1px solid #1e3a5f",
                     borderRadius:99, padding:"4px 10px",
                     fontSize:10, fontWeight:600, color:"#4b6a9b",
@@ -644,7 +653,7 @@ export default function AIAssistant({ pageContext = {} }) {
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => { if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); send(); } }}
-                  placeholder="Query production data..."
+                  placeholder="Ask about breakdowns, downtime, spares..."
                   rows={1}
                   style={{
                     width:"100%", resize:"none",

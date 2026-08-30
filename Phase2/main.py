@@ -775,6 +775,13 @@ DOMAIN NIYAM (in par app ke page bane hain - inhe mat todo):
   - Financial year April se March.  2026-27 = 2026-04-01 .. 2027-03-31
   - Breakdown ki date = COALESCE(slip_date, bd_start_date)
   - Zone/line/machine ke naam HAMESHA maintenance_machines se milao
+  - MTTR (minute) = SUM(mc_down_time_minutes) / SUM(frequency)
+    MTTR ka matlab REPAIR ka time hai - response_time_minutes NAHI.
+    response_time_minutes alag cheez hai (call aane se pahunchne tak).
+  - MTBF (ghante) = (beete hue ghante - kul downtime ghante) / SUM(frequency)
+  - LTTR = MAX(mc_down_time_minutes)
+  - Breakdown ki GINTI hamesha SUM(frequency) se karo, COUNT(*) se nahi -
+    KPI page bhi yahi karta hai, warna number mel nahi khayenge
   - downtime MINUTE me hai, ANDON ka duration_seconds SECOND me
 """
             _AI_SCHEMA_CACHE["prompt"] = schema_info
@@ -817,6 +824,11 @@ Today={today}  Yesterday={yesterday}  Page={context.get('page','Maintenance')}
 
 RULES:
 - ALWAYS use run_query for data; never guess numbers.
+- GINTI KABHI KHUD MAT GINO.  run_query ka nateeja sirf PEHLI 20 row dikhata
+  hai ("... +N more rows" ke saath), isliye list dekh kar ginne par number
+  GALAT aata hai.  Jab bhi "kitne / how many / total" poocha jaye, SQL me hi
+  COUNT(*) ya SUM(...) karo aur wahi number batao.  List chahiye to alag
+  query karo, par number hamesha aggregate wali query se hi aaye.
 - SELECT only.  Dates as YYYY-MM-DD.
 - Column ke naam upar di gayi list se hi lo - apne se mat banao.
 - Be brief: one-line answer + short table or bullets.  No preamble.
@@ -899,10 +911,16 @@ RULES:
         #    AI_MODEL=claude-sonnet-4-6 for heavier reasoning at +latency.
         model = os.getenv("AI_MODEL", "claude-haiku-4-5")
 
-        # Cap tool-use loops to 3 instead of 5. Each iteration = full round-trip
-        # to Anthropic + DB, which is the biggest source of latency.
-        max_iterations = 3
+        # Tool-use loop ka cap.  Pehle 3 tha (latency kam karne ke liye), par 3
+        # tab hi kaafi hai jab pehli query hi sahi chale.  Ek query fail hui —
+        # column ka naam galat, ya khali nateeja — to retry me hi budget khatam
+        # ho jaata tha aur user ko sirf "Unable to complete analysis" milta,
+        # bina kisi wajah ke.  5 par asli sawaal nikal jaate hain aur seedhe
+        # sawaal phir bhi 1-2 iteration me hi ho jaate hain (unpar koi asar nahi).
+        max_iterations = 5
         iteration      = 0
+        last_text      = ""      # aakhri baar model ne jo likha — cap khatam
+                                 # hone par kaam aata hai
         while iteration < max_iterations:
             iteration += 1
             resp = client.messages.create(
@@ -919,6 +937,9 @@ RULES:
                         reply += block.text
                 return {"reply": reply.strip(), "provider": model.split("-")[1] if "-" in model else "claude"}
             if resp.stop_reason == "tool_use":
+                for block in resp.content:                 # beech ka text bhi sambhal lo
+                    if hasattr(block, "text") and block.text:
+                        last_text = block.text
                 msgs.append({"role": "assistant", "content": resp.content})
                 tool_results = []
                 for block in resp.content:
@@ -936,7 +957,12 @@ RULES:
                 continue
             break
 
-        return {"reply": "Unable to complete analysis. Please rephrase.", "provider": "claude"}
+        # Cap khatam.  Model ne beech me kuch likha ho to wahi de do — khali
+        # "rephrase" se behtar hai.  Warna kam se kam WAJAH to batao.
+        return {"reply": last_text.strip() or
+                ("Is sawaal ka jawab nikalte-nikalte meri koshishein khatam ho gayin. "
+                 "Thoda saaf poochhiye — jaise mahina ya machine ka naam bata dijiye."),
+                "provider": "claude"}
 
     except Exception as e:
         print(f"[AI] Error: {e}")
