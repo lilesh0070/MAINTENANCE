@@ -6,6 +6,10 @@ Study Material ka SEED content — part 1: maintenance ke core concepts
 
 Har topic ka dhancha:  (category, title, body_en, body_hi)
 
+Hindi hissa DEVANAGARI me hai.  Acronym (PLC, HMI, MTTR, MTBF, CAPA, QPR,
+PM, DMC, ANDON) Latin me hi rakhe gaye hain — Hindi ke technical document
+me bhi wo aise hi likhe jaate hain, aur shop floor par wahi padha jaata hai.
+
 Ye content is plant ke ASLI niyam se likha gaya hai, kitaabi nahi —
 formula wahi jo KPI page chalata hai, CAPA ka niyam wahi jo CAPA page par
 hai.  Kabhi formula badle to YAHAN bhi badalna, warna padhne wala kuch aur
@@ -27,15 +31,15 @@ CORE = [
      "it does not break down in the first place.\n\n"
      "A good maintenance team is judged less by how fast it repairs, and more "
      "by how rarely it has to.",
-     "Maintenance ka matlab hai machine ko aisi haalat me rakhna ki wo chalti "
-     "rahe aur safe tareeke se sahi parts banati rahe.\n\n"
-     "Iske do hisse hain:\n\n"
-     "1. BREAKDOWN maintenance - machine ruk chuki hai ya dikkat de rahi hai, "
-     "aur hum use theek karte hain.\n\n"
-     "2. PREVENTIVE maintenance (PM) - hum plan bana kar pehle hi servicing "
-     "karte hain, taaki machine kharab ho hi na.\n\n"
-     "Achhi maintenance team ki pehchaan ye nahi hai ki wo kitni jaldi repair "
-     "karti hai, balki ye hai ki use repair karna kitna KAM padta hai."),
+     "मेंटेनेंस का मतलब है मशीन को ऐसी हालत में रखना कि वह सुरक्षित तरीके से "
+     "चलती रहे और सही पार्ट बनाती रहे।\n\n"
+     "इसके दो हिस्से हैं:\n\n"
+     "1. ब्रेकडाउन मेंटेनेंस — मशीन रुक चुकी है या दिक्कत दे रही है, और हम उसे "
+     "ठीक करते हैं।\n\n"
+     "2. प्रिवेंटिव मेंटेनेंस (PM) — हम प्लान बनाकर पहले ही सर्विसिंग करते हैं, "
+     "ताकि मशीन खराब हो ही न।\n\n"
+     "अच्छी मेंटेनेंस टीम की पहचान यह नहीं है कि वह कितनी जल्दी रिपेयर करती है, "
+     "बल्कि यह है कि उसे रिपेयर करना कितना कम पड़ता है।"),
 
     ("Basics", "What is a Breakdown?",
      "A breakdown is any machine problem that needs maintenance action.\n\n"
@@ -45,13 +49,13 @@ CORE = [
      "The slip is the source of every number you see on the KPI and Dashboard "
      "pages. If the slip is filled carelessly, every report built on it is "
      "wrong.",
-     "Breakdown ka matlab hai machine ki koi bhi aisi dikkat jiske liye "
-     "maintenance ko kaam karna pade.\n\n"
-     "Apne system me har breakdown BREAK DOWN SLIP par likhi jaati hai, jisme "
-     "hota hai: machine, date, shift, start time, OK time, problem kya thi, kya "
-     "action liya, kaunse spare lage, aur kisne attend kiya.\n\n"
-     "KPI aur Dashboard par jo bhi number dikhta hai, wo isi slip se banta hai. "
-     "Slip laparwaahi se bhari to us par bani har report galat ho jaati hai."),
+     "ब्रेकडाउन का मतलब है मशीन की कोई भी ऐसी दिक्कत जिसके लिए मेंटेनेंस को काम "
+     "करना पड़े।\n\n"
+     "हमारे सिस्टम में हर ब्रेकडाउन BREAK DOWN SLIP पर लिखा जाता है, जिसमें "
+     "होता है: मशीन, तारीख, शिफ्ट, स्टार्ट टाइम, OK टाइम, समस्या क्या थी, क्या "
+     "एक्शन लिया, कौन से स्पेयर लगे, और किसने अटेंड किया।\n\n"
+     "KPI और डैशबोर्ड पर जो भी नंबर दिखता है, वह इसी स्लिप से बनता है। स्लिप "
+     "लापरवाही से भरी गई तो उस पर बनी हर रिपोर्ट गलत हो जाती है।"),
 
     ("Basics", "Breakdown Categories (A and B)",
      "Every slip must be marked with one category.\n\n"
@@ -62,14 +66,13 @@ CORE = [
      "Why it matters: A-category losses hit output immediately, so they are "
      "reviewed first. Marking a real A-category slip as B hides a genuine "
      "production loss from the report.",
-     "Har slip par ek category zaroor lagani hoti hai.\n\n"
-     "A CATEGORY - Machine ya line BAND ho gayi hai aur seedha production loss "
-     "ho raha hai.\n\n"
-     "B CATEGORY - Machine chal to rahi hai, par production par asar pad raha "
-     "hai (adjustment).\n\n"
-     "Ye zaroori kyun hai: A-category ka nuksaan turant output par lagta hai, "
-     "isliye pehle usi ko dekha jaata hai. Asli A-category slip par B laga dena "
-     "ek sachche production loss ko report se chhupa deta hai."),
+     "हर स्लिप पर एक कैटेगरी ज़रूर लगानी होती है।\n\n"
+     "A CATEGORY — मशीन या लाइन बंद हो गई है और सीधा प्रोडक्शन लॉस हो रहा है।\n\n"
+     "B CATEGORY — मशीन चल तो रही है, पर प्रोडक्शन पर असर पड़ रहा है "
+     "(एडजस्टमेंट)।\n\n"
+     "यह क्यों ज़रूरी है: A-कैटेगरी का नुकसान तुरंत आउटपुट पर लगता है, इसलिए "
+     "पहले उसी को देखा जाता है। असली A-कैटेगरी स्लिप पर B लगा देना एक सच्चे "
+     "प्रोडक्शन लॉस को रिपोर्ट से छिपा देता है।"),
 
     ("Basics", "Down Time vs Response Time",
      "These two are often confused. They are not the same thing.\n\n"
@@ -79,13 +82,13 @@ CORE = [
      "measures how long PRODUCTION was affected.\n\n"
      "A fast response with a long repair still means a long down time. Both "
      "numbers are tracked separately for this reason.",
-     "In dono me aksar gadbad ho jaati hai. Ye ek cheez nahi hain.\n\n"
-     "RESPONSE TIME - call lagne se lekar maintenance ke machine tak pahunchne "
-     "tak ka samay. Ye batata hai ki hum kitni jaldi PAHUNCHE.\n\n"
-     "DOWN TIME (M/C down time) - B/D start time se B/D OK time tak. Ye batata "
-     "hai ki PRODUCTION kitni der rukka raha.\n\n"
-     "Jaldi pahunch gaye par repair lamba chala, to down time phir bhi lamba "
-     "hai. Isiliye dono number alag-alag rakhe jaate hain."),
+     "इन दोनों में अक्सर गड़बड़ हो जाती है। ये एक चीज़ नहीं हैं।\n\n"
+     "RESPONSE TIME — कॉल लगने से लेकर मेंटेनेंस के मशीन तक पहुँचने तक का समय। "
+     "यह बताता है कि हम कितनी जल्दी पहुँचे।\n\n"
+     "DOWN TIME (M/C down time) — B/D स्टार्ट टाइम से B/D OK टाइम तक। यह बताता "
+     "है कि प्रोडक्शन कितनी देर रुका रहा।\n\n"
+     "जल्दी पहुँच गए पर रिपेयर लंबा चला, तो डाउन टाइम फिर भी लंबा है। इसीलिए "
+     "दोनों नंबर अलग-अलग रखे जाते हैं।"),
 
     ("Basics", "The plant day and the financial year",
      "PLANT DAY: our day runs from 07:00 to 06:30 the next morning, not "
@@ -95,12 +98,12 @@ CORE = [
      "FINANCIAL YEAR: April to March. 'FY 2026-27' means 01-Apr-2026 to "
      "31-Mar-2027. Every yearly report on this system follows this, not the "
      "calendar year.",
-     "PLANT DIN: apna din subah 07:00 se agle din 06:30 tak chalta hai, raat "
-     "12 baje se nahi. Subah 6 baje ki call PICHHLE din ki report me jaati hai. "
-     "Isiliye night shift ka breakdown pehli waali date par dikhta hai.\n\n"
-     "FINANCIAL YEAR: April se March. 'FY 2026-27' matlab 01-Apr-2026 se "
-     "31-Mar-2027. Is system ki har saalana report isi hisaab se banti hai, "
-     "calendar year se nahi."),
+     "प्लांट दिन: हमारा दिन सुबह 07:00 से अगले दिन 06:30 तक चलता है, रात 12 बजे "
+     "से नहीं। सुबह 6 बजे की कॉल पिछले दिन की रिपोर्ट में जाती है। इसीलिए नाइट "
+     "शिफ्ट का ब्रेकडाउन पहले वाली तारीख पर दिखता है।\n\n"
+     "फाइनेंशियल ईयर: अप्रैल से मार्च। 'FY 2026-27' मतलब 01-अप्रैल-2026 से "
+     "31-मार्च-2027। इस सिस्टम की हर सालाना रिपोर्ट इसी हिसाब से बनती है, "
+     "कैलेंडर ईयर से नहीं।"),
 
     ("Basics", "Why filling the slip properly matters",
      "Every KPI on this system is built from the breakdown slips. Nothing is "
@@ -112,17 +115,16 @@ CORE = [
      "  - Vague problem / action -> the next person repeats your investigation "
      "from zero\n\n"
      "Five extra minutes on the slip today saves hours of guessing later.",
-     "Is system ka har KPI breakdown slip se hi banta hai. Alag se kuch type "
-     "nahi kiya jaata.\n\n"
-     "  - Galat start ya OK time -> galat down time -> galat MTTR aur galat "
-     "availability\n\n"
-     "  - Frequency khali -> MTTR aur MTBF dono galat (frequency se hi bhaag "
-     "diya jaata hai)\n\n"
-     "  - Galat category -> ek sachcha production loss report se gayab\n\n"
-     "  - Problem/action adhoora likha -> agla banda aapki poori jaanch shuru "
-     "se dohrata hai\n\n"
-     "Aaj slip par paanch minute zyada dene se baad me ghanton ka andaaza "
-     "lagana bach jaata hai."),
+     "इस सिस्टम का हर KPI ब्रेकडाउन स्लिप से ही बनता है। अलग से कुछ टाइप नहीं "
+     "किया जाता।\n\n"
+     "  • गलत स्टार्ट या OK टाइम → गलत डाउन टाइम → गलत MTTR और गलत "
+     "अवेलेबिलिटी\n\n"
+     "  • फ्रीक्वेंसी खाली → MTTR और MTBF दोनों गलत (फ्रीक्वेंसी से ही भाग दिया "
+     "जाता है)\n\n"
+     "  • गलत कैटेगरी → एक सच्चा प्रोडक्शन लॉस रिपोर्ट से गायब\n\n"
+     "  • समस्या/एक्शन अधूरा लिखा → अगला बंदा आपकी पूरी जाँच शुरू से दोहराता है\n\n"
+     "आज स्लिप पर पाँच मिनट ज़्यादा देने से बाद में घंटों का अंदाज़ा लगाना बच "
+     "जाता है।"),
 
     # ── KPI ─────────────────────────────────────────────────────────────
     ("KPI", "What is a KPI?",
@@ -133,13 +135,13 @@ CORE = [
      "more.\n\n"
      "A KPI is only as honest as the data behind it. Every one of these is "
      "calculated live from the breakdown slips - nothing is typed in by hand.",
-     "KPI = Key Performance Indicator. Ye ek aisa number hai jo bina har slip "
-     "padhe bata deta hai ki haalat sudhar rahi hai ya bigad rahi hai.\n\n"
-     "Apne maintenance ke KPI hain: MTTR, MTBF, LTTR, Availability, Breakdown "
-     "Frequency, Total Breakdown Hours, aur 60 minute ya usse zyada wale "
-     "breakdown.\n\n"
-     "KPI utna hi sachcha hota hai jitna uske peeche ka data. Ye sab live "
-     "breakdown slip se bante hain - koi bhi haath se nahi bharta."),
+     "KPI = Key Performance Indicator. यह एक ऐसा नंबर है जो बिना हर स्लिप पढ़े "
+     "बता देता है कि हालत सुधर रही है या बिगड़ रही है।\n\n"
+     "हमारे मेंटेनेंस के KPI हैं: MTTR, MTBF, LTTR, अवेलेबिलिटी, ब्रेकडाउन "
+     "फ्रीक्वेंसी, कुल ब्रेकडाउन घंटे, और 60 मिनट या उससे ज़्यादा वाले "
+     "ब्रेकडाउन।\n\n"
+     "KPI उतना ही सच्चा होता है जितना उसके पीछे का डेटा। ये सब लाइव ब्रेकडाउन "
+     "स्लिप से बनते हैं — कोई भी हाथ से नहीं भरता।"),
 
     ("KPI", "MTTR - Mean Time To Repair",
      "MTTR tells you, on average, how long a machine stays down once it "
@@ -151,16 +153,14 @@ CORE = [
      "the two.\n\n"
      "If MTTR is rising, ask: are spares available? is the right skill on "
      "shift? is the same fault repeating and being patched instead of fixed?",
-     "MTTR batata hai ki machine kharab hone ke baad औsatan kitni der band "
-     "rehti hai.\n\n"
-     "FORMULA (jo is system me chalta hai):\n\n"
-     "    MTTR = Kul down time (minute) / Kul breakdown frequency\n\n"
-     "Unit: MINUTE. Kam ho to behtar.\n\n"
-     "Dhyan se: MTTR REPAIR ke samay ka hai, response time ka nahi. Dono ko mat "
-     "milaiye.\n\n"
-     "MTTR badh raha ho to poochhiye: spare available hain? shift me sahi skill "
-     "wala banda hai? kya wahi fault baar-baar aa raha hai aur hum jugaad kar ke "
-     "chhod de rahe hain?"),
+     "MTTR बताता है कि मशीन खराब होने के बाद औसतन कितनी देर बंद रहती है।\n\n"
+     "फ़ॉर्मूला (जो इस सिस्टम में चलता है):\n\n"
+     "    MTTR = कुल डाउन टाइम (मिनट) / कुल ब्रेकडाउन फ्रीक्वेंसी\n\n"
+     "इकाई: मिनट। कम हो तो बेहतर।\n\n"
+     "ध्यान से: MTTR रिपेयर के समय का है, रेस्पॉन्स टाइम का नहीं। दोनों को मत "
+     "मिलाइए।\n\n"
+     "MTTR बढ़ रहा हो तो पूछिए: स्पेयर उपलब्ध हैं? शिफ्ट में सही स्किल वाला बंदा "
+     "है? क्या वही फ़ॉल्ट बार-बार आ रहा है और हम जुगाड़ करके छोड़ दे रहे हैं?"),
 
     ("KPI", "MTBF - Mean Time Between Failures",
      "MTBF tells you how long a machine runs, on average, before it fails "
@@ -174,17 +174,16 @@ CORE = [
      "  MTBF - how often does it break at all?\n\n"
      "Improving MTBF is preventive work (PM, DMC, root-cause fixes). Improving "
      "MTTR is repair readiness (spares, skill, tools).",
-     "MTBF batata hai ki machine औsatan kitni der chalti hai, agli baar kharab "
-     "hone se pehle.\n\n"
-     "FORMULA (jo is system me chalta hai):\n\n"
-     "    MTBF = (Beete hue ghante - Kul down ghante) / Kul breakdown "
-     "frequency\n\n"
-     "Unit: GHANTE. Zyada ho to behtar.\n\n"
-     "MTTR aur MTBF do alag sawaalon ka jawab dete hain:\n\n"
-     "  MTTR - kharab hone par hum kitni jaldi wapas laate hain?\n"
-     "  MTBF - wo kharab hoti hi kitni baar hai?\n\n"
-     "MTBF sudharna preventive kaam hai (PM, DMC, jad tak jaakar fix karna). "
-     "MTTR sudharna repair ki taiyari hai (spare, skill, tools)."),
+     "MTBF बताता है कि मशीन औसतन कितनी देर चलती है, अगली बार खराब होने से "
+     "पहले।\n\n"
+     "फ़ॉर्मूला (जो इस सिस्टम में चलता है):\n\n"
+     "    MTBF = (बीते हुए घंटे − कुल डाउन घंटे) / कुल ब्रेकडाउन फ्रीक्वेंसी\n\n"
+     "इकाई: घंटे। ज़्यादा हो तो बेहतर।\n\n"
+     "MTTR और MTBF दो अलग सवालों का जवाब देते हैं:\n\n"
+     "  MTTR — खराब होने पर हम कितनी जल्दी वापस लाते हैं?\n"
+     "  MTBF — वह खराब होती ही कितनी बार है?\n\n"
+     "MTBF सुधारना प्रिवेंटिव काम है (PM, DMC, जड़ तक जाकर ठीक करना)। MTTR "
+     "सुधारना रिपेयर की तैयारी है (स्पेयर, स्किल, टूल्स)।"),
 
     ("KPI", "LTTR - Longest Time To Repair",
      "LTTR is the single longest breakdown in the selected period.\n\n"
@@ -193,12 +192,12 @@ CORE = [
      "Why it is tracked separately: an average can look healthy while one "
      "12-hour breakdown quietly caused most of the month's loss. LTTR makes "
      "that one bad event visible instead of letting the average hide it.",
-     "LTTR chune hue samay ka SABSE LAMBA ek breakdown hai.\n\n"
-     "    LTTR = MAX(down time)\n\n"
-     "Unit: aam taur par ghanton me. Kam ho to behtar.\n\n"
-     "Ise alag kyun dekha jaata hai: औsat theek dikh sakti hai, jabki ek hi "
-     "12-ghante ka breakdown chupchap mahine ka zyadatar nuksaan kar gaya ho. "
-     "LTTR us ek badi ghatna ko saamne le aata hai, औsat use chhupa leta hai."),
+     "LTTR चुने हुए समय का सबसे लंबा एक ब्रेकडाउन है।\n\n"
+     "    LTTR = MAX(डाउन टाइम)\n\n"
+     "इकाई: आम तौर पर घंटों में। कम हो तो बेहतर।\n\n"
+     "इसे अलग क्यों देखा जाता है: औसत ठीक दिख सकती है, जबकि एक ही 12-घंटे का "
+     "ब्रेकडाउन चुपचाप महीने का ज़्यादातर नुकसान कर गया हो। LTTR उस एक बड़ी "
+     "घटना को सामने ले आता है, औसत उसे छिपा लेती है।"),
 
     ("KPI", "Availability",
      "Availability is the share of planned time a machine was actually "
@@ -207,13 +206,12 @@ CORE = [
      "Unit: PERCENT. Higher is better.\n\n"
      "It combines both sides in one number: breaking rarely (high MTBF) AND "
      "recovering quickly (low MTTR) both push availability up.",
-     "Availability batati hai ki plan kiye gaye samay me se machine asal me "
-     "kitne samay chalne layak thi.\n\n"
-     "    Availability = MTBF / (MTBF + MTTR ghanton me) x 100\n\n"
-     "Unit: PRATISHAT. Zyada ho to behtar.\n\n"
-     "Ye ek hi number me dono baatein jod deti hai: kam kharab hona (zyada "
-     "MTBF) AUR jaldi theek ho jaana (kam MTTR) - dono availability badhate "
-     "hain."),
+     "अवेलेबिलिटी बताती है कि प्लान किए गए समय में से मशीन असल में कितने समय "
+     "चलने लायक थी।\n\n"
+     "    Availability = MTBF / (MTBF + MTTR घंटों में) × 100\n\n"
+     "इकाई: प्रतिशत। ज़्यादा हो तो बेहतर।\n\n"
+     "यह एक ही नंबर में दोनों बातें जोड़ देती है: कम खराब होना (ज़्यादा MTBF) "
+     "और जल्दी ठीक हो जाना (कम MTTR) — दोनों अवेलेबिलिटी बढ़ाते हैं।"),
 
     ("KPI", "Breakdown Frequency",
      "Frequency is how MANY times breakdowns happened - not how long they "
@@ -222,12 +220,11 @@ CORE = [
      "not simply count rows. One slip can record more than one occurrence.\n\n"
      "Frequency is also the divider in both MTTR and MTBF, so a wrong "
      "frequency quietly corrupts both of those KPIs.",
-     "Frequency batati hai ki breakdown KITNI BAAR hua - kitni der chala ye "
-     "nahi.\n\n"
-     "Zaroori baat: apni report slip ke FREQUENCY column ko jodti hai, sirf "
-     "rows nahi ginti. Ek slip par ek se zyada baar bhi darj ho sakti hai.\n\n"
-     "Frequency se hi MTTR aur MTBF dono me bhaag diya jaata hai, isliye galat "
-     "frequency chupchap dono KPI kharab kar deti hai."),
+     "फ्रीक्वेंसी बताती है कि ब्रेकडाउन कितनी बार हुआ — कितनी देर चला यह नहीं।\n\n"
+     "ज़रूरी बात: हमारी रिपोर्ट स्लिप के FREQUENCY कॉलम को जोड़ती है, सिर्फ़ "
+     "पंक्तियाँ नहीं गिनती। एक स्लिप पर एक से ज़्यादा बार भी दर्ज हो सकती है।\n\n"
+     "फ्रीक्वेंसी से ही MTTR और MTBF दोनों में भाग दिया जाता है, इसलिए गलत "
+     "फ्रीक्वेंसी चुपचाप दोनों KPI खराब कर देती है।"),
 
     # ── CAPA ────────────────────────────────────────────────────────────
     ("CAPA", "Breakdowns of 60 minutes or more",
@@ -238,13 +235,13 @@ CORE = [
      "(Earlier two pages disagreed on this - one used 'more than 60' and the "
      "other used '60 or more' - and the counts never matched. The whole system "
      "now uses 60-or-more everywhere.)",
-     "Jis breakdown ka down time 60 MINUTE YA USSE ZYADA hai, use bada nuksaan "
-     "maana jaata hai aur uski CAPA banti hai.\n\n"
-     "Niyam dhyan se: 60 minute YA USSE ZYADA. Theek 60 minute wala breakdown "
-     "bhi GINTA hai.\n\n"
-     "(Pehle do page is par alag chalte the - ek '60 se zyada' aur doosra '60 "
-     "ya usse zyada' - aur ginti kabhi milti hi nahi thi. Ab poore system me "
-     "'60 ya usse zyada' hi chalta hai.)"),
+     "जिस ब्रेकडाउन का डाउन टाइम 60 मिनट या उससे ज़्यादा है, उसे बड़ा नुकसान "
+     "माना जाता है और उसकी CAPA बनती है।\n\n"
+     "नियम ध्यान से: 60 मिनट या उससे ज़्यादा। ठीक 60 मिनट वाला ब्रेकडाउन भी "
+     "गिना जाता है।\n\n"
+     "(पहले दो पेज इस पर अलग चलते थे — एक '60 से ज़्यादा' और दूसरा '60 या उससे "
+     "ज़्यादा' — और गिनती कभी मिलती ही नहीं थी। अब पूरे सिस्टम में '60 या उससे "
+     "ज़्यादा' ही चलता है।)"),
 
     ("CAPA", "What is CAPA?",
      "CAPA = Corrective And Preventive Action.\n\n"
@@ -256,13 +253,13 @@ CORE = [
      "In our system every breakdown of 60 minutes or more becomes a CAPA, and "
      "it is closed by filling the QPR sheet.",
      "CAPA = Corrective And Preventive Action.\n\n"
-     "CORRECTIVE - jo dikkat hui use theek karna.\n"
-     "PREVENTIVE - pakka karna ki wo dobara ho hi na sake.\n\n"
-     "Toota hua sensor badal dena corrective hai. Ye pata lagana ki sensor baar-"
-     "baar chot kyun kha raha hai aur uspar guard laga dena preventive hai. "
-     "Aage ke breakdown sirf doosri wali cheez kam karti hai.\n\n"
-     "Apne system me 60 minute ya usse zyada ka har breakdown CAPA banta hai, "
-     "aur QPR sheet bhar kar hi band hota hai."),
+     "CORRECTIVE — जो दिक्कत हुई उसे ठीक करना।\n"
+     "PREVENTIVE — पक्का करना कि वह दोबारा हो ही न सके।\n\n"
+     "टूटा हुआ सेंसर बदल देना करेक्टिव है। यह पता लगाना कि सेंसर बार-बार चोट "
+     "क्यों खा रहा है और उस पर गार्ड लगा देना प्रिवेंटिव है। आगे के ब्रेकडाउन "
+     "सिर्फ़ दूसरी वाली चीज़ कम करती है।\n\n"
+     "हमारे सिस्टम में 60 मिनट या उससे ज़्यादा का हर ब्रेकडाउन CAPA बनता है, और "
+     "QPR शीट भरकर ही बंद होता है।"),
 
     ("CAPA", "What is QPR?",
      "QPR is the quality problem report sheet used to close a CAPA.\n\n"
@@ -272,12 +269,12 @@ CORE = [
      "taken.\n\n"
      "A CAPA is not closed because the machine is running again. It is closed "
      "when the QPR shows the cause was found and blocked.",
-     "QPR wo quality problem report sheet hai jisse CAPA band ki jaati hai.\n\n"
-     "Ye problem ko kram se le kar chalti hai: kya dikha, use confirm kaise "
-     "kiya, turant rokne ke liye kya kiya, jad kya thi - OCCURRENCE ki bhi aur "
-     "OUTFLOW ki bhi, aur pakka ilaaj kya kiya.\n\n"
-     "CAPA isliye band nahi hoti ki machine phir se chal padi. Wo tab band hoti "
-     "hai jab QPR dikha de ki jad mil gayi aur use rok diya gaya."),
+     "QPR वह क्वालिटी प्रॉब्लम रिपोर्ट शीट है जिससे CAPA बंद की जाती है।\n\n"
+     "यह समस्या को क्रम से लेकर चलती है: क्या दिखा, उसे कन्फ़र्म कैसे किया, "
+     "तुरंत रोकने के लिए क्या किया, जड़ क्या थी — OCCURRENCE की भी और OUTFLOW "
+     "की भी, और पक्का इलाज क्या किया।\n\n"
+     "CAPA इसलिए बंद नहीं होती कि मशीन फिर से चल पड़ी। वह तब बंद होती है जब QPR "
+     "दिखा दे कि जड़ मिल गई और उसे रोक दिया गया।"),
 
     # ── Preventive ──────────────────────────────────────────────────────
     ("Preventive", "PM - Preventive Maintenance",
@@ -288,14 +285,14 @@ CORE = [
      "vs actual can be compared.\n\n"
      "PM is the main lever on MTBF. Breakdown repair only restores what was "
      "lost; PM is what stops the loss from happening.",
-     "PM wo planned servicing hai jo machine ke kharab hone se PEHLE ki jaati "
-     "hai - safai, greasing/oiling, kasna, ghisawat dekhna, aur schedule ke "
-     "hisaab se parts badalna.\n\n"
-     "Har machine ki ek PM frequency hoti hai aur saal bhar ka plan hota hai ki "
-     "kis hafte PM karni hai. PM ho jaane par asli hafta aur date bhari jaati "
-     "hai, taaki plan aur actual ki tulna ho sake.\n\n"
-     "MTBF sudharne ka sabse bada zariya PM hi hai. Breakdown repair to sirf jo "
-     "chala gaya use wapas laata hai; PM us nuksaan ko hone hi nahi deti."),
+     "PM वह प्लान की गई सर्विसिंग है जो मशीन के खराब होने से पहले की जाती है — "
+     "सफ़ाई, ग्रीसिंग/ऑइलिंग, कसना, घिसावट देखना, और शेड्यूल के हिसाब से पार्ट "
+     "बदलना।\n\n"
+     "हर मशीन की एक PM फ्रीक्वेंसी होती है और साल भर का प्लान होता है कि किस "
+     "हफ़्ते PM करनी है। PM हो जाने पर असली हफ़्ता और तारीख भरी जाती है, ताकि "
+     "प्लान और एक्चुअल की तुलना हो सके।\n\n"
+     "MTBF सुधारने का सबसे बड़ा ज़रिया PM ही है। ब्रेकडाउन रिपेयर तो सिर्फ़ जो "
+     "चला गया उसे वापस लाता है; PM उस नुकसान को होने ही नहीं देती।"),
 
     ("Preventive", "DMC - Daily Machine Check",
      "DMC is the short daily check the operator does on the machine - a small "
@@ -304,12 +301,12 @@ CORE = [
      "or an odd sound caught in a 5-minute daily check is a 10-minute job; the "
      "same thing found after failure can cost a full shift.\n\n"
      "An NG point raised in DMC goes to maintenance for action.",
-     "DMC wo chhoti si roz ki jaanch hai jo operator machine par karta hai - "
-     "kuch points ki list, jinhe roz OK ya NG mark kiya jaata hai.\n\n"
-     "Ye sabse sasta early warning hai. Dheela guard, halki leakage ya ajeeb "
-     "awaaz agar 5 minute ki roz ki jaanch me pakad li jaye to 10 minute ka kaam "
-     "hai; wahi cheez fail hone ke baad mile to poori shift le sakti hai.\n\n"
-     "DMC me uthaya gaya NG point maintenance ke paas action ke liye jaata hai."),
+     "DMC वह छोटी सी रोज़ की जाँच है जो ऑपरेटर मशीन पर करता है — कुछ पॉइंट की "
+     "लिस्ट, जिन्हें रोज़ OK या NG मार्क किया जाता है।\n\n"
+     "यह सबसे सस्ती अगाऊ चेतावनी है। ढीला गार्ड, हल्की लीकेज या अजीब आवाज़ अगर "
+     "5 मिनट की रोज़ की जाँच में पकड़ ली जाए तो 10 मिनट का काम है; वही चीज़ फ़ेल "
+     "होने के बाद मिले तो पूरी शिफ़्ट ले सकती है।\n\n"
+     "DMC में उठाया गया NG पॉइंट मेंटेनेंस के पास एक्शन के लिए जाता है।"),
 
     # ── ANDON ───────────────────────────────────────────────────────────
     ("ANDON", "What is ANDON?",
@@ -321,15 +318,14 @@ CORE = [
      "anyone writing it down.\n\n"
      "For Maintenance and Tool Room the tower light goes OFF as soon as someone "
      "RESPONDS. For the other departments it stays ON until the call is closed.",
-     "ANDON shop floor ka call system hai. Machine me dikkat hone par operator "
-     "button dabata hai aur sahi department ko call chali jaati hai - "
-     "Maintenance, Tool Room, Quality, Material waghera.\n\n"
-     "Call me darj hota hai ki wo kab shuru hui, kab kisi ne response diya, aur "
-     "kab khatam hui. Isse response time aur duration apne aap mil jaate hain, "
-     "kisi ko likhna nahi padta.\n\n"
-     "Maintenance aur Tool Room ke liye tower light tabhi BUJH jaati hai jab "
-     "koi RESPONSE de deta hai. Baaki department ke liye wo call band hone tak "
-     "jalti rehti hai."),
+     "ANDON शॉप फ़्लोर का कॉल सिस्टम है। मशीन में दिक्कत होने पर ऑपरेटर बटन "
+     "दबाता है और सही डिपार्टमेंट को कॉल चली जाती है — मेंटेनेंस, टूल रूम, "
+     "क्वालिटी, मैटेरियल वग़ैरह।\n\n"
+     "कॉल में दर्ज होता है कि वह कब शुरू हुई, कब किसी ने रेस्पॉन्स दिया, और कब "
+     "ख़त्म हुई। इससे रेस्पॉन्स टाइम और ड्यूरेशन अपने आप मिल जाते हैं, किसी को "
+     "लिखना नहीं पड़ता।\n\n"
+     "मेंटेनेंस और टूल रूम के लिए टावर लाइट तभी बुझ जाती है जब कोई रेस्पॉन्स दे "
+     "देता है। बाकी डिपार्टमेंट के लिए वह कॉल बंद होने तक जलती रहती है।"),
 
     ("ANDON", "Total Loss and why lines are counted separately",
      "When two departments are called on the same line, the time is not counted "
@@ -338,10 +334,10 @@ CORE = [
      "But two different LINES can be down at the same time, and both losses are "
      "real. So the loss is worked out separately for each line and then added "
      "up. Treating the whole plant as one timeline would under-report the loss.",
-     "Jab ek hi line par do department ko call jaati hai, to samay do baar nahi "
-     "gina jaata - nayi call purani ko rok deti hai, aur nayi khatam hone par "
-     "purani phir se chalu ho jaati hai.\n\n"
-     "Par do ALAG LINE ek hi waqt par band ho sakti hain, aur dono ka nuksaan "
-     "asli hai. Isliye nuksaan har line ka alag nikal kar phir joda jaata hai. "
-     "Poore plant ko ek hi timeline maan lene se nuksaan kam dikhta."),
+     "जब एक ही लाइन पर दो डिपार्टमेंट को कॉल जाती है, तो समय दो बार नहीं गिना "
+     "जाता — नई कॉल पुरानी को रोक देती है, और नई ख़त्म होने पर पुरानी फिर से "
+     "चालू हो जाती है।\n\n"
+     "पर दो अलग लाइन एक ही वक़्त पर बंद हो सकती हैं, और दोनों का नुकसान असली "
+     "है। इसलिए नुकसान हर लाइन का अलग निकालकर फिर जोड़ा जाता है। पूरे प्लांट को "
+     "एक ही टाइमलाइन मान लेने से नुकसान कम दिखता।"),
 ]
