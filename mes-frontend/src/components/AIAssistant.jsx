@@ -556,7 +556,7 @@ export default function AIAssistant({ pageContext = {} }) {
                     fontSize:14, fontWeight:800, color:"#e0f2fe",
                     fontFamily:"'Rajdhani', sans-serif", letterSpacing:".06em",
                     textShadow:"0 0 12px #3b82f640",
-                  }}>NEURAL CORE</div>
+                  }}>MAINTENANCE BUDDY</div>
                   <div style={{
                     fontSize:9, marginTop:2,
                     color: thinking ? "#f59e0b" : "#00ff88",
