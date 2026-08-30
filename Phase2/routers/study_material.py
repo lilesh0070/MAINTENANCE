@@ -25,6 +25,8 @@ POST   /api/study-material/       → naya topic        (admin)
 PUT    /api/study-material/{id}   → topic badlo       (admin)
 DELETE /api/study-material/{id}   → topic hatao       (admin)
 """
+import os
+import re
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -184,3 +186,156 @@ def del_topic(tid: int, user=Depends(require_admin)) -> dict:
     if not n:
         raise HTTPException(404, "Topic not found")
     return {"ok": True, "deleted": tid}
+
+
+# ── translate ───────────────────────────────────────────────────────────────
+# Admin ek zubaan me likhe aur doosri apne aap ban jaye.  Par translation ko
+# aankh band karke bharosa NAHI karte — technical Hindi me machine translation
+# ki sabse aam galti ye hai ki wo technical naam bhi anuvaad kar deta hai
+# ("reed switch" -> "सरकंडा स्विच", jo bematlab hai).  Isliye:
+#
+#   1. Prompt me saaf niyam — prose Devanagari me, par technical naam Latin me
+#      hi rahein.  Wahi style jo pehle se 61 topic me hai.
+#   2. Jawab par JAANCH — script sahi hai? acronym bache? lambai theek?
+#   3. Jaanch fail ho to EK BAAR sudhar ke saath dobara koshish, phir bhi fail
+#      ho to SAAF MANA — galat matter chupchap bhar dena isse kahin bura hai,
+#      kyunki wo save ho kar mahinon padha jaata rahega.
+
+# Ye naam kabhi anuvaad nahi hone chahiye.  Source me jo mile, output me bhi
+# hona chahiye — warna translation ne unhe tod diya hai.
+_KEEP_AS_IS = [
+    "PLC", "HMI", "VFD", "SMPS", "MCB", "MCCB", "FRL", "SLMP", "MES",
+    "MTTR", "MTBF", "LTTR", "CAPA", "QPR", "ANDON", "DMC", "LOTO", "PPE",
+    "PNP", "NPN", "RPM", "FLA", "OEE",
+]
+
+_DEVANAGARI = re.compile(r"[ऀ-ॿ]")
+_LATIN      = re.compile(r"[A-Za-z]")
+# "Here is the translation:" / "I cannot" jaisa meta-jawab — matter nahi hai
+_META       = re.compile(r"^\s*(here is|here's|sure[,!]|i (cannot|can't|am unable)|"
+                         r"translation\s*:|अनुवाद\s*:)", re.I)
+
+
+class TranslateIn(BaseModel):
+    text: str
+    to:   Optional[str] = "hi"          # "hi" = Hindi, "en" = English
+
+
+def _translate_prompt(to_hi: bool) -> str:
+    if to_hi:
+        return (
+            "You translate maintenance training material from English into HINDI "
+            "for shop-floor maintenance staff at an auto-parts plant in India.\n\n"
+            "RULES - follow every one:\n"
+            "1. Write the prose in DEVANAGARI script. Do not use Roman/Hinglish.\n"
+            "2. KEEP THESE IN LATIN SCRIPT, EXACTLY AS WRITTEN - never translate or "
+            "transliterate them: PLC, HMI, VFD, SMPS, MCB, MCCB, FRL, SLMP, MES, "
+            "MTTR, MTBF, LTTR, CAPA, QPR, ANDON, DMC, LOTO, PPE, PNP, NPN, RPM, "
+            "FLA, OEE, NO, NC, OK, NG, and all units and values (24V, 4-20 mA, "
+            "0-10 V, 5/2, 5-6 bar, mm, kW).\n"
+            "3. Common machine part names should be written in Devanagari the way "
+            "they are actually SPOKEN on the shop floor - सेंसर, सिलेंडर, वाल्व, "
+            "बेयरिंग, कपलिंग, मोटर, पैनल, कॉइल - NOT invented pure-Hindi words. "
+            "Never translate 'reed switch' as 'सरकंडा स्विच'; write 'रीड स्विच'.\n"
+            "4. Keep the SAME structure - same line breaks, same blank lines, same "
+            "bullet or arrow layout, same formulas unchanged.\n"
+            "5. Translate the meaning, not word by word. It must read naturally to "
+            "a Hindi-speaking technician.\n"
+            "6. Output ONLY the translated text. No preface, no notes, no quotes."
+        )
+    return (
+        "You translate maintenance training material from Hindi into clear, simple "
+        "ENGLISH for shop-floor maintenance staff.\n\n"
+        "RULES:\n"
+        "1. Keep all technical terms, acronyms, units and values exactly as they "
+        "appear (PLC, HMI, VFD, MTTR, 24V, 4-20 mA, 5/2 ...).\n"
+        "2. Keep the SAME structure - same line breaks, blank lines, bullets and "
+        "formulas.\n"
+        "3. Plain shop-floor English. Short sentences. No flowery language.\n"
+        "4. Output ONLY the translated text. No preface, no notes, no quotes."
+    )
+
+
+def _check_translation(src: str, out: str, to_hi: bool):
+    """Sahi lage to None, warna wajah (string).  Ye hi wo pehra hai jo galat
+    matter ko DB tak nahi pahunchne deta."""
+    out = (out or "").strip()
+    if not out:
+        return "translation khali aayi"
+    if _META.search(out):
+        return "jawab me matter ke bajaye meta-text aaya"
+
+    dev = len(_DEVANAGARI.findall(out))
+    lat = len(_LATIN.findall(out))
+    if to_hi:
+        # Hindi chahiye thi — Devanagari na ho to translation hui hi nahi
+        if dev == 0:
+            return "Hindi maangi thi par Devanagari ek bhi akshar nahi"
+        if dev < (dev + lat) * 0.30:
+            return "zyadatar text Latin me hai, Devanagari bahut kam"
+    else:
+        if dev > 0:
+            return "English maangi thi par Devanagari akshar aaye"
+
+    # Technical naam bache ya nahi
+    missing = [w for w in _KEEP_AS_IS
+               if re.search(r"\b" + re.escape(w) + r"\b", src)
+               and not re.search(r"\b" + re.escape(w) + r"\b", out)]
+    if missing:
+        return "ye technical naam translation me gayab ho gaye: " + ", ".join(missing)
+
+    # Lambai — kata hua ya bemtlab phaila hua to nahi
+    r = len(out) / max(1, len(src))
+    if r < 0.45:
+        return f"translation bahut chhoti hai (source ka {int(r * 100)}%) — shayad kat gayi"
+    if r > 3.0:
+        return f"translation bahut lambi hai (source ka {int(r * 100)}%)"
+
+    # Structure — khali line ka dhancha kaafi alag to nahi
+    if abs(src.count("\n\n") - out.count("\n\n")) > 2:
+        return "paragraph ka dhancha badal gaya"
+    return None
+
+
+@router.post("/translate")
+def translate_text(body: TranslateIn, user=Depends(require_admin)) -> dict:
+    """Ek zubaan se doosri.  Admin-only.  Jaanch fail hone par 422 — taaki UI
+    admin ko bata sake, aur galat matter chup-chaap save na ho jaye."""
+    src = (body.text or "").strip()
+    if not src:
+        raise HTTPException(400, "Text required")
+    if len(src) > 20000:
+        raise HTTPException(400, "Text too long (20000 characters max)")
+    to_hi = (body.to or "hi").lower() != "en"
+
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        raise HTTPException(503, "Translation service not configured")
+
+    import anthropic
+    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    # Translation quality-critical hai aur kabhi-kabhaar hi chalti hai, isliye
+    # chat wale Haiku ke bajaye Sonnet — thoda dheema, par kaafi behtar.
+    model = os.getenv("AI_TRANSLATE_MODEL", "claude-sonnet-5")
+
+    system = _translate_prompt(to_hi)
+    msg    = src
+    why    = None
+    for attempt in (1, 2):
+        try:
+            resp = client.messages.create(
+                model=model, max_tokens=4000, system=system,
+                messages=[{"role": "user", "content": msg}])
+        except Exception as e:
+            raise HTTPException(502, f"Translation failed: {str(e)[:160]}")
+        out = "".join(b.text for b in resp.content if hasattr(b, "text")).strip()
+        why = _check_translation(src, out, to_hi)
+        if why is None:
+            return {"ok": True, "text": out, "to": "hi" if to_hi else "en",
+                    "model": model, "attempts": attempt}
+        # ek baar aur — is baar galti batakar
+        msg = (f"{src}\n\n---\nYour previous attempt was rejected because: {why}. "
+               f"Translate again and fix exactly that. Output only the translation.")
+
+    # Do baar me bhi theek nahi hui — bhejo mat, bata do.
+    raise HTTPException(
+        422, f"Translation ठीक नहीं आई ({why}). Kripya haath se likhein ya dobara koshish karein.")

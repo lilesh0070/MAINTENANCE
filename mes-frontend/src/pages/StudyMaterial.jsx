@@ -68,6 +68,34 @@ export default function StudyMaterial() {
 
   const flash = (m) => { setMsg(m); setTimeout(() => setMsg(""), 2600); };
 
+  // ── translate ──────────────────────────────────────────────────────────
+  // Admin ek zubaan me likh kar doosri bana sakta hai.  Backend jaanch karta
+  // hai (script sahi hai? PLC/24V jaise naam bache? lambai theek?) aur shak
+  // hone par 422 lauta deta hai — isliye yahan galat matter chup-chaap box me
+  // nahi bhar sakta.  Bharne ke baad bhi admin ko padhne ko kehte hain, kyunki
+  // ye matter mahinon padha jaayega.
+  const [translating, setTranslating] = useState("");   // "hi" | "en" | ""
+  const doTranslate = async (to) => {
+    const src = (to === "hi" ? form.body : form.body_hi) || "";
+    if (!src.trim()) {
+      flash(to === "hi" ? "Pehle English matter likhein" : "Pehle Hindi matter likhein");
+      return;
+    }
+    setTranslating(to);
+    try {
+      const r = await api.send("/api/study-material/translate", token, "POST",
+                               { text: src, to });
+      setForm((f) => (to === "hi" ? { ...f, body_hi: r.text } : { ...f, body: r.text }));
+      flash("Translate ho gaya — save karne se pehle ek baar padh lein");
+    } catch (e) {
+      let m = String(e?.message || "");
+      try { m = JSON.parse(m).detail || m; } catch { /* plain text aaya */ }
+      flash("Translate nahi hua — " + m);
+    } finally {
+      setTranslating("");
+    }
+  };
+
   const load = async () => {
     if (!token) return;
     setLoading(true);
@@ -202,6 +230,12 @@ export default function StudyMaterial() {
         .sm-empty { padding:40px 10px; text-align:center; color:#94a3b8; font-size:13.5px; }
         /* Zubaan ka switch — har page par upar, taaki jo jis zubaan me
            padhna chahe wo ek click me badal le. */
+        .sm-lbl-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+        .sm-tr { border:1.5px solid #cbd5e1; background:#fff; color:#475569; cursor:pointer;
+                 border-radius:99px; padding:3px 12px; font-size:11.5px; font-weight:800;
+                 font-family:inherit; white-space:nowrap; }
+        .sm-tr:hover:not(:disabled) { border-color:#94a3b8; color:#0f172a; }
+        .sm-tr:disabled { opacity:.55; cursor:default; }
         .sm-lang { display:inline-flex; border:1.5px solid #cbd5e1; border-radius:99px; overflow:hidden; }
         .sm-lang button { border:none; background:#fff; color:#64748b; cursor:pointer; padding:6px 16px;
                           font-size:12.5px; font-weight:800; font-family:'Barlow',sans-serif; }
@@ -287,14 +321,28 @@ export default function StudyMaterial() {
                 {/* Dono zubaan alag-alag — Hindi khali chhod di to us topic par
                     English hi dikhega (aur padhne wale ko note mil jayega). */}
                 <div className="sm-fld" style={{ marginTop:14 }}>
-                  <label className="sm-lbl">Matter — English</label>
+                  <div className="sm-lbl-row">
+                    <label className="sm-lbl">Matter — English</label>
+                    <button type="button" className="sm-tr" disabled={!!translating}
+                            onClick={() => doTranslate("hi")}
+                            title="English se हिंदी banao">
+                      {translating === "hi" ? "बन रहा है…" : "→ हिंदी बनाओ"}
+                    </button>
+                  </div>
                   <textarea className="sm-in sm-ta" value={form.body || ""}
                             placeholder="Write the full explanation here.  A blank line starts a new paragraph."
                             onChange={(e) => setForm({ ...form, body: e.target.value })} />
                 </div>
 
                 <div className="sm-fld" style={{ marginTop:14 }}>
-                  <label className="sm-lbl">Matter — हिंदी</label>
+                  <div className="sm-lbl-row">
+                    <label className="sm-lbl">Matter — हिंदी</label>
+                    <button type="button" className="sm-tr" disabled={!!translating}
+                            onClick={() => doTranslate("en")}
+                            title="हिंदी se English banao">
+                      {translating === "en" ? "Making…" : "→ Make English"}
+                    </button>
+                  </div>
                   <textarea className="sm-in sm-ta" value={form.body_hi || ""}
                             placeholder="Yahan Hindi me likhein.  Khali chhod denge to is topic par English hi dikhega."
                             onChange={(e) => setForm({ ...form, body_hi: e.target.value })} />
