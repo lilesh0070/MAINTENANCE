@@ -39,6 +39,7 @@ GET             /events                     live OPEN calls (running timer)
 GET             /history                    closed calls (duration / response)
 """
 import os
+import re
 import socket
 import threading
 import time as _time
@@ -890,7 +891,17 @@ _OUT_CONN   = {}     # {(ip,port): mc}   persistent WRITE connections (separate 
 _OUT_RETRY  = {}     # {(ip,port): monotonic ts}
 _OUT_STATE  = {}     # {mapping_id: {ip,port,series,bit_type,bit_no,on,online,checked}}
 # departments that have an ACK output (DO2/DO4) → bit off on RESPONSE, not on end.
-_ACK_DEPTS  = {"maintenance", "tool room", "toolroom"}
+_ACK_DEPTS  = {"maintenance", "toolroom"}
+
+
+def _dept_key(name):
+    """Department ka naam milane ke liye — space/underscore/hyphen hata kar
+    chhote akshar.  "Tool Room", "Toolroom", "TOOL_ROOM" — teeno ek hi cheez
+    hain.  Pehle seedha lower+strip par match hota tha, to Call->Output me
+    "Tool Room" likha ho aur ANDON me department "Toolroom" ho to milte hi
+    nahi the — us department ka bit kabhi ON hi na hota, aur wajah dikhti bhi
+    nahi.  Ab naam ka style koi bhi ho, jodi sahi banegi."""
+    return re.sub(r"[\s_\-]+", "", str(name or "").strip().lower())
 _OUT_ENSURED = False
 # ── writer SINGLETON lock ── sirf EK backend output PLC likhe (single-conn PLC pe
 # do writer ladenge = dono fail).  Poller-wale (production) ki priority 1 — wo dev
@@ -901,7 +912,32 @@ _have_lock   = None   # pichhla lock-state (transition log ke liye)
 
 
 def _dept_off_on_ack(dept):
-    return (dept or "").strip().lower() in _ACK_DEPTS
+    return _dept_key(dept) in _ACK_DEPTS
+
+
+def _want_bit(dept, live):
+    """Ek output mapping ka bit ON hona chahiye ya nahi.
+
+    `live` = {department_key: {"total": n, "unacked": n}} — sirf abhi khuli
+    hui calls.  Do baatein isi ek jagah tay hoti hain, isliye yeh alag function
+    hai (test bhi isi ko karta hai, code ki nakal ko nahi):
+
+    1. DEPARTMENT ALAG-ALAG — `live` department se key hoti hai, to Maintenance
+       ka mapping sirf Maintenance ki ginti dekhta hai.  Quality ki call chalu
+       ho to Maintenance ka bit chhua tak nahi jaata.  Har department ka apna.
+
+    2. EK SE ZYADA CALL — ginti > 0 par ON.  Do machine se call aayi to ginti 2,
+       bit pehle se ON tha, ON hi rahega — koi jhatka, koi dobara-likhna nahi.
+       Ek band hui to ginti 1, ab bhi ON.  Bit tabhi OFF jab AAKHRI call nipte.
+
+    Maintenance/Toolroom ke liye "nipatna" = response aa gaya (unacked),
+    baaki sabke liye = call band ho gayi (total).
+    """
+    row = live.get(_dept_key(dept))
+    if not row:
+        return False
+    field = "unacked" if _dept_off_on_ack(dept) else "total"
+    return int(row.get(field) or 0) > 0
 
 
 def _ensure_output():
@@ -956,13 +992,32 @@ def _acquire_writer_lock():
             cur.execute("""UPDATE andon_output_lock SET holder=%s, prio=%s, heartbeat=NOW()
                             WHERE id=1 AND (holder=%s
                                             OR split_part(holder, ':', 1) = %s
-                                            OR heartbeat < NOW() - INTERVAL '10 seconds'
-                                            OR prio < %s)""",
+                                            OR COALESCE(prio,0) < %s
+                                            OR (COALESCE(prio,0) = %s
+                                                AND heartbeat < NOW() - INTERVAL '10 seconds')
+                                            OR (COALESCE(prio,0) > %s
+                                                AND heartbeat < NOW() - INTERVAL '60 seconds'))""",
                         (_WRITER_ID, _WRITER_PRIO, _WRITER_ID,
-                         socket.gethostname(), _WRITER_PRIO))
-            # holder=%s → main hi hoon (refresh);  same-host → apni hi machine ka
-            # purana/mara instance (restart) → turant le lo (ek host pe kabhi 2
-            # backend nahi);  stale 10s → cross-host failover;  prio< → preempt.
+                         socket.gethostname(), _WRITER_PRIO, _WRITER_PRIO, _WRITER_PRIO))
+            # holder=%s   → main hi hoon, sirf heartbeat refresh
+            # same-host   → apni hi machine ka purana/mara instance (restart) →
+            #               turant le lo; ek host pe kabhi 2 backend nahi chalte
+            # prio <  mera→ mujhse chhota (dev) baitha hai → turant preempt
+            # prio == mera→ barabar wala mar gaya (10s chup) → failover
+            # prio >  mera→ MUJHSE BADA (production) baitha hai → 60s chup rahe
+            #               tabhi loonga.
+            #
+            # Ye aakhri line hi asli bug ka ilaaj hai.  Pehle yahan sabke liye
+            # ek hi 10-second ka niyam tha.  Ek MC operation ka timeout ~4s hai,
+            # aur purana writer har cycle write+read (2 operation) karta tha —
+            # PLC ek pal ko busy hua to production ka loop 10s se zyada atak
+            # jaata.  Bas itne me DEV (prio 0) lock utha leta, apna socket
+            # kholta; production laut kar dekhta lock gaya, apne connection
+            # BAND karta, phir prio se wapas chheen kar DOBARA connect karta.
+            # Yahi "baar-baar connect/disconnect" tha — aur sabse zyada tab,
+            # jab bit ON hota hai, kyunki asli write usi waqt jaata hai.
+            # Ab chhota backend bade se tabhi leta hai jab wo sach me mar gaya
+            # ho (poore 60 second chup), zara sa slow hone par nahi.
             got = cur.rowcount == 1
             conn.commit()
             return got
@@ -971,35 +1026,71 @@ def _acquire_writer_lock():
         return False
 
 
+# Ek PLC par lagataar kitni baar fail hua — ek hichki par connection nahi todte.
+_OUT_FAILS = {}          # {(ip,port): consecutive failures}
+_OUT_MAX_FAILS = 3       # itni baar LAGATAAR fail ho tabhi socket todo
+
+
 def _out_write_bit(ip, port, series, bit_type, bit_no, value):
-    """Write ONE bit to an output PLC and READ IT BACK on the SAME connection.
-    Returns the ACTUAL bit (True/False) after the write, or None if it couldn't
-    connect / write / read.  ONE persistent connection per PLC — many PLCs (e.g.
-    FX5U) allow only ONE, so a separate reader would fight the writer."""
+    """Output PLC ka EK bit us haalat me le aao jo chahiye, aur ASLI bit lauta do
+    (True/False), ya None agar connect/read/write nahi hua.
+
+    Teen baatein jaan-boojh kar aisi hain:
+
+    1) **Zaroorat ho tabhi LIKHO.**  Pehle bit PADHTE hain; wo pehle se sahi hai
+       to kuch likhte hi nahi.  Purana code har cycle (har 1 second) write+read
+       dono karta tha — yaani 2 MC operation prati second, hamesha.  Utni
+       khatkhat me kabhi na kabhi ek operation atak hi jaata tha.  Ab thehri
+       haalat me sirf 1 read, aur likhna sirf jab bit galat ho.
+       (Maintain wala behaviour bana rehta hai: koi PLC par bit haath se badal
+       de to read me farak dikhega aur hum turant sahi kar denge.)
+
+    2) **Ek hichki par connection NAHI todte.**  Purana code kisi bhi exception
+       par socket band karke naya banata tha — isliye "baar-baar connect /
+       disconnect" dikhta tha, khaaskar bit ON hote waqt (tab asli write jaata
+       hai aur wahi sabse dher operation hota hai).  Ab lagataar
+       `_OUT_MAX_FAILS` baar fail hone par hi socket todte hain; usse pehle
+       agle cycle me usi connection par dobara koshish hoti hai.
+
+    3) **Connect se pehle TCP probe nahi.**  Wo ek extra connect+close tha.
+       Seedha MC connect karte hain; na ho to backoff.
+    """
     key = (ip, int(port or 5007))
+    head = f"{(bit_type or '').upper()}{bit_no}"
     mc = _OUT_CONN.get(key)
     if mc is None:
         if _time.monotonic() < _OUT_RETRY.get(key, 0):
-            return None
-        if not _reachable(ip, key[1], timeout=0.4):
-            _OUT_RETRY[key] = _time.monotonic() + _PLC_RETRY_SECS
             return None
         try:
             mc = _connect({"series": series or "Q", "plc_ip": ip, "plc_port": key[1]})
             _OUT_CONN[key] = mc
             _OUT_RETRY.pop(key, None)
+            _OUT_FAILS[key] = 0
         except Exception:
             _OUT_RETRY[key] = _time.monotonic() + _PLC_RETRY_SECS
             return None
+
+    want = 1 if value else 0
     try:
-        mc.batchwrite_bitunits(headdevice=f"{(bit_type or '').upper()}{bit_no}",
-                               values=[1 if value else 0])
-        return bool(_read_one(mc, bit_type, bit_no))          # write ke baad ASLI bit
-    except Exception:
+        cur_bit = int(_read_one(mc, bit_type, bit_no))
+        if cur_bit != want:                       # galat hai tabhi likho
+            mc.batchwrite_bitunits(headdevice=head, values=[want])
+            cur_bit = int(_read_one(mc, bit_type, bit_no))   # likhne ke baad ASLI bit
+        _OUT_FAILS[key] = 0
+        return bool(cur_bit)
+    except Exception as e:
+        n = _OUT_FAILS.get(key, 0) + 1
+        _OUT_FAILS[key] = n
+        if n < _OUT_MAX_FAILS:
+            # ek-do hichki — connection rehne do, agle cycle me phir try karenge
+            return None
         try: mc.close()
         except Exception: pass
         _OUT_CONN.pop(key, None)
+        _OUT_FAILS[key] = 0
         _OUT_RETRY[key] = _time.monotonic() + 1
+        print(f"[ANDON-OUT] {ip}:{key[1]} {head} — {n} baar lagataar fail, "
+              f"connection dobara banayenge ({str(e)[:60]})", flush=True)
         return None
 
 
@@ -1053,19 +1144,21 @@ def _andon_output_write_once():
                          FROM andon_system e
                          LEFT JOIN andon_departments dep ON dep.id = e.department_id
                         WHERE e.state='OPEN' GROUP BY 1""")
-        live = {(r["dept"] or "").strip().lower(): r for r in cur.fetchall()}
+        live = {_dept_key(r["dept"]): r for r in cur.fetchall()}
     enabled_ids = set()
     updates = []   # (last_bit, last_want, last_online, id) → DB me persist
     for m in maps:
         enabled_ids.add(m["id"])
-        row = live.get((m["department"] or "").strip().lower())
-        if _dept_off_on_ack(m["department"]):
-            # Maintenance / Tool Room → ON only while an UN-acknowledged call is
-            # open (bit off the moment response arrives).
-            want = bool(row and int(row["unacked"] or 0) > 0)
-        else:
-            # Quality / Material / … → ON while ANY open call exists.
-            want = bool(row and int(row["total"] or 0) > 0)
+        # HAR MAPPING SIRF APNE DEPARTMENT KI CALL DEKHTA HAI.
+        # Maintenance wale PLC ka bit sirf Maintenance ki call par ON hoga,
+        # Toolroom wale ka sirf Toolroom par — `live` department se key hoti
+        # hai, isliye ek department ki call doosre ka bit kabhi nahi chhedti.
+        #
+        # AUR: `unacked`/`total` GINTI hai, sirf haan/na nahi.  Isliye ek call
+        # chalu ho aur usi department ki doosri machine se aur call aa jaye to
+        # ginti badhti hai, bit ON hi rehta hai — koi jhatka nahi.  Bit tabhi
+        # OFF hota hai jab us department ki AAKHRI call bhi nipat jaye.
+        want = _want_bit(m["department"], live)
         prev = _OUT_STATE.get(m["id"], {})
         actual = _out_write_bit(m["plc_ip"], m["plc_port"], m["plc_series"],
                                 m["bit_type"], m["bit_no"], want)   # read-back: True/False/None
@@ -1141,7 +1234,7 @@ def list_call_outputs(user=Depends(get_current_user)):
                          FROM andon_system e
                          LEFT JOIN andon_departments dep ON dep.id = e.department_id
                         WHERE e.state='OPEN' GROUP BY 1""")
-        live = {(r["dept"] or "").strip().lower(): r for r in cur.fetchall()}
+        live = {_dept_key(r["dept"]): r for r in cur.fetchall()}
         # writer lock ka heartbeat = koi backend abhi likh raha hai ya nahi (sach signal)
         cur.execute("SELECT holder, EXTRACT(EPOCH FROM (NOW()-heartbeat)) AS age FROM andon_output_lock WHERE id=1")
         _lk = cur.fetchone() or {}
@@ -1150,9 +1243,9 @@ def list_call_outputs(user=Depends(get_current_user)):
         r["off_on_ack"] = _dept_off_on_ack(r["department"])   # response pe off?
         # should_be_on = call ki live state se INTENDED bit (call ON → chahiye ON;
         # off_on_ack dept sirf jab tak UN-acknowledged).  Ye writer se independent.
-        lc = live.get((r["department"] or "").strip().lower())
-        r["should_be_on"] = (bool(lc and int(lc["unacked"] or 0) > 0) if r["off_on_ack"]
-                             else bool(lc and int(lc["total"] or 0) > 0))
+        # UI wahi _want_bit poochta hai jo writer chalata hai — do jagah do
+        # hisaab hote to screen "should be on" dikhati aur bit ON hota hi nahi.
+        r["should_be_on"] = _want_bit(r["department"], live)
         # bit_on / online = ASLI bit — jise ACTIVE writer ne likha + read-back karke DB
         # me persist kiya.  Har backend (dev/prod) YAHI padhta, to "Bit now" har jagah
         # SACH.  Koi active writer nahi (last_at >20s puraana) → pata nahi ("—").
