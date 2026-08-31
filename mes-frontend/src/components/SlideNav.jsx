@@ -22,9 +22,6 @@ const NAV_ITEMS = [
     section: "Admin",
     items: [
       { key: "admin-maintenance", label: "Maintenance Panel", icon: "🛠", path: "/admin/maintenance" },
-      // Document Update — KPI Targets / Slip Threshold / PM Check Sheet /
-      // Machine DMC / Breakdown Mail.  Pehle ye Maintenance Panel ke tab the.
-      { key: "document-update",   label: "Document Update", icon: "📄", path: "/document-update" },
     ],
   },
 ];
@@ -66,6 +63,7 @@ export default function SlideNav() {
           { key: "maintenance-machine-dmc",    label: "Machine DMC",        icon: "🏷",                   path: "/maintenance-machine-dmc" },
           { key: "maintenance-spare",          label: "Spare",              icon: "🔩",                   path: "/maintenance-spare" },
           { key: "machine-master",             label: "Machine Master",     icon: "🏭",                   path: "/machine-master" },
+          { key: "document-update",            label: "Document Update",    icon: "📄",                   path: "/document-update" },
         ],
       };
       return [adminMaint, ...NAV_ITEMS];
@@ -96,6 +94,7 @@ export default function SlideNav() {
         { key: "maintenance-machine-dmc",    label: "Machine DMC",        icon: "🏷",                   path: "/maintenance-machine-dmc" },
         { key: "maintenance-spare",          label: "Spare",              icon: "🔩",                   path: "/maintenance-spare" },
         { key: "machine-master",             label: "Machine Master",     icon: "🏭",                   path: "/machine-master" },
+        { key: "document-update",            label: "Document Update",    icon: "📄",                   path: "/document-update" },
       ],
     };
     return [adminMaint, ...NAV_ITEMS];
