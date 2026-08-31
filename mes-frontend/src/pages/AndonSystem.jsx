@@ -215,6 +215,31 @@ export default function AndonSystem() {
     } catch (e) { flash(String(e.message || e).slice(0, 120)); setHistData(null); }
     finally { setHistLoad(false); }
   }, [api]);
+  // Loss History se kachra call hatana — SIRF admin.  Ye modal HAR department
+  // ke liye khulta hai (histDept), isliye ek hi jagah lagane se Maintenance,
+  // Toolroom, Quality — sab cover ho jaate hain.  Isme sirf BAND ho chuki
+  // calls aati hain (andon_history), to chalu call ka sawaal hi nahi.
+  const [histDel, setHistDel] = useState(null);
+  const deleteHistRow = async (r) => {
+    if (!r?.id) return;
+    if (!window.confirm(
+      `Ye call history se hamesha ke liye hat jayegi:
+
+` +
+      `${histDept} · ${r.zone || "-"} / ${r.line || "-"}
+` +
+      `${r.date} ${r.start_time || "-"} → ${r.end_time || "-"}
+
+` +
+      `Wapas nahi aayegi.  Aage badhein?`)) return;
+    setHistDel(r.id);
+    try {
+      await api("/history/delete", { method: "POST", body: JSON.stringify({ ids: [r.id] }) });
+      await loadHistory(histDept, histFrom, histTo);   // wahi filter, taaza data
+    } catch (e) {
+      flash(String(e?.message || e).slice(0, 140));
+    } finally { setHistDel(null); }
+  };
   const openHistory = (dept) => { setHistDept(dept); setHistData(null); loadHistory(dept); };
 
   // ── Reports → TOTAL LOSS (union) ──────────────────────────────────────
@@ -1618,7 +1643,7 @@ export default function AndonSystem() {
                 <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                   <thead>
                     <tr style={{ background:"#f8fafc", position:"sticky", top:0 }}>
-                      {["Date","Zone","Line","Start","End","Duration (loss)", ...(showResp?["Response"]:[])].map((h) => (
+                      {["Date","Zone","Line","Start","End","Duration (loss)", ...(showResp?["Response"]:[]), ...(isAdmin?[""]:[])].map((h) => (
                         <th key={h} style={{ textAlign:"left", padding:"10px 14px", fontSize:10.5,
                                              fontWeight:800, letterSpacing:".06em", textTransform:"uppercase",
                                              color:"#64748b", borderBottom:"2px solid #e2e8f0", whiteSpace:"nowrap" }}>{h}</th>
@@ -1640,6 +1665,18 @@ export default function AndonSystem() {
                           <td style={{ padding:"9px 14px", fontFamily:"'Barlow Condensed',sans-serif", fontSize:16, fontWeight:800,
                                        color: r.response_seconds == null ? "#cbd5e1" : "#16a34a" }}>
                             {r.response_seconds == null ? "—" : fmtClock(r.response_seconds)}
+                          </td>
+                        )}
+                        {isAdmin && (
+                          <td style={{ padding:"9px 14px", whiteSpace:"nowrap", textAlign:"right" }}>
+                            <button onClick={() => deleteHistRow(r)} disabled={histDel === r.id}
+                                    title="Is call ko history se hata do"
+                                    style={{ border:"1px solid #fecaca", background:"#fff", color:"#dc2626",
+                                             borderRadius:7, cursor:"pointer", padding:"3px 9px",
+                                             fontSize:12, fontWeight:800,
+                                             opacity: histDel === r.id ? .5 : 1 }}>
+                              {histDel === r.id ? "…" : "🗑"}
+                            </button>
                           </td>
                         )}
                       </tr>
