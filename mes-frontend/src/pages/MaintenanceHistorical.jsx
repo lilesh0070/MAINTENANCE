@@ -137,7 +137,7 @@ const _MON = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
 const fillMonthLabel = (ym) => { if (!ym) return ""; const [y, m] = ym.split("-"); return `${_MON[parseInt(m, 10)] || m} ${y}`; };
 
 export default function MaintenanceHistorical() {
-  const { token, theme, user, isAdmin } = useAuth();
+  const { token, theme, user, isAdmin, canAccess } = useAuth();
   // ── filters (Machine Master List + FY/Month + exact Date) ──
   // Upar ke buttons me se kaunsa chuna hua hai — ek waqt me wahi section dikhta
   const [sec, setSec]       = useState("BD");
@@ -471,16 +471,29 @@ export default function MaintenanceHistorical() {
   }), [lbRows, win, fDate, fZone, fLine, fMachineNo, fMachineName]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Upar ke chunav-buttons — naam, rang aur kitne record hain (filter ke hisaab se)
+  // Har section ka apna permission key — admin chahe to kisi user ko sirf
+  // Breakdown Slips de, ya sirf PM.  Sab `maintenance-historical` se inherit
+  // karte hain, isliye jisko poora page mila hua hai use aathon section pehle
+  // jaise hi dikhte hain.  Naya section jodo to key bhi teen jagah jodna:
+  // yahan, AuthContext ke SUBPAGE_PARENT me, aur PAGE_PERM_GROUPS me.
   const SECTIONS = [
-    { key: "BD",   label: "Breakdown Slips",       color: "#16a34a", count: () => list.length },
-    { key: "AUTO", label: "Auto Slips (ANDON)",    color: "#dc2626", count: () => autoList.length },
-    { key: "PM",   label: "PM Check Sheets",       color: "#2563eb", count: () => pmList.length },
-    { key: "DMC",  label: "DMC Check Sheets",      color: "#0d9488", count: () => dmcList.length },
-    { key: "SUN",  label: "Sunday Plan Work",      color: "#d97706", count: () => sunList.length },
-    { key: "DAY",  label: "Daily Work Assign",     color: "#7c3aed", count: () => dayList.length },
-    { key: "CAPA", label: "CAPA (Closed)",          color: "#be185d", count: () => capaList.length },
-    { key: "LOG",  label: "Log Book",               color: "#0891b2", count: () => lbList.length },
+    { key: "BD",   perm: "hist-bd",   label: "Breakdown Slips",    color: "#16a34a", count: () => list.length },
+    { key: "AUTO", perm: "hist-auto", label: "Auto Slips (ANDON)", color: "#dc2626", count: () => autoList.length },
+    { key: "PM",   perm: "hist-pm",   label: "PM Check Sheets",    color: "#2563eb", count: () => pmList.length },
+    { key: "DMC",  perm: "hist-dmc",  label: "DMC Check Sheets",   color: "#0d9488", count: () => dmcList.length },
+    { key: "SUN",  perm: "hist-sun",  label: "Sunday Plan Work",   color: "#d97706", count: () => sunList.length },
+    { key: "DAY",  perm: "hist-day",  label: "Daily Work Assign",  color: "#7c3aed", count: () => dayList.length },
+    { key: "CAPA", perm: "hist-capa", label: "CAPA (Closed)",      color: "#be185d", count: () => capaList.length },
+    { key: "LOG",  perm: "hist-log",  label: "Log Book",           color: "#0891b2", count: () => lbList.length },
   ];
+
+  // Jis section par ho uski permission na ho to pehle allowed par bhej do —
+  // warna page khula rehta par andar kuch dikhta hi nahi.
+  useEffect(() => {
+    if (canAccess(SECTIONS.find((x) => x.key === sec)?.perm)) return;
+    const first = SECTIONS.find((x) => canAccess(x.perm));
+    if (first) setSec(first.key);
+  }, [sec, canAccess]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const fmtD = (iso) => (iso ? String(iso).slice(0, 10) : "—");
   const fmtT = (iso) => { const d = iso ? new Date(iso) : null; return d ? d.toTimeString().slice(0, 5) : "—"; };
@@ -617,7 +630,7 @@ export default function MaintenanceHistorical() {
 
         {/* ── kya dekhna hai — upar ke buttons (ek waqt me ek) ── */}
         <div className="hd-picks">
-          {SECTIONS.map((x) => {
+          {SECTIONS.filter((x) => canAccess(x.perm)).map((x) => {
             const on = sec === x.key, n = x.count();
             return (
               <button key={x.key} className="hd-pick" onClick={() => setSec(x.key)}

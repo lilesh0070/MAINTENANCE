@@ -95,14 +95,31 @@ export const PAGE_PERM_GROUPS = [
       { key: "maintenance-breakdown-pareto",   label: "Pareto Analysis" },
       { key: "maintenance-breakdown-top10",    label: "Top 10 BD" },
     ]},
-    { key: "production-breakdown-slip",  label: "Production Breakdown Slip" },
+    { key: "production-breakdown-slip",  label: "Production Breakdown Slip", children: [
+      /* Chaaron tab alag grant ho sakte hain — production wale ko sirf apna
+         tab, tool room wale ko sirf apna.  Kram wahi jo page par hai. */
+      { key: "prod-slip-production",  label: "Production (fill production half)" },
+      { key: "prod-slip-maintenance", label: "Maintenance (complete slip)" },
+      { key: "prod-slip-toolroom",    label: "Tool Room (complete slip)" },
+      { key: "prod-slip-status",      label: "Status (view only)" },
+    ]},
     { key: "skill-training",             label: "Skill & Training", children: [
       { key: "skill-ojt",         label: "OJT" },
       { key: "skill-matrix",      label: "Skill Matrix" },
       { key: "skill-org-chart",   label: "Organisation Chart" },
       { key: "skill-upgradation", label: "Skill Upgradation Plan" },
     ]},
-    { key: "maintenance-historical",     label: "Historical Data" },
+    { key: "maintenance-historical",     label: "Historical Data", children: [
+      /* Kram wahi jo page ke section buttons ka hai. */
+      { key: "hist-bd",   label: "Breakdown Slips" },
+      { key: "hist-auto", label: "Auto Slips (ANDON)" },
+      { key: "hist-pm",   label: "PM Check Sheets" },
+      { key: "hist-dmc",  label: "DMC Check Sheets" },
+      { key: "hist-sun",  label: "Sunday Plan Work" },
+      { key: "hist-day",  label: "Daily Work Assign" },
+      { key: "hist-capa", label: "CAPA (Closed)" },
+      { key: "hist-log",  label: "Log Book" },
+    ]},
     { key: "maintenance-capa",           label: "CAPA" },
     { key: "maintenance-deviations",     label: "Deviations" },
     { key: "maintenance-logbook",        label: "Log Book" },

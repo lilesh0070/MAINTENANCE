@@ -36,6 +36,20 @@ export const SUBPAGE_PARENT = {
   "andon-config":  "andon-system",
   "andon-callout": "andon-system",
   "andon-reports": "andon-system",
+  // Historical Data (aathon section)
+  "hist-bd":   "maintenance-historical",
+  "hist-auto": "maintenance-historical",
+  "hist-pm":   "maintenance-historical",
+  "hist-dmc":  "maintenance-historical",
+  "hist-sun":  "maintenance-historical",
+  "hist-day":  "maintenance-historical",
+  "hist-capa": "maintenance-historical",
+  "hist-log":  "maintenance-historical",
+  // Production Breakdown Slip (do-stage slip ke chaar tab)
+  "prod-slip-production":  "production-breakdown-slip",
+  "prod-slip-maintenance": "production-breakdown-slip",
+  "prod-slip-toolroom":    "production-breakdown-slip",
+  "prod-slip-status":      "production-breakdown-slip",
   // Skill & Training
   "skill-ojt":          "skill-training",
   "skill-matrix":       "skill-training",

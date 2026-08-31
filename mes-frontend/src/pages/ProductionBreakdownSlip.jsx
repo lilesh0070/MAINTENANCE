@@ -15,19 +15,25 @@ import { PROD_ZONES } from "../constants/zones";
 import { api, Btn, StatCard } from "./breakdown/shared";
 import { ClosureFormModal } from "./breakdown/ClosureFormModal";
 
+// Har tab ka apna permission key — teeno department alag-alag grant ho saken
+// (production wale ko sirf Production tab, tool room wale ko sirf apna).  Ye
+// keys teen jagah honi chahiye: yahan, AuthContext ke SUBPAGE_PARENT me, aur
+// admin ke PAGE_PERM_GROUPS me.  Sab `production-breakdown-slip` se inherit
+// karti hain, isliye jisko poora page mila hua hai use chaaron tab pehle jaise
+// hi dikhte hain — kisi maujooda user ka kuch nahi badla.
 const TABS = [
   // Production tab me DONO taraf (maintenance + tool room) ki pending slips
   // ek saath aati hain — production dono bharti hai.  Submit ke baad har slip
   // apni hi taraf jaati hai (ANDON ne jis department ko bulaya tha).
-  { key: "PRODUCTION",  icon: "🏭", label: "Production",
+  { key: "PRODUCTION",  perm: "prod-slip-production", icon: "🏭", label: "Production",
     stage: "PENDING_PRODUCTION",  phase: "production",  src: "all",         accent: "#1e40af" },
-  { key: "MAINTENANCE", icon: "🔧", label: "Maintenance",
+  { key: "MAINTENANCE", perm: "prod-slip-maintenance", icon: "🔧", label: "Maintenance",
     stage: "PENDING_MAINTENANCE", phase: "maintenance", src: "maintenance", accent: "#0e7490" },
-  { key: "TOOLROOM",    icon: "🧰", label: "Tool Room",
+  { key: "TOOLROOM",    perm: "prod-slip-toolroom", icon: "🧰", label: "Tool Room",
     stage: "PENDING_MAINTENANCE", phase: "maintenance", src: "toolroom",    accent: "#b45309" },
   // Status = sirf dekhne ke liye — har breakdown ki ek line (resolve hua ya
   // nahi, aur kisne apni slip submit ki).  `breakdown_status` view se.
-  { key: "STATUS",      icon: "📊", label: "Status", status: true, accent: "#7c3aed" },
+  { key: "STATUS",      perm: "prod-slip-status", icon: "📊", label: "Status", status: true, accent: "#7c3aed" },
 ];
 
 // Slip kitni purani hai.  Production bhare BINA slip maintenance ko dikhti hi
@@ -78,7 +84,7 @@ function Tag({ v }) {
 }
 
 export default function ProductionBreakdownSlip() {
-  const { token, isAdmin } = useAuth();
+  const { token, isAdmin, canAccess } = useAuth();
   const nav = useNavigate();
   const [tab, setTab]     = useState("PRODUCTION");
   const [rows, setRows]   = useState([]);
@@ -89,6 +95,15 @@ export default function ProductionBreakdownSlip() {
   const [zoneSel, setZone]= useState("");     // zone card click -> list filter
   const [fy, setFy]       = useState(`${CUR_FY_Y}-${CUR_FY_Y + 1}`);   // FY filter
   const [month, setMonth] = useState("");     // "" = poora FY
+
+  // Jis tab par ho uski permission na ho to pehle allowed tab par bhej do —
+  // warna page khula rehta par andar kuch dikhta hi nahi (ANDON me bhi yahi
+  // hifazat hai).
+  useEffect(() => {
+    if (canAccess(TABS.find((t) => t.key === tab)?.perm)) return;
+    const first = TABS.find((t) => canAccess(t.perm));
+    if (first) setTab(first.key);
+  }, [tab, canAccess]);
 
   const T = TABS.find((t) => t.key === tab);
 
@@ -216,7 +231,7 @@ export default function ProductionBreakdownSlip() {
       <div style={{ maxWidth: 1300, margin: "20px auto 0", padding: "0 24px" }}>
         {/* tabs + FY/month filter (filter saare tabs par lagta hai) */}
         <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-          {TABS.map((t) => {
+          {TABS.filter((t) => canAccess(t.perm)).map((t) => {
             const on = t.key === tab;
             return (
               <button key={t.key} onClick={() => { setTab(t.key); setZone(""); }}
