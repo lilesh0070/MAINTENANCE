@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import bcrypt
-from fastapi import Depends, HTTPException, status, Request
+from fastapi import Depends, Form, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from pydantic import BaseModel
@@ -44,6 +44,12 @@ if not SECRET_KEY:
           "in .env for stable signing.")
 ALGORITHM           = "HS256"
 TOKEN_EXPIRE_HOURS  = 12
+# "Remember me" wale login ka token itne din chalta hai.  Ye un jagahon ke liye
+# hai jahan screen hamesha khuli rehti hai — jaise doosre app me iframe se laga
+# hua page, ya deewar par lagi TV.  Wahan har baar login maangna bekaar hai.
+# Normal login ab bhi 12 ghante ka hi hai; ye tabhi lagta hai jab user khud
+# "Remember me" chune.
+TOKEN_REMEMBER_DAYS = 30
 
 # ── Crypto ─────────────────────────────────────────────────────
 # Use bcrypt directly (passlib 1.7.4 is incompatible with bcrypt >= 4.1).
@@ -85,9 +91,10 @@ def hash_password(plain: str) -> str:
     return bcrypt.hashpw(plain.encode("utf-8")[:72], bcrypt.gensalt()).decode("utf-8")
 
 
-def create_token(username: str, role: str, user_id: int) -> str:
+def create_token(username: str, role: str, user_id: int, remember: bool = False) -> str:
     now = datetime.utcnow()
-    expire = now + timedelta(hours=TOKEN_EXPIRE_HOURS)
+    expire = now + (timedelta(days=TOKEN_REMEMBER_DAYS) if remember
+                    else timedelta(hours=TOKEN_EXPIRE_HOURS))
     return jwt.encode(
         # `iat` (issued-at) zaroori hai — password badalne par is se purane token
         # invalid ho jaate hain (get_current_user me pwd_changed_at se compare).
@@ -243,7 +250,8 @@ def _throttle_fail(key):
 
 
 @auth_router.post("/login", response_model=Token)
-def login(request: Request, form: OAuth2PasswordRequestForm = Depends()):
+def login(request: Request, form: OAuth2PasswordRequestForm = Depends(),
+          remember: bool = Form(False)):
     """
     Exchange username+password for a JWT token.
     Returns token with user id, role, and expiry.
@@ -300,14 +308,15 @@ def login(request: Request, form: OAuth2PasswordRequestForm = Depends()):
             # Audit failure must never block login — log and continue
             print(f"[AUDIT] login write failed: {_exc}")
 
-    token = create_token(form.username, user["role"], user["id"])
+    token = create_token(form.username, user["role"], user["id"], remember)
     return Token(
         access_token=token,
         token_type="bearer",
         username=form.username,
         user_id=user["id"],
         role=user["role"],
-        expires_in=TOKEN_EXPIRE_HOURS * 3600,
+        expires_in=(TOKEN_REMEMBER_DAYS * 86400 if remember
+                    else TOKEN_EXPIRE_HOURS * 3600),
     )
 
 

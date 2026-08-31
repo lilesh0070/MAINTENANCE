@@ -6,6 +6,10 @@ export default function Login() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError]       = useState("");
+  // Default OFF — plant ki policy hai ki har naye tab me login maanga jaye.
+  // Ye tick sirf un screens ke liye hai jo hamesha khuli rehti hain
+  // (doosre app me iframe se laga page, ya deewar par lagi TV).
+  const [remember, setRemember] = useState(false);
   const [loading, setLoading]   = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [mounted, setMounted]   = useState(false);
@@ -39,7 +43,7 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      await login(username.trim(), password);
+      await login(username.trim(), password, remember);
       navigate("/dashboard", { replace: true });
     } catch (err) {
       const m = (err.message || "").toLowerCase();
@@ -504,6 +508,20 @@ export default function Login() {
                     </span>
                   </div>
                 </div>
+
+                <label style={{ display:"flex", alignItems:"center", gap:9,
+                                margin:"2px 2px 14px", cursor:"pointer",
+                                fontSize:13, color:"#cbd5e1", userSelect:"none" }}>
+                  <input type="checkbox" checked={remember} disabled={loading}
+                         onChange={(e) => setRemember(e.target.checked)}
+                         style={{ width:15, height:15, cursor:"pointer", accentColor:"#2563eb" }} />
+                  <span>
+                    Keep me signed in
+                    <span style={{ display:"block", fontSize:11, color:"#94a3b8", marginTop:1 }}>
+                      For always-on screens (wall TV, embedded panel). Do not use on a shared PC.
+                    </span>
+                  </span>
+                </label>
 
                 <button className="login-btn" type="submit" disabled={loading}>
                   {loading
