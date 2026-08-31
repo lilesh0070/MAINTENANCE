@@ -82,10 +82,22 @@ export function LoginHistoryPage() {
     if (!token) return;
     try { const d = await api.get("/api/audit/active-logins", token); setActive(d?.rows || []); } catch {}
   }, [token]);
-  // Admin kisi id ko force logout kare — uske sab token invalid ho jaate hain.
+  // Admin kisi ko force logout kare — uske sab token invalid ho jaate hain.
+  //
+  // NAAM se bhulaate hain, id se nahi.  Ye list audit-log se banti hai
+  // (username par), maintenance_users se nahi — to jo user DELETE ho chuka hai
+  // uski row bhi yahan dikhti hai aur uski `user_id` NULL aati hai.  Pehle
+  // yahan id lagti thi, to us row par URL `/api/users/null/force-logout` ban
+  // jaata (422) aur `catch {}` use chup-chaap nigal leta — button dabate rehne
+  // par bhi kuch nahi hota tha.  Ab naam kaafi hai, aur galti chhupti nahi.
   const forceLogout = async (uid, uname) => {
-    if (!uid || !window.confirm(`"${uname}" ko abhi logout karna hai? Uske sab device/tab se session khatam ho jayega.`)) return;
-    try { await api.post(`/api/users/${uid}/force-logout`, {}, token); } catch {}
+    if (!uname || !window.confirm(`"${uname}" ko abhi logout karna hai? Uske sab device/tab se session khatam ho jayega.`)) return;
+    try {
+      await api.post(`/api/users/force-logout?username=${encodeURIComponent(uname)}`, {}, token);
+    } catch (e) {
+      window.alert(`"${uname}" ko logout nahi kar paye — ${e?.message || e}`);
+      return;
+    }
     loadActive();
   };
   // History clear — date range (dono khali => saari)

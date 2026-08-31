@@ -144,6 +144,46 @@ def force_logout_user(user_id: int, admin=Depends(require_admin)):
     return {"ok": True, "username": uname}
 
 
+@router.post("/force-logout")
+def force_logout_by_name(username: str, admin=Depends(require_admin)):
+    """USERNAME se force-logout — user DELETE ho chuka ho tab bhi chalta hai.
+
+    Kyun alag endpoint: "Currently Logged In" ki list `maintenance_audit_log`
+    se banti hai (username par), `maintenance_users` se nahi.  Isliye user ko
+    delete kar dene par bhi uski row wahan atki reh jaati thi, aur upar wala
+    `/{user_id}/force-logout` use hata nahi paata tha — deleted user ki id NULL
+    aati hai, to URL `/api/users/null/force-logout` ban kar 422 de deta tha
+    (aur UI use chup-chaap nigal jaata tha, isliye button "kuch nahi karta"
+    lagta tha).  Ye endpoint sirf naam par chalta hai.
+
+    User abhi maujood ho  -> `pwd_changed_at` bump (uske sab token turant mare).
+    User delete ho chuka  -> token waise bhi mara hua hai (get_current_user
+                             DB me user na milne par 401 deta hai), to sirf
+                             AUTH_LOGOUT likhna kaafi hai — wahi row ko list
+                             se hataata hai.
+    """
+    uname = (username or "").strip()
+    if not uname:
+        raise HTTPException(400, "username required")
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM maintenance_users WHERE username = %s", (uname,))
+        r = cur.fetchone()
+        uid = r[0] if r else None
+        existed = uid is not None
+        if existed:
+            cur.execute("UPDATE maintenance_users SET pwd_changed_at = %s WHERE id = %s",
+                        (int(time.time()), uid))
+        cur.execute("""INSERT INTO maintenance_audit_log
+                           (action, entity_type, entity_id, details, user_id, username)
+                       VALUES ('AUTH_LOGOUT', 'user', %s, %s, %s, %s)""",
+                    (uid, f"admin '{admin.get('username')}' ne force-logout kiya"
+                          + ("" if existed else " (user delete ho chuka tha — sirf session band ki)"),
+                     uid, uname))
+        conn.commit()
+    return {"ok": True, "username": uname, "user_existed": existed}
+
+
 @router.put("/{user_id}/role")
 def update_user_role(user_id: int, body: UserUpdate, admin=Depends(require_admin)):
     """Role badlo.  (Naam `/role` hi rakha hai taaki AdminPanel ke purane
