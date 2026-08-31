@@ -61,6 +61,17 @@ def main():
         print("   %s  %-52s %s=%s" % ("PASS" if ok else "FAIL", step, dept,
                                       "ON " if got[dept] else "OFF"))
 
+    def T2(step, live, exp1, exp2):
+        """bit1 aur bit2 dono ek saath jaancho (Maintenance ke liye)."""
+        global _fail
+        b1 = _want_bit("Maintenance", live)
+        b2 = _want_bit("Maintenance", live, on_close=True)
+        ok = (b1 is exp1) and (b2 is exp2)
+        if not ok:
+            _fail += 1
+        print("   %s  %-46s bit1=%s  bit2=%s" % ("PASS" if ok else "FAIL", step,
+                                                 "ON " if b1 else "OFF", "ON " if b2 else "OFF"))
+
     def T(step, got, exp):
         global _fail
         ok = got["Maintenance"] is exp
@@ -155,6 +166,33 @@ def main():
         cur.execute("DELETE FROM andon_system WHERE id=%s", (t1,))
         bb, _ = bits()
         T_named("Toolroom ACK bina band -> bit OFF", bb, "Toolroom", False)
+        # ── DOOSRA BIT: response par nahi, BREAKDOWN BAND hone par girta hai ──
+        # bit1 = "koi pahuncha ya nahi"  ·  bit2 = "kaam khatam hua ya nahi".
+        # Ye test isliye hai ki bit2 ka faisla `total` par tika hai — kal koi
+        # `live` ki query ya _want_bit ka on_close hissa chhed de to bit2 ya to
+        # response par gir jayega (galat) ya kabhi girega hi nahi (tower jalti
+        # rehti).  Dono yahin pakde jaayenge.
+        print()
+        print("--- DOOSRA BIT (on_close): response se nahi, band hone par OFF ---")
+        cur.execute("DELETE FROM andon_system")
+        cur.execute("""INSERT INTO andon_system (department_id, display_name, state, started_at)
+                       VALUES (%s,'Maintenance','OPEN', now()) RETURNING id""", (md,))
+        d1 = cur.fetchone()["id"]
+        b, live = bits()
+        T2("call aayi -> dono ON", live, True, True)
+        cur.execute("UPDATE andon_system SET acknowledged_at=now() WHERE id=%s", (d1,))
+        b, live = bits()
+        T2("RESPONSE aaya -> bit1 OFF, bit2 ON", live, False, True)
+        cur.execute("DELETE FROM andon_system WHERE id=%s", (d1,))
+        b, live = bits()
+        T2("breakdown BAND -> dono OFF", live, False, False)
+
+        cur.execute("""INSERT INTO andon_system (department_id, display_name, state, started_at)
+                       VALUES (%s,'Maintenance','OPEN', now()) RETURNING id""", (md,))
+        d2 = cur.fetchone()["id"]
+        cur.execute("DELETE FROM andon_system WHERE id=%s", (d2,))
+        b, live = bits()
+        T2("ACK aaye BINA band hui -> dono OFF", live, False, False)
     finally:
         c.rollback()                      # <- test ka koi nishan nahi bachta
 

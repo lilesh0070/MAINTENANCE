@@ -944,7 +944,7 @@ def _dept_off_on_ack(dept):
     return _dept_key(dept) in _ACK_DEPTS
 
 
-def _want_bit(dept, live):
+def _want_bit(dept, live, on_close=False):
     """Ek output mapping ka bit ON hona chahiye ya nahi.
 
     `live` = {department_key: {"total": n, "unacked": n}} — sirf abhi khuli
@@ -965,7 +965,11 @@ def _want_bit(dept, live):
     row = live.get(_dept_key(dept))
     if not row:
         return False
-    field = "unacked" if _dept_off_on_ack(dept) else "total"
+    # on_close=True (bit2) -> hamesha `total`, yaani bit tabhi girega jab us
+    # department ki AAKHRI call BAND ho jaye — response aane se nahi.  Isse
+    # Maintenance/Toolroom ke liye do alag nishaniyan ban jaati hain:
+    #   bit1 = "koi pahuncha ya nahi"   bit2 = "kaam khatam hua ya nahi"
+    field = "total" if on_close else ("unacked" if _dept_off_on_ack(dept) else "total")
     return int(row.get(field) or 0) > 0
 
 
@@ -994,9 +998,16 @@ def _ensure_output():
         # (dev) bhi serve kar sakta hai — to seedha socket todna mumkin nahi.
         # Isliye button DB me nishan lagata hai, aur writer agle cycle me use
         # dekh kar apna connection giraata hai.  (Wahi tareeqa jo writer lock ka.)
+        # bit2 = DOOSRA (marzi ka) bit.  Pehla bit Maintenance/Toolroom ke liye
+        # RESPONSE aate hi off ho jaata hai; kai baar chahiye ki ek nishani tab
+        # tak jalti rahe jab tak breakdown POORA BAND na ho.  Wahi kaam bit2
+        # karta hai — ON call aane par, OFF tabhi jab us department ki aakhri
+        # call band ho.  Khali chhod dein to bit2 kuch karta hi nahi.
         for col, typ in (("last_bit", "BOOLEAN"), ("last_want", "BOOLEAN"),
                          ("last_online", "BOOLEAN"), ("last_at", "TIMESTAMP"),
-                         ("last_writer", "TEXT"), ("reconnect_req", "TIMESTAMP")):
+                         ("last_writer", "TEXT"), ("reconnect_req", "TIMESTAMP"),
+                         ("bit2_type", "TEXT"), ("bit2_no", "TEXT"),
+                         ("last_bit2", "BOOLEAN"), ("last_want2", "BOOLEAN")):
             cur.execute(f"ALTER TABLE andon_call_output ADD COLUMN IF NOT EXISTS {col} {typ}")
         # singleton writer lock — sirf EK backend likhe (single-conn PLC pe do
         # writer = dono fail).  Ek hi row (id=1); holder + prio + heartbeat.
@@ -1184,7 +1195,7 @@ def _andon_output_write_once():
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("""SELECT id, department, plc_ip, plc_port, plc_series, bit_type, bit_no,
-                              reconnect_req
+                              bit2_type, bit2_no, reconnect_req
                          FROM andon_call_output WHERE enabled=TRUE""")
         maps = cur.fetchall()
         cur.execute("""SELECT COALESCE(dep.name, e.display_name) AS dept,
@@ -1231,11 +1242,29 @@ def _andon_output_write_once():
         if want != prev.get("want"):
             print(f"[ANDON-OUT] {m['department']} {m['bit_type']}{m['bit_no']} "
                   f"-> {'ON' if want else 'OFF'} (readback={actual})", flush=True)
+        # ── DOOSRA BIT (marzi ka) ──────────────────────────────────────
+        # ON call aane par, OFF tabhi jab breakdown BAND ho (response se nahi).
+        # bit2_no khali ho to kuch karte hi nahi — purani mappings waisi hi
+        # chalti rehti hain.  Isi connection par likhte hain, isliye koi naya
+        # socket nahi khulta.
+        want2 = actual2 = None
+        if (m.get("bit2_no") or "").strip():
+            want2 = _want_bit(m["department"], live, on_close=True)
+            actual2 = _out_write_bit(m["plc_ip"], m["plc_port"], m["plc_series"],
+                                     m["bit2_type"] or "M", m["bit2_no"], want2)
+            if actual2 is None and (m["plc_ip"], int(m["plc_port"] or 5007)) in _OUT_CONN:
+                actual2 = prev.get("on2")
+            if want2 != prev.get("want2"):
+                print(f"[ANDON-OUT] {m['department']} {m['bit2_type'] or 'M'}{m['bit2_no']} "
+                      f"(close-pe-off) -> {'ON' if want2 else 'OFF'} (readback={actual2})", flush=True)
+
         _OUT_STATE[m["id"]] = {"ip": m["plc_ip"], "port": m["plc_port"], "series": m["plc_series"],
                                "bit_type": m["bit_type"], "bit_no": m["bit_no"],
+                               "bit2_type": m.get("bit2_type"), "bit2_no": m.get("bit2_no"),
                                "want": want, "on": actual, "online": actual is not None,
+                               "want2": want2, "on2": actual2,
                                "checked": datetime.now().isoformat(timespec="seconds")}
-        updates.append((actual, want, actual is not None, m["id"]))
+        updates.append((actual, want, actual is not None, actual2, want2, m["id"]))
     # a mapping that was ON but is no longer enabled/present → force its bit OFF once
     for oid in list(_OUT_STATE.keys()):
         if oid in enabled_ids:
@@ -1244,18 +1273,25 @@ def _andon_output_write_once():
         if st.get("on"):
             _out_write_bit(st.get("ip"), st.get("port"), st.get("series"),
                           st.get("bit_type"), st.get("bit_no"), False)
+        # bit2 bhi — warna mapping hatane par wo PLC par ON hi ATKA reh jaata
+        # aur tower jalti rehti, bina kisi call ke.
+        if st.get("on2") and (st.get("bit2_no") or "").strip():
+            _out_write_bit(st.get("ip"), st.get("port"), st.get("series"),
+                          st.get("bit2_type") or "M", st.get("bit2_no"), False)
         _OUT_STATE.pop(oid, None)
     # writer ke asli bits DB me likho → koi bhi backend ka GET sach dikhaye
     if updates:
         try:
             with get_conn() as conn:
                 cur = conn.cursor()
-                for last_bit, last_want, last_online, mid in updates:
+                for last_bit, last_want, last_online, last_bit2, last_want2, mid in updates:
                     cur.execute("""UPDATE andon_call_output
                                       SET last_bit=%s, last_want=%s, last_online=%s,
+                                          last_bit2=%s, last_want2=%s,
                                           last_at=NOW(), last_writer=%s
                                     WHERE id=%s""",
-                                (last_bit, last_want, last_online, _WRITER_ID, mid))
+                                (last_bit, last_want, last_online,
+                                 last_bit2, last_want2, _WRITER_ID, mid))
                 conn.commit()
         except Exception as e:
             print(f"[ANDON-OUT] persist error: {e}")
@@ -1289,6 +1325,9 @@ class CallOutputIn(BaseModel):
     plc_series: Optional[str] = "Q"
     bit_type: str
     bit_no: str
+    # Doosra bit — marzi ka.  Khali chhoda to kuch nahi hota.
+    bit2_type: Optional[str] = "M"
+    bit2_no: Optional[str] = ""
     enabled: bool = True
 
 
@@ -1322,6 +1361,9 @@ def list_call_outputs(user=Depends(get_current_user)):
         # UI wahi _want_bit poochta hai jo writer chalata hai — do jagah do
         # hisaab hote to screen "should be on" dikhati aur bit ON hota hi nahi.
         r["should_be_on"] = _want_bit(r["department"], live)
+        # bit2 ka apna faisla — call BAND hone par hi girta hai
+        r["should_be_on2"] = (_want_bit(r["department"], live, on_close=True)
+                              if (r.get("bit2_no") or "").strip() else None)
         # bit_on / online = ASLI bit — jise ACTIVE writer ne likha + read-back karke DB
         # me persist kiya.  Har backend (dev/prod) YAHI padhta, to "Bit now" har jagah
         # SACH.  Koi active writer nahi (last_at >20s puraana) → pata nahi ("—").
@@ -1332,8 +1374,10 @@ def list_call_outputs(user=Depends(get_current_user)):
         r["writer_age"] = round(_lk["age"], 1) if _lk.get("age") is not None else None
         if r["enabled"] and fresh:
             r["bit_on"], r["online"] = r.get("last_bit"), r.get("last_online")
+            r["bit2_on"] = r.get("last_bit2")
         else:
             r["bit_on"], r["online"] = None, None    # disabled ya koi writer nahi
+            r["bit2_on"] = None
         # Connection: bit pata chala → reachable; warna (writer band) quick TCP probe.
         reach = True if r["bit_on"] is not None else r["online"]
         if reach is None and r.get("plc_ip") and r["enabled"]:
@@ -1357,9 +1401,12 @@ def add_call_output(body: CallOutputIn, user=Depends(get_current_user)):
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""INSERT INTO andon_call_output
-                         (department, plc_ip, plc_port, plc_series, bit_type, bit_no, enabled)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-                    (dept, ip, body.plc_port or 5007, body.plc_series or "Q", bt, bn, bool(body.enabled)))
+                         (department, plc_ip, plc_port, plc_series, bit_type, bit_no,
+                          bit2_type, bit2_no, enabled)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                    (dept, ip, body.plc_port or 5007, body.plc_series or "Q", bt, bn,
+                     (body.bit2_type or "M").strip().upper(),
+                     str(body.bit2_no or "").strip(), bool(body.enabled)))
         new_id = cur.fetchone()[0]; conn.commit()
     return {"id": new_id}
 
@@ -1369,13 +1416,26 @@ def edit_call_output(oid: int, body: CallOutputIn, user=Depends(get_current_user
     _ensure_output()
     with get_conn() as conn:
         cur = conn.cursor()
+        # NOTE: bit2 khali kar dene par writer ka cleanup use PLC par OFF nahi
+        # karta (wo sirf poori mapping hatne par chalta hai).  Isliye yahin
+        # pehle purana bit2 OFF kar dete hain — warna wo PLC par ON hi atka
+        # reh jaata aur tower bina call ke jalti rehti.
+        new_b2 = str(body.bit2_no or "").strip()
+        cur.execute("SELECT bit2_type, bit2_no, plc_ip, plc_port, plc_series FROM andon_call_output WHERE id=%s", (oid,))
+        _old = cur.fetchone()
+        if _old and (_old[1] or "").strip() and (_old[1] or "").strip() != new_b2:
+            try:
+                _out_write_bit(_old[2], _old[3], _old[4], _old[0] or "M", _old[1], False)
+            except Exception as _e:
+                print(f"[ANDON-OUT] purana bit2 off nahi hua: {_e}")
         cur.execute("""UPDATE andon_call_output
                           SET department=%s, plc_ip=%s, plc_port=%s, plc_series=%s,
-                              bit_type=%s, bit_no=%s, enabled=%s
+                              bit_type=%s, bit_no=%s, bit2_type=%s, bit2_no=%s, enabled=%s
                         WHERE id=%s""",
                     ((body.department or "").strip(), (body.plc_ip or "").strip(),
                      body.plc_port or 5007, body.plc_series or "Q",
                      (body.bit_type or "").strip().upper(), str(body.bit_no or "").strip(),
+                     (body.bit2_type or "M").strip().upper(), new_b2,
                      bool(body.enabled), oid))
         if cur.rowcount == 0:
             raise HTTPException(404, "mapping not found")

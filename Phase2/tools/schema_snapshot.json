@@ -1,8 +1,20 @@
 {
- "columns": 698,
+ "columns": 702,
  "db": "maintenance_db",
  "schema": {
   "andon_call_output": {
+   "bit2_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 17,
+    "type": "text"
+   },
+   "bit2_type": {
+    "default": null,
+    "nullable": true,
+    "pos": 16,
+    "type": "text"
+   },
    "bit_no": {
     "default": null,
     "nullable": false,
@@ -51,6 +63,12 @@
     "pos": 10,
     "type": "boolean"
    },
+   "last_bit2": {
+    "default": null,
+    "nullable": true,
+    "pos": 18,
+    "type": "boolean"
+   },
    "last_online": {
     "default": null,
     "nullable": true,
@@ -61,6 +79,12 @@
     "default": null,
     "nullable": true,
     "pos": 11,
+    "type": "boolean"
+   },
+   "last_want2": {
+    "default": null,
+    "nullable": true,
+    "pos": 19,
     "type": "boolean"
    },
    "last_writer": {
@@ -4296,5 +4320,5 @@
   }
  },
  "tables": 52,
- "taken_at": "2026-08-31T12:48:35"
+ "taken_at": "2026-08-31T14:59:43"
 }

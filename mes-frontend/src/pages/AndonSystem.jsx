@@ -196,7 +196,7 @@ export default function AndonSystem() {
   const [depts, setDepts]     = useState([]);
   const [plcs, setPlcs]       = useState([]);
   const [outs, setOuts]       = useState([]);       // Call → PLC output mappings (list + live bit status)
-  const [outForm, setOutForm] = useState({ department:"", plc_ip:"", plc_port:5007, plc_series:"Q", bit_type:"M", bit_no:"", enabled:true });
+  const [outForm, setOutForm] = useState({ department:"", plc_ip:"", plc_port:5007, plc_series:"Q", bit_type:"M", bit_no:"", bit2_type:"M", bit2_no:"", enabled:true });
   const [outEdit, setOutEdit] = useState(null);
   const [events, setEvents]   = useState([]);       // live OPEN calls (the board)
   const [totals, setTotals]   = useState([]);        // aaj ka per-department total loss
@@ -454,10 +454,11 @@ export default function AndonSystem() {
     const body = { department: outForm.department, plc_ip: (outForm.plc_ip || "").trim(),
                    plc_port: Number(outForm.plc_port) || 5007, plc_series: outForm.plc_series || "Q",
                    bit_type: outForm.bit_type || "M", bit_no: String(outForm.bit_no).trim(),
+                   bit2_type: outForm.bit2_type || "M", bit2_no: String(outForm.bit2_no || "").trim(),
                    enabled: outForm.enabled };
     if (outEdit) await api(`/call-outputs/${outEdit}`, { method: "PUT", body: JSON.stringify(body) });
     else await api("/call-outputs", { method: "POST", body: JSON.stringify(body) });
-    setOutForm({ department:"", plc_ip:"", plc_port:5007, plc_series:"Q", bit_type:"M", bit_no:"", enabled:true });
+    setOutForm({ department:"", plc_ip:"", plc_port:5007, plc_series:"Q", bit_type:"M", bit_no:"", bit2_type:"M", bit2_no:"", enabled:true });
     setOutEdit(null);
   }, outEdit ? "Mapping updated" : "Mapping added");
 
@@ -1013,12 +1014,32 @@ export default function AndonSystem() {
                     </select></div>
                   <div><label className="an-lbl">Bit no</label><input className="an-in" style={{ width:"100%" }} value={outForm.bit_no} onChange={(e) => setOutForm({ ...outForm, bit_no: e.target.value })} placeholder="e.g. 100" /></div>
                 </div>
+
+                {/* Doosra bit — marzi ka.  Pehla bit Maintenance/Tool Room me
+                    RESPONSE aate hi off ho jaata hai; ye wala tab tak ON rehta
+                    hai jab tak breakdown POORA BAND na ho.  Khali chhoda to
+                    kuch hota hi nahi — purani mapping waisi hi chalti hai. */}
+                <div className="an-row" style={{ marginTop:14, paddingTop:12, borderTop:"1px dashed #cbd5e1" }}>
+                  <div style={{ flex:"1 1 100%", marginBottom:2 }}>
+                    <b style={{ fontSize:13 }}>Doosra bit — <span style={{ color:"#0e7490" }}>breakdown band hone par OFF</span></b>
+                    <div style={{ fontSize:11.5, color:"#64748b", marginTop:2 }}>
+                      Marzi ka. Pehla bit <b>response</b> par off hota hai; ye tab tak ON
+                      rehta hai jab tak us department ki <b>aakhri call band</b> na ho jaye.
+                      Khali chhod dein to nahi lagega.
+                    </div>
+                  </div>
+                  <div><label className="an-lbl">Bit 2 type</label>
+                    <select className="an-in" style={{ width:"100%" }} value={outForm.bit2_type || "M"} onChange={(e) => setOutForm({ ...outForm, bit2_type: e.target.value })}>
+                      {["M","Y","L","B","F","V","S"].map((s2) => <option key={s2} value={s2}>{s2}</option>)}
+                    </select></div>
+                  <div><label className="an-lbl">Bit 2 no</label><input className="an-in" style={{ width:"100%" }} value={outForm.bit2_no || ""} onChange={(e) => setOutForm({ ...outForm, bit2_no: e.target.value })} placeholder="khali = nahi lagega" /></div>
+                </div>
                 <div className="an-row" style={{ marginTop:12 }}>
                   <label style={{ fontSize:13, fontWeight:700, display:"flex", alignItems:"center", gap:6 }}>
                     <input type="checkbox" checked={outForm.enabled} onChange={(e) => setOutForm({ ...outForm, enabled: e.target.checked })} /> Enabled (write this bit)
                   </label>
                   <div style={{ marginLeft:"auto" }} />
-                  {outEdit && <button className="an-btn gh" onClick={() => { setOutEdit(null); setOutForm({ department:"", plc_ip:"", plc_port:5007, plc_series:"Q", bit_type:"M", bit_no:"", enabled:true }); }}>Cancel</button>}
+                  {outEdit && <button className="an-btn gh" onClick={() => { setOutEdit(null); setOutForm({ department:"", plc_ip:"", plc_port:5007, plc_series:"Q", bit_type:"M", bit_no:"", bit2_type:"M", bit2_no:"", enabled:true }); }}>Cancel</button>}
                   <button className="an-btn" disabled={!outForm.department || !outForm.plc_ip.trim() || !String(outForm.bit_no).trim()} onClick={saveOut}>{outEdit ? "Save" : "+ Add mapping"}</button>
                 </div>
               </div>
@@ -1047,8 +1068,22 @@ export default function AndonSystem() {
                       <tr key={o.id}>
                         <td style={{ fontWeight:700 }}>{o.department}</td>
                         <td style={{ fontFamily:"monospace" }}>{o.plc_ip}:{o.plc_port}<span style={{ marginLeft:6, fontSize:10, fontWeight:700, color:"#64748b", background:"#f1f5f9", padding:"1px 6px", borderRadius:99 }}>{o.plc_series}</span></td>
-                        <td style={{ fontFamily:"monospace", fontWeight:700 }}>{o.bit_type}{o.bit_no}</td>
-                        <td style={{ fontSize:12 }}>{o.off_on_ack ? "Response pe" : "Call-end pe"}</td>
+                        <td style={{ fontFamily:"monospace", fontWeight:700 }}>
+                          {o.bit_type}{o.bit_no}
+                          {(o.bit2_no || "").trim() && (
+                            <span style={{ display:"block", fontSize:11, color:"#0e7490", fontWeight:800, marginTop:2 }}>
+                              {o.bit2_type || "M"}{o.bit2_no}
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ fontSize:12 }}>
+                          {o.off_on_ack ? "Response pe" : "Call-end pe"}
+                          {(o.bit2_no || "").trim() && (
+                            <span style={{ display:"block", fontSize:11, color:"#0e7490", fontWeight:700, marginTop:2 }}>
+                              Call-end pe
+                            </span>
+                          )}
+                        </td>
                         <td>
                           <span style={{ display:"inline-flex", alignItems:"center", gap:7, fontWeight:700, fontSize:12,
                                          color: o.reachable === true ? "#16a34a" : o.reachable === false ? "#dc2626" : "#94a3b8" }}>
@@ -1071,6 +1106,12 @@ export default function AndonSystem() {
                         <td>
                           {o.should_be_on ? <span style={{ color:"#16a34a", fontWeight:800 }}>● ON</span>
                            : <span style={{ color:"#94a3b8", fontWeight:700 }}>OFF</span>}
+                          {o.should_be_on2 != null && (
+                            <span style={{ display:"block", fontSize:11, marginTop:2, fontWeight:800,
+                                           color: o.should_be_on2 ? "#0e7490" : "#94a3b8" }}>
+                              {o.should_be_on2 ? "● ON" : "OFF"}
+                            </span>
+                          )}
                         </td>
                         {/* PLC BIT = PLC par ASLI bit, likhne ke baad wapas padh kar.  Dono alag
                             dikhane se turant pata chalta hai galti kis taraf hai: program ON aur
@@ -1084,10 +1125,17 @@ export default function AndonSystem() {
                               {o.bit_on === false ? "PLC pe pending" : "PLC padha nahi ja raha"}
                             </span>
                           )}
+                          {(o.bit2_no || "").trim() && (
+                            <span style={{ display:"block", fontSize:11, marginTop:2, fontWeight:800,
+                                           color: o.bit2_on === true ? "#0e7490"
+                                                : o.bit2_on === false ? "#94a3b8" : "#cbd5e1" }}>
+                              {o.bit2_on === true ? "● ON" : o.bit2_on === false ? "OFF" : "—"}
+                            </span>
+                          )}
                         </td>
                         <td><span className="an-chip" style={{ padding:"2px 9px", background: o.enabled ? "#dcfce7" : "#fee2e2", color: o.enabled ? "#16a34a" : "#dc2626" }}>{o.enabled ? "Enabled" : "Disabled"}</span></td>
                         <td style={{ whiteSpace:"nowrap" }}>
-                          <button className="an-btn gh sm" onClick={() => { setOutEdit(o.id); setOutForm({ department:o.department, plc_ip:o.plc_ip, plc_port:o.plc_port, plc_series:o.plc_series, bit_type:o.bit_type, bit_no:o.bit_no, enabled:o.enabled }); }}>Edit</button>{" "}
+                          <button className="an-btn gh sm" onClick={() => { setOutEdit(o.id); setOutForm({ department:o.department, plc_ip:o.plc_ip, plc_port:o.plc_port, plc_series:o.plc_series, bit_type:o.bit_type, bit_no:o.bit_no, bit2_type:o.bit2_type || "M", bit2_no:o.bit2_no || "", enabled:o.enabled }); }}>Edit</button>{" "}
                           <button className="an-x" onClick={() => wrap(() => api(`/call-outputs/${o.id}`, { method:"DELETE" }), "Mapping removed")}>×</button>
                         </td>
                       </tr>
