@@ -39,6 +39,14 @@ def _ensure_master():
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("ALTER TABLE maintenance_machines ADD COLUMN IF NOT EXISTS ip VARCHAR(45)")
+        # Ek IP sirf EK machine par.  Ye rok DB me bhi lagayi hai (sirf code me
+        # nahi) — kyunki IP master se ANDON ka PLC config apne aap bharta hai;
+        # do machine par ek hi IP ho to config kaunsi machine uthaye ye tay hi
+        # nahi hota, aur galti chup-chaap nikalti hai.
+        # Partial index: jinki IP khali hai wo jitni bhi hon, chalega.
+        cur.execute("""CREATE UNIQUE INDEX IF NOT EXISTS uq_machine_ip
+                         ON maintenance_machines (ip)
+                      WHERE ip IS NOT NULL AND ip <> ''""")
         conn.commit()
     _ensured = True
 
@@ -280,6 +288,14 @@ def master_create(body: MachineIn, admin=Depends(require_admin)):
                         WHERE LOWER(TRIM(machine_no)) = LOWER(TRIM(%s))""", (mno,))
         if cur.fetchone():
             raise HTTPException(409, f"Machine No '{mno}' pehle se maujood hai")
+        # Wahi rok IP par bhi — warna do machine ek hi PLC ki taraf ishara
+        # karti hain aur ANDON ka config galat machine utha leta hai.
+        if ip:
+            cur.execute("""SELECT machine_no FROM maintenance_machines
+                            WHERE ip = %s""", (ip,))
+            dup = cur.fetchone()
+            if dup:
+                raise HTTPException(409, f"IP {ip} pehle se '{dup['machine_no']}' par lagi hai")
         cur.execute("SELECT COALESCE(MAX(serial_no), 0) + 1 AS nxt FROM maintenance_machines")
         nxt = cur.fetchone()["nxt"]
         cur.execute("""
@@ -334,7 +350,16 @@ def master_update(mid: int, body: MachineIn, admin=Depends(require_admin)):
                 sets.append(f"{col} = %s"); vals.append(v)
 
         if "ip" in sent:
-            sets.append("ip = %s"); vals.append(_check_ip(sent["ip"]))
+            new_ip = _check_ip(sent["ip"])
+            if new_ip:
+                # `id <> %s` zaroori hai — warna machine ki apni hi IP dobara
+                # save karne par wo khud ko duplicate maan kar mana kar deti.
+                cur.execute("""SELECT machine_no FROM maintenance_machines
+                                WHERE ip = %s AND id <> %s""", (new_ip, mid))
+                dup = cur.fetchone()
+                if dup:
+                    raise HTTPException(409, f"IP {new_ip} pehle se '{dup['machine_no']}' par lagi hai")
+            sets.append("ip = %s"); vals.append(new_ip)
         if "is_active" in sent:
             sets.append("is_active = %s"); vals.append(bool(sent["is_active"]))
 
