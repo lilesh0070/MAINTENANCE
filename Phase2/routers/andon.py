@@ -1337,8 +1337,9 @@ def list_call_outputs(user=Depends(get_current_user)):
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("""SELECT id, department, plc_ip, plc_port, plc_series,
-                              bit_type, bit_no, enabled, created_at,
-                              last_bit, last_online, last_writer,
+                              bit_type, bit_no, bit2_type, bit2_no,
+                              enabled, created_at,
+                              last_bit, last_bit2, last_online, last_writer,
                               EXTRACT(EPOCH FROM (NOW() - last_at)) AS last_age
                          FROM andon_call_output ORDER BY id""")
         rows = cur.fetchall()
@@ -1383,7 +1384,7 @@ def list_call_outputs(user=Depends(get_current_user)):
         if reach is None and r.get("plc_ip") and r["enabled"]:
             reach = _reachable(r["plc_ip"], r.get("plc_port") or 5007, timeout=0.4)
         r["reachable"] = reach
-        r.pop("last_bit", None); r.pop("last_online", None)
+        r.pop("last_bit", None); r.pop("last_bit2", None); r.pop("last_online", None)
         if isinstance(r.get("created_at"), datetime):
             r["created_at"] = r["created_at"].isoformat()
     return rows

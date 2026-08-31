@@ -1069,10 +1069,17 @@ export default function AndonSystem() {
                         <td style={{ fontWeight:700 }}>{o.department}</td>
                         <td style={{ fontFamily:"monospace" }}>{o.plc_ip}:{o.plc_port}<span style={{ marginLeft:6, fontSize:10, fontWeight:700, color:"#64748b", background:"#f1f5f9", padding:"1px 6px", borderRadius:99 }}>{o.plc_series}</span></td>
                         <td style={{ fontFamily:"monospace", fontWeight:700 }}>
-                          {o.bit_type}{o.bit_no}
-                          {(o.bit2_no || "").trim() && (
-                            <span style={{ display:"block", fontSize:11, color:"#0e7490", fontWeight:800, marginTop:2 }}>
+                          <span title="Pehla bit — response par OFF">{o.bit_type}{o.bit_no}</span>
+                          {(o.bit2_no || "").trim() ? (
+                            <span style={{ display:"block", fontSize:11.5, color:"#0e7490", fontWeight:800, marginTop:3 }}
+                                  title="Doosra bit — breakdown band hone par OFF">
+                              <span style={{ background:"#cffafe", color:"#0e7490", borderRadius:4,
+                                             padding:"0 4px", marginRight:5, fontSize:9.5, fontWeight:800 }}>2nd</span>
                               {o.bit2_type || "M"}{o.bit2_no}
+                            </span>
+                          ) : (
+                            <span style={{ display:"block", fontSize:10.5, color:"#cbd5e1", fontWeight:700, marginTop:3 }}>
+                              2nd bit nahi
                             </span>
                           )}
                         </td>
