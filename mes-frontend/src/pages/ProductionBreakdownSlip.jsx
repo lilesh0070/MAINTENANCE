@@ -277,8 +277,13 @@ export default function ProductionBreakdownSlip() {
             return (
               <div key={z} style={{ display: "flex", flex: "1 1 130px", minWidth: 0, borderRadius: 12,
                                     boxShadow: on ? `0 0 0 3px ${T.accent}` : undefined }}>
+                {/* Zone ka naam WAISA HI dikhta hai jaisa master
+                    (maintenance_machines) me hai — SEAT_SLIDER, LOOP_PIPE.
+                    Pehle yahan underscore ko space bana diya jaata tha
+                    ("SEAT SLIDER"), jisse card ka naam neeche table ki row se
+                    hi mel nahi khata tha. */}
                 <StatCard
-                  label={z.replace(/_/g, " ")}
+                  label={z}
                   value={n}
                   sub={n > 0 ? "open" : "clear"}
                   color={n > 0 ? "#dc2626" : "#16a34a"}
@@ -291,7 +296,7 @@ export default function ProductionBreakdownSlip() {
 
         {zoneSel && (
           <div style={{ marginBottom: 10, fontSize: 12.5, fontWeight: 700, color: T.accent }}>
-            Filter: {zoneSel.replace(/_/g, " ")}
+            Filter: {zoneSel}
             <button onClick={() => setZone("")}
               style={{ marginLeft: 10, border: "1px solid #cbd5e1", background: "#fff", color: "#475569",
                        borderRadius: 8, padding: "3px 10px", fontSize: 11.5, fontWeight: 700,
@@ -311,7 +316,7 @@ export default function ProductionBreakdownSlip() {
               <div style={{ fontSize: 34 }}>✅</div>
               <div style={{ fontWeight: 700, color: "#334155", marginTop: 6 }}>
                 {zoneSel
-                  ? `${zoneSel.replace(/_/g, " ")} me kuch nahi.`
+                  ? `${zoneSel} me kuch nahi.`
                   : tab === "PRODUCTION" ? "Koi production-pending slip nahi."
                   : tab === "TOOLROOM"   ? "Koi tool room-pending slip nahi."
                   : tab === "STATUS"     ? "Abhi koi breakdown record nahi."
