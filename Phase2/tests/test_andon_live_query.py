@@ -52,6 +52,15 @@ def main():
         live = {_dept_key(r["dept"]): r for r in cur.fetchall()}
         return {d: _want_bit(d, live) for d in ("Maintenance", "Toolroom", "Quality")}, live
 
+    def T_named(step, got, dept, exp):
+        """T ka wo roop jo kisi bhi department ka bit jaanch sake."""
+        global _fail
+        ok = got[dept] is exp
+        if not ok:
+            _fail += 1
+        print("   %s  %-52s %s=%s" % ("PASS" if ok else "FAIL", step, dept,
+                                      "ON " if got[dept] else "OFF"))
+
     def T(step, got, exp):
         global _fail
         ok = got["Maintenance"] is exp
@@ -98,6 +107,54 @@ def main():
                        VALUES (%s,'Maintenance','OPEN', now())""", (md,))
         b, _ = bits()
         T("baad me nayi call aayi -> phir ON", b, True)
+
+        # ── SAFETY NET: ACK (ACC) na aaye to bhi call BAND hone par bit OFF ──
+        # User ki chinta: "maan lo ACC wala data na pahuncha, kuch issue ho gaya
+        # to Maintenance/Toolroom wali call band ho jaye tab bhi bit OFF ho".
+        # Ye apne aap chalta hai kyunki `live` sirf andon_system ki KHULI calls
+        # se banta hai, aur call band hote hi uski row wahan se hat jaati hai
+        # (_apply_state close par DELETE karta hai) -> ginti 0 -> bit OFF.
+        # Test isliye rakha hai ki kal koi `live` ki query badle (jaise band
+        # calls bhi ginne lage) to yahin pakda jaye — warna ACK atakne par
+        # andon tower hamesha jalta reh jaata.
+        print()
+        print("--- SAFETY NET: ACK na aaye, par call band ho jaye ---")
+        cur.execute("DELETE FROM andon_system")          # sab saaf
+        cur.execute("""INSERT INTO andon_system (department_id, display_name, state, started_at)
+                       VALUES (%s,'Maintenance','OPEN', now()) RETURNING id""", (md,))
+        c1 = cur.fetchone()["id"]
+        b, _ = bits()
+        T("Maintenance call aayi, ACK nahi aaya", b, True)
+        cur.execute("DELETE FROM andon_system WHERE id=%s", (c1,))   # close = row hat jaati hai
+        b, _ = bits()
+        T("ACK BINA hi call band hui -> bit OFF", b, False)
+
+        # do call: ek ACK se nipti, doosri ACK ke bina band hui
+        cur.execute("""INSERT INTO andon_system (department_id, display_name, state, started_at)
+                       VALUES (%s,'Maintenance','OPEN', now()) RETURNING id""", (md,))
+        c2 = cur.fetchone()["id"]
+        cur.execute("""INSERT INTO andon_system (department_id, display_name, state, started_at)
+                       VALUES (%s,'Maintenance','OPEN', now()) RETURNING id""", (md,))
+        c3 = cur.fetchone()["id"]
+        cur.execute("UPDATE andon_system SET acknowledged_at=now() WHERE id=%s", (c2,))
+        b, _ = bits()
+        T("ek ka ACK aaya, doosri abhi baaki", b, True)
+        cur.execute("DELETE FROM andon_system WHERE id=%s", (c3,))
+        b, _ = bits()
+        T("doosri ACK bina band -> bit OFF", b, False)
+
+        # Toolroom par bhi wahi (uska bhi off-on-ack wala niyam hai)
+        cur.execute("DELETE FROM andon_system")
+        cur.execute("SELECT id FROM andon_departments WHERE name='Toolroom'")
+        td = cur.fetchone()["id"]
+        cur.execute("""INSERT INTO andon_system (department_id, display_name, state, started_at)
+                       VALUES (%s,'Toolroom','OPEN', now()) RETURNING id""", (td,))
+        t1 = cur.fetchone()["id"]
+        bb, _ = bits()
+        T_named("Toolroom call aayi, ACK nahi", bb, "Toolroom", True)
+        cur.execute("DELETE FROM andon_system WHERE id=%s", (t1,))
+        bb, _ = bits()
+        T_named("Toolroom ACK bina band -> bit OFF", bb, "Toolroom", False)
     finally:
         c.rollback()                      # <- test ka koi nishan nahi bachta
 
