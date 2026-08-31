@@ -1,0 +1,4300 @@
+{
+ "columns": 698,
+ "db": "maintenance_db",
+ "schema": {
+  "andon_call_output": {
+   "bit_no": {
+    "default": null,
+    "nullable": false,
+    "pos": 7,
+    "type": "text"
+   },
+   "bit_type": {
+    "default": null,
+    "nullable": false,
+    "pos": 6,
+    "type": "text"
+   },
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 9,
+    "type": "timestamp without time zone"
+   },
+   "department": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "text"
+   },
+   "enabled": {
+    "default": "true",
+    "nullable": true,
+    "pos": 8,
+    "type": "boolean"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "last_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "timestamp without time zone"
+   },
+   "last_bit": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "boolean"
+   },
+   "last_online": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "boolean"
+   },
+   "last_want": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "boolean"
+   },
+   "last_writer": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "text"
+   },
+   "plc_ip": {
+    "default": null,
+    "nullable": false,
+    "pos": 3,
+    "type": "text"
+   },
+   "plc_port": {
+    "default": "5007",
+    "nullable": true,
+    "pos": 4,
+    "type": "integer"
+   },
+   "plc_series": {
+    "default": "'Q'::text",
+    "nullable": true,
+    "pos": 5,
+    "type": "text"
+   },
+   "reconnect_req": {
+    "default": null,
+    "nullable": true,
+    "pos": 15,
+    "type": "timestamp without time zone"
+   }
+  },
+  "andon_departments": {
+   "color": {
+    "default": "'#2563eb'::character varying",
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 4,
+    "type": "timestamp without time zone"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "name": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "character varying"
+   }
+  },
+  "andon_fault_map": {
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 7,
+    "type": "timestamp without time zone"
+   },
+   "device_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "device_type": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "fault_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "text"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "plc_id": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "integer"
+   },
+   "value": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "integer"
+   }
+  },
+  "andon_history": {
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 13,
+    "type": "timestamp without time zone"
+   },
+   "department_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "integer"
+   },
+   "display_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "character varying"
+   },
+   "do_index": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "integer"
+   },
+   "duration_seconds": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "integer"
+   },
+   "ended_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "timestamp without time zone"
+   },
+   "fault": {
+    "default": null,
+    "nullable": true,
+    "pos": 18,
+    "type": "character varying"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line": {
+    "default": null,
+    "nullable": true,
+    "pos": 15,
+    "type": "character varying"
+   },
+   "line_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "integer"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 16,
+    "type": "character varying"
+   },
+   "model": {
+    "default": null,
+    "nullable": true,
+    "pos": 17,
+    "type": "character varying"
+   },
+   "plc_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "integer"
+   },
+   "priority": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "character varying"
+   },
+   "response_seconds": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "integer"
+   },
+   "started_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "timestamp without time zone"
+   },
+   "zone": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "character varying"
+   },
+   "zone_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "integer"
+   }
+  },
+  "andon_model_map": {
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 7,
+    "type": "timestamp without time zone"
+   },
+   "device_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "device_type": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "model_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "text"
+   },
+   "plc_id": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "integer"
+   },
+   "value": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "integer"
+   }
+  },
+  "andon_output_lock": {
+   "heartbeat": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "timestamp without time zone"
+   },
+   "holder": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "text"
+   },
+   "id": {
+    "default": "1",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "prio": {
+    "default": "0",
+    "nullable": true,
+    "pos": 3,
+    "type": "integer"
+   }
+  },
+  "andon_plc_devices": {
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 10,
+    "type": "timestamp without time zone"
+   },
+   "description": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "text"
+   },
+   "enabled": {
+    "default": "true",
+    "nullable": true,
+    "pos": 8,
+    "type": "boolean"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "ip": {
+    "default": null,
+    "nullable": false,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "line": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "character varying"
+   },
+   "line_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "integer"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 15,
+    "type": "character varying"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "character varying"
+   },
+   "name": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "character varying"
+   },
+   "poll_path": {
+    "default": "'/status'::character varying",
+    "nullable": true,
+    "pos": 9,
+    "type": "character varying"
+   },
+   "port": {
+    "default": "80",
+    "nullable": true,
+    "pos": 4,
+    "type": "integer"
+   },
+   "series": {
+    "default": "'Q'::character varying",
+    "nullable": true,
+    "pos": 16,
+    "type": "character varying"
+   },
+   "sub_ip": {
+    "default": null,
+    "nullable": true,
+    "pos": 17,
+    "type": "character varying"
+   },
+   "sub_machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 20,
+    "type": "character varying"
+   },
+   "sub_port": {
+    "default": null,
+    "nullable": true,
+    "pos": 18,
+    "type": "integer"
+   },
+   "sub_series": {
+    "default": null,
+    "nullable": true,
+    "pos": 19,
+    "type": "character varying"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 11,
+    "type": "timestamp without time zone"
+   },
+   "zone": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "character varying"
+   },
+   "zone_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "integer"
+   }
+  },
+  "andon_plc_output_mapping": {
+   "bit_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "character varying"
+   },
+   "bit_type": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "character varying"
+   },
+   "department_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "integer"
+   },
+   "display_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "do_index": {
+    "default": null,
+    "nullable": false,
+    "pos": 3,
+    "type": "integer"
+   },
+   "enabled": {
+    "default": "true",
+    "nullable": true,
+    "pos": 7,
+    "type": "boolean"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "plc_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "integer"
+   },
+   "priority": {
+    "default": "'Normal'::character varying",
+    "nullable": true,
+    "pos": 6,
+    "type": "character varying"
+   }
+  },
+  "andon_system": {
+   "acknowledged_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "timestamp without time zone"
+   },
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 12,
+    "type": "timestamp without time zone"
+   },
+   "department_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "integer"
+   },
+   "display_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "character varying"
+   },
+   "do_index": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "integer"
+   },
+   "fault": {
+    "default": null,
+    "nullable": true,
+    "pos": 17,
+    "type": "character varying"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "character varying"
+   },
+   "line_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "integer"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 16,
+    "type": "character varying"
+   },
+   "model": {
+    "default": null,
+    "nullable": true,
+    "pos": 15,
+    "type": "character varying"
+   },
+   "plc_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "integer"
+   },
+   "priority": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "character varying"
+   },
+   "started_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 9,
+    "type": "timestamp without time zone"
+   },
+   "state": {
+    "default": "'OPEN'::character varying",
+    "nullable": true,
+    "pos": 11,
+    "type": "character varying"
+   },
+   "zone": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "character varying"
+   },
+   "zone_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "integer"
+   }
+  },
+  "breakdown_status": {
+   "andon_event_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "integer"
+   },
+   "bd_for": {
+    "default": null,
+    "nullable": false,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "bd_start_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "date"
+   },
+   "bd_start_time": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "character varying"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "character varying"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "character varying"
+   },
+   "maint": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "character varying"
+   },
+   "prod": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "character varying"
+   },
+   "production_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 16,
+    "type": "timestamp without time zone"
+   },
+   "shift": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "character varying"
+   },
+   "slip_id": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "integer"
+   },
+   "state": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "character varying"
+   },
+   "submitted_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 17,
+    "type": "timestamp without time zone"
+   },
+   "toolroom": {
+    "default": null,
+    "nullable": true,
+    "pos": 15,
+    "type": "character varying"
+   },
+   "total_downtime_min": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "integer"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 18,
+    "type": "timestamp without time zone"
+   },
+   "zone": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "character varying"
+   }
+  },
+  "machine_dmc": {
+   "category": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "text"
+   },
+   "check_point": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "text"
+   },
+   "criteria": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "text"
+   },
+   "format_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "text"
+   },
+   "freq": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "text"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "text"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "text"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "text"
+   },
+   "method": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "text"
+   },
+   "resp": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "text"
+   },
+   "rev_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 16,
+    "type": "date"
+   },
+   "rev_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 15,
+    "type": "text"
+   },
+   "s_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "integer"
+   },
+   "sort_order": {
+    "default": null,
+    "nullable": true,
+    "pos": 17,
+    "type": "integer"
+   },
+   "type": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "text"
+   },
+   "zone": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "text"
+   }
+  },
+  "machine_dmc_fill_ng_point": {
+   "action_taken": {
+    "default": null,
+    "nullable": true,
+    "pos": 20,
+    "type": "text"
+   },
+   "category": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "text"
+   },
+   "check_point": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "text"
+   },
+   "closed_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 23,
+    "type": "timestamp without time zone"
+   },
+   "closed_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 22,
+    "type": "text"
+   },
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 19,
+    "type": "timestamp without time zone"
+   },
+   "criteria": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "text"
+   },
+   "fill_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "integer"
+   },
+   "filled_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 18,
+    "type": "text"
+   },
+   "freq": {
+    "default": null,
+    "nullable": true,
+    "pos": 16,
+    "type": "text"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "text"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "text"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "text"
+   },
+   "method": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "text"
+   },
+   "ng_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "date"
+   },
+   "point_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "integer"
+   },
+   "reason": {
+    "default": null,
+    "nullable": true,
+    "pos": 17,
+    "type": "text"
+   },
+   "resp": {
+    "default": null,
+    "nullable": true,
+    "pos": 15,
+    "type": "text"
+   },
+   "s_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "integer"
+   },
+   "sheet_month": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "text"
+   },
+   "status": {
+    "default": "'OPEN'::character varying",
+    "nullable": true,
+    "pos": 21,
+    "type": "character varying"
+   },
+   "zone_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "text"
+   }
+  },
+  "machine_dmc_filled": {
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 12,
+    "type": "timestamp without time zone"
+   },
+   "day_meta": {
+    "default": null,
+    "nullable": true,
+    "pos": 15,
+    "type": "jsonb"
+   },
+   "doc_footer": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "jsonb"
+   },
+   "entries": {
+    "default": "'[]'::jsonb",
+    "nullable": true,
+    "pos": 9,
+    "type": "jsonb"
+   },
+   "filled_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "text"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "text"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "text"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "text"
+   },
+   "rev_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "text"
+   },
+   "rev_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "text"
+   },
+   "sheet_month": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "text"
+   },
+   "sign_imgs": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "jsonb"
+   },
+   "signs": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "jsonb"
+   },
+   "week_meta": {
+    "default": null,
+    "nullable": true,
+    "pos": 16,
+    "type": "jsonb"
+   },
+   "zone_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "text"
+   }
+  },
+  "machine_dmc_format": {
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 4,
+    "type": "timestamp without time zone"
+   },
+   "format": {
+    "default": "'{}'::jsonb",
+    "nullable": true,
+    "pos": 3,
+    "type": "jsonb"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "name": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "character varying"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 5,
+    "type": "timestamp without time zone"
+   }
+  },
+  "machine_dmc_rev": {
+   "archived_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 18,
+    "type": "timestamp without time zone"
+   },
+   "category": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "character varying"
+   },
+   "check_point": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "text"
+   },
+   "criteria": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "text"
+   },
+   "format_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "character varying"
+   },
+   "freq": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "character varying"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "character varying"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "method": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "text"
+   },
+   "resp": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "character varying"
+   },
+   "rev_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 16,
+    "type": "date"
+   },
+   "rev_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 15,
+    "type": "character varying"
+   },
+   "s_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "character varying"
+   },
+   "sort_order": {
+    "default": null,
+    "nullable": true,
+    "pos": 17,
+    "type": "integer"
+   },
+   "type": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "character varying"
+   },
+   "zone": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "character varying"
+   }
+  },
+  "maintenance_audit_log": {
+   "action": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "character varying"
+   },
+   "created_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 8,
+    "type": "timestamp without time zone"
+   },
+   "details": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "text"
+   },
+   "entity_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "integer"
+   },
+   "entity_type": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "user_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "integer"
+   },
+   "username": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "character varying"
+   }
+  },
+  "maintenance_auto_breakdown_slip": {
+   "action_taken_on_problem": {
+    "default": null,
+    "nullable": true,
+    "pos": 23,
+    "type": "text"
+   },
+   "andon_event_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 35,
+    "type": "integer"
+   },
+   "bd_attended_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 25,
+    "type": "character varying"
+   },
+   "bd_end_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 16,
+    "type": "date"
+   },
+   "bd_ok_time": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "character varying"
+   },
+   "bd_received_time": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "character varying"
+   },
+   "bd_start_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 15,
+    "type": "date"
+   },
+   "bd_start_time": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "character varying"
+   },
+   "category": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "character varying"
+   },
+   "frequency": {
+    "default": "1",
+    "nullable": true,
+    "pos": 34,
+    "type": "integer"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "line_leader_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "character varying"
+   },
+   "line_leader_operator_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 28,
+    "type": "character varying"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "character varying"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "machine_operator_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "character varying"
+   },
+   "mc_down_time_minutes": {
+    "default": null,
+    "nullable": true,
+    "pos": 17,
+    "type": "integer"
+   },
+   "model_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "character varying"
+   },
+   "power_cut": {
+    "default": "false",
+    "nullable": true,
+    "pos": 36,
+    "type": "boolean"
+   },
+   "prepared_by_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 26,
+    "type": "character varying"
+   },
+   "problem_observed_by_maintenance": {
+    "default": null,
+    "nullable": true,
+    "pos": 22,
+    "type": "text"
+   },
+   "problem_related_to": {
+    "default": null,
+    "nullable": true,
+    "pos": 19,
+    "type": "character varying"
+   },
+   "problem_reported_by_production": {
+    "default": null,
+    "nullable": true,
+    "pos": 18,
+    "type": "text"
+   },
+   "prod_stage": {
+    "default": "'PENDING_PRODUCTION'::character varying",
+    "nullable": true,
+    "pos": 37,
+    "type": "character varying"
+   },
+   "production_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 39,
+    "type": "timestamp without time zone"
+   },
+   "production_by_user_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 38,
+    "type": "integer"
+   },
+   "quality_engineer_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 29,
+    "type": "character varying"
+   },
+   "received_by_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 27,
+    "type": "character varying"
+   },
+   "response_time_minutes": {
+    "default": null,
+    "nullable": true,
+    "pos": 33,
+    "type": "integer"
+   },
+   "shift": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "character varying"
+   },
+   "slip_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "date"
+   },
+   "spares": {
+    "default": null,
+    "nullable": true,
+    "pos": 32,
+    "type": "jsonb"
+   },
+   "spares_used": {
+    "default": null,
+    "nullable": true,
+    "pos": 24,
+    "type": "text"
+   },
+   "submitted_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 31,
+    "type": "timestamp without time zone"
+   },
+   "submitted_by_user_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 30,
+    "type": "integer"
+   },
+   "type_electrical": {
+    "default": "false",
+    "nullable": true,
+    "pos": 20,
+    "type": "boolean"
+   },
+   "type_mechanical": {
+    "default": "false",
+    "nullable": true,
+    "pos": 21,
+    "type": "boolean"
+   },
+   "zone": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "character varying"
+   }
+  },
+  "maintenance_breakdown_data": {
+   "action_taken_on_problem": {
+    "default": null,
+    "nullable": true,
+    "pos": 23,
+    "type": "text"
+   },
+   "bd_attended_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 25,
+    "type": "character varying"
+   },
+   "bd_end_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 16,
+    "type": "date"
+   },
+   "bd_ok_time": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "character varying"
+   },
+   "bd_received_time": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "character varying"
+   },
+   "bd_start_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 15,
+    "type": "date"
+   },
+   "bd_start_time": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "character varying"
+   },
+   "category": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "character varying"
+   },
+   "frequency": {
+    "default": "1",
+    "nullable": true,
+    "pos": 34,
+    "type": "integer"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "line_leader_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "character varying"
+   },
+   "line_leader_operator_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 28,
+    "type": "character varying"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "character varying"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "machine_operator_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "character varying"
+   },
+   "mc_down_time_minutes": {
+    "default": null,
+    "nullable": true,
+    "pos": 17,
+    "type": "integer"
+   },
+   "model_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "character varying"
+   },
+   "prepared_by_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 26,
+    "type": "character varying"
+   },
+   "problem_observed_by_maintenance": {
+    "default": null,
+    "nullable": true,
+    "pos": 22,
+    "type": "text"
+   },
+   "problem_related_to": {
+    "default": null,
+    "nullable": true,
+    "pos": 19,
+    "type": "character varying"
+   },
+   "problem_reported_by_production": {
+    "default": null,
+    "nullable": true,
+    "pos": 18,
+    "type": "text"
+   },
+   "quality_engineer_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 29,
+    "type": "character varying"
+   },
+   "received_by_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 27,
+    "type": "character varying"
+   },
+   "response_time_minutes": {
+    "default": null,
+    "nullable": true,
+    "pos": 33,
+    "type": "integer"
+   },
+   "shift": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "character varying"
+   },
+   "slip_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "date"
+   },
+   "spares": {
+    "default": null,
+    "nullable": true,
+    "pos": 32,
+    "type": "jsonb"
+   },
+   "spares_used": {
+    "default": null,
+    "nullable": true,
+    "pos": 24,
+    "type": "text"
+   },
+   "submitted_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 31,
+    "type": "timestamp without time zone"
+   },
+   "submitted_by_user_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 30,
+    "type": "integer"
+   },
+   "type_electrical": {
+    "default": "false",
+    "nullable": true,
+    "pos": 20,
+    "type": "boolean"
+   },
+   "type_mechanical": {
+    "default": "false",
+    "nullable": true,
+    "pos": 21,
+    "type": "boolean"
+   },
+   "zone": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "character varying"
+   }
+  },
+  "maintenance_capa_sheet": {
+   "breakdown_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "integer"
+   },
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 10,
+    "type": "timestamp without time zone"
+   },
+   "created_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "text"
+   },
+   "data": {
+    "default": "'{}'::jsonb",
+    "nullable": true,
+    "pos": 8,
+    "type": "jsonb"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "text"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "text"
+   },
+   "qpr_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "text"
+   },
+   "status": {
+    "default": "'DRAFT'::text",
+    "nullable": true,
+    "pos": 7,
+    "type": "text"
+   },
+   "title": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "text"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 12,
+    "type": "timestamp without time zone"
+   },
+   "updated_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "text"
+   },
+   "zone": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "text"
+   }
+  },
+  "maintenance_daily_plan_work": {
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 13,
+    "type": "timestamp without time zone"
+   },
+   "created_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "text"
+   },
+   "done_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "timestamp without time zone"
+   },
+   "done_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "text"
+   },
+   "duration_minutes": {
+    "default": null,
+    "nullable": true,
+    "pos": 16,
+    "type": "integer"
+   },
+   "end_time": {
+    "default": null,
+    "nullable": true,
+    "pos": 15,
+    "type": "text"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "text"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "text"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "text"
+   },
+   "plan_date": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "date"
+   },
+   "problem": {
+    "default": null,
+    "nullable": false,
+    "pos": 7,
+    "type": "text"
+   },
+   "spares": {
+    "default": null,
+    "nullable": true,
+    "pos": 17,
+    "type": "jsonb"
+   },
+   "spares_used": {
+    "default": null,
+    "nullable": true,
+    "pos": 18,
+    "type": "text"
+   },
+   "start_time": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "text"
+   },
+   "status": {
+    "default": "'PENDING'::character varying",
+    "nullable": false,
+    "pos": 8,
+    "type": "character varying"
+   },
+   "work_done": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "text"
+   },
+   "zone_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "text"
+   }
+  },
+  "maintenance_dashboard_zones": {
+   "created_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 3,
+    "type": "timestamp with time zone"
+   },
+   "sort_order": {
+    "default": "0",
+    "nullable": false,
+    "pos": 2,
+    "type": "integer"
+   },
+   "zone_name": {
+    "default": null,
+    "nullable": false,
+    "pos": 1,
+    "type": "text"
+   }
+  },
+  "maintenance_deviations": {
+   "approved_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 38,
+    "type": "timestamp without time zone"
+   },
+   "approved_by_user_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 37,
+    "type": "integer"
+   },
+   "breakdown_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "integer"
+   },
+   "category": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "character varying"
+   },
+   "closed_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 39,
+    "type": "timestamp without time zone"
+   },
+   "closure_remarks": {
+    "default": null,
+    "nullable": true,
+    "pos": 32,
+    "type": "text"
+   },
+   "containment_actions": {
+    "default": "'[]'::jsonb",
+    "nullable": true,
+    "pos": 29,
+    "type": "jsonb"
+   },
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 40,
+    "type": "timestamp without time zone"
+   },
+   "dev_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "character varying"
+   },
+   "deviation_qty": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "integer"
+   },
+   "deviation_upto_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 16,
+    "type": "date"
+   },
+   "deviation_upto_qty": {
+    "default": null,
+    "nullable": true,
+    "pos": 15,
+    "type": "integer"
+   },
+   "extensions": {
+    "default": "'[]'::jsonb",
+    "nullable": true,
+    "pos": 31,
+    "type": "jsonb"
+   },
+   "hod_concerned_close": {
+    "default": null,
+    "nullable": true,
+    "pos": 33,
+    "type": "character varying"
+   },
+   "hod_production": {
+    "default": null,
+    "nullable": true,
+    "pos": 25,
+    "type": "character varying"
+   },
+   "hod_production_note": {
+    "default": null,
+    "nullable": true,
+    "pos": 26,
+    "type": "text"
+   },
+   "hod_quality": {
+    "default": null,
+    "nullable": true,
+    "pos": 27,
+    "type": "character varying"
+   },
+   "hod_quality_close": {
+    "default": null,
+    "nullable": true,
+    "pos": 34,
+    "type": "character varying"
+   },
+   "hod_quality_note": {
+    "default": null,
+    "nullable": true,
+    "pos": 28,
+    "type": "text"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "initiated_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 18,
+    "type": "timestamp without time zone"
+   },
+   "initiated_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 17,
+    "type": "character varying"
+   },
+   "line_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "integer"
+   },
+   "line_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "character varying"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "character varying"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "character varying"
+   },
+   "observation": {
+    "default": null,
+    "nullable": true,
+    "pos": 21,
+    "type": "text"
+   },
+   "permanent_actions": {
+    "default": "'[]'::jsonb",
+    "nullable": true,
+    "pos": 30,
+    "type": "jsonb"
+   },
+   "potential_consequences": {
+    "default": null,
+    "nullable": true,
+    "pos": 24,
+    "type": "text"
+   },
+   "process_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "character varying"
+   },
+   "process_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "character varying"
+   },
+   "raised_by_user_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 36,
+    "type": "integer"
+   },
+   "reason": {
+    "default": null,
+    "nullable": true,
+    "pos": 19,
+    "type": "text"
+   },
+   "requirement": {
+    "default": null,
+    "nullable": true,
+    "pos": 20,
+    "type": "text"
+   },
+   "root_cause_detection": {
+    "default": null,
+    "nullable": true,
+    "pos": 23,
+    "type": "text"
+   },
+   "root_cause_occurrence": {
+    "default": null,
+    "nullable": true,
+    "pos": 22,
+    "type": "text"
+   },
+   "srv_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "character varying"
+   },
+   "status": {
+    "default": "'PENDING_QA'::character varying",
+    "nullable": false,
+    "pos": 35,
+    "type": "character varying"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 41,
+    "type": "timestamp without time zone"
+   },
+   "zone_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "integer"
+   },
+   "zone_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "character varying"
+   }
+  },
+  "maintenance_escalation_config": {
+   "auto_enabled": {
+    "default": "false",
+    "nullable": true,
+    "pos": 2,
+    "type": "boolean"
+   },
+   "cc": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "text"
+   },
+   "id": {
+    "default": "1",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 4,
+    "type": "timestamp without time zone"
+   }
+  },
+  "maintenance_escalation_level": {
+   "after_minutes": {
+    "default": null,
+    "nullable": false,
+    "pos": 4,
+    "type": "integer"
+   },
+   "emails": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "text"
+   },
+   "enabled": {
+    "default": "true",
+    "nullable": true,
+    "pos": 6,
+    "type": "boolean"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "role_label": {
+    "default": null,
+    "nullable": false,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "seq": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "integer"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 7,
+    "type": "timestamp without time zone"
+   }
+  },
+  "maintenance_escalation_log": {
+   "andon_event_id": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "integer"
+   },
+   "err": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "text"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "level_id": {
+    "default": null,
+    "nullable": false,
+    "pos": 3,
+    "type": "integer"
+   },
+   "line": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "character varying"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "character varying"
+   },
+   "minutes": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "integer"
+   },
+   "ok": {
+    "default": "true",
+    "nullable": true,
+    "pos": 9,
+    "type": "boolean"
+   },
+   "role_label": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "sent_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 11,
+    "type": "timestamp without time zone"
+   },
+   "to_emails": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "text"
+   },
+   "zone": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "character varying"
+   }
+  },
+  "maintenance_kpi_target": {
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 10,
+    "type": "timestamp without time zone"
+   },
+   "fy": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "character varying"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "kpi_key": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "character varying"
+   },
+   "level": {
+    "default": null,
+    "nullable": false,
+    "pos": 8,
+    "type": "character varying"
+   },
+   "line_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "character varying"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "character varying"
+   },
+   "month": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "character varying"
+   },
+   "serial_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "integer"
+   },
+   "target_value": {
+    "default": null,
+    "nullable": false,
+    "pos": 9,
+    "type": "double precision"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 11,
+    "type": "timestamp without time zone"
+   },
+   "zone_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   }
+  },
+  "maintenance_kpi_ui_settings": {
+   "id": {
+    "default": "1",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "settings": {
+    "default": "'{}'::jsonb",
+    "nullable": false,
+    "pos": 2,
+    "type": "jsonb"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 3,
+    "type": "timestamp with time zone"
+   }
+  },
+  "maintenance_logbook": {
+   "employees_on_leave": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "text"
+   },
+   "employees_present": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "text"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "record_date": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "date"
+   },
+   "rows": {
+    "default": "'[]'::jsonb",
+    "nullable": false,
+    "pos": 9,
+    "type": "jsonb"
+   },
+   "shift": {
+    "default": null,
+    "nullable": false,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "total_down_time": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "text"
+   },
+   "total_over_time": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "text"
+   },
+   "total_working_hours": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "text"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 11,
+    "type": "timestamp without time zone"
+   },
+   "updated_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "character varying"
+   }
+  },
+  "maintenance_logbook_db_history": {
+   "action_taken_on_problem": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "text"
+   },
+   "bd_attended_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "character varying"
+   },
+   "bd_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "date"
+   },
+   "bd_ok_time": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "character varying"
+   },
+   "bd_start_time": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "character varying"
+   },
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 15,
+    "type": "timestamp without time zone"
+   },
+   "created_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "character varying"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "character varying"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "character varying"
+   },
+   "mc_down_time_minutes": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "character varying"
+   },
+   "problem_observed_by_maintenance": {
+    "default": null,
+    "nullable": true,
+    "pos": 17,
+    "type": "text"
+   },
+   "serial_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 16,
+    "type": "integer"
+   },
+   "shift": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "character varying"
+   },
+   "solve_time_hours": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "character varying"
+   },
+   "spares": {
+    "default": null,
+    "nullable": true,
+    "pos": 18,
+    "type": "jsonb"
+   },
+   "spares_used": {
+    "default": null,
+    "nullable": true,
+    "pos": 19,
+    "type": "text"
+   },
+   "zone": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   }
+  },
+  "maintenance_machine_running_hours": {
+   "created_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 9,
+    "type": "timestamp with time zone"
+   },
+   "fy": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "text"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "text"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "text"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": false,
+    "pos": 6,
+    "type": "text"
+   },
+   "running_hours": {
+    "default": "0",
+    "nullable": false,
+    "pos": 8,
+    "type": "numeric"
+   },
+   "serial_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "integer"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 10,
+    "type": "timestamp with time zone"
+   },
+   "zone_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "text"
+   }
+  },
+  "maintenance_machines": {
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 8,
+    "type": "timestamp without time zone"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "ip": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "character varying"
+   },
+   "is_active": {
+    "default": "true",
+    "nullable": false,
+    "pos": 7,
+    "type": "boolean"
+   },
+   "line_name": {
+    "default": null,
+    "nullable": false,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": false,
+    "pos": 6,
+    "type": "character varying"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": false,
+    "pos": 5,
+    "type": "character varying"
+   },
+   "serial_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "integer"
+   },
+   "source_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "character varying"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 9,
+    "type": "timestamp without time zone"
+   },
+   "zone_name": {
+    "default": null,
+    "nullable": false,
+    "pos": 3,
+    "type": "character varying"
+   }
+  },
+  "maintenance_org_chart": {
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 6,
+    "type": "timestamp without time zone"
+   },
+   "created_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "character varying"
+   },
+   "data": {
+    "default": "'{}'::jsonb",
+    "nullable": false,
+    "pos": 4,
+    "type": "jsonb"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "month": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "character varying"
+   },
+   "title": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 7,
+    "type": "timestamp without time zone"
+   }
+  },
+  "maintenance_pm_check_point": {
+   "check_point": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "text"
+   },
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 13,
+    "type": "timestamp without time zone"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "judgement_standard": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "text"
+   },
+   "line": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "character varying"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "method": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "text"
+   },
+   "rev_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "date"
+   },
+   "rev_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "character varying"
+   },
+   "s_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "character varying"
+   },
+   "sort_order": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "integer"
+   },
+   "zone": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "character varying"
+   }
+  },
+  "maintenance_pm_check_point_rev": {
+   "archived_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 13,
+    "type": "timestamp without time zone"
+   },
+   "check_point": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "text"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "judgement_standard": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "text"
+   },
+   "line": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "character varying"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "method": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "text"
+   },
+   "rev_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "date"
+   },
+   "rev_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "character varying"
+   },
+   "s_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "character varying"
+   },
+   "sort_order": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "integer"
+   },
+   "zone": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "character varying"
+   }
+  },
+  "maintenance_pm_check_sheet_filled": {
+   "approved_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 19,
+    "type": "timestamp without time zone"
+   },
+   "approved_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "text"
+   },
+   "approved_by_user": {
+    "default": null,
+    "nullable": true,
+    "pos": 21,
+    "type": "text"
+   },
+   "chain_log": {
+    "default": "'[]'::jsonb",
+    "nullable": false,
+    "pos": 27,
+    "type": "jsonb"
+   },
+   "checked_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 18,
+    "type": "timestamp without time zone"
+   },
+   "checked_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "text"
+   },
+   "checked_by_user": {
+    "default": null,
+    "nullable": true,
+    "pos": 20,
+    "type": "text"
+   },
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 14,
+    "type": "timestamp without time zone"
+   },
+   "doc_footer": {
+    "default": null,
+    "nullable": true,
+    "pos": 15,
+    "type": "jsonb"
+   },
+   "entries": {
+    "default": "'[]'::jsonb",
+    "nullable": false,
+    "pos": 9,
+    "type": "jsonb"
+   },
+   "filled_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "text"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "text"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "text"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "text"
+   },
+   "pm_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "date"
+   },
+   "prepared_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "text"
+   },
+   "reject_reason": {
+    "default": null,
+    "nullable": true,
+    "pos": 22,
+    "type": "text"
+   },
+   "rejected_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 26,
+    "type": "timestamp without time zone"
+   },
+   "rejected_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 24,
+    "type": "text"
+   },
+   "rejected_by_user": {
+    "default": null,
+    "nullable": true,
+    "pos": 25,
+    "type": "text"
+   },
+   "rejected_from": {
+    "default": null,
+    "nullable": true,
+    "pos": 23,
+    "type": "text"
+   },
+   "rev_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "text"
+   },
+   "rev_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "text"
+   },
+   "sheet_spares": {
+    "default": "'[]'::jsonb",
+    "nullable": false,
+    "pos": 28,
+    "type": "jsonb"
+   },
+   "sign_imgs": {
+    "default": null,
+    "nullable": true,
+    "pos": 16,
+    "type": "jsonb"
+   },
+   "stage": {
+    "default": null,
+    "nullable": true,
+    "pos": 17,
+    "type": "text"
+   },
+   "zone_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "text"
+   }
+  },
+  "maintenance_pm_check_sheet_format": {
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 4,
+    "type": "timestamp without time zone"
+   },
+   "format": {
+    "default": "'{}'::jsonb",
+    "nullable": false,
+    "pos": 3,
+    "type": "jsonb"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "name": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "character varying"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 5,
+    "type": "timestamp without time zone"
+   }
+  },
+  "maintenance_qpr": {
+   "capa_status": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "character varying"
+   },
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 6,
+    "type": "timestamp without time zone"
+   },
+   "created_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "character varying"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "logbook_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "integer"
+   },
+   "payload": {
+    "default": "'{}'::jsonb",
+    "nullable": false,
+    "pos": 4,
+    "type": "jsonb"
+   },
+   "qpr_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "integer"
+   },
+   "title": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 7,
+    "type": "timestamp without time zone"
+   }
+  },
+  "maintenance_shutdown_plan": {
+   "assigned_to": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "text"
+   },
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 14,
+    "type": "timestamp without time zone"
+   },
+   "created_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "text"
+   },
+   "done_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "timestamp without time zone"
+   },
+   "done_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "text"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "text"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "text"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "text"
+   },
+   "plan_date": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "date"
+   },
+   "problem": {
+    "default": null,
+    "nullable": false,
+    "pos": 7,
+    "type": "text"
+   },
+   "status": {
+    "default": "'PENDING'::character varying",
+    "nullable": false,
+    "pos": 9,
+    "type": "character varying"
+   },
+   "work_done": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "text"
+   },
+   "zone_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "text"
+   }
+  },
+  "maintenance_skill_eval": {
+   "assessment_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "date"
+   },
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 15,
+    "type": "timestamp without time zone"
+   },
+   "created_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "character varying"
+   },
+   "employee": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "character varying"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "machine": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "max_marks": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "numeric"
+   },
+   "percentage": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "numeric"
+   },
+   "period": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "character varying"
+   },
+   "period_label": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "character varying"
+   },
+   "process": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "character varying"
+   },
+   "status": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "character varying"
+   },
+   "topics": {
+    "default": "'[]'::jsonb",
+    "nullable": false,
+    "pos": 9,
+    "type": "jsonb"
+   },
+   "total_marks": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "numeric"
+   },
+   "zone": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   }
+  },
+  "maintenance_skill_training": {
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 6,
+    "type": "timestamp without time zone"
+   },
+   "created_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "character varying"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "payload": {
+    "default": "'{}'::jsonb",
+    "nullable": false,
+    "pos": 4,
+    "type": "jsonb"
+   },
+   "section": {
+    "default": "'ojt'::character varying",
+    "nullable": false,
+    "pos": 2,
+    "type": "character varying"
+   },
+   "title": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 7,
+    "type": "timestamp without time zone"
+   }
+  },
+  "maintenance_slip_config": {
+   "scope": {
+    "default": "'GLOBAL'::text",
+    "nullable": false,
+    "pos": 1,
+    "type": "text"
+   },
+   "slip_threshold_min": {
+    "default": "2",
+    "nullable": false,
+    "pos": 2,
+    "type": "integer"
+   },
+   "target_breakdowns": {
+    "default": "10",
+    "nullable": false,
+    "pos": 4,
+    "type": "integer"
+   },
+   "target_pending": {
+    "default": "0",
+    "nullable": false,
+    "pos": 5,
+    "type": "integer"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 3,
+    "type": "timestamp with time zone"
+   }
+  },
+  "maintenance_spare": {
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 5,
+    "type": "timestamp without time zone"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "character varying"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "character varying"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "character varying"
+   },
+   "slip_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "integer"
+   },
+   "source": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "character varying"
+   },
+   "spare_cnmm_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "spare_model_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "spare_name": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "character varying"
+   },
+   "spare_qty": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "character varying"
+   },
+   "used_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "date"
+   },
+   "zone": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "character varying"
+   }
+  },
+  "maintenance_study_material": {
+   "active": {
+    "default": "true",
+    "nullable": false,
+    "pos": 6,
+    "type": "boolean"
+   },
+   "body": {
+    "default": "''::text",
+    "nullable": false,
+    "pos": 4,
+    "type": "text"
+   },
+   "body_hi": {
+    "default": "''::text",
+    "nullable": false,
+    "pos": 11,
+    "type": "text"
+   },
+   "category": {
+    "default": "'General'::character varying",
+    "nullable": false,
+    "pos": 2,
+    "type": "character varying"
+   },
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 8,
+    "type": "timestamp without time zone"
+   },
+   "created_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "character varying"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "sort_order": {
+    "default": "0",
+    "nullable": false,
+    "pos": 5,
+    "type": "integer"
+   },
+   "title": {
+    "default": null,
+    "nullable": false,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 10,
+    "type": "timestamp without time zone"
+   },
+   "updated_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "character varying"
+   }
+  },
+  "maintenance_sunday_plan": {
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 13,
+    "type": "timestamp without time zone"
+   },
+   "created_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "text"
+   },
+   "done_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "timestamp without time zone"
+   },
+   "done_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "text"
+   },
+   "duration_minutes": {
+    "default": null,
+    "nullable": true,
+    "pos": 16,
+    "type": "integer"
+   },
+   "end_time": {
+    "default": null,
+    "nullable": true,
+    "pos": 15,
+    "type": "text"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "text"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "text"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "text"
+   },
+   "plan_date": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "date"
+   },
+   "problem": {
+    "default": null,
+    "nullable": false,
+    "pos": 7,
+    "type": "text"
+   },
+   "spares": {
+    "default": null,
+    "nullable": true,
+    "pos": 17,
+    "type": "jsonb"
+   },
+   "spares_used": {
+    "default": null,
+    "nullable": true,
+    "pos": 18,
+    "type": "text"
+   },
+   "start_time": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "text"
+   },
+   "status": {
+    "default": "'PENDING'::character varying",
+    "nullable": false,
+    "pos": 8,
+    "type": "character varying"
+   },
+   "work_done": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "text"
+   },
+   "zone_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "text"
+   }
+  },
+  "maintenance_user_permissions": {
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "page_key": {
+    "default": null,
+    "nullable": false,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "perm_level": {
+    "default": "'read'::character varying",
+    "nullable": false,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "user_id": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "integer"
+   }
+  },
+  "maintenance_users": {
+   "created_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 9,
+    "type": "timestamp without time zone"
+   },
+   "full_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "character varying"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "is_active": {
+    "default": "true",
+    "nullable": false,
+    "pos": 7,
+    "type": "boolean"
+   },
+   "last_login": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "timestamp without time zone"
+   },
+   "password_hash": {
+    "default": null,
+    "nullable": false,
+    "pos": 3,
+    "type": "text"
+   },
+   "password_plain": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "text"
+   },
+   "pwd_changed_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "bigint"
+   },
+   "role": {
+    "default": "'admin'::character varying",
+    "nullable": false,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "username": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "character varying"
+   }
+  },
+  "maintenance_yearly_pm_shedule": {
+   "actual_dates": {
+    "default": "'{}'::jsonb",
+    "nullable": true,
+    "pos": 14,
+    "type": "jsonb"
+   },
+   "actual_weeks": {
+    "default": "'{}'::jsonb",
+    "nullable": false,
+    "pos": 8,
+    "type": "jsonb"
+   },
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 11,
+    "type": "timestamp without time zone"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "character varying"
+   },
+   "machine_code": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "text"
+   },
+   "plan_weeks": {
+    "default": "'{}'::jsonb",
+    "nullable": false,
+    "pos": 7,
+    "type": "jsonb"
+   },
+   "pm_frequency": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "character varying"
+   },
+   "s_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "character varying"
+   },
+   "sort_order": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "integer"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 12,
+    "type": "timestamp without time zone"
+   },
+   "year_label": {
+    "default": "'2026-27'::character varying",
+    "nullable": true,
+    "pos": 9,
+    "type": "character varying"
+   },
+   "zone_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "character varying"
+   }
+  },
+  "maintenance_yearly_pm_signoff": {
+   "sign_imgs": {
+    "default": "'[]'::jsonb",
+    "nullable": false,
+    "pos": 2,
+    "type": "jsonb"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 4,
+    "type": "timestamp without time zone"
+   },
+   "updated_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "year_label": {
+    "default": null,
+    "nullable": false,
+    "pos": 1,
+    "type": "character varying"
+   }
+  },
+  "pm_mail_config": {
+   "auto_enabled": {
+    "default": "true",
+    "nullable": true,
+    "pos": 4,
+    "type": "boolean"
+   },
+   "cc": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "text"
+   },
+   "id": {
+    "default": null,
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "recipient": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "text"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 5,
+    "type": "timestamp with time zone"
+   }
+  },
+  "pm_mail_log": {
+   "count": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "integer"
+   },
+   "error": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "text"
+   },
+   "period_key": {
+    "default": null,
+    "nullable": false,
+    "pos": 1,
+    "type": "text"
+   },
+   "sent_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 2,
+    "type": "timestamp with time zone"
+   },
+   "status": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "text"
+   }
+  },
+  "pm_schedule": {
+   "created_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 14,
+    "type": "timestamp with time zone"
+   },
+   "created_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "text"
+   },
+   "due_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "date"
+   },
+   "frequency": {
+    "default": "'Monthly'::text",
+    "nullable": true,
+    "pos": 8,
+    "type": "text"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "text"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "text"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "text"
+   },
+   "owner": {
+    "default": "'Maintenance'::text",
+    "nullable": true,
+    "pos": 10,
+    "type": "text"
+   },
+   "pm_month": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "text"
+   },
+   "sheet_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "integer"
+   },
+   "status": {
+    "default": "'Pending'::text",
+    "nullable": true,
+    "pos": 11,
+    "type": "text"
+   },
+   "task": {
+    "default": "'Line preventive maintenance'::text",
+    "nullable": true,
+    "pos": 7,
+    "type": "text"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 15,
+    "type": "timestamp with time zone"
+   },
+   "zone": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "text"
+   }
+  },
+  "toolroom_auto_breakdown_slip": {
+   "action_taken_on_problem": {
+    "default": null,
+    "nullable": true,
+    "pos": 23,
+    "type": "text"
+   },
+   "andon_event_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 35,
+    "type": "integer"
+   },
+   "bd_attended_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 25,
+    "type": "character varying"
+   },
+   "bd_end_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 16,
+    "type": "date"
+   },
+   "bd_ok_time": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "character varying"
+   },
+   "bd_received_time": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "character varying"
+   },
+   "bd_start_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 15,
+    "type": "date"
+   },
+   "bd_start_time": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "character varying"
+   },
+   "category": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "character varying"
+   },
+   "frequency": {
+    "default": "1",
+    "nullable": true,
+    "pos": 34,
+    "type": "integer"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "line": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "line_leader_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "character varying"
+   },
+   "line_leader_operator_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 28,
+    "type": "character varying"
+   },
+   "machine_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "character varying"
+   },
+   "machine_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "machine_operator_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "character varying"
+   },
+   "mc_down_time_minutes": {
+    "default": null,
+    "nullable": true,
+    "pos": 17,
+    "type": "integer"
+   },
+   "model_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "character varying"
+   },
+   "power_cut": {
+    "default": "false",
+    "nullable": true,
+    "pos": 36,
+    "type": "boolean"
+   },
+   "prepared_by_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 26,
+    "type": "character varying"
+   },
+   "problem_observed_by_maintenance": {
+    "default": null,
+    "nullable": true,
+    "pos": 22,
+    "type": "text"
+   },
+   "problem_related_to": {
+    "default": null,
+    "nullable": true,
+    "pos": 19,
+    "type": "character varying"
+   },
+   "problem_reported_by_production": {
+    "default": null,
+    "nullable": true,
+    "pos": 18,
+    "type": "text"
+   },
+   "prod_stage": {
+    "default": "'PENDING_PRODUCTION'::character varying",
+    "nullable": true,
+    "pos": 37,
+    "type": "character varying"
+   },
+   "production_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 39,
+    "type": "timestamp without time zone"
+   },
+   "production_by_user_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 38,
+    "type": "integer"
+   },
+   "quality_engineer_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 29,
+    "type": "character varying"
+   },
+   "received_by_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 27,
+    "type": "character varying"
+   },
+   "response_time_minutes": {
+    "default": null,
+    "nullable": true,
+    "pos": 33,
+    "type": "integer"
+   },
+   "shift": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "character varying"
+   },
+   "slip_date": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "date"
+   },
+   "spares": {
+    "default": null,
+    "nullable": true,
+    "pos": 32,
+    "type": "jsonb"
+   },
+   "spares_used": {
+    "default": null,
+    "nullable": true,
+    "pos": 24,
+    "type": "text"
+   },
+   "submitted_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 31,
+    "type": "timestamp without time zone"
+   },
+   "submitted_by_user_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 30,
+    "type": "integer"
+   },
+   "type_electrical": {
+    "default": "false",
+    "nullable": true,
+    "pos": 20,
+    "type": "boolean"
+   },
+   "type_mechanical": {
+    "default": "false",
+    "nullable": true,
+    "pos": 21,
+    "type": "boolean"
+   },
+   "zone": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "character varying"
+   }
+  }
+ },
+ "tables": 52,
+ "taken_at": "2026-08-31T12:48:35"
+}
