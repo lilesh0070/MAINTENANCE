@@ -840,15 +840,60 @@ def breakdown_status(limit: int = Query(300),
 
 @router.delete("/auto/{sid}")
 def delete_auto_slip(sid: int, src: str = Query("maintenance"), admin=Depends(require_admin)):
-    """AUTO slip delete — galat/extra auto-generated slip hatane ke liye (admin-only)."""
+    """AUTO slip delete — galat/extra auto-generated slip hatane ke liye (admin-only).
+
+    Slip AKELI nahi hoti — uske saath do aur cheezein judi hoti hain, aur pehle
+    sirf slip hi hatti thi.  Usse do gadbad hoti thi:
+
+    1. **`breakdown_status` me row padi reh jaati.**  Wo asli TABLE hai, view
+       nahi — Status tab wahi padhta hai.  To slip hat jaati par Status me
+       bhoot dikhta rehta, jiska koi slip hi nahi.
+    2. **`maintenance_spare` ki entries anaath ho jaatin.**  Spare page unhe
+       ginta rehta, jabki jis slip par wo lage the wo hai hi nahi.
+
+    Ab teeno ek saath hatte hain, aur audit me poora byora likha jaata hai
+    (delete wapas nahi aata, isliye kam se kam nishan to rahe).
+
+    NOTE: ANDON ka event (`andon_event_id`) NAHI chheda jaata — wo call ka
+    apna record hai (`andon_history`), slip ka nahi.  Slip delete karne ka
+    matlab "ye slip galat bani thi", "call hui hi nahi" nahi.
+    """
     _ensure_table()
     tbl = _src_table(src)
+    src_l = (src or "maintenance").strip().lower()
     with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute(f"DELETE FROM {tbl} WHERE id = %s", (sid,))
-        if cur.rowcount == 0:
+        cur = dict_cursor(conn)
+        cur.execute(f"SELECT * FROM {tbl} WHERE id = %s", (sid,))
+        row = cur.fetchone()
+        if not row:
             raise HTTPException(404, "auto slip not found")
-    return {"ok": True, "deleted": sid}
+
+        # 1) is slip par darj spare usage
+        from routers.maintenance_spare import clear_usage
+        n_spare = clear_usage(conn, sid)
+
+        # 2) Status tab wali row
+        cur.execute("DELETE FROM breakdown_status WHERE slip_id = %s AND bd_for = %s",
+                    (sid, src_l))
+        n_status = cur.rowcount
+
+        # 3) khud slip
+        cur.execute(f"DELETE FROM {tbl} WHERE id = %s", (sid,))
+
+        try:
+            from main import write_audit
+            write_audit(conn, action="AUTO_SLIP_DELETE", entity_type=tbl, entity_id=sid,
+                        details=(f"{src_l} slip #{sid} · {row.get('zone')}/{row.get('line')}"
+                                 f"/{row.get('machine_no')} · {row.get('bd_start_date')} "
+                                 f"{row.get('bd_start_time')} · stage={row.get('prod_stage')} "
+                                 f"· andon_event={row.get('andon_event_id')} "
+                                 f"· spare rows hatai={n_spare} · status rows hatai={n_status}"),
+                        user=admin)
+        except Exception as e:                       # audit kabhi kaam na roke
+            print(f"[SLIP] auto-slip delete ka audit nahi likha: {e}")
+
+    return {"ok": True, "deleted": sid, "src": src_l,
+            "spare_rows_removed": n_spare, "status_rows_removed": n_status}
 
 
 @router.post("/auto/{sid}/fill")

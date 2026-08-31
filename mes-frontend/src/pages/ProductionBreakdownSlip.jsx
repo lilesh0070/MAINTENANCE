@@ -78,7 +78,7 @@ function Tag({ v }) {
 }
 
 export default function ProductionBreakdownSlip() {
-  const { token } = useAuth();
+  const { token, isAdmin } = useAuth();
   const nav = useNavigate();
   const [tab, setTab]     = useState("PRODUCTION");
   const [rows, setRows]   = useState([]);
@@ -126,6 +126,43 @@ export default function ProductionBreakdownSlip() {
     finally { setLoad(false); loadCounts(); }
   }, [token, T.stage, T.src, T.status, fq, loadCounts]);
   useEffect(() => { load(); }, [load]);
+
+  // Slip delete — SIRF admin.  Galat/extra auto-slip hatane ke liye (ANDON ki
+  // testing me kabhi-kabhi bekaar slip ban jaati hai).
+  //
+  // `src` HAR row me aata hai (maintenance ya toolroom), aur wahi tay karta hai
+  // ki kaunsi table se hatana hai — Production tab me dono taraf ki slips ek
+  // saath dikhti hain, isliye tab ka src ('all') istemal karna galat hota.
+  // src na mile to delete karte hi nahi — andaaze se galat table chhedne se
+  // behtar hai ruk jaana.
+  const [delSlip, setDelSlip] = useState(null);
+  const deleteSlip = async (r) => {
+    const src = r?.src;
+    if (!src) { setErr("Is row ka source pata nahi — delete nahi kar sakte."); return; }
+    if (!window.confirm(
+      `Ye slip hamesha ke liye hat jayegi:
+
+` +
+      `${src === "toolroom" ? "Tool Room" : "Maintenance"} · slip #${r.id}
+` +
+      `${r.zone || "-"} / ${r.line || "-"} / ${r.machine_no || "-"}
+` +
+      `${fmtDate(r.bd_start_date)} ${r.bd_start_time || ""}
+
+` +
+      `Iske saath uska Status record aur us par darj spare bhi hat jayenge.
+` +
+      `Wapas nahi aayegi.  Aage badhein?`)) return;
+    setDelSlip(`${src}-${r.id}`);
+    try {
+      await api.delete(`/api/breakdown-slips/auto/${r.id}?src=${src}`, token);
+      await load();
+    } catch (e) {
+      let m = String(e?.message || e);
+      try { m = JSON.parse(m).detail || m; } catch { /* plain text */ }
+      setErr("Delete nahi hua — " + m.slice(0, 160));
+    } finally { setDelSlip(null); }
+  };
 
   const openFill = async (row) => {
     try {
@@ -336,6 +373,17 @@ export default function ProductionBreakdownSlip() {
                         <Btn variant="primary" size="sm" onClick={() => openFill(r)}>
                           {tab === "PRODUCTION" ? "✏ Fill Production Half" : "🔧 Complete"}
                         </Btn>
+                        {isAdmin && (
+                          <button onClick={() => deleteSlip(r)}
+                                  disabled={delSlip === `${r.src}-${r.id}`}
+                                  title="Is slip ko hata do (Status aur spare bhi)"
+                                  style={{ marginLeft: 8, border: "1px solid #fecaca", background: "#fff",
+                                           color: "#dc2626", borderRadius: 7, cursor: "pointer",
+                                           padding: "5px 10px", fontSize: 13, fontWeight: 800,
+                                           opacity: delSlip === `${r.src}-${r.id}` ? .5 : 1 }}>
+                            {delSlip === `${r.src}-${r.id}` ? "…" : "🗑"}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
