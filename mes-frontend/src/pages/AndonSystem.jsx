@@ -477,6 +477,13 @@ export default function AndonSystem() {
   const [chLoading, setChLoading] = useState(false);
   const [chSel, setChSel]         = useState(() => new Set());
   const [chLimit, setChLimit]     = useState(200);
+  const [chDept, setChDept]       = useState("");     // "" = saare department
+
+  // Filter client-side hai — rows pehle se load hain, to chunav turant lagta
+  // hai (server ko dobara nahi poochte).
+  const chShown = useMemo(
+    () => (chDept ? chRows.filter((r) => (r.department || r.display_name) === chDept) : chRows),
+    [chRows, chDept]);
   const isAdmin = user?.role === "admin";
 
   const loadCallHistory = useCallback(async () => {
@@ -1253,10 +1260,21 @@ export default function AndonSystem() {
               <div className="an-row" style={{ gap:10, flexWrap:"wrap", alignItems:"center", marginBottom:12 }}>
                 <b style={{ fontSize:15 }}>Call History</b>
                 <span style={{ color:"#94a3b8", fontSize:12 }}>
-                  {chLoading ? "load ho raha…" : `${chRows.length} row`}
+                  {chLoading
+                    ? "Loading…"
+                    : `${chShown.length} call${chShown.length === 1 ? "" : "s"}` +
+                      (chDept ? ` of ${chRows.length}` : "")}
                 </span>
                 <label style={{ fontSize:12, color:"#64748b", fontWeight:700 }}>
-                  {" "}dikhao{" "}
+                  Department{" "}
+                  <select className="an-in" style={{ padding:"4px 8px", minWidth:150 }}
+                          value={chDept} onChange={(e) => setChDept(e.target.value)}>
+                    <option value="">All departments</option>
+                    {depts.map((d) => <option key={d.id} value={d.name}>{d.name}</option>)}
+                  </select>
+                </label>
+                <label style={{ fontSize:12, color:"#64748b", fontWeight:700 }}>
+                  Show latest{" "}
                   <select className="an-in" style={{ padding:"4px 8px", width:90 }}
                           value={chLimit} onChange={(e) => setChLimit(Number(e.target.value))}>
                     {[100, 200, 500, 1000].map((n) => <option key={n} value={n}>{n}</option>)}
@@ -1290,21 +1308,24 @@ export default function AndonSystem() {
                   <thead><tr>
                     {isAdmin && <th style={{ width:34 }}>
                       <input type="checkbox"
-                             checked={!!chRows.length && chSel.size === chRows.length}
+                             title="Select all shown"
+                             checked={!!chShown.length && chSel.size === chShown.length}
                              onChange={(e) => setChSel(e.target.checked
-                               ? new Set(chRows.map((r) => r.id)) : new Set())} />
+                               ? new Set(chShown.map((r) => r.id)) : new Set())} />
                     </th>}
                     <th style={{ width:60 }}>ID</th>
                     <th>Department</th><th>Zone</th><th>Line</th><th>Machine</th>
-                    <th>Aayi</th><th>Khatam</th>
+                    <th>Started</th><th>Ended</th>
                     <th style={{ width:100, textAlign:"center" }}>Response</th>
                     <th style={{ width:90, textAlign:"center" }}>Total</th>
                   </tr></thead>
                   <tbody>
-                    {chLoading && <tr><td colSpan={isAdmin ? 10 : 9} style={{ color:"#94a3b8" }}>Load ho raha…</td></tr>}
-                    {!chLoading && !chRows.length &&
-                      <tr><td colSpan={isAdmin ? 10 : 9} style={{ color:"#94a3b8" }}>Koi call history nahi.</td></tr>}
-                    {!chLoading && chRows.map((r) => (
+                    {chLoading && <tr><td colSpan={isAdmin ? 10 : 9} style={{ color:"#94a3b8" }}>Loading…</td></tr>}
+                    {!chLoading && !chShown.length &&
+                      <tr><td colSpan={isAdmin ? 10 : 9} style={{ color:"#94a3b8" }}>
+                        {chRows.length ? `No calls for ${chDept}.` : "No closed calls yet."}
+                      </td></tr>}
+                    {!chLoading && chShown.map((r) => (
                       <tr key={r.id} style={{ background: chSel.has(r.id) ? "#fef2f2" : undefined }}>
                         {isAdmin && <td>
                           <input type="checkbox" checked={chSel.has(r.id)}
