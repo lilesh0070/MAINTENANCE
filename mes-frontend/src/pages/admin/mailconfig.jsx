@@ -42,14 +42,40 @@ export const ROLE_PILL = {
 // Grouped by area for the permission matrix modal.  page_key MUST
 // match the canAccess() keys in AuthContext.jsx so explicit overrides
 // resolve correctly.
+//
+// ─────────────────────────────────────────────────────────────────────────
+// NAYA PAGE YA SUB-PAGE JOD RAHE HO?  TEENO JAGAH KARNA ZAROORI HAI:
+//
+//   1. YAHAN (PAGE_PERM_GROUPS)  — warna admin use grant hi nahi kar payega
+//   2. AuthContext.jsx ke SUBPAGE_PARENT me (sirf sub-page ke liye)
+//                                 — warna wo apne parent se inherit nahi hoga
+//   3. Jahan use hota hai: App.jsx ka requiredAccess, ya page ka
+//      canAccess(...) / TAB_KEY
+//
+// Ek bhi chhoot gayi to gadbad CHUP-CHAAP hoti hai:
+//   • canAccess(undefined) hamesha FALSE lautata hai — to non-admin ko wo
+//     page/tab dikhta hi nahi, aur admin ko dikhta hai, isliye testing me
+//     sab theek lagta hai.  (ANDON ka "Call History" tab isi tarah galti se
+//     kuch der admin-only reh gaya tha.)
+//   • Yahan se chhoot gaya to key kaam to karti hai, par admin ki permission
+//     list me dikhti hi nahi — grant karne ka koi tareeqa hi nahi bachta.
+//
+// Milaan karne ka tareeqa (frontend folder se):
+//   App.jsx ke requiredAccess, code ke canAccess(...), aur is list ko
+//   aapas me mila lo — teeno ka farak khali hona chahiye.
+// ─────────────────────────────────────────────────────────────────────────
 export const PAGE_PERM_GROUPS = [
   { group: "Maintenance — Pages", items: [
     { key: "dashboard",                  label: "Dashboard (home / landing)" },
     { key: "maintenance-overview",       label: "Overview" },
     { key: "andon-system",               label: "ANDON", children: [
+      /* Kram wahi jo ANDON page ke tabs ka hai, taaki dono milte-julte lagein. */
       { key: "andon-board",   label: "Live Board" },
+      { key: "andon-monitor", label: "Monitor" },
       { key: "andon-faults",  label: "Fault History" },
+      { key: "andon-calls",   label: "Call History (delete admin-only)" },
       { key: "andon-config",  label: "Configuration" },
+      { key: "andon-callout", label: "Call → Output" },
       { key: "andon-reports", label: "Reports" },
     ]},
     { key: "maintenance-update-plan",    label: "Update Plan", children: [

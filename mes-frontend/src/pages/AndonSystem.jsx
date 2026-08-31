@@ -64,7 +64,18 @@ const fmtClock = (s) => {
 const ACK_PARENT = { 2: 1, 4: 3 };
 // ANDON top tabs → per-tab permission sub-key (inherits the andon-system parent
 // unless a sub-key is explicitly set to None).
-const TAB_KEY = { board: "andon-board", monitor: "andon-board", faults: "andon-faults", config: "andon-config", callout: "andon-config", reports: "andon-reports" };
+// HAR tab ka apna key — taaki admin ek-ek tab alag grant kar sake.
+// Pehle monitor `andon-board` par aur callout `andon-config` par chal rahe
+// the, aur `calls` (Call History) kahin tha hi nahi — TAB_KEY["calls"]
+// undefined hone se canAccess(undefined) = false, yaani wo tab galti se
+// SIRF admin ko dikh raha tha.  Naya key jodte waqt teen jagah karna hota
+// hai: yahan, AuthContext ke SUBPAGE_PARENT me, aur admin ke
+// PAGE_PERM_GROUPS me — teeno na ho to tab ya chhup jaata hai ya grant
+// hi nahi ho paata.
+const TAB_KEY = { board: "andon-board", monitor: "andon-monitor",
+                  faults: "andon-faults", calls: "andon-calls",
+                  config: "andon-config", callout: "andon-callout",
+                  reports: "andon-reports" };
 // Call→Output: departments jinka bit RESPONSE (acknowledge) pe off hota hai
 // (inme ACK output hai — DO2/DO4); baaki call band hone par hi off.
 const OUT_ACK_DEPTS = ["maintenance", "tool room", "toolroom"];
@@ -1255,7 +1266,7 @@ export default function AndonSystem() {
               Raw andon_history rows.  Reports jod-ghata dikhati hai; yahan
               ek-ek call dikhti hai, taaki admin kachra row hata sake
               (testing ki 2-second call, ya galat department wali). */}
-          {tab === "calls" && canAccess("andon-reports") && (
+          {tab === "calls" && canAccess("andon-calls") && (
             <div className="an-card">
               <div className="an-row" style={{ gap:10, flexWrap:"wrap", alignItems:"center", marginBottom:12 }}>
                 <b style={{ fontSize:15 }}>Call History</b>
