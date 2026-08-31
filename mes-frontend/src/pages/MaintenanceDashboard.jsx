@@ -384,8 +384,15 @@ Wapas nahi aayegi.  Aage badhein?`)) return;
           <div className="md-title">
             {titleLeft}<span>{titleRight}</span>
           </div>
-          {/* flex:0 1 auto — ye group jagah kam padne par sikudta hai, title nahi. */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "0 1 auto", justifyContent: "flex-end", minWidth: 0 }}>
+          {/* flex:1 1 0 — BARABAR ka hissa, bilkul left ke khali spacer jitna.
+              Dono taraf barabar honge tabhi title beech me aayega.
+              (Ek baar isko "0 1 auto" kar diya tha taaki title na kate — title
+              to bach gaya, par grow band hone se khali left spacer poori jagah
+              kha gaya aur title DAAYEN chala gaya.  Title ka bachav uske apne
+              flex:0 0 auto se hota hai, isse nahi.)
+              minWidth bhi nahi diya: default `auto` group ko apne content se
+              chhota nahi hone deta, warna buttons dab kar wrap ho jaate. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "1 1 0", justifyContent: "flex-end" }}>
             <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
               <button onClick={() => setAspect("9:16")} className="md-fs-btn" title="Portrait 9:16"
                       style={portrait ? { background: theme.accent, color: "#fff", borderColor: theme.accent } : {}}>9:16</button>
