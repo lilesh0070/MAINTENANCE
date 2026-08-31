@@ -727,6 +727,10 @@ export default function AndonSystem() {
         .an-tbl th { text-align:left; padding:8px 10px; font-size:10px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:#64748b; border-bottom:1px solid #e2e8f0; }
         .an-tbl td { padding:9px 10px; border-bottom:1px solid #f1f5f9; color:#334155; }
         .an-x { border:none; background:transparent; color:#dc2626; cursor:pointer; font-weight:800; font-size:16px; }
+        /* Call -> Output form ke box baaki page se chhote — form ek nazar me
+           poora dikhna chahiye, scroll kiye bina. */
+        .an-form-sm .an-in { padding:5px 8px; font-size:12.5px; border-radius:7px; }
+        .an-form-sm .an-lbl { font-size:9.5px; margin-bottom:3px; }
         .an-lbl { font-size:10.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:#64748b; margin-bottom:4px; display:block; }
         .an-chip { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:700; padding:5px 6px 5px 11px; border-radius:99px; }
         .an-panel { background:#fff; border:1px solid #e2e8f0; border-radius:13px; padding:34px; text-align:center; }
@@ -985,22 +989,16 @@ export default function AndonSystem() {
 
           {tab === "callout" && canAccess("andon-config") && (
             <>
-              <div className="an-card" style={{ marginBottom:14 }}>
+              <div className="an-card an-form-sm" style={{ marginBottom:14 }}>
                 <b style={{ fontSize:14 }}>{outEdit ? "Edit mapping" : "Add Call → Output mapping"}</b>
-                <div style={{ fontSize:12, color:"#64748b", marginTop:5, lineHeight:1.5 }}>
-                  Kisi department ki call active hote hi ek output PLC ka bit <b>ON</b>, call band hone par <b>OFF</b>.
-                  <br /><b>Maintenance</b> & <b>Tool Room</b> ka bit <b>response (acknowledge)</b> aate hi off ho jaata hai;
-                  baaki (Quality / Material / …) call <b>band</b> hone par. (Ye alag config hai — ANDON reading isse alag chalti hai.)
-                </div>
-                <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginTop:12 }}>
+                {/* Lamba samjhaane wala paragraph hata diya — wahi baat ab neeche
+                    har bit ke saamne "Off kab" me likhi hai, jahan uski zaroorat
+                    hai.  Do jagah likhne se form bhara-bhara lagta tha. */}
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:9, marginTop:12 }}>
                   <div><label className="an-lbl">Department (call)</label>
                     <select className="an-in" style={{ width:"100%" }} value={outForm.department} onChange={(e) => setOutForm({ ...outForm, department: e.target.value })}>
                       <option value="">— select —</option>{depts.map((d) => <option key={d.id} value={d.name}>{d.name}</option>)}
                     </select>
-                    {outForm.department && <div style={{ fontSize:11, fontWeight:700, marginTop:3,
-                                                          color: outDeptOffAck(outForm.department) ? "#b45309" : "#0e7490" }}>
-                      {outDeptOffAck(outForm.department) ? "Bit off: response (acknowledge) pe" : "Bit off: call band hone pe"}
-                    </div>}
                   </div>
                   <div><label className="an-lbl">Output PLC IP</label><input className="an-in" style={{ width:"100%" }} value={outForm.plc_ip} onChange={(e) => setOutForm({ ...outForm, plc_ip: e.target.value })} placeholder="192.168.30.120" /></div>
                   <div><label className="an-lbl">Port</label><input className="an-in" style={{ width:"100%" }} type="number" value={outForm.plc_port} onChange={(e) => setOutForm({ ...outForm, plc_port: e.target.value })} placeholder="5007" /></div>
@@ -1023,34 +1021,34 @@ export default function AndonSystem() {
                   </div>
 
                   {/* labels — ek hi baar */}
-                  <div className="an-row" style={{ marginBottom:4 }}>
-                    <div style={{ flex:"0 0 26px" }} />
-                    <div style={{ flex:"0 0 100px" }}><label className="an-lbl">Type</label></div>
-                    <div style={{ flex:"0 0 170px" }}><label className="an-lbl">Bit no</label></div>
-                    <div style={{ flex:"1 1 200px" }}><label className="an-lbl">Off kab</label></div>
+                  <div className="an-row" style={{ marginBottom:3 }}>
+                    <div style={{ flex:"0 0 22px" }} />
+                    <div style={{ flex:"0 0 78px" }}><label className="an-lbl">Type</label></div>
+                    <div style={{ flex:"0 0 130px" }}><label className="an-lbl">Bit no</label></div>
+                    <div style={{ flex:"1 1 180px" }}><label className="an-lbl">Off kab</label></div>
                   </div>
 
                   {[
                     { n: 1, t: "bit_type", v: "bit_no", show: true,
-                      rule: outDeptOffAck(outForm.department) ? "response (ACK) aane par" : "call band hone par",
+                      rule: outDeptOffAck(outForm.department) ? "ACC hone par" : "breakdown band hone par",
                       color: outDeptOffAck(outForm.department) ? "#b45309" : "#0e7490", ph: "e.g. 1000" },
                     { n: 2, t: "bit2_type", v: "bit2_no", show: outDeptOffAck(outForm.department),
                       rule: "breakdown band hone par", color: "#0e7490", ph: "khali = nahi lagegi" },
                   ].filter((b) => b.show).map((b) => (
-                    <div key={b.n} className="an-row" style={{ alignItems:"center", marginBottom:7 }}>
-                      <div style={{ flex:"0 0 26px", fontSize:15, fontWeight:800, color:"#94a3b8" }}>{b.n}</div>
-                      <div style={{ flex:"0 0 100px" }}>
+                    <div key={b.n} className="an-row" style={{ alignItems:"center", marginBottom:6 }}>
+                      <div style={{ flex:"0 0 22px", fontSize:14, fontWeight:800, color:"#94a3b8" }}>{b.n}</div>
+                      <div style={{ flex:"0 0 78px" }}>
                         <select className="an-in" style={{ width:"100%" }} value={outForm[b.t] || "M"}
                                 onChange={(e) => setOutForm({ ...outForm, [b.t]: e.target.value })}>
                           {["M","Y","L","B","F","V","S"].map((x) => <option key={x} value={x}>{x}</option>)}
                         </select>
                       </div>
-                      <div style={{ flex:"0 0 170px" }}>
+                      <div style={{ flex:"0 0 130px" }}>
                         <input className="an-in" style={{ width:"100%" }} value={outForm[b.v] || ""}
                                onChange={(e) => setOutForm({ ...outForm, [b.v]: e.target.value })}
                                placeholder={b.ph} />
                       </div>
-                      <div style={{ flex:"1 1 200px", fontSize:12.5, fontWeight:700, color:b.color }}>
+                      <div style={{ flex:"1 1 180px", fontSize:12, fontWeight:700, color:b.color }}>
                         {b.rule}
                       </div>
                     </div>
@@ -1114,11 +1112,11 @@ export default function AndonSystem() {
                         </td>
                         <td style={{ fontSize:12, lineHeight:1.75 }}>
                           <div style={{ color: o.off_on_ack ? "#b45309" : "#0e7490", fontWeight:700 }}>
-                            {o.off_on_ack ? "Response pe" : "Call-end pe"}
+                            {o.off_on_ack ? "ACC hone par" : "Breakdown band hone par"}
                           </div>
                           {o.bit2_allowed && (
                             <div style={{ color: (o.bit2_no || "").trim() ? "#0e7490" : "#cbd5e1", fontWeight:700 }}>
-                              {(o.bit2_no || "").trim() ? "Call-end pe" : "—"}
+                              {(o.bit2_no || "").trim() ? "Breakdown band hone par" : "—"}
                             </div>
                           )}
                         </td>
