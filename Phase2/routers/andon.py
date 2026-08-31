@@ -643,7 +643,18 @@ def _ensure_conn(pool, retry, key, ip, port, series):
     if _time.monotonic() < retry.get(key, 0):            # backoff — abhi try mat karo
         return None
     p = int(port or 5007)
-    if not _reachable(ip, p, timeout=0.4):               # 4s block se bacho
+    # Probe ka timeout 1.5s — pehle 0.4s tha aur usne SUB PLC ka connection
+    # KABHI banne hi nahi diya.  Wajah: ye input PLC ek hi connection dete
+    # hain.  Slot khali ho to TCP connect ~15ms me ho jaata, par slot bhara ya
+    # abhi-abhi chhoda gaya ho to PLC ~520ms leta hai (naap kar dekha: YHB SUB
+    # 533/518/520ms, MAIN bhi 519-526ms).  0.4s par wo hamesha fail hota, phir
+    # 5s backoff, phir wahi — sub kabhi jud hi nahi paata aur model/fault
+    # chup-chaap khali reh jaate.
+    # MAIN isliye chalta tha kyunki uska connection ek baar (startup par, jab
+    # slot khali tha) ban gaya aur phir cache se chalta raha.
+    # Probe rakha hai (hataya nahi) taaki sach me mari hui PLC par har retry
+    # 4 second block na kare — bas timeout asli maap ke hisaab se kiya.
+    if not _reachable(ip, p, timeout=1.5):
         retry[key] = _time.monotonic() + _PLC_RETRY_SECS
         return None
     try:
