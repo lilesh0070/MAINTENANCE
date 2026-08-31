@@ -64,61 +64,29 @@ export const SUBPAGE_PARENT = {
   "maintenance-pm-yearly":    "maintenance-pm",
 };
 
-// ── Auth storage ───────────────────────────────────────────────────
-// Operator's policy (DEFAULT, badla nahi gaya): "har naya browser tab →
-// fresh login mandatory.  URL-only access without id/password should NEVER
-// reach a page."  sessionStorage token ko EK TAB tak rakhta hai — tab band =
-// logout, naya tab = phir login.
+// ── Auth storage = sessionStorage (per-tab) ────────────────────────
+// Operator's policy: "har naya browser tab → fresh login mandatory.
+// URL-only access without id/password should NEVER reach a page."
 //
-// 2026-08-31 — Ek APNI-MARZI ki chhoot jodi gayi: "Remember me".  Zaroorat ye
-// thi ki kuch screen hamesha khuli rehti hain — doosre app me iframe se laga
-// hua page, ya deewar par lagi TV — aur wahan roz-roz login maangna bekaar
-// hai.  User KHUD tick kare tabhi token localStorage me jaata hai (30 din).
-// Bina tick ke sab kuch pehle jaisa hi hai, yaani upar wali policy sirf tab
-// dheeli hoti hai jab koi jaan-boojh kar chune.
+// sessionStorage isolates the token to ONE browser tab.  Closing the
+// tab kills the session; opening a new tab → no token → Protected
+// route bounces to /login.  This blocks the URL-only-access path that
+// localStorage allowed (any tab on the same browser inherited the
+// token).  Old localStorage keys are cleared on first run for a clean
+// migration.
 const AUTH_KEYS = ["mes_token","mes_username","user_role","user_id","user_dept_slug"];
 (function migrateOldLocalStorage() {
   try {
-    // Remember kiya hua login ho to localStorage ko HAATH MAT LAGAO — warna
-    // har page-load par wahi token mit jaata jise bachana tha.
-    if (localStorage.getItem("mes_remember") === "1") return;
     for (const k of AUTH_KEYS) {
       if (localStorage.getItem(k) !== null) localStorage.removeItem(k);
     }
   } catch {}
 })();
 
-// Default: sessionStorage — token sirf USI TAB me, tab band = logout.  Ye
-// jaan-boojh kar hai (shared PC par koi doosra aakar khuli hui screen na paaye).
-//
-// "Remember me" chuna ho to localStorage — tab/browser band hone par bhi login
-// bacha rehta hai.  Ye un jagahon ke liye hai jahan screen hamesha khuli rehti
-// hai: doosre app me iframe se laga hua page, ya deewar par lagi TV.  Wahan har
-// baar login maangna bekaar hai.
-//
-// Padhte waqt DONO dekhte hain (session pehle) — isliye remember kiya hua login
-// naye tab me bhi chal jaata hai.
-const REMEMBER_FLAG = "mes_remember";
 const ss = {
-  get:    (k) => { try { return sessionStorage.getItem(k) ?? localStorage.getItem(k); }
-                   catch { return null; } },
-  set:    (k, v, remember) => {
-    try {
-      if (remember) { localStorage.setItem(k, v); sessionStorage.removeItem(k); }
-      else          { sessionStorage.setItem(k, v); localStorage.removeItem(k); }
-    } catch { /* private mode */ }
-  },
-  remove: (k) => { try { sessionStorage.removeItem(k); localStorage.removeItem(k); } catch {} },
-};
-const isRemembered = () => { try { return localStorage.getItem(REMEMBER_FLAG) === "1"; }
-                             catch { return false; } };
-// Login ke saare nishan hatao — session, localStorage, aur remember ka flag.
-// Teen jagah se bulaya jaata hai (do 401-handler + logout); ek jagah bhi
-// flag reh jaata to safai wala block khud ko rok deta aur purane keys pade
-// reh jaate.
-const clearAuthStorage = (keys) => {
-  for (const k of keys) { try { sessionStorage.removeItem(k); localStorage.removeItem(k); } catch { /* private mode */ } }
-  try { localStorage.removeItem(REMEMBER_FLAG); } catch { /* private mode */ }
+  get:    (k) => { try { return sessionStorage.getItem(k); } catch { return null; } },
+  set:    (k,v) => { try { sessionStorage.setItem(k, v); } catch {} },
+  remove: (k) => { try { sessionStorage.removeItem(k); } catch {} },
 };
 
 export function AuthProvider({ children }) {
@@ -145,10 +113,9 @@ export function AuthProvider({ children }) {
       // baked into canAccess() below.
       permissions:    me.permissions || {},
     });
-    const rem = isRemembered();
-    ss.set("user_role", me.role, rem);
-    ss.set("user_id", me.id, rem);
-    if (me.department_slug) ss.set("user_dept_slug", me.department_slug, rem);
+    ss.set("user_role", me.role);
+    ss.set("user_id", me.id);
+    if (me.department_slug) ss.set("user_dept_slug", me.department_slug);
     else ss.remove("user_dept_slug");
   };
 
@@ -163,7 +130,7 @@ export function AuthProvider({ children }) {
       try {
         const r = await fetch(`${API}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
         if (r.status === 401) {                       // genuine auth failure → logout
-          if (!cancelled) { setToken(""); clearAuthStorage(AUTH_KEYS); setLoading(false); }
+          if (!cancelled) { setToken(""); for (const k of AUTH_KEYS) ss.remove(k); setLoading(false); }
           return;
         }
         if (!r.ok) throw new Error(`me ${r.status}`); // transient → retry (keep session)
@@ -191,7 +158,7 @@ export function AuthProvider({ children }) {
         .then((r) => {
           if (r.status === 401) {                 // token invalid (force-logout / pw change)
             setToken(""); setUser(null);
-            clearAuthStorage(AUTH_KEYS);
+            for (const k of AUTH_KEYS) ss.remove(k);
             if (typeof window !== "undefined" && window.location) window.location.replace("/login");
           }
         })
@@ -201,11 +168,10 @@ export function AuthProvider({ children }) {
     return () => clearInterval(id);
   }, [token]);
 
-  const login = async (username, password, remember = false) => {
+  const login = async (username, password) => {
     const fd = new FormData();
     fd.append("username", username);
     fd.append("password", password);
-    fd.append("remember", remember ? "true" : "false");
     const res = await fetch(`${API}/api/auth/login`, { method: "POST", body: fd });
     if (!res.ok) {
       let msg = "Invalid credentials";
@@ -227,15 +193,10 @@ export function AuthProvider({ children }) {
     if (me) _setUserFromMe(me);
     else setUser({ id: data.user_id, username: data.username, role: data.role,
                    departmentId: null, departmentName: null, departmentSlug: null });
-    // remember hone par sab kuch localStorage me, warna session me (default)
-    try {
-      if (remember) localStorage.setItem(REMEMBER_FLAG, "1");
-      else          localStorage.removeItem(REMEMBER_FLAG);
-    } catch { /* private mode */ }
-    ss.set("mes_token",    data.access_token, remember);
-    ss.set("mes_username", data.username,     remember);
-    ss.set("user_role",    data.role,         remember);
-    ss.set("user_id",      data.user_id,      remember);
+    ss.set("mes_token",    data.access_token);
+    ss.set("mes_username", data.username);
+    ss.set("user_role",    data.role);
+    ss.set("user_id",      data.user_id);
     return data;
   };
 
@@ -247,7 +208,7 @@ export function AuthProvider({ children }) {
     }
     setToken("");
     setUser(null);
-    clearAuthStorage(AUTH_KEYS);
+    for (const k of AUTH_KEYS) ss.remove(k);
   };
 
   // Sirf `admin` → sab pages ka poora access.  Baaki designations
