@@ -178,17 +178,21 @@ export default function AndonSystem() {
     return r.status === 204 ? null : r.json();
   }, [token]);
 
-  const [tab, setTab] = useState("config");
+  const [tab, setTab] = useState("board");   // reload par pehla tab = Live Board
   const [cfg, setCfg] = useState("plc");            // plc | outputs
   const [msg, setMsg] = useState("");
   const flash = (m) => { setMsg(m); setTimeout(() => setMsg(""), 2500); };
 
   // Default/active tab ko accessible rakho: agar current tab ka access nahi
-  // (sub-key None), to board→config→reports me se pehle allowed tab par switch.
+  // (sub-key None), to tab-bar ke KRAM me pehle allowed tab par switch.
+  // List wahi rakhi hai jo tab-bar me hai — pehle sirf teen naam the, to jis
+  // user ke paas sirf Monitor ya Call History ka access hota uske liye koi
+  // chalta tab na milta aur khali screen reh jaati.
   // Guard (early-return + firstOk !== tab) loop rokta hai.
   useEffect(() => {
     if (canAccess(TAB_KEY[tab])) return;
-    const firstOk = ["board", "config", "reports"].find((t) => canAccess(TAB_KEY[t]));
+    const firstOk = ["board", "monitor", "faults", "calls", "config", "callout", "reports"]
+      .find((t) => canAccess(TAB_KEY[t]));
     if (firstOk && firstOk !== tab) setTab(firstOk);
   }, [tab, user]);   // eslint-disable-line react-hooks/exhaustive-deps
 
