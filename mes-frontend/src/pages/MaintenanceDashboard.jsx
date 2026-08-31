@@ -318,11 +318,17 @@ Wapas nahi aayegi.  Aage badhein?`)) return;
            TV the long "Maintenance Dashboard" title can never sit on top of the
            right-side controls (9:16 / 16:9 / Fullscreen).  Shrinks + ellipsis
            before it would ever overlap. */
-        .md-title { flex:0 1 auto; min-width:0; text-align:center; padding:0 14px;
+        /* flex:0 0 auto = title KABHI nahi sikudta, isliye "Maintenance
+           Dashboard" poora dikhta hai — TV par pehle ye "Maintenance Das…"
+           ho kar kat jaata tha.  Sikudne ka kaam ab right-side group karta
+           hai (neeche flex:0 1 auto), aur bachi hui jagah khali left spacer
+           kha jaata hai.  KPI page title ko absolute rakh kar bachata hai,
+           par wo tareeqa yahan nahi chalta: is topbar me controls zyada hain
+           aur absolute title unke UPAR chadh jaata. */
+        .md-title { flex:0 0 auto; text-align:center; padding:0 14px;
                     font-family:'Barlow Condensed',sans-serif;
                     font-size:34px; font-weight:800; color:#0f172a; letter-spacing:-.01em;
-                    pointer-events:none; white-space:nowrap;
-                    overflow:hidden; text-overflow:ellipsis; }
+                    pointer-events:none; white-space:nowrap; }
         .md-title span { color:${theme.accent}; }
         .md-user-pill { display:flex; align-items:center; gap:10px;
                          padding:6px 14px; border-radius:99px;
@@ -378,15 +384,24 @@ Wapas nahi aayegi.  Aage badhein?`)) return;
           <div className="md-title">
             {titleLeft}<span>{titleRight}</span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "1 1 0", justifyContent: "flex-end", minWidth: 0 }}>
+          {/* flex:0 1 auto — ye group jagah kam padne par sikudta hai, title nahi. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "0 1 auto", justifyContent: "flex-end", minWidth: 0 }}>
             <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
               <button onClick={() => setAspect("9:16")} className="md-fs-btn" title="Portrait 9:16"
                       style={portrait ? { background: theme.accent, color: "#fff", borderColor: theme.accent } : {}}>9:16</button>
               <button onClick={() => setAspect("16:9")} className="md-fs-btn" title="Wide 16:9"
                       style={!portrait ? { background: theme.accent, color: "#fff", borderColor: theme.accent } : {}}>16:9</button>
             </div>
-            <button onClick={goPageFullscreen} className="md-fs-btn" title="Fullscreen (TV)">⛶ Fullscreen</button>
-            {user?.username && (
+            {/* Portrait (9:16 wall TV) par jagah sabse tang hoti hai.  Wahan
+                "Fullscreen" ka shabd aur "Signed in as ..." pill hata dete
+                hain — dono deewar par lagi TV par kisi kaam ke nahi, aur
+                dono milkar ~250px kha jaate the, jiski wajah se title
+                kat-ta tha.  Button ka kaam waisa hi rehta hai (tooltip me
+                naam bhi). */}
+            <button onClick={goPageFullscreen} className="md-fs-btn" title="Fullscreen (TV)">
+              {portrait ? "⛶" : "⛶ Fullscreen"}
+            </button>
+            {!portrait && user?.username && (
               <div className="md-user-pill">
                 Signed in as <b>{user.username}</b>
               </div>
