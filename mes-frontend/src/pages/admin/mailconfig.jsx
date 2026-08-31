@@ -143,12 +143,15 @@ export const PAGE_PERM_GROUPS = [
     { key: "maintenance-spare",          label: "Spare" },
     { key: "machine-master",             label: "Machine Master (writes are admin-only)" },
   ]},
-  // Admin config panel.  Grant se sidebar me "Maintenance Panel" dikhega
-  // (KPI Targets / Slip Threshold / PM Check Sheet / Machine DMC config).
-  // NOTE: iske andar "Users & Access" tab HAMESHA admin-only rehta hai —
-  // grant milne par bhi non-admin ko user-management nahi dikhta.
+  // Admin config panel.  Grant se sidebar me "Maintenance Panel" dikhega.
+  // NOTE: iske andar "Users & Access" aur "Login History" HAMESHA admin-only
+  // hain — grant milne par bhi non-admin ko user-management nahi dikhta.
   { group: "Admin Panel", items: [
-    { key: "admin-maintenance", label: "Maintenance Panel (config — Users tab admin-only)" },
+    { key: "admin-maintenance", label: "Maintenance Panel (Users & Login History — admin-only)" },
+    // Document Update: KPI Targets / Slip Threshold / PM Check Sheet /
+    // Machine DMC / Breakdown Mail.  Pehle ye Maintenance Panel ke tab the,
+    // isliye jinke paas "admin-maintenance" tha unhe ab ye ALAG se dena hoga.
+    { key: "document-update",   label: "Document Update (KPI Targets · Slip Threshold · PM Check Sheet · Machine DMC · Breakdown Mail)" },
   ]},
 ];
 

@@ -22,6 +22,9 @@ const NAV_ITEMS = [
     section: "Admin",
     items: [
       { key: "admin-maintenance", label: "Maintenance Panel", icon: "🛠", path: "/admin/maintenance" },
+      // Document Update — KPI Targets / Slip Threshold / PM Check Sheet /
+      // Machine DMC / Breakdown Mail.  Pehle ye Maintenance Panel ke tab the.
+      { key: "document-update",   label: "Document Update", icon: "📄", path: "/document-update" },
     ],
   },
 ];
@@ -126,6 +129,7 @@ export default function SlideNav() {
     if (path === "/admin")                   return location.pathname === "/admin";
     if (path === "/admin/production")        return location.pathname === "/admin/production";
     if (path === "/admin/maintenance")       return location.pathname === "/admin/maintenance";
+    if (path === "/document-update")         return location.pathname === "/document-update";
     if (path === "/admin/quality")           return location.pathname === "/admin/quality";
     if (path === "/department-panel")        return location.pathname.startsWith("/department-panel");
     if (path === "/maintenance-dashboard")   return location.pathname.startsWith("/maintenance-dashboard");

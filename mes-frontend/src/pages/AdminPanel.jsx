@@ -21,11 +21,14 @@ import { LoginHistoryPage } from "./admin/loginhistory";
 export function renderAdminTab(sectionKey, tabKey, props) {
   const t = props || {};
   switch (`${sectionKey}/${tabKey}`) {
-    case "maintenance/kpitarget":    return <KpiTargetsPage  {...t} readOnly={false} />;
-    case "maintenance/slipthreshold": return <SlipThresholdPage {...t} />;
-    case "maintenance/breakdownmail": return <BreakdownMailPage {...t} />;
-    case "maintenance/pmchecksheet": return <PMCheckSheetAdmin {...t} />;
-    case "maintenance/machinedmc":   return <MachineDMCAdmin   {...t} />;
+    // Ye paanch 2026-08-31 se "Document Update" section me hain (pehle
+    // "Maintenance" me the).  Component, props aur data bilkul wahi hain —
+    // sirf section-key badli hai, isliye koi logic ya data path nahi toota.
+    case "documentupdate/kpitarget":     return <KpiTargetsPage  {...t} readOnly={false} />;
+    case "documentupdate/slipthreshold": return <SlipThresholdPage {...t} />;
+    case "documentupdate/breakdownmail": return <BreakdownMailPage {...t} />;
+    case "documentupdate/pmchecksheet":  return <PMCheckSheetAdmin {...t} />;
+    case "documentupdate/machinedmc":    return <MachineDMCAdmin   {...t} />;
     case "admin/users":
     case "maintenance/users": return <UsersPage       {...t} />;
     case "maintenance/loginhistory": return <LoginHistoryPage {...t} />;
@@ -126,13 +129,21 @@ export function AdminShell({
     ...s, tabs: s.tabs.filter(t => !t.adminOnly || isAdmin),
   }));
 
-  // URL hash format: #<section>/<tab> e.g. "#maintenance/pokayoke"
+  // URL hash format: #<section>/<tab> e.g. "#documentupdate/kpitarget"
+  //
+  // KHAALI SECTION ka bachav: Maintenance section me ab sirf adminOnly tab
+  // (Users & Access / Login History) bache hain.  Non-admin ke liye upar wala
+  // filter unhe hata deta hai, to `sec.tabs` KHAALI ho jaati hai aur pehle
+  // `sec.tabs[0].key` seedha crash karta tha (safed screen).  Isliye har jagah
+  // tab ko optional maan kar chalte hain aur khaali hone par saaf sandesh
+  // dikhate hain.
   const parseHash = () => {
     const h = (typeof window !== "undefined" ? window.location.hash : "").replace(/^#/, "");
     const [s, t] = h.split("/");
     const sec = sections.find(x => x.key === s) || sections[0];
+    if (!sec) return { section: "", tab: "" };
     const tab = sec.tabs.find(x => x.key === t) || sec.tabs[0];
-    return { section: sec.key, tab: tab.key };
+    return { section: sec.key, tab: tab ? tab.key : "" };
   };
   const [active, setActive] = useState(parseHash);
 
@@ -154,7 +165,7 @@ export function AdminShell({
     return () => window.removeEventListener("hashchange", onHash);
   }, [sections]); // eslint-disable-line
 
-  const sec = sections.find(s => s.key === active.section) || sections[0];
+  const sec = sections.find(s => s.key === active.section) || sections[0] || { key:"", tabs:[], color:accent };
   // Always prefer the caller-supplied accent (which is theme.accent —
   // role-aware) over the section's hardcoded color.  Admin's blue then
   // overrides green/red/yellow when admin views a Production /
@@ -166,7 +177,7 @@ export function AdminShell({
   const onPickSection = (k) => {
     const newSec = sections.find(s => s.key === k);
     if (!newSec) return;
-    setActive({ section: k, tab: newSec.tabs[0].key });
+    setActive({ section: k, tab: newSec.tabs[0]?.key || "" });
   };
 
   // When the shell is rendered with exactly ONE section we hide the
@@ -220,7 +231,20 @@ export function AdminShell({
         </div>
 
         <div className="admin-body">
-          {renderAdminTab(active.section, active.tab, { toast: showToast, readOnly })}
+          {sec.tabs.length === 0 ? (
+            <Card>
+              <div style={{ padding:"40px 30px", textAlign:"center" }}>
+                <div style={{ fontSize:40, marginBottom:12 }}>🔒</div>
+                <div style={{ fontSize:15, fontWeight:700, color:"#0f172a", marginBottom:6 }}>
+                  Yahan aapke liye koi tab nahi hai
+                </div>
+                <div style={{ fontSize:12, color:"#64748b", maxWidth:460, margin:"0 auto" }}>
+                  Is panel ke saare tab sirf admin ke liye hain.  Zaroorat ho to
+                  admin se access maangein.
+                </div>
+              </div>
+            </Card>
+          ) : renderAdminTab(active.section, active.tab, { toast: showToast, readOnly })}
         </div>
       </div>
 
@@ -281,6 +305,13 @@ export function ProductionAdminPanel() {
 }
 export function MaintenanceAdminPanel() {
   return <_RoleScopedShell title="Maintenance Panel" sectionKey="maintenance" editable accessKey="admin-maintenance" />;
+}
+// Document Update — wahi paanch config screens jo pehle Maintenance Panel ke
+// andar thin.  `editable` + apni access key, taaki jis maintenance user ko
+// "full" mile wo edit kar sake aur "read" wale ko read-only mile — bilkul
+// Maintenance Panel jaisa hi vyavhaar.
+export function DocumentUpdatePanel() {
+  return <_RoleScopedShell title="Document Update" sectionKey="documentupdate" editable accessKey="document-update" />;
 }
 export function QualityAdminPanel() {
   return <_RoleScopedShell title="Quality Panel"     sectionKey="quality" />;

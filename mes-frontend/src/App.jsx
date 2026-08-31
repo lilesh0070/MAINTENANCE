@@ -43,7 +43,7 @@ import DMCMaintenanceVerify  from "./pages/DMCMaintenanceVerify";
 import DMCNgPoint            from "./pages/DMCNgPoint";
 import Spare                 from "./pages/Spare";
 import MachineMaster         from "./pages/MachineMaster";
-import { MaintenanceAdminPanel } from "./pages/AdminPanel";
+import { MaintenanceAdminPanel, DocumentUpdatePanel } from "./pages/AdminPanel";
 
 // ─── Protected Route ───────────────────────────────────────────────────────
 // Redirects to /login if not authenticated, or to /dashboard if the role
@@ -284,9 +284,16 @@ function AppRoutes() {
         <Protected requiredAccess="maintenance-spare"><Spare /></Protected>
       } />
 
-      {/* Maintenance admin panel (KPI targets, mail config, PY master, etc.). */}
+      {/* Maintenance admin panel (Users & Access / Login History — admin-only). */}
       <Route path="/admin/maintenance" element={
         <Protected requiredAccess="admin-maintenance"><MaintenanceAdminPanel /></Protected>
+      } />
+
+      {/* Document Update — KPI Targets / Slip Threshold / PM Check Sheet /
+          Machine DMC / Breakdown Mail.  Ye paanch pehle Maintenance Panel ke
+          andar the; sirf jagah badli hai, andar ka code aur data wahi hai. */}
+      <Route path="/document-update" element={
+        <Protected requiredAccess="document-update"><DocumentUpdatePanel /></Protected>
       } />
 
       {/* Catch-all → root (other-department links from SlideNav land here). */}
