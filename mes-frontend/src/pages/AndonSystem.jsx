@@ -1008,31 +1008,49 @@ export default function AndonSystem() {
                     <select className="an-in" style={{ width:"100%" }} value={outForm.plc_series || "Q"} onChange={(e) => setOutForm({ ...outForm, plc_series: e.target.value })}>
                       {["Q","FX5U","iQ-R","L"].map((s) => <option key={s} value={s}>{s}</option>)}
                     </select></div>
-                  <div><label className="an-lbl">Bit type</label>
-                    <select className="an-in" style={{ width:"100%" }} value={outForm.bit_type} onChange={(e) => setOutForm({ ...outForm, bit_type: e.target.value })}>
-                      {["M","Y","L","B","F","V","S"].map((s) => <option key={s} value={s}>{s}</option>)}
-                    </select></div>
-                  <div><label className="an-lbl">Bit no</label><input className="an-in" style={{ width:"100%" }} value={outForm.bit_no} onChange={(e) => setOutForm({ ...outForm, bit_no: e.target.value })} placeholder="e.g. 100" /></div>
                 </div>
 
-                {/* Doosra bit — marzi ka.  Pehla bit Maintenance/Tool Room me
-                    RESPONSE aate hi off ho jaata hai; ye wala tab tak ON rehta
-                    hai jab tak breakdown POORA BAND na ho.  Khali chhoda to
-                    kuch hota hi nahi — purani mapping waisi hi chalti hai. */}
-                <div className="an-row" style={{ marginTop:14, paddingTop:12, borderTop:"1px dashed #cbd5e1" }}>
-                  <div style={{ flex:"1 1 100%", marginBottom:2 }}>
-                    <b style={{ fontSize:13 }}>Doosra bit — <span style={{ color:"#0e7490" }}>breakdown band hone par OFF</span></b>
-                    <div style={{ fontSize:11.5, color:"#64748b", marginTop:2 }}>
-                      Marzi ka. Pehla bit <b>response</b> par off hota hai; ye tab tak ON
-                      rehta hai jab tak us department ki <b>aakhri call band</b> na ho jaye.
-                      Khali chhod dein to nahi lagega.
-                    </div>
+                {/* ── BITS — ek numbered list ──────────────────────────────
+                    Pehle ye do alag khaane the ("Bit no" aur "Bit 2 no") aur
+                    dekhne wale ko samajh hi nahi aata tha ki kaunsa kis kaam
+                    ka hai.  Ab saaf list hai: har bit ka SERIAL, uska number,
+                    aur uske saamne likha hua ki wo KAB OFF hoga. */}
+                <div style={{ marginTop:14, paddingTop:12, borderTop:"1px dashed #cbd5e1" }}>
+                  <b style={{ fontSize:13 }}>Bits</b>
+                  <div style={{ fontSize:11.5, color:"#64748b", margin:"2px 0 8px" }}>
+                    Dono ek saath ON hote hain jab call aati hai — OFF alag-alag hote hain.
+                    Doosri bit na chahiye to uska number khali chhod dein.
                   </div>
-                  <div><label className="an-lbl">Bit 2 type</label>
-                    <select className="an-in" style={{ width:"100%" }} value={outForm.bit2_type || "M"} onChange={(e) => setOutForm({ ...outForm, bit2_type: e.target.value })}>
-                      {["M","Y","L","B","F","V","S"].map((s2) => <option key={s2} value={s2}>{s2}</option>)}
-                    </select></div>
-                  <div><label className="an-lbl">Bit 2 no</label><input className="an-in" style={{ width:"100%" }} value={outForm.bit2_no || ""} onChange={(e) => setOutForm({ ...outForm, bit2_no: e.target.value })} placeholder="khali = nahi lagega" /></div>
+
+                  {[
+                    { n: 1, t: "bit_type",  v: "bit_no",
+                      rule: outDeptOffAck(outForm.department) ? "response (ACK) aane par OFF" : "call band hone par OFF",
+                      color: outDeptOffAck(outForm.department) ? "#b45309" : "#0e7490", ph: "e.g. 1000" },
+                    { n: 2, t: "bit2_type", v: "bit2_no",
+                      rule: "breakdown BAND hone par OFF", color: "#0e7490", ph: "khali = nahi lagegi" },
+                  ].map((b) => (
+                    <div key={b.n} className="an-row" style={{ alignItems:"flex-end", marginBottom:8 }}>
+                      <div style={{ flex:"0 0 26px", fontSize:15, fontWeight:800, color:"#94a3b8", paddingBottom:8 }}>
+                        {b.n}
+                      </div>
+                      <div style={{ flex:"0 0 110px" }}>
+                        <label className="an-lbl">Type</label>
+                        <select className="an-in" style={{ width:"100%" }} value={outForm[b.t] || "M"}
+                                onChange={(e) => setOutForm({ ...outForm, [b.t]: e.target.value })}>
+                          {["M","Y","L","B","F","V","S"].map((x) => <option key={x} value={x}>{x}</option>)}
+                        </select>
+                      </div>
+                      <div style={{ flex:"1 1 150px" }}>
+                        <label className="an-lbl">Bit no</label>
+                        <input className="an-in" style={{ width:"100%" }} value={outForm[b.v] || ""}
+                               onChange={(e) => setOutForm({ ...outForm, [b.v]: e.target.value })}
+                               placeholder={b.ph} />
+                      </div>
+                      <div style={{ flex:"1 1 210px", fontSize:12, fontWeight:700, color:b.color, paddingBottom:9 }}>
+                        {b.rule}
+                      </div>
+                    </div>
+                  ))}
                 </div>
                 <div className="an-row" style={{ marginTop:12 }}>
                   <label style={{ fontSize:13, fontWeight:700, display:"flex", alignItems:"center", gap:6 }}>
@@ -1068,28 +1086,24 @@ export default function AndonSystem() {
                       <tr key={o.id}>
                         <td style={{ fontWeight:700 }}>{o.department}</td>
                         <td style={{ fontFamily:"monospace" }}>{o.plc_ip}:{o.plc_port}<span style={{ marginLeft:6, fontSize:10, fontWeight:700, color:"#64748b", background:"#f1f5f9", padding:"1px 6px", borderRadius:99 }}>{o.plc_series}</span></td>
-                        <td style={{ fontFamily:"monospace", fontWeight:700 }}>
-                          <span title="Pehla bit — response par OFF">{o.bit_type}{o.bit_no}</span>
-                          {(o.bit2_no || "").trim() ? (
-                            <span style={{ display:"block", fontSize:11.5, color:"#0e7490", fontWeight:800, marginTop:3 }}
-                                  title="Doosra bit — breakdown band hone par OFF">
-                              <span style={{ background:"#cffafe", color:"#0e7490", borderRadius:4,
-                                             padding:"0 4px", marginRight:5, fontSize:9.5, fontWeight:800 }}>2nd</span>
-                              {o.bit2_type || "M"}{o.bit2_no}
-                            </span>
-                          ) : (
-                            <span style={{ display:"block", fontSize:10.5, color:"#cbd5e1", fontWeight:700, marginTop:3 }}>
-                              2nd bit nahi
-                            </span>
-                          )}
+                        {/* Dono bit numbered lines me — har row ke chaar khaane
+                            (Bit / Off trigger / Program bit / PLC bit) ek jaisi
+                            do lines dikhate hain, isliye 1 aur 2 aapas me sidhe
+                            me padhe jaate hain. */}
+                        <td style={{ fontFamily:"monospace", fontWeight:700, lineHeight:1.75 }}>
+                          <div><span style={{ color:"#94a3b8", marginRight:6 }}>1</span>{o.bit_type}{o.bit_no}</div>
+                          <div style={{ color: (o.bit2_no || "").trim() ? "#0e7490" : "#cbd5e1" }}>
+                            <span style={{ color:"#94a3b8", marginRight:6 }}>2</span>
+                            {(o.bit2_no || "").trim() ? `${o.bit2_type || "M"}${o.bit2_no}` : "—"}
+                          </div>
                         </td>
-                        <td style={{ fontSize:12 }}>
-                          {o.off_on_ack ? "Response pe" : "Call-end pe"}
-                          {(o.bit2_no || "").trim() && (
-                            <span style={{ display:"block", fontSize:11, color:"#0e7490", fontWeight:700, marginTop:2 }}>
-                              Call-end pe
-                            </span>
-                          )}
+                        <td style={{ fontSize:12, lineHeight:1.75 }}>
+                          <div style={{ color: o.off_on_ack ? "#b45309" : "#0e7490", fontWeight:700 }}>
+                            {o.off_on_ack ? "Response pe" : "Call-end pe"}
+                          </div>
+                          <div style={{ color: (o.bit2_no || "").trim() ? "#0e7490" : "#cbd5e1", fontWeight:700 }}>
+                            {(o.bit2_no || "").trim() ? "Call-end pe" : "—"}
+                          </div>
                         </td>
                         <td>
                           <span style={{ display:"inline-flex", alignItems:"center", gap:7, fontWeight:700, fontSize:12,
@@ -1110,35 +1124,36 @@ export default function AndonSystem() {
                         </td>
                         {/* PROGRAM BIT = software ne kya tay kiya (khuli calls se).  Ye hamesha
                             pata hota hai — PLC se baat na ho tab bhi. */}
-                        <td>
-                          {o.should_be_on ? <span style={{ color:"#16a34a", fontWeight:800 }}>● ON</span>
-                           : <span style={{ color:"#94a3b8", fontWeight:700 }}>OFF</span>}
-                          {o.should_be_on2 != null && (
-                            <span style={{ display:"block", fontSize:11, marginTop:2, fontWeight:800,
-                                           color: o.should_be_on2 ? "#0e7490" : "#94a3b8" }}>
-                              {o.should_be_on2 ? "● ON" : "OFF"}
-                            </span>
-                          )}
+                        <td style={{ lineHeight:1.75, fontWeight:800 }}>
+                          <div style={{ color: o.should_be_on ? "#16a34a" : "#94a3b8" }}>
+                            {o.should_be_on ? "● ON" : "OFF"}
+                          </div>
+                          <div style={{ color: o.should_be_on2 == null ? "#cbd5e1"
+                                             : o.should_be_on2 ? "#16a34a" : "#94a3b8" }}>
+                            {o.should_be_on2 == null ? "—" : (o.should_be_on2 ? "● ON" : "OFF")}
+                          </div>
                         </td>
-                        {/* PLC BIT = PLC par ASLI bit, likhne ke baad wapas padh kar.  Dono alag
-                            dikhane se turant pata chalta hai galti kis taraf hai: program ON aur
-                            PLC OFF = likha to gaya par PLC tak utra nahi (pending). */}
-                        <td>
-                          {o.bit_on === true ? <span style={{ color:"#16a34a", fontWeight:800 }}>● ON</span>
-                           : o.bit_on === false ? <span style={{ color:"#94a3b8", fontWeight:700 }}>OFF</span>
-                           : <span style={{ color:"#cbd5e1" }}>—</span>}
-                          {o.should_be_on && o.bit_on !== true && (
-                            <span style={{ display:"block", fontSize:10, color:"#b45309", fontWeight:700, whiteSpace:"nowrap" }}>
-                              {o.bit_on === false ? "PLC pe pending" : "PLC padha nahi ja raha"}
-                            </span>
-                          )}
-                          {(o.bit2_no || "").trim() && (
-                            <span style={{ display:"block", fontSize:11, marginTop:2, fontWeight:800,
-                                           color: o.bit2_on === true ? "#0e7490"
-                                                : o.bit2_on === false ? "#94a3b8" : "#cbd5e1" }}>
-                              {o.bit2_on === true ? "● ON" : o.bit2_on === false ? "OFF" : "—"}
-                            </span>
-                          )}
+                        <td style={{ lineHeight:1.75, fontWeight:800 }}>
+                          <div style={{ color: o.bit_on === true ? "#16a34a"
+                                             : o.bit_on === false ? "#94a3b8" : "#cbd5e1" }}>
+                            {o.bit_on === true ? "● ON" : o.bit_on === false ? "OFF" : "—"}
+                            {o.should_be_on && o.bit_on !== true && (
+                              <span style={{ fontSize:10, color:"#b45309", fontWeight:700, marginLeft:6, whiteSpace:"nowrap" }}>
+                                {o.bit_on === false ? "pending" : "padha nahi ja raha"}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ color: !(o.bit2_no || "").trim() ? "#cbd5e1"
+                                             : o.bit2_on === true ? "#16a34a"
+                                             : o.bit2_on === false ? "#94a3b8" : "#cbd5e1" }}>
+                            {!(o.bit2_no || "").trim() ? "—"
+                              : o.bit2_on === true ? "● ON" : o.bit2_on === false ? "OFF" : "—"}
+                            {o.should_be_on2 && o.bit2_on !== true && (
+                              <span style={{ fontSize:10, color:"#b45309", fontWeight:700, marginLeft:6, whiteSpace:"nowrap" }}>
+                                {o.bit2_on === false ? "pending" : "padha nahi ja raha"}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td><span className="an-chip" style={{ padding:"2px 9px", background: o.enabled ? "#dcfce7" : "#fee2e2", color: o.enabled ? "#16a34a" : "#dc2626" }}>{o.enabled ? "Enabled" : "Disabled"}</span></td>
                         <td style={{ whiteSpace:"nowrap" }}>
