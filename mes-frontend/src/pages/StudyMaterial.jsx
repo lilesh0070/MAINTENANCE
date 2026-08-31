@@ -138,6 +138,22 @@ export default function StudyMaterial() {
     return g;
   }, [shown]);
 
+  // Kaunsi category khuli hai.  Default: SIRF wahi jisme abhi chuna hua topic
+  // hai — 61 topic ki poori flat list bahut lambi ho jaati thi.  Baaki band.
+  const [openCats, setOpenCats] = useState(() => new Set());
+  const toggleCat = (c) => setOpenCats((prev) => {
+    const n = new Set(prev);
+    if (n.has(c)) n.delete(c); else n.add(c);
+    return n;
+  });
+  // Chuna hua topic jis category me hai, wo apne aap khul jaye (search se ya
+  // pehli baar aane par bhi) — warna user ko dikhta hai ki kuch chuna hua hai
+  // par list me wo mil hi nahi raha.
+  useEffect(() => {
+    const cur = rows.find((r) => r.id === pickId);
+    if (cur?.category) setOpenCats((prev) => (prev.has(cur.category) ? prev : new Set(prev).add(cur.category)));
+  }, [pickId, rows]);
+
   const cats = useMemo(
     () => Array.from(new Set(rows.map((r) => r.category || "General"))).sort(),
     [rows]);
@@ -202,6 +218,15 @@ export default function StudyMaterial() {
                      font-size:13px; font-family:'Barlow',sans-serif; color:#0f172a; box-sizing:border-box; }
         .sm-cat { font-size:10px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; color:#94a3b8;
                   padding:12px 16px 5px; }
+        .sm-cat-btn { display:flex; align-items:center; gap:8px; width:100%; text-align:left;
+                      border:none; background:none; cursor:pointer; font-family:'Barlow',sans-serif;
+                      padding:11px 16px 8px; }
+        .sm-cat-btn:hover { color:#475569; background:#f8fafc; }
+        .sm-cat-btn.open { color:#64748b; }
+        .sm-cat-arrow { font-size:9px; width:9px; flex:0 0 auto; }
+        .sm-cat-name { flex:1 1 auto; }
+        .sm-cat-n { flex:0 0 auto; background:#e2e8f0; color:#475569; border-radius:99px;
+                    padding:1px 7px; font-size:10px; font-weight:800; letter-spacing:0; }
         .sm-item { display:block; width:100%; text-align:left; border:none; background:none; cursor:pointer;
                    padding:9px 16px; font-size:13px; font-weight:600; color:#334155; font-family:'Barlow',sans-serif;
                    border-left:3px solid transparent; }
@@ -278,18 +303,29 @@ export default function StudyMaterial() {
             {!loading && shown.length === 0 && (
               <div className="sm-empty">{rows.length ? "Kuch nahi mila." : "Abhi koi topic nahi."}</div>
             )}
-            {!loading && groups.map((g) => (
-              <div key={g.cat}>
-                <div className="sm-cat">{g.cat}</div>
-                {g.items.map((r) => (
-                  <button key={r.id}
-                          className={"sm-item" + (r.id === pickId ? " on" : "") + (r.active === false ? " sm-off" : "")}
-                          onClick={() => { setPickId(r.id); setForm(null); }}>
-                    {r.title}{r.active === false ? "  (hidden)" : ""}
+            {!loading && groups.map((g) => {
+              // Search chalu ho to sab khula rakho — warna nateeje band
+              // category ke andar chhup jaate aur "kuch mila hi nahi" lagta.
+              const open = !!q.trim() || openCats.has(g.cat);
+              return (
+                <div key={g.cat}>
+                  <button className={"sm-cat sm-cat-btn" + (open ? " open" : "")}
+                          onClick={() => toggleCat(g.cat)}
+                          title={open ? "Band karein" : "Kholein"}>
+                    <span className="sm-cat-arrow">{open ? "▾" : "▸"}</span>
+                    <span className="sm-cat-name">{g.cat}</span>
+                    <span className="sm-cat-n">{g.items.length}</span>
                   </button>
-                ))}
-              </div>
-            ))}
+                  {open && g.items.map((r) => (
+                    <button key={r.id}
+                            className={"sm-item" + (r.id === pickId ? " on" : "") + (r.active === false ? " sm-off" : "")}
+                            onClick={() => { setPickId(r.id); setForm(null); }}>
+                      {r.title}{r.active === false ? "  (hidden)" : ""}
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
           </div>
 
           {/* ── right: matter, ya admin ka form ── */}
