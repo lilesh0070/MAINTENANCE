@@ -1247,8 +1247,14 @@ def _andon_output_write_once():
         # bit2_no khali ho to kuch karte hi nahi — purani mappings waisi hi
         # chalti rehti hain.  Isi connection par likhte hain, isliye koi naya
         # socket nahi khulta.
+        # Doosra bit SIRF Maintenance / Tool Room ke liye hai — unhi ka bit1
+        # RESPONSE par girta hai, isliye "kaam khatam hua ya nahi" wali alag
+        # nishani chahiye hoti hai.  Quality / Material / Model Setup / Other
+        # Loss ka bit1 pehle se call BAND hone par hi girta hai, to unke liye
+        # bit2 wahi cheez dobara karega — bekaar, aur ek aur bit bina wajah
+        # PLC par likha jaata.  Isliye yahan rok di.
         want2 = actual2 = None
-        if (m.get("bit2_no") or "").strip():
+        if (m.get("bit2_no") or "").strip() and _dept_off_on_ack(m["department"]):
             want2 = _want_bit(m["department"], live, on_close=True)
             actual2 = _out_write_bit(m["plc_ip"], m["plc_port"], m["plc_series"],
                                      m["bit2_type"] or "M", m["bit2_no"], want2)
@@ -1363,8 +1369,11 @@ def list_call_outputs(user=Depends(get_current_user)):
         # hisaab hote to screen "should be on" dikhati aur bit ON hota hi nahi.
         r["should_be_on"] = _want_bit(r["department"], live)
         # bit2 ka apna faisla — call BAND hone par hi girta hai
+        # bit2 sirf Maintenance/Tool Room par — writer ki shart se milta-julta
+        r["bit2_allowed"] = bool(r["off_on_ack"])
         r["should_be_on2"] = (_want_bit(r["department"], live, on_close=True)
-                              if (r.get("bit2_no") or "").strip() else None)
+                              if ((r.get("bit2_no") or "").strip() and r["off_on_ack"])
+                              else None)
         # bit_on / online = ASLI bit — jise ACTIVE writer ne likha + read-back karke DB
         # me persist kiya.  Har backend (dev/prod) YAHI padhta, to "Bit now" har jagah
         # SACH.  Koi active writer nahi (last_at >20s puraana) → pata nahi ("—").

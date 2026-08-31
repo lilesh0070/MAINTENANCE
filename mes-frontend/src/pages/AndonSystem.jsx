@@ -1010,48 +1010,61 @@ export default function AndonSystem() {
                     </select></div>
                 </div>
 
-                {/* ── BITS — ek numbered list ──────────────────────────────
-                    Pehle ye do alag khaane the ("Bit no" aur "Bit 2 no") aur
-                    dekhne wale ko samajh hi nahi aata tha ki kaunsa kis kaam
-                    ka hai.  Ab saaf list hai: har bit ka SERIAL, uska number,
-                    aur uske saamne likha hua ki wo KAB OFF hoga. */}
+                {/* ── BITS ─────────────────────────────────────────────────
+                    Label sirf EK BAAR upar (pehle har row par TYPE/BIT NO
+                    dohra rahe the aur bhadda lag raha tha).
+                    Doosri bit SIRF Maintenance / Tool Room ke liye — baaki
+                    department ka bit pehle se call band hone par hi girta hai,
+                    to unke liye doosri bit wahi cheez dobara karegi. */}
                 <div style={{ marginTop:14, paddingTop:12, borderTop:"1px dashed #cbd5e1" }}>
                   <b style={{ fontSize:13 }}>Bits</b>
-                  <div style={{ fontSize:11.5, color:"#64748b", margin:"2px 0 8px" }}>
-                    Dono ek saath ON hote hain jab call aati hai — OFF alag-alag hote hain.
-                    Doosri bit na chahiye to uska number khali chhod dein.
+                  <div style={{ fontSize:11.5, color:"#64748b", margin:"2px 0 10px" }}>
+                    Call aate hi ON. OFF alag-alag hota hai — neeche likha hai.
+                  </div>
+
+                  {/* labels — ek hi baar */}
+                  <div className="an-row" style={{ marginBottom:4 }}>
+                    <div style={{ flex:"0 0 26px" }} />
+                    <div style={{ flex:"0 0 100px" }}><label className="an-lbl">Type</label></div>
+                    <div style={{ flex:"0 0 170px" }}><label className="an-lbl">Bit no</label></div>
+                    <div style={{ flex:"1 1 200px" }}><label className="an-lbl">Off kab</label></div>
                   </div>
 
                   {[
-                    { n: 1, t: "bit_type",  v: "bit_no",
-                      rule: outDeptOffAck(outForm.department) ? "response (ACK) aane par OFF" : "call band hone par OFF",
+                    { n: 1, t: "bit_type", v: "bit_no", show: true,
+                      rule: outDeptOffAck(outForm.department) ? "response (ACK) aane par" : "call band hone par",
                       color: outDeptOffAck(outForm.department) ? "#b45309" : "#0e7490", ph: "e.g. 1000" },
-                    { n: 2, t: "bit2_type", v: "bit2_no",
-                      rule: "breakdown BAND hone par OFF", color: "#0e7490", ph: "khali = nahi lagegi" },
-                  ].map((b) => (
-                    <div key={b.n} className="an-row" style={{ alignItems:"flex-end", marginBottom:8 }}>
-                      <div style={{ flex:"0 0 26px", fontSize:15, fontWeight:800, color:"#94a3b8", paddingBottom:8 }}>
-                        {b.n}
-                      </div>
-                      <div style={{ flex:"0 0 110px" }}>
-                        <label className="an-lbl">Type</label>
+                    { n: 2, t: "bit2_type", v: "bit2_no", show: outDeptOffAck(outForm.department),
+                      rule: "breakdown band hone par", color: "#0e7490", ph: "khali = nahi lagegi" },
+                  ].filter((b) => b.show).map((b) => (
+                    <div key={b.n} className="an-row" style={{ alignItems:"center", marginBottom:7 }}>
+                      <div style={{ flex:"0 0 26px", fontSize:15, fontWeight:800, color:"#94a3b8" }}>{b.n}</div>
+                      <div style={{ flex:"0 0 100px" }}>
                         <select className="an-in" style={{ width:"100%" }} value={outForm[b.t] || "M"}
                                 onChange={(e) => setOutForm({ ...outForm, [b.t]: e.target.value })}>
                           {["M","Y","L","B","F","V","S"].map((x) => <option key={x} value={x}>{x}</option>)}
                         </select>
                       </div>
-                      <div style={{ flex:"1 1 150px" }}>
-                        <label className="an-lbl">Bit no</label>
+                      <div style={{ flex:"0 0 170px" }}>
                         <input className="an-in" style={{ width:"100%" }} value={outForm[b.v] || ""}
                                onChange={(e) => setOutForm({ ...outForm, [b.v]: e.target.value })}
                                placeholder={b.ph} />
                       </div>
-                      <div style={{ flex:"1 1 210px", fontSize:12, fontWeight:700, color:b.color, paddingBottom:9 }}>
+                      <div style={{ flex:"1 1 200px", fontSize:12.5, fontWeight:700, color:b.color }}>
                         {b.rule}
                       </div>
                     </div>
                   ))}
+
+                  {outForm.department && !outDeptOffAck(outForm.department) && (
+                    <div style={{ fontSize:11.5, color:"#94a3b8", marginTop:2 }}>
+                      Doosri bit sirf <b>Maintenance</b> aur <b>Tool Room</b> ke liye hai —
+                      inhi ka bit response par girta hai. {outForm.department} ka bit to
+                      pehle se call band hone par hi girta hai.
+                    </div>
+                  )}
                 </div>
+
                 <div className="an-row" style={{ marginTop:12 }}>
                   <label style={{ fontSize:13, fontWeight:700, display:"flex", alignItems:"center", gap:6 }}>
                     <input type="checkbox" checked={outForm.enabled} onChange={(e) => setOutForm({ ...outForm, enabled: e.target.checked })} /> Enabled (write this bit)
@@ -1092,18 +1105,22 @@ export default function AndonSystem() {
                             me padhe jaate hain. */}
                         <td style={{ fontFamily:"monospace", fontWeight:700, lineHeight:1.75 }}>
                           <div><span style={{ color:"#94a3b8", marginRight:6 }}>1</span>{o.bit_type}{o.bit_no}</div>
-                          <div style={{ color: (o.bit2_no || "").trim() ? "#0e7490" : "#cbd5e1" }}>
-                            <span style={{ color:"#94a3b8", marginRight:6 }}>2</span>
-                            {(o.bit2_no || "").trim() ? `${o.bit2_type || "M"}${o.bit2_no}` : "—"}
-                          </div>
+                          {o.bit2_allowed && (
+                            <div style={{ color: (o.bit2_no || "").trim() ? "#0e7490" : "#cbd5e1" }}>
+                              <span style={{ color:"#94a3b8", marginRight:6 }}>2</span>
+                              {(o.bit2_no || "").trim() ? `${o.bit2_type || "M"}${o.bit2_no}` : "lagi nahi"}
+                            </div>
+                          )}
                         </td>
                         <td style={{ fontSize:12, lineHeight:1.75 }}>
                           <div style={{ color: o.off_on_ack ? "#b45309" : "#0e7490", fontWeight:700 }}>
                             {o.off_on_ack ? "Response pe" : "Call-end pe"}
                           </div>
-                          <div style={{ color: (o.bit2_no || "").trim() ? "#0e7490" : "#cbd5e1", fontWeight:700 }}>
-                            {(o.bit2_no || "").trim() ? "Call-end pe" : "—"}
-                          </div>
+                          {o.bit2_allowed && (
+                            <div style={{ color: (o.bit2_no || "").trim() ? "#0e7490" : "#cbd5e1", fontWeight:700 }}>
+                              {(o.bit2_no || "").trim() ? "Call-end pe" : "—"}
+                            </div>
+                          )}
                         </td>
                         <td>
                           <span style={{ display:"inline-flex", alignItems:"center", gap:7, fontWeight:700, fontSize:12,
@@ -1128,10 +1145,12 @@ export default function AndonSystem() {
                           <div style={{ color: o.should_be_on ? "#16a34a" : "#94a3b8" }}>
                             {o.should_be_on ? "● ON" : "OFF"}
                           </div>
-                          <div style={{ color: o.should_be_on2 == null ? "#cbd5e1"
-                                             : o.should_be_on2 ? "#16a34a" : "#94a3b8" }}>
-                            {o.should_be_on2 == null ? "—" : (o.should_be_on2 ? "● ON" : "OFF")}
-                          </div>
+                          {o.bit2_allowed && (
+                            <div style={{ color: o.should_be_on2 == null ? "#cbd5e1"
+                                               : o.should_be_on2 ? "#16a34a" : "#94a3b8" }}>
+                              {o.should_be_on2 == null ? "—" : (o.should_be_on2 ? "● ON" : "OFF")}
+                            </div>
+                          )}
                         </td>
                         <td style={{ lineHeight:1.75, fontWeight:800 }}>
                           <div style={{ color: o.bit_on === true ? "#16a34a"
@@ -1143,17 +1162,22 @@ export default function AndonSystem() {
                               </span>
                             )}
                           </div>
-                          <div style={{ color: !(o.bit2_no || "").trim() ? "#cbd5e1"
+                          {o.bit2_allowed && (
+                          <div title={(o.bit2_no || "").trim() && o.bit2_on == null
+                                        ? "Writer ne abhi is bit ki khabar nahi bheji — purana backend bit-2 likhta hi nahi. Restart ke baad aayega."
+                                        : undefined}
+                               style={{ color: !(o.bit2_no || "").trim() ? "#cbd5e1"
                                              : o.bit2_on === true ? "#16a34a"
                                              : o.bit2_on === false ? "#94a3b8" : "#cbd5e1" }}>
                             {!(o.bit2_no || "").trim() ? "—"
-                              : o.bit2_on === true ? "● ON" : o.bit2_on === false ? "OFF" : "—"}
+                              : o.bit2_on === true ? "● ON" : o.bit2_on === false ? "OFF" : "— ?"}
                             {o.should_be_on2 && o.bit2_on !== true && (
                               <span style={{ fontSize:10, color:"#b45309", fontWeight:700, marginLeft:6, whiteSpace:"nowrap" }}>
-                                {o.bit2_on === false ? "pending" : "padha nahi ja raha"}
+                                {o.bit2_on === false ? "pending" : "khabar nahi"}
                               </span>
                             )}
                           </div>
+                          )}
                         </td>
                         <td><span className="an-chip" style={{ padding:"2px 9px", background: o.enabled ? "#dcfce7" : "#fee2e2", color: o.enabled ? "#16a34a" : "#dc2626" }}>{o.enabled ? "Enabled" : "Disabled"}</span></td>
                         <td style={{ whiteSpace:"nowrap" }}>
