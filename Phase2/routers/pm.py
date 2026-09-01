@@ -267,92 +267,10 @@ def delete_check_point(pid: int, user=Depends(get_current_user)):
     return {"ok": True}
 
 
-class RevEdit(BaseModel):
-    """Admin ka rev SUDHAAR — ye bump NAHI hai.
-
-    Bump (`/check-point-rev`) purane points archive karta hai aur rev aage
-    badhata hai.  Ye endpoint sirf ABHI ke revision ka number/date theek
-    karta hai — na koi archive banta hai, na ek bhi point chhuta hai.  Galat
-    rev chadh jaye (jaise 4 ki jagah 5) to use wapas laane ka yahi raasta hai,
-    aur isi liye ye SIRF admin ke liye hai."""
-    zone: str
-    line: str
-    machine_no: str
-    rev_no: str
-    rev_date: Optional[str] = ""          # blank → date waisi hi rehne do
-
-
-@router.put("/check-point-rev-edit")
-def edit_check_point_rev(body: RevEdit, admin=Depends(require_admin)):
-    """Abhi ke revision ka number/date badlo (admin only).  Points nahi badalte."""
-    _ensure_cp_rev_table()
-    want_raw = (body.rev_no or "").strip()
-    if not want_raw:
-        raise HTTPException(400, "Rev no. khali nahi ho sakta")
-    # SIRF ginti — par 0 bhi theek hai.  Pehle yahan `want <= 0` likha tha, jo
-    # Rev 0 ko bhi rok deta tha; galat tha, kyunki is system ka SHURUAATI rev
-    # hi "00" hai (dono doc_footer me wahi default hai).  `isdigit()` "0"/"00"
-    # ko aane deta hai aur "abc" / "-1" / "1.5" ko rokta hai — `_rev_int` un
-    # sab ko chupke se 0 bana deta, isliye us par bharosa nahi kar sakte.
-    if not want_raw.isdigit():
-        raise HTTPException(400, "Rev no. sirf ginti honi chahiye (jaise 0, 4 ya 04)")
-    want = _rev_int(want_raw)
-    new_date = None
-    if (body.rev_date or "").strip():
-        try:
-            new_date = datetime.strptime(body.rev_date.strip(), "%Y-%m-%d").date()
-        except Exception:
-            raise HTTPException(400, "rev_date must be YYYY-MM-DD")
-    with get_conn() as conn:
-        cur = dict_cursor(conn)
-        cur.execute("""SELECT MAX(rev_no) rev_no, MAX(rev_date) rev_date, COUNT(*) n
-                         FROM maintenance_pm_check_point
-                        WHERE zone=%s AND line=%s AND machine_no=%s""",
-                    (body.zone, body.line, body.machine_no))
-        ctx = cur.fetchone() or {}
-        if not ctx.get("n"):
-            raise HTTPException(404, "Is machine par abhi koi check point hi nahi hai")
-        old_raw = ctx["rev_no"]
-        # TAKRAAV KI ROK: jo number archive me pehle se hai wo dobara nahi de
-        # sakte — warna ek hi machine par do alag cheezein "Rev 4" kehlatin,
-        # aur history dropdown me dono dikhte.
-        cur.execute("""SELECT DISTINCT rev_no FROM maintenance_pm_check_point_rev
-                        WHERE zone=%s AND line=%s AND machine_no=%s""",
-                    (body.zone, body.line, body.machine_no))
-        taken = {_rev_int(r["rev_no"]) for r in cur.fetchall()}
-        if want in taken and want != _rev_int(old_raw):
-            raise HTTPException(409,
-                f"Rev {want_raw} pehle se history me hai, isliye nahi le sakte — warna "
-                f"agla bump us purane Rev {want_raw} ko MITA dega. Koi aur number "
-                f"chunein. (history me abhi: {', '.join(str(t) for t in sorted(taken))})")
-        cur2 = conn.cursor()
-        if new_date is not None:
-            cur2.execute("""UPDATE maintenance_pm_check_point SET rev_no=%s, rev_date=%s
-                             WHERE zone=%s AND line=%s AND machine_no=%s""",
-                         (want_raw, new_date, body.zone, body.line, body.machine_no))
-        else:
-            cur2.execute("""UPDATE maintenance_pm_check_point SET rev_no=%s
-                             WHERE zone=%s AND line=%s AND machine_no=%s""",
-                         (want_raw, body.zone, body.line, body.machine_no))
-        touched = cur2.rowcount
-        try:
-            from main import write_audit
-            write_audit(conn, action="PM_REV_EDIT", entity_type="pm_check_point",
-                        details=(f"{body.zone}/{body.line}/{body.machine_no}: "
-                                 f"Rev {old_raw} -> {want_raw}"
-                                 + (f", date {new_date}" if new_date else "")),
-                        user=admin)
-        except Exception:
-            pass                    # audit na likh paye to bhi sudhaar hona chahiye
-        conn.commit()
-    return {"ok": True, "old_rev": old_raw, "new_rev": want_raw,
-            "rev_date": (new_date.isoformat() if new_date else None),
-            "points_updated": touched}
-
-
 class RevMapOne(BaseModel):
     old: str
     new: str
+    date: Optional[str] = ""        # blank -> date waisi hi rehne do
 
 
 class RevRenumber(BaseModel):
@@ -402,27 +320,29 @@ def renumber_check_point_revs(body: RevRenumber, admin=Depends(require_admin)):
                 "Screen ki list DB se nahi mil rahi — page refresh karke dobara "
                 f"karein. (DB me abhi: {', '.join(sorted(have))})")
 
-        mapping = {}
+        mapping, dates = {}, {}
         for m in body.revs:
             o, n = str(m.old).strip(), str(m.new).strip()
             if not n.isdigit():
                 raise HTTPException(400, f"Rev '{o}' ke saamne sirf ginti daaliye (jaise 0, 4 ya 04) — '{n}' nahi chalega")
             mapping[o] = n
+            d = (m.date or "").strip()
+            if d:
+                try:
+                    dates[o] = datetime.strptime(d, "%Y-%m-%d").date()
+                except Exception:
+                    raise HTTPException(400, f"Rev {o} ki date YYYY-MM-DD me honi chahiye ('{d}' nahi chalegi)")
         news = list(mapping.values())
         dup = sorted({x for x in news if news.count(x) > 1}, key=_rev_int)
         if dup:
             raise HTTPException(400,
                 f"Do revision ka ek hi number nahi ho sakta — {', '.join(dup)} do baar aaya hai")
-        # CHALU REV SABSE UPAR RAHE: system purani rev ko archive se padhta hai
-        # aur chalu ko live table se, aur farak MAX(rev_no) se karta hai.  Chalu
-        # rev kisi purani se chhoti ho gayi to wo pehchaan hi ulat jaati.
-        new_live = mapping[str(live_rev)]
-        higher = [o for o, n in mapping.items()
-                  if o != str(live_rev) and _rev_int(n) >= _rev_int(new_live)]
-        if higher:
-            raise HTTPException(400,
-                f"Chalu revision (abhi Rev {live_rev}) ka number sabse bada hona chahiye. "
-                f"Aapne use Rev {new_live} diya hai jo purani rev se chhota/barabar hai.")
+        # Pehle yahan shart thi ki "chalu rev ka number sabse bada ho".  Wo HATA
+        # di gayi — code ko uski zaroorat hi nahi thi (chalu live table se aur
+        # purani archive se padhi jaati hai, number se nahi), aur wo shart neeche
+        # jaane ka raasta hi band kar deti thi (Rev 1 ko 0 karna).  Jo asli
+        # khatra tha — agla bump archive wale number par ja gire — wo ab bump me
+        # hi rok diya gaya hai (wahan liye hue number langh diye jaate hain).
 
         cur2 = conn.cursor()
         touched_live = touched_arch = 0
@@ -436,9 +356,19 @@ def renumber_check_point_revs(body: RevRenumber, admin=Depends(require_admin)):
             params = []
             for o in olds:
                 params += [o, mapping[o]]
+            # date sirf un rev ki badlo jinki bheji gayi — baaki ka `ELSE rev_date`
+            # se waisa hi reh jaata hai.  Dono CASE update se PEHLE wali rev_no par
+            # milaan karte hain (ek hi statement hai), isliye kram ka jhagda nahi.
+            with_d = [o for o in olds if o in dates]
+            set_sql = "rev_no = CASE rev_no " + case + " END"
+            if with_d:
+                dcase = " ".join(["WHEN %s THEN %s"] * len(with_d))
+                set_sql += ", rev_date = CASE rev_no " + dcase + " ELSE rev_date END"
+                for o in with_d:
+                    params += [o, dates[o]]
             params += list(key) + list(olds)
             holes = ", ".join(["%s"] * len(olds))
-            cur2.execute(f"""UPDATE {table} SET rev_no = CASE rev_no {case} END
+            cur2.execute(f"""UPDATE {table} SET {set_sql}
                               WHERE zone=%s AND line=%s AND machine_no=%s
                                 AND rev_no IN ({holes})""", params)
             return cur2.rowcount
@@ -484,13 +414,27 @@ def bump_check_point_rev(body: RevBump, user=Depends(get_current_user)):
         cur_raw = ctx["rev_no"] if ctx else None
         cur_rev = _rev_int(cur_raw) if cur_raw is not None else 0
         # rev_no diya ho to wahi (must be > current); blank → AUTO current + 1
+        # Archive me kaunse number pehle se liye hue hain — inhe langhna zaroori
+        # hai.  Sirf +1 karna theek NAHI: renumber ke baad wo number archive me
+        # ho sakta hai, aur tab live + archive dono ek hi number ke ho jaate.
+        # Phir `points` MAX(live) se milaan karta hai, to archive wala hamesha
+        # dab jaata — ek poora revision chup-chaap gaayab.
+        cur.execute("""SELECT DISTINCT rev_no FROM maintenance_pm_check_point_rev
+                        WHERE zone=%s AND line=%s AND machine_no=%s""",
+                    (body.zone, body.line, body.machine_no))
+        _taken = {_rev_int(r["rev_no"]) for r in cur.fetchall()}
         if (body.rev_no or "").strip():
             new_rev = _rev_int(body.rev_no)
             if new_rev <= cur_rev:
                 raise HTTPException(400,
                     f"New rev no. must be greater than the current rev ({cur_raw}).")
+            if new_rev in _taken:
+                raise HTTPException(409,
+                    f"Rev {new_rev} history me pehle se hai — koi aur number chunein.")
         else:
             new_rev = cur_rev + 1
+            while new_rev in _taken:
+                new_rev += 1
         cur2 = conn.cursor()
         archived = 0
         if cur_raw is not None:
