@@ -220,6 +220,18 @@ export default function MachineDMCAdmin({ toast, readOnly = false }) {
   };
   const removePending = (i) => setPending((ps) => ps.filter((_, x) => x !== i));
 
+  // Bump tabhi chalu ho jab SACH ME kuch badla ho.  Pehle wo hamesha dabta
+  // tha, isliye galti se khali revision chadh jaati thi — wahi wajah thi ki
+  // step-down banana pada.  Naye point `pending` me dikh jaate hain; edit aur
+  // delete turant lag jaate hain, isliye unke liye ye nishaan rakhte hain.
+  const [touched, setTouched] = useState(false);
+  const revChanged = pending.length > 0 || touched;
+  // MACHINE BADLE TO SAAF: pehle staged points machine badalne par bhi pade
+  // rehte the — yaani machine A par jodа point machine B par save ho jaata
+  // (galat sheet par galat point), aur bump wahan bina wajah chalu dikhta.
+  useEffect(() => { setPending([]); setTouched(false); }, [zone, line, mno]);
+
+
   const startEdit = (p) => {
     setEditId(p.id);
     setEditVals({ category: p.category || "", s_no: p.s_no || "", check_point: p.check_point || "",
@@ -231,14 +243,14 @@ export default function MachineDMCAdmin({ toast, readOnly = false }) {
     setBusy(true);
     try {
       await api(`/points/${editId}`, { method: "PUT", body: JSON.stringify(editVals) });
-      setEditId(null); say("Point updated ✓"); loadPoints();
+      setEditId(null); setTouched(true); say("Point updated ✓"); loadPoints();
     } catch (e) { say(String(e.message || e), "err"); }
     finally { setBusy(false); }
   };
 
   const delPoint = async (p) => {
     if (!window.confirm(`Delete point ${p.s_no}?\n"${(p.check_point || "").slice(0, 60)}"`)) return;
-    try { await api(`/points/${p.id}`, { method: "DELETE" }); say("Point deleted"); loadPoints(); loadRevs(); }
+    try { await api(`/points/${p.id}`, { method: "DELETE" }); setTouched(true); say("Point deleted"); loadPoints(); loadRevs(); }
     catch (e) { say(String(e.message || e), "err"); }
   };
 
@@ -284,7 +296,7 @@ export default function MachineDMCAdmin({ toast, readOnly = false }) {
       const r = await api(`/rev`, { method: "PUT", body: JSON.stringify({
         zone, line, machine_no: mno, rev_no: "", rev_date: nrDate || "", new_points: pending }) });
       say(`Rev ${r.new_rev} ✓ — ${r.added_points || 0} naye point add${r.old_rev ? `, Rev ${r.old_rev} archived` : ""}`);
-      setPending([]); setSelRev(""); loadRevs(); loadPoints();
+      setPending([]); setTouched(false); setSelRev(""); loadRevs(); loadPoints();
     } catch (e) { say(String(e.message || e), "err"); }
     finally { setBusy(false); }
   };
@@ -449,12 +461,21 @@ export default function MachineDMCAdmin({ toast, readOnly = false }) {
             </div>
             <div><div style={label}>REV DATE</div>
               <input type="date" value={nrDate} onChange={(e) => setNrDate(e.target.value)} style={{ ...sel, minWidth: 150 }} /></div>
-            <button onClick={bumpRev} disabled={busy}
-                    style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "#2563eb", color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+            <button onClick={bumpRev} disabled={busy || !revChanged}
+                    title={revChanged ? "" : "Pehle koi point add / edit / delete karo — bina badlav ke revision nahi badalti"}
+                    style={{ padding: "9px 18px", borderRadius: 8, border: "none",
+                             background: revChanged ? "#2563eb" : "#cbd5e1",
+                             color: revChanged ? "#fff" : "#64748b",
+                             fontWeight: 800, fontSize: 13,
+                             cursor: revChanged ? "pointer" : "not-allowed" }}>
               {busy ? "…" : (pending.length
                 ? `Save ${pending.length} point → Rev ${parseInt(revs.current?.rev_no || "0", 10) + 1}`
                 : `Bump to Rev ${parseInt(revs.current?.rev_no || "0", 10) + 1}`)}</button>
-            <span style={{ fontSize: 11, color: "#94a3b8" }}>Rev khud +1 hoti hai; purana rev archive ho ke Revision dropdown me dikhta.</span>
+            <span style={{ fontSize: 11, color: revChanged ? "#94a3b8" : "#b45309", fontWeight: revChanged ? 400 : 700 }}>
+              {revChanged
+                ? "Rev khud +1 hoti hai; purana rev archive ho ke Revision dropdown me dikhta."
+                : "Pehle koi point add / edit / delete karo — bina badlav ke revision nahi badalti."}
+            </span>
           </div>
         )}
 
