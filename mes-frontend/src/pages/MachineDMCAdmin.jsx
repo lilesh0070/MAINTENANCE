@@ -492,7 +492,7 @@ export default function MachineDMCAdmin({ toast, readOnly = false }) {
                                  background: "#fff", color: "#475569", fontWeight: 700, fontSize: 12.5,
                                  cursor: "pointer" }}>Cancel</button>
                 <span style={{ fontSize: 11, color: "#b45309" }}>
-                  Jo number history me pehle se hai wo nahi le sakte — do "Rev 4" ban jaate.
+                  Jo number history me pehle se hai wo nahi le sakte — agla bump us purane rev ko mita dega.
                 </span>
               </>
             )}

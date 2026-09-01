@@ -289,9 +289,14 @@ def edit_check_point_rev(body: RevEdit, admin=Depends(require_admin)):
     want_raw = (body.rev_no or "").strip()
     if not want_raw:
         raise HTTPException(400, "Rev no. khali nahi ho sakta")
+    # SIRF ginti — par 0 bhi theek hai.  Pehle yahan `want <= 0` likha tha, jo
+    # Rev 0 ko bhi rok deta tha; galat tha, kyunki is system ka SHURUAATI rev
+    # hi "00" hai (dono doc_footer me wahi default hai).  `isdigit()` "0"/"00"
+    # ko aane deta hai aur "abc" / "-1" / "1.5" ko rokta hai — `_rev_int` un
+    # sab ko chupke se 0 bana deta, isliye us par bharosa nahi kar sakte.
+    if not want_raw.isdigit():
+        raise HTTPException(400, "Rev no. sirf ginti honi chahiye (jaise 0, 4 ya 04)")
     want = _rev_int(want_raw)
-    if want <= 0:
-        raise HTTPException(400, "Rev no. ek ginti honi chahiye (jaise 4 ya 04)")
     new_date = None
     if (body.rev_date or "").strip():
         try:
@@ -317,8 +322,9 @@ def edit_check_point_rev(body: RevEdit, admin=Depends(require_admin)):
         taken = {_rev_int(r["rev_no"]) for r in cur.fetchall()}
         if want in taken and want != _rev_int(old_raw):
             raise HTTPException(409,
-                f"Rev {want_raw} pehle se history me hai — koi doosra number chunein. "
-                f"(history me: {', '.join(str(t) for t in sorted(taken))})")
+                f"Rev {want_raw} pehle se history me hai, isliye nahi le sakte — warna "
+                f"agla bump us purane Rev {want_raw} ko MITA dega. Koi aur number "
+                f"chunein. (history me abhi: {', '.join(str(t) for t in sorted(taken))})")
         cur2 = conn.cursor()
         if new_date is not None:
             cur2.execute("""UPDATE maintenance_pm_check_point SET rev_no=%s, rev_date=%s
