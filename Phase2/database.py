@@ -46,17 +46,21 @@ DB_CONFIG = {
 
 _pool = None
 
-# ── DB_HOST_ALT — LAN pe LAN se, bahar se Tailscale se ────────────────────
+# ── DB_HOST_ALT — ek se zyada raaste, kram se ─────────────────────────────
 # `.env`:
-#     DB_HOST=192.168.30.15        <- office LAN (tez)
-#     DB_HOST_ALT=100.121.68.19    <- Tailscale (bahar se)
+#     DB_HOST=192.168.30.15                          <- Ethernet LAN (sabse tez)
+#     DB_HOST_ALT=192.168.100.24,100.121.68.19       <- WiFi LAN, phir Tailscale
 #
 # Pool banate waqt pehle DB_HOST ko TCP se tatolte hain (1.5s).  Mil gaya to
-# wahi (LAN, ~70ms).  Nahi mila (matlab office ke bahar ho) to DB_HOST_ALT.
-# Laptop office se ghar le jao — pehli fail hote hi pool dobara bana kar doosre
-# host par chala jaata hai, .env chhune ki zaroorat nahi.
-# DB_HOST_ALT set na ho to bilkul purana vyavhaar — kuch nahi badalta.
+# wahi.  Nahi mila to DB_HOST_ALT ke host EK-EK karke, isi kram me.  Isliye
+# kram maayne rakhta hai: tez wala pehle likhein (WiFi LAN), door wala baad me
+# (Tailscale) — warna LAN par hote hue bhi relay se jud jayenge.
+#
+# 2026-09-01: pehle yahan SIRF EK alt host aata tha.  Ethernet ke saath WiFi
+# bhi chahiye tha, isliye ab comma se alag kai host chalte hain.  Ek hi host
+# likha ho to bilkul purana vyavhaar — kuch nahi badalta.
 DB_HOST_ALT   = (os.getenv("DB_HOST_ALT") or "").strip()
+_ALT_HOSTS    = [h.strip() for h in DB_HOST_ALT.split(",") if h.strip()]
 _HOST_PROBE_S = float(os.getenv("DB_HOST_PROBE_TIMEOUT", "1.5") or 1.5)
 _active_host  = None            # abhi kaunsa host chal raha hai
 
@@ -77,16 +81,18 @@ def _pick_host(force=False):
     if _active_host and not force:
         return _active_host
     primary, port = DB_CONFIG["host"], DB_CONFIG["port"]
-    if not DB_HOST_ALT:
+    if not _ALT_HOSTS:
         _active_host = primary
         return _active_host
     if _tcp_ok(primary, port, _HOST_PROBE_S):
         _active_host = primary
-    elif _tcp_ok(DB_HOST_ALT, port, max(_HOST_PROBE_S, 3.0)):
-        _active_host = DB_HOST_ALT
-        print(f"[DB] {primary} nahi mila -> {DB_HOST_ALT} (Tailscale) se jud rahe hain")
-    else:
-        _active_host = primary          # dono band — purana behaviour (saaf error)
+        return _active_host
+    for alt in _ALT_HOSTS:
+        if _tcp_ok(alt, port, max(_HOST_PROBE_S, 3.0)):
+            _active_host = alt
+            print(f"[DB] {primary} nahi mila -> {alt} se jud rahe hain")
+            return _active_host
+    _active_host = primary              # koi bhi nahi mila — purana behaviour (saaf error)
     return _active_host
 
 
@@ -97,7 +103,7 @@ def db_reachable(timeout: float = 2.0) -> bool:
     port = DB_CONFIG["port"]
     if _tcp_ok(_pick_host(), port, timeout):
         return True
-    if DB_HOST_ALT:                     # doosre host par bhi dekh lo
+    if _ALT_HOSTS:                      # baaki raaston par bhi dekh lo
         return _tcp_ok(_pick_host(force=True), port, timeout)
     return False
 
@@ -111,9 +117,10 @@ def _get_pool():
         # Postgres default max_connections=100, so well within budget.
         host = _pick_host()
         cfg = {**DB_CONFIG, "host": host}
-        # Tailscale (alt host) par har connection relay se jaata hai (~5s), to
-        # shuru me 2 ki jagah 1 hi kholo — pool phir zaroorat par khud badhta hai.
-        minconn = 1 if (DB_HOST_ALT and host == DB_HOST_ALT) else 2
+        # Alt host door ho sakta hai (Tailscale par har connection relay se
+        # jaata hai, ~5s), to shuru me 2 ki jagah 1 hi kholo — pool zaroorat
+        # par khud badh jaata hai.
+        minconn = 1 if host in _ALT_HOSTS else 2
         _pool = psycopg2.pool.SimpleConnectionPool(minconn, 30, **cfg)
     return _pool
 
@@ -123,9 +130,9 @@ def get_conn():
     try:
         conn = pool.getconn()
     except Exception:
-        # Host badal gaya (laptop office se bahar, ya ulta) — doosre host par
-        # dobara koshish.  Sirf tab jab DB_HOST_ALT diya ho.
-        if not DB_HOST_ALT:
+        # Host badal gaya (Ethernet nikal gaya, ya laptop bahar chala gaya) —
+        # baaki raaston par dobara koshish.  Sirf tab jab DB_HOST_ALT diya ho.
+        if not _ALT_HOSTS:
             raise
         global _pool
         try: pool.closeall()
