@@ -78,7 +78,14 @@ export default function BDAnalysis() {
       setYears(list);
       if (!booted.current && list.length) {
         booted.current = true;
-        setFFy((list.find((v) => v.is_current) || list[list.length - 1]).fy);
+        const fy = (list.find((v) => v.is_current) || list[list.length - 1]).fy;
+        setFFy(fy);
+        // Month default = ABHI ka mahina (agar wo us FY me aata ho).  Pehle
+        // month khali rehta tha = "All Months", to poore saal ka jhamela ek
+        // saath dikhta.  BDHistory / HistoryCard / Pareto sab isi tareeqe se.
+        const now = new Date();
+        const cm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        if (fyMonths(fy).some((m) => m.value === cm)) setFMonth(cm);
       }
     }).catch(() => setYears([]));
     api.get("/api/machines/", token).then((m) => setMaster(Array.isArray(m) ? m : [])).catch(() => setMaster([]));
@@ -210,7 +217,13 @@ export default function BDAnalysis() {
         <div className="ba-filters">
           <div className="ba-fld">
             <label>Financial Year</label>
-            <select className="ba-sel" value={fFy} onChange={(e) => { setFFy(e.target.value); setFMonth(""); }}>
+            <select className="ba-sel" value={fFy} onChange={(e) => {
+              const v = e.target.value; setFFy(v);
+              if (!v) { setFMonth(""); return; }
+              const n = new Date();
+              const c = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
+              setFMonth(fyMonths(v).some((m) => m.value === c) ? c : "");
+            }}>
               <option value="">All Financial Years</option>
               {years.map((y) => <option key={y.fy} value={y.fy}>{y.fy}{y.is_current ? "  (current)" : ""}</option>)}
             </select>
