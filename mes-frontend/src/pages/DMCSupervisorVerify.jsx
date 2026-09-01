@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { DmcSheet, groupDmcPoints, RESP_STAGE, isPointDue } from "./DmcSheet";
+import { upperCaret } from "../constants/upperCaret";
 
 const monthNow = () => new Date().toISOString().slice(0, 7);
 const MON = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -351,7 +352,7 @@ export default function DMCSupervisorVerify() {
                 ) : (<>
                   <div><div style={lab}>SUPERVISOR CODE</div>
                     <input value={supCode} maxLength={20} placeholder="Enter your code"
-                           onChange={(e) => setSupCode(e.target.value.toUpperCase())}
+                           onChange={(e) => setSupCode(upperCaret(e))}
                            style={{ ...sels, minWidth: 200, letterSpacing: ".06em", fontWeight: 800 }} /></div>
                   {opNgPending.length > 0 && (
                     <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 800, color: "#b45309",

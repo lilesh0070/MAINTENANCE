@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import { Btn, api, fmtDuration, fmtDateTime } from "./shared";
+import { upperCaret } from "../../constants/upperCaret";
 
 // One spare row — SAME shape the Log Book uses, so spare data is consistent
 // across both features.
@@ -1046,11 +1047,11 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                                   milaan case dekhe bina hota hai, to naam
                                   uppercase karne se picker nahi bigadta. */
                                onChange={(e) => k === "spare_name"
-                                 ? onSpareName(i, e.target.value.toUpperCase())
+                                 ? onSpareName(i, upperCaret(e))
                                  : setSpare(i, k,
                                      k === "spare_cnmm_no" ? fmtErp(e.target.value)
                                    : k === "spare_qty"     ? e.target.value
-                                                           : e.target.value.toUpperCase())} />
+                                                           : upperCaret(e))} />
                       </div>
                     ))}
                     {spEdit && (
@@ -1105,7 +1106,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                   {/* naam bhi BADE AKSHAR me — baaki slip jaisa hi */}
                   <input type="text" disabled={!fieldEditable(key)}
                          value={obj?.name || ""}
-                         onChange={e => setSub(key, "name", e.target.value.toUpperCase())}/>
+                         onChange={e => setSub(key, "name", upperCaret(e))}/>
                 </div>
               </div>
             ))}
@@ -1475,7 +1476,7 @@ function BdsRow({ label, value, readOnly, onChange }) {
         <textarea value={value || ""}
                   disabled={readOnly}
                   rows={2}
-                  onChange={(e) => onChange?.(e.target.value.toUpperCase())}/>
+                  onChange={(e) => onChange?.(upperCaret(e))}/>
       </div>
     </div>
   );

@@ -20,6 +20,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { upperCaret } from "../constants/upperCaret";
 
 const api = {
   async get(path, token) {
@@ -206,13 +207,13 @@ export default function MachineManual() {
             <Fld label="Equipment Name">
               <input style={{ ...sel2, minWidth:240 }} value={eqName}
                      placeholder="e.g. WELDING ROBOT"
-                     onChange={(e) => setEqName(e.target.value.toUpperCase())}
+                     onChange={(e) => setEqName(upperCaret(e))}
                      onKeyDown={(e) => { if (e.key === "Enter") searchEquipment(); }} />
             </Fld>
             <Fld label="Model">
               <input style={{ ...sel2, minWidth:200 }} value={eqModel}
                      placeholder="e.g. FANUC R-2000iC"
-                     onChange={(e) => setEqModel(e.target.value.toUpperCase())}
+                     onChange={(e) => setEqModel(upperCaret(e))}
                      onKeyDown={(e) => { if (e.key === "Enter") searchEquipment(); }} />
             </Fld>
             <Fld label="&nbsp;">

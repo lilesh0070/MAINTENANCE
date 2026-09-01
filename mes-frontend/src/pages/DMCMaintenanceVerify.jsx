@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { DmcSheet, groupDmcPoints, monthDays, RESP_STAGE, isPointDue } from "./DmcSheet";
+import { upperCaret } from "../constants/upperCaret";
 
 const monthNow = () => new Date().toISOString().slice(0, 7);
 const MON = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -327,7 +328,7 @@ export default function DMCMaintenanceVerify() {
               ) : sel.status === "READY" ? (<>
                 <div><div style={lab}>MAINTENANCE CODE</div>
                   <input value={maintCode} maxLength={20} placeholder="Enter your code"
-                         onChange={(e) => setMaintCode(e.target.value.toUpperCase())}
+                         onChange={(e) => setMaintCode(upperCaret(e))}
                          style={{ ...sels, minWidth: 200, letterSpacing: ".06em", fontWeight: 800 }} /></div>
                 <button onClick={signWeek} disabled={saving}
                         style={{ marginLeft: "auto", padding: "10px 24px", borderRadius: 8, border: "none",

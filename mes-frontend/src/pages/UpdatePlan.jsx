@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { upperCaret } from "../constants/upperCaret";
 
 const api = {
   async get(path, token) {
@@ -449,13 +450,13 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
           <Fld label="Problem / Work to do">
             <input style={{ ...selStyle, minWidth:cfg.assignee ? 320 : 420 }} value={problem}
                    placeholder="e.g. CONVEYOR BELT ALIGNMENT + GREASING"
-                   onChange={(e) => setProblem(e.target.value.toUpperCase())} />
+                   onChange={(e) => setProblem(upperCaret(e))} />
           </Fld>
           {cfg.assignee && (
             <Fld label="Assigned To (who will do it)">
               <input style={{ ...selStyle, minWidth:200 }} value={assignee}
                      placeholder="name(s) — kaun karega"
-                     onChange={(e) => setAssignee(e.target.value.toUpperCase())} />
+                     onChange={(e) => setAssignee(upperCaret(e))} />
             </Fld>
           )}
           <button onClick={assign} disabled={saving}
@@ -587,12 +588,12 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
                         <Fld label="Action Taken">
                           <input style={{ ...selStyle, minWidth:340 }} value={fill.work_done}
                                  placeholder="e.g. BELT ALIGNED, TENSION SET, GREASING DONE"
-                                 onChange={(e) => setFill((f) => ({ ...f, work_done: e.target.value.toUpperCase() }))} />
+                                 onChange={(e) => setFill((f) => ({ ...f, work_done: upperCaret(e) }))} />
                         </Fld>
                         <Fld label="Who did it?">
                           <input style={{ ...selStyle, minWidth:200 }} value={fill.done_by}
                                  placeholder="name(s)"
-                                 onChange={(e) => setFill((f) => ({ ...f, done_by: e.target.value.toUpperCase() }))} />
+                                 onChange={(e) => setFill((f) => ({ ...f, done_by: upperCaret(e) }))} />
                         </Fld>
                       </div>
                       {cfg.timesSpares && (
@@ -625,11 +626,11 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
                               </Fld>
                               <Fld label="Model Number">
                                 <input style={{ ...selStyle, minWidth:170 }}
-                                       value={sp.spare_model_no} onChange={(e) => setFillSpare(i, "spare_model_no", e.target.value.toUpperCase())} />
+                                       value={sp.spare_model_no} onChange={(e) => setFillSpare(i, "spare_model_no", upperCaret(e))} />
                               </Fld>
                               <Fld label="Spare ERP Number">
                                 <input maxLength={8} placeholder="ABCD1234" style={{ ...selStyle, minWidth:150 }}
-                                       value={sp.spare_cnmm_no} onChange={(e) => setFillSpare(i, "spare_cnmm_no", e.target.value.toUpperCase())} />
+                                       value={sp.spare_cnmm_no} onChange={(e) => setFillSpare(i, "spare_cnmm_no", upperCaret(e))} />
                               </Fld>
                               <Fld label="Quantity">
                                 <input type="number" style={{ ...selStyle, minWidth:110 }}
