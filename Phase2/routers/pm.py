@@ -267,129 +267,84 @@ def delete_check_point(pid: int, user=Depends(get_current_user)):
     return {"ok": True}
 
 
-class RevMapOne(BaseModel):
-    old: str
-    new: str
-    date: Optional[str] = ""        # blank -> date waisi hi rehne do
+class RevStepDown(BaseModel):
+    """Sabse UPAR wali revision hatao — pichhli wapas chalu ho jaye.
 
+    Ye bump ka ULTA hai.  Bump Rev 1 ko archive me daal kar Rev 2 banata hai;
+    ye Rev 2 ko hata kar Rev 1 ko wapas live kar deta hai — bilkul waisi hi
+    jaisi wo thi.  Ek baar me EK hi kadam, isliye 0,1,2 par pehle "2 hatao"
+    milta hai, uske baad "1 hatao", aur Rev 0 par kuch nahi (sabse purani
+    kabhi nahi hatti).
 
-class RevRenumber(BaseModel):
-    """Saare revision ke number EK SAATH badalna (admin only).
-
-    `rev-edit` sirf ABHI wale revision ka number badalta hai, isliye jab do
-    revision ka number aapas me badalna ho (jaise 0,1 -> 5,6) to wo ek-ek kar
-    ke nahi ho pata — beech me do rev ka ek hi number ban jaata aur rok lag
-    jaati.  Yahan poori list ek saath aati hai, poori jaanchi jaati hai, aur
-    EK hi UPDATE me lag jaati hai — to beech ki wo haalat aati hi nahi.
-
-    POINTS BILKUL NAHI BADALTE — sirf rev ka number.  Bhari hui check sheets
-    par jo number us waqt chhapa tha wo bhi waisa hi rehta hai (wo us din ka
-    record hai, use badalna itihaas badalna hota).
+    Kyun renumber ki jagah ye: number badal dene se "Rev 2 hataana" hota nahi
+    tha — uska naam badal jaata aur uske points wahi ke wahi rehte.  Yahan Rev 2
+    sach me chala jaata hai aur Rev 1 hu-ba-hu wapas aa jaati hai.
     """
     zone: str
     line: str
     machine_no: str
-    revs: List[RevMapOne]
 
 
-@router.put("/check-point-rev-renumber")
-def renumber_check_point_revs(body: RevRenumber, admin=Depends(require_admin)):
-    """Machine ke saare revision ke number ek saath badlo (admin only)."""
+@router.put("/check-point-rev-stepdown")
+def stepdown_check_point_rev(body: RevStepDown, admin=Depends(require_admin)):
+    """Chalu revision hatao, pichhli wapas laao (admin only)."""
     _ensure_cp_rev_table()
-    if not body.revs:
-        raise HTTPException(400, "Koi revision bheja hi nahi")
     key = (body.zone, body.line, body.machine_no)
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("""SELECT MAX(rev_no) r FROM maintenance_pm_check_point
+        cur.execute("""SELECT MAX(rev_no) r, COUNT(*) n FROM maintenance_pm_check_point
                         WHERE zone=%s AND line=%s AND machine_no=%s""", key)
-        row = cur.fetchone()
-        live_rev = row["r"] if row else None
-        if live_rev is None:
-            raise HTTPException(404, "Is machine par abhi koi check point hi nahi hai")
-        cur.execute("""SELECT DISTINCT rev_no FROM maintenance_pm_check_point_rev
-                        WHERE zone=%s AND line=%s AND machine_no=%s""", key)
-        arch_revs = [r["rev_no"] for r in cur.fetchall()]
-
-        have = [str(live_rev)] + [str(a) for a in arch_revs]
-        sent_old = [str(m.old).strip() for m in body.revs]
-        # LIST PURANI TO NAHI: agar screen par kuch aur tha aur DB me kuch aur,
-        # to aadha-adhoora badlav sabse khatarnak hota hai — pehle hi rok do.
-        if sorted(have) != sorted(sent_old):
-            raise HTTPException(409,
-                "Screen ki list DB se nahi mil rahi — page refresh karke dobara "
-                f"karein. (DB me abhi: {', '.join(sorted(have))})")
-
-        mapping, dates = {}, {}
-        for m in body.revs:
-            o, n = str(m.old).strip(), str(m.new).strip()
-            if not n.isdigit():
-                raise HTTPException(400, f"Rev '{o}' ke saamne sirf ginti daaliye (jaise 0, 4 ya 04) — '{n}' nahi chalega")
-            mapping[o] = n
-            d = (m.date or "").strip()
-            if d:
-                try:
-                    dates[o] = datetime.strptime(d, "%Y-%m-%d").date()
-                except Exception:
-                    raise HTTPException(400, f"Rev {o} ki date YYYY-MM-DD me honi chahiye ('{d}' nahi chalegi)")
-        news = list(mapping.values())
-        dup = sorted({x for x in news if news.count(x) > 1}, key=_rev_int)
-        if dup:
+        row = cur.fetchone() or {}
+        if not row.get("n"):
+            raise HTTPException(404, "Is machine par abhi koi point hi nahi hai")
+        cur_rev = row["r"]
+        cur.execute("""SELECT rev_no, MAX(rev_date) d, COUNT(*) n FROM maintenance_pm_check_point_rev
+                        WHERE zone=%s AND line=%s AND machine_no=%s
+                        GROUP BY rev_no""", key)
+        old = sorted(cur.fetchall(), key=lambda r: _rev_int(r["rev_no"]), reverse=True)
+        if not old:
             raise HTTPException(400,
-                f"Do revision ka ek hi number nahi ho sakta — {', '.join(dup)} do baar aaya hai")
-        # Pehle yahan shart thi ki "chalu rev ka number sabse bada ho".  Wo HATA
-        # di gayi — code ko uski zaroorat hi nahi thi (chalu live table se aur
-        # purani archive se padhi jaati hai, number se nahi), aur wo shart neeche
-        # jaane ka raasta hi band kar deti thi (Rev 1 ko 0 karna).  Jo asli
-        # khatra tha — agla bump archive wale number par ja gire — wo ab bump me
-        # hi rok diya gaya hai (wahan liye hue number langh diye jaate hain).
+                f"Sirf ek hi revision hai (Rev {cur_rev}) — isse neeche nahi ja sakte. "
+                "Sabse purani revision kabhi nahi hatti.")
+        back = old[0]                      # sabse upar wali purani = jise wapas laana hai
+        back_rev, back_n = back["rev_no"], int(back["n"])
 
         cur2 = conn.cursor()
-        touched_live = touched_arch = 0
-
-        def _case_update(table, olds):
-            """Ek hi UPDATE me sab badal do — CASE se.  Do statement me karte to
-            beech me do rev ka ek number ban sakta tha."""
-            if not olds:
-                return 0
-            case = " ".join(["WHEN %s THEN %s"] * len(olds))
-            params = []
-            for o in olds:
-                params += [o, mapping[o]]
-            # date sirf un rev ki badlo jinki bheji gayi — baaki ka `ELSE rev_date`
-            # se waisa hi reh jaata hai.  Dono CASE update se PEHLE wali rev_no par
-            # milaan karte hain (ek hi statement hai), isliye kram ka jhagda nahi.
-            with_d = [o for o in olds if o in dates]
-            set_sql = "rev_no = CASE rev_no " + case + " END"
-            if with_d:
-                dcase = " ".join(["WHEN %s THEN %s"] * len(with_d))
-                set_sql += ", rev_date = CASE rev_no " + dcase + " ELSE rev_date END"
-                for o in with_d:
-                    params += [o, dates[o]]
-            params += list(key) + list(olds)
-            holes = ", ".join(["%s"] * len(olds))
-            cur2.execute(f"""UPDATE {table} SET {set_sql}
-                              WHERE zone=%s AND line=%s AND machine_no=%s
-                                AND rev_no IN ({holes})""", params)
-            return cur2.rowcount
-
-        touched_live = _case_update("maintenance_pm_check_point", [str(live_rev)])
-        touched_arch = _case_update("maintenance_pm_check_point_rev",
-                                    [str(a) for a in arch_revs])
-        changed = {o: n for o, n in mapping.items() if o != n}
+        # 1) abhi ke points hatao (yahi "Rev <cur> hatana" hai)
+        cur2.execute("""DELETE FROM maintenance_pm_check_point WHERE zone=%s AND line=%s AND machine_no=%s""", key)
+        gone = cur2.rowcount
+        # 2) purani revision ko HU-BA-HU wapas live me laao
+        cur2.execute("""INSERT INTO maintenance_pm_check_point (zone,line,machine_no,machine_name,s_no,check_point,judgement_standard,method,rev_no,rev_date,sort_order)
+                        SELECT zone,line,machine_no,machine_name,s_no,check_point,judgement_standard,method,rev_no,rev_date,sort_order FROM maintenance_pm_check_point_rev
+                         WHERE zone=%s AND line=%s AND machine_no=%s AND rev_no=%s""",
+                     key + (back_rev,))
+        back_rows = cur2.rowcount
+        # 3) ab wo archive me nahi rehni chahiye — wo live ho chuki hai
+        cur2.execute("""DELETE FROM maintenance_pm_check_point_rev
+                         WHERE zone=%s AND line=%s AND machine_no=%s AND rev_no=%s""",
+                     key + (back_rev,))
+        # bhari hui sheets ko HAATH NAHI lagate — wo us din ka record hain.
+        # Sirf ginti bata dete hain taaki UI saaf-saaf chetavni de sake.
+        try:
+            cur.execute("""SELECT COUNT(*) n FROM maintenance_pm_check_sheet_filled
+                            WHERE machine_no=%s AND rev_no=%s""",
+                        (body.machine_no, str(cur_rev)))
+            filled_left = int((cur.fetchone() or {}).get("n") or 0)
+        except Exception:
+            filled_left = 0
         try:
             from main import write_audit
-            write_audit(conn, action="PM_REV_RENUMBER", entity_type="pm_check_point",
+            write_audit(conn, action="PM_REV_STEPDOWN", entity_type="pm_check_point",
                         details=(f"{body.zone}/{body.line}/{body.machine_no}: "
-                                 + (", ".join(f"Rev {o} -> {n}" for o, n in changed.items())
-                                    or "koi badlav nahi")),
+                                 f"Rev {cur_rev} hataya ({gone} point), "
+                                 f"Rev {back_rev} wapas chalu ({back_rows} point)"),
                         user=admin)
         except Exception:
             pass
         conn.commit()
-    return {"ok": True, "changed": changed,
-            "live_rows": touched_live, "archive_rows": touched_arch,
-            "new_current": mapping[str(live_rev)]}
+    return {"ok": True, "removed_rev": cur_rev, "removed_points": gone,
+            "now_current": back_rev, "restored_points": back_rows,
+            "filled_sheets_on_removed_rev": filled_left}
 
 
 @router.put("/check-point-rev")

@@ -171,40 +171,31 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
     catch (e) { say(String(e.message || e), "err"); }
   };
 
-  // ── Sab revision ke number/date EK SAATH badalna (admin only) ──────
-  // Ek-ek karke number badalna kaam hi nahi karta — beech me do rev ka ek
-  // number ban jaata aur rok lag jaati.  Isliye poori list ek saath jaati
-  // hai, poori jaanchi jaati hai, aur ek hi baar me lagti hai.  Number aapas
-  // me badalne ho (0 <-> 1) to DONO box bharne hote hain.
-  const [renum, setRenum] = useState({ open: false, map: {}, dates: {} });
-  const revRows = () => {
-    const cur = revs.current ? [{ ...revs.current, live: true }] : [];
-    const old = (revs.history || []).filter((h) => String(h.rev_no) !== String(revs.current?.rev_no));
-    return [...cur, ...old];
+  // ── Chalu revision HATAO — pichhli wapas chalu ho jaye (admin only) ─
+  // Ye bump ka ulta hai.  Number badalne se "Rev 2 hataana" hota nahi tha —
+  // uska naam badal jaata aur points wahi ke wahi rehte.  Yahan Rev 2 sach me
+  // chala jaata hai aur Rev 1 hu-ba-hu wapas aa jaati hai.  Ek baar me ek
+  // kadam, aur sabse purani revision kabhi nahi hatti.
+  const prevRev = () => {
+    const cur = String(revs.current?.rev_no ?? "");
+    const old = (revs.history || []).filter((h) => String(h.rev_no) !== cur);
+    if (!old.length) return null;
+    return old.reduce((a, b) => (parseInt(a.rev_no, 10) >= parseInt(b.rev_no, 10) ? a : b));
   };
-  const openRenum = () => {
-    const m = {}, d = {};
-    revRows().forEach((r) => {
-      m[String(r.rev_no)] = String(r.rev_no);
-      d[String(r.rev_no)] = String(r.rev_date || "").slice(0, 10);
-    });
-    setRenum({ open: true, map: m, dates: d });
-  };
-  const saveRenum = async () => {
-    const rows = revRows().map((r) => ({ old: String(r.rev_no),
-                                        new: String(renum.map[String(r.rev_no)] ?? "").trim(),
-                                        date: String(renum.dates[String(r.rev_no)] ?? "").trim() }));
-    const badle = rows.filter((r, i2) => r.old !== r.new || r.date !== String(revRows()[i2].rev_date || "").slice(0, 10));
-    if (!badle.length) { say("Kuch badla hi nahi", "err"); return; }
-    const kaLine = badle.map((r) => `Rev ${r.old}  →  Rev ${r.new}`).join("\n");
-    if (!window.confirm("Ye badlav karein?\n\n" + kaLine +
-        "\n\nPoints bilkul nahi badlenge. Bhari hui check sheets par purana number waisa hi rahega.")) return;
+  const stepDownRev = async () => {
+    const p = prevRev();
+    if (!p) return;
+    const cur = revs.current;
+    const l1 = `• Rev ${cur?.rev_no} ke ${cur?.count ?? "?"} point HAT jayenge`;
+    const l2 = `• Rev ${p.rev_no} (${p.count ?? "?"} point) hu-ba-hu wapas chalu ho jayegi`;
+    const l3 = `Bhari hui check sheets par Rev ${cur?.rev_no} likha hi rahega — wo us din ka record hai.`;
+    if (!window.confirm([`Rev ${cur?.rev_no} hatana hai?`, "", l1, l2, "", l3].join("\n"))) return;
     setBusy(true);
     try {
-      const r = await api(`/check-point-rev-renumber`, { method: "PUT", body: JSON.stringify({
-        zone, line, machine_no: mno, revs: rows }) });
-      say(`Ho gaya ✓ chalu rev ab Rev ${r.new_current} (${r.live_rows} + ${r.archive_rows} row)`);
-      setRenum({ open: false, map: {}, dates: {} });
+      const r = await api(`/check-point-rev-stepdown`, { method: "PUT", body: JSON.stringify({
+        zone, line, machine_no: mno }) });
+      say(`Rev ${r.removed_rev} hata ✓ ab Rev ${r.now_current} chalu (${r.restored_points} point)` +
+          (r.filled_sheets_on_removed_rev ? ` — dhyan: Rev ${r.removed_rev} par ${r.filled_sheets_on_removed_rev} bhari hui sheet hai` : ""));
       loadRevs(); loadPoints();
     } catch (e) { say(String(e.message || e), "err"); }
     finally { setBusy(false); }
@@ -351,75 +342,21 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
           Upar wala bump rev aage badhata hai aur purane points archive karta
           hai.  Ye uske liye hai jab rev GALAT chadh gayi ho — number/date
           seedha theek kar dete hain, points ko chhue bina. */}
-      {isAdmin && mno && isCurrent && (
-        <div style={{ ...card, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end",
+      {isAdmin && mno && isCurrent && prevRev() && (
+        <div style={{ ...card, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center",
                       borderLeft: "4px solid #b45309", background: "#fffbeb" }}>
-          {renum.open ? (
-            /* ── Sab revision ke number ek saath ── */
-            <div style={{ width: "100%" }}>
-              <div style={{ fontWeight: 800, fontSize: 13, color: "#92400e", marginBottom: 8 }}>
-                Sab revision ke number badlo — naye number bharke ek saath Save karo
-              </div>
-              <table style={{ borderCollapse: "collapse", fontSize: 12.5, marginBottom: 10 }}>
-                <thead><tr>
-                  <th style={{ textAlign: "left", padding: "4px 14px 4px 0", fontSize: 10.5, color: "#92400e" }}>ABHI</th>
-                  <th style={{ textAlign: "left", padding: "4px 14px 4px 0", fontSize: 10.5, color: "#92400e" }}>POINT</th>
-                  <th style={{ textAlign: "left", padding: "4px 14px 4px 0", fontSize: 10.5, color: "#92400e" }}>NAYA NUMBER</th>
-                  <th style={{ textAlign: "left", padding: "4px 0", fontSize: 10.5, color: "#92400e" }}>REV DATE</th>
-                </tr></thead>
-                <tbody>
-                  {revRows().map((r) => (
-                    <tr key={String(r.rev_no)}>
-                      <td style={{ padding: "3px 14px 3px 0", fontWeight: 800 }}>
-                        Rev {r.rev_no}
-                        {r.live && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: "#16a34a" }}>CHALU</span>}
-                      </td>
-                      <td style={{ padding: "3px 14px 3px 0", color: "#64748b" }}>{r.count ?? "—"}</td>
-                      <td style={{ padding: "3px 14px 3px 0" }}>
-                        <input value={renum.map[String(r.rev_no)] ?? ""}
-                               onChange={(e) => setRenum((s) => ({ ...s, map: { ...s.map, [String(r.rev_no)]: e.target.value } }))}
-                               style={{ ...sel, minWidth: 80, padding: "5px 8px" }} />
-                      </td>
-                      <td style={{ padding: "3px 0" }}>
-                        <input type="date" value={renum.dates[String(r.rev_no)] ?? ""}
-                               onChange={(e) => setRenum((s) => ({ ...s, dates: { ...s.dates, [String(r.rev_no)]: e.target.value } }))}
-                               style={{ ...sel, minWidth: 140, padding: "5px 8px" }} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                <button onClick={saveRenum} disabled={busy}
-                        style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "#b45309",
-                                 color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
-                  {busy ? "…" : "Save"}</button>
-                <button onClick={() => setRenum({ open: false, map: {} })}
-                        style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid #cbd5e1",
-                                 background: "#fff", color: "#475569", fontWeight: 700, fontSize: 12.5,
-                                 cursor: "pointer" }}>Cancel</button>
-                <span style={{ fontSize: 11, color: "#b45309", lineHeight: 1.5 }}>
-                  Points bilkul nahi badlenge. Bas do rev ka ek number nahi ho sakta —
-                  isliye number aapas me badalna ho to <b>dono</b> box bharo (jaise upar
-                  wale me 0 aur neeche wale me 1). Bhari hui check sheets par purana number
-                  waisa hi rahega — wo us din ka record hai.
-                </span>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div style={{ fontWeight: 800, fontSize: 12.5, color: "#92400e", alignSelf: "center" }}>
-                Rev number ya date galat chadh gaya? Abhi <b>Rev {revs.current?.rev_no ?? "—"}</b> chalu hai.
-              </div>
-              <button onClick={openRenum}
-                      style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #b45309",
-                               background: "#fff", color: "#b45309", fontWeight: 800, fontSize: 12.5,
-                               cursor: "pointer" }}>Rev number badlo</button>
-              <span style={{ fontSize: 11, color: "#b45309", opacity: .8 }}>
-                Sirf admin. Points bilkul nahi badalte.
-              </span>
-            </>
-          )}
+          <div style={{ fontWeight: 800, fontSize: 12.5, color: "#92400e" }}>
+            Rev galat chadh gaya? <b>Rev {revs.current?.rev_no}</b> hata kar{" "}
+            <b>Rev {prevRev()?.rev_no}</b> wapas chalu kar do.
+          </div>
+          <button onClick={stepDownRev} disabled={busy}
+                  style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#b45309",
+                           color: "#fff", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>
+            {busy ? "…" : `Rev ${revs.current?.rev_no} hatao → Rev ${prevRev()?.rev_no}`}</button>
+          <span style={{ fontSize: 11, color: "#b45309", opacity: .85, lineHeight: 1.5 }}>
+            Sirf admin. Ek baar me ek kadam — phir se dabao to usse pichhli aa jayegi.
+            Sabse purani revision kabhi nahi hatti.
+          </span>
         </div>
       )}
 
