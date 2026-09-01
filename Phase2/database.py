@@ -48,13 +48,12 @@ _pool = None
 
 # ── DB_HOST_ALT — ek se zyada raaste, kram se ─────────────────────────────
 # `.env`:
-#     DB_HOST=192.168.30.15                          <- Ethernet LAN (sabse tez)
-#     DB_HOST_ALT=192.168.100.24,100.121.68.19       <- WiFi LAN, phir Tailscale
+#     DB_HOST=192.168.30.15          <- Ethernet LAN (sabse tez)
+#     DB_HOST_ALT=192.168.100.24     <- wahi server, WiFi network par
 #
 # Pool banate waqt pehle DB_HOST ko TCP se tatolte hain (1.5s).  Mil gaya to
-# wahi.  Nahi mila to DB_HOST_ALT ke host EK-EK karke, isi kram me.  Isliye
-# kram maayne rakhta hai: tez wala pehle likhein (WiFi LAN), door wala baad me
-# (Tailscale) — warna LAN par hote hue bhi relay se jud jayenge.
+# wahi.  Nahi mila to DB_HOST_ALT ke host EK-EK karke, isi kram me — isliye
+# kram maayne rakhta hai, tez wala pehle likhein.
 #
 # 2026-09-01: pehle yahan SIRF EK alt host aata tha.  Ethernet ke saath WiFi
 # bhi chahiye tha, isliye ab comma se alag kai host chalte hain.  Ek hi host
