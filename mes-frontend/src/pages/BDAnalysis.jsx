@@ -69,6 +69,10 @@ export default function BDAnalysis() {
   const [metric, setMetric]       = useState("hours");   // "hours" | "frequency"
   const [chartRows, setChartRows] = useState([]);        // rows from /breakdown-by
   const [loading, setLoading]     = useState(false);
+  // Boot (FY + month tay hone) se PEHLE data nahi maangte — warna pehli
+  // baar bina date ke request jaati hai aur POORE SAMAY ka data ek jhalak
+  // ke liye chart me aa jaata hai (galat number dikh jaate hain).
+  const [ready, setReady] = useState(false);
   const booted = useRef(false);   // default the FY to the current one, once
 
   useEffect(() => {
@@ -87,7 +91,8 @@ export default function BDAnalysis() {
         const cm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
         if (fyMonths(fy).some((m) => m.value === cm)) setFMonth(cm);
       }
-    }).catch(() => setYears([]));
+      setReady(true);
+    }).catch(() => { setYears([]); setReady(true); });
     api.get("/api/machines/", token).then((m) => setMaster(Array.isArray(m) ? m : [])).catch(() => setMaster([]));
   }, [token]);
 
@@ -109,7 +114,7 @@ export default function BDAnalysis() {
   const group = fLine ? "machine" : fZone ? "line" : "zone";
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || !ready) return;
     const p = new URLSearchParams({ group });
     if (fFy)    p.set("fy", fFy);
     if (fMonth) p.set("month", fMonth);
@@ -120,7 +125,7 @@ export default function BDAnalysis() {
       .then((d) => setChartRows(Array.isArray(d?.rows) ? d.rows : []))
       .catch(() => setChartRows([]))
       .finally(() => setLoading(false));
-  }, [token, group, fFy, fMonth, fZone, fLine]);
+  }, [token, ready, group, fFy, fMonth, fZone, fLine]);
 
   // Machine No selected directly, or resolved from the Machine Name pick —
   // used to highlight that machine's bar in the machine-wise chart.

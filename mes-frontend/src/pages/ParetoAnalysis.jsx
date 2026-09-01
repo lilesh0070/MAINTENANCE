@@ -78,6 +78,10 @@ export default function ParetoAnalysis() {
   // mahina (April) chunta tha, to September me bhi April ka data khulta —
   // aur dekhne wale ko lagta ki is mahine kuch hua hi nahi.  BDHistory aur
   // HistoryCard pehle se isi tareeqe se chalte hain, wahi yahan bhi.
+  // Boot (FY + month tay hone) se PEHLE data nahi maangte — warna pehli
+  // baar bina date ke request jaati hai aur POORE SAMAY ka data ek jhalak
+  // ke liye chart me aa jaata hai (galat number dikh jaate hain).
+  const [ready, setReady] = useState(false);
   const booted = useRef(false);
   useEffect(() => {
     if (!token) return;
@@ -95,7 +99,8 @@ export default function ParetoAnalysis() {
         // bhi yahi karta hai, to dono page ek jaise chalte hain.
         setFMonth(fyMonths(cur.fy).some((m) => m.value === cm) ? cm : "");
       }
-    }).catch(() => setYears([]));
+      setReady(true);
+    }).catch(() => { setYears([]); setReady(true); });
     api.get("/api/machines/", token).then((m) => setMaster(Array.isArray(m) ? m : [])).catch(() => setMaster([]));
   }, [token]);
 
@@ -117,7 +122,7 @@ export default function ParetoAnalysis() {
   const group = fLine ? "machine" : fZone ? "line" : "zone";
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || !ready) return;
     const p = new URLSearchParams({ group });
     if (fFy)          p.set("fy", fFy);
     if (fMonth)       p.set("month", fMonth);
@@ -130,7 +135,7 @@ export default function ParetoAnalysis() {
       .then((d) => setRows(Array.isArray(d?.rows) ? d.rows : []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, [token, group, fFy, fMonth, fZone, fLine, fMachineNo, fMachineName]);
+  }, [token, ready, group, fFy, fMonth, fZone, fLine, fMachineNo, fMachineName]);
 
   // Pareto: machines sorted by downtime desc; CUMM% over the FULL filtered
   // total (so a Top-N view honestly shows how much of the whole it covers).
