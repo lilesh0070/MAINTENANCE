@@ -37,7 +37,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel
 
 from database import get_conn, dict_cursor
-from auth import get_current_user
+from auth import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/machine-dmc", tags=["machine-dmc"])
 
@@ -404,6 +404,80 @@ def dmc_del_point(pid: int, user=Depends(get_current_user)):
 
 
 # ── ADMIN — revision bump ──────────────────────────────────────────────────
+class DmcRevEdit(BaseModel):
+    """Admin ka rev SUDHAAR — ye bump NAHI hai.  Dekho `PUT /rev-edit`."""
+    zone: str
+    line: str
+    machine_no: str
+    rev_no: str
+    rev_date: Optional[str] = ""          # blank -> date waisi hi rehne do
+
+
+@router.put("/rev-edit")
+def dmc_edit_rev(body: DmcRevEdit, admin=Depends(require_admin)):
+    """Abhi ke revision ka number/date badlo (admin only).  Points nahi badalte.
+
+    `PUT /rev` (bump) purane points archive karta hai aur rev aage badhata hai.
+    Ye endpoint sirf ABHI ke rev ka number/date theek karta hai — na archive
+    banta hai, na ek bhi point chhuta hai.  Galat rev chadh jaye to wapas laane
+    ka yahi raasta hai, isi liye SIRF admin ke liye."""
+    _ensure_dmc()
+    want_raw = (body.rev_no or "").strip()
+    if not want_raw:
+        raise HTTPException(400, "Rev no. khali nahi ho sakta")
+    want = _rev_int(want_raw)
+    if want <= 0:
+        raise HTTPException(400, "Rev no. ek ginti honi chahiye (jaise 4 ya 04)")
+    new_date = None
+    if (body.rev_date or "").strip():
+        try:
+            new_date = datetime.strptime(body.rev_date.strip(), "%Y-%m-%d").date()
+        except Exception:
+            raise HTTPException(400, "rev_date must be YYYY-MM-DD")
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT MAX(rev_no) AS rev_no, COUNT(*) AS n FROM machine_dmc
+                        WHERE machine_no=%s AND zone=%s AND line=%s""",
+                    (body.machine_no, body.zone, body.line))
+        ctx = cur.fetchone() or {}
+        if not ctx.get("n"):
+            raise HTTPException(404, "Is machine par abhi koi DMC point hi nahi hai")
+        old_raw = ctx["rev_no"]
+        # TAKRAAV KI ROK — wahi wajah jo pm.py me likhi hai: ek hi machine par
+        # do alag cheezein "Rev 4" nahi kehla sakti.
+        cur.execute("""SELECT DISTINCT rev_no FROM machine_dmc_rev
+                        WHERE machine_no=%s AND zone=%s AND line=%s""",
+                    (body.machine_no, body.zone, body.line))
+        taken = {_rev_int(r["rev_no"]) for r in cur.fetchall()}
+        if want in taken and want != _rev_int(old_raw):
+            raise HTTPException(409,
+                f"Rev {want_raw} pehle se history me hai — koi doosra number chunein. "
+                f"(history me: {', '.join(str(t) for t in sorted(taken))})")
+        cur2 = conn.cursor()
+        if new_date is not None:
+            cur2.execute("""UPDATE machine_dmc SET rev_no=%s, rev_date=%s
+                             WHERE machine_no=%s AND zone=%s AND line=%s""",
+                         (want_raw, new_date, body.machine_no, body.zone, body.line))
+        else:
+            cur2.execute("""UPDATE machine_dmc SET rev_no=%s
+                             WHERE machine_no=%s AND zone=%s AND line=%s""",
+                         (want_raw, body.machine_no, body.zone, body.line))
+        touched = cur2.rowcount
+        try:
+            from main import write_audit
+            write_audit(conn, action="DMC_REV_EDIT", entity_type="machine_dmc",
+                        details=(f"{body.zone}/{body.line}/{body.machine_no}: "
+                                 f"Rev {old_raw} -> {want_raw}"
+                                 + (f", date {new_date}" if new_date else "")),
+                        user=admin)
+        except Exception:
+            pass
+        conn.commit()
+    return {"ok": True, "old_rev": old_raw, "new_rev": want_raw,
+            "rev_date": (new_date.isoformat() if new_date else None),
+            "points_updated": touched}
+
+
 @router.put("/rev")
 def dmc_bump_rev(body: DmcRevBump, user=Depends(get_current_user)):
     """Update the revision: archive the CURRENT point set under the old rev, then

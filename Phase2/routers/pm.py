@@ -35,7 +35,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from database import get_conn, dict_cursor
-from auth import get_current_user
+from auth import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/pm", tags=["pm"])
 
@@ -265,6 +265,83 @@ def delete_check_point(pid: int, user=Depends(get_current_user)):
             raise HTTPException(404, "point not found")
         conn.commit()
     return {"ok": True}
+
+
+class RevEdit(BaseModel):
+    """Admin ka rev SUDHAAR — ye bump NAHI hai.
+
+    Bump (`/check-point-rev`) purane points archive karta hai aur rev aage
+    badhata hai.  Ye endpoint sirf ABHI ke revision ka number/date theek
+    karta hai — na koi archive banta hai, na ek bhi point chhuta hai.  Galat
+    rev chadh jaye (jaise 4 ki jagah 5) to use wapas laane ka yahi raasta hai,
+    aur isi liye ye SIRF admin ke liye hai."""
+    zone: str
+    line: str
+    machine_no: str
+    rev_no: str
+    rev_date: Optional[str] = ""          # blank → date waisi hi rehne do
+
+
+@router.put("/check-point-rev-edit")
+def edit_check_point_rev(body: RevEdit, admin=Depends(require_admin)):
+    """Abhi ke revision ka number/date badlo (admin only).  Points nahi badalte."""
+    _ensure_cp_rev_table()
+    want_raw = (body.rev_no or "").strip()
+    if not want_raw:
+        raise HTTPException(400, "Rev no. khali nahi ho sakta")
+    want = _rev_int(want_raw)
+    if want <= 0:
+        raise HTTPException(400, "Rev no. ek ginti honi chahiye (jaise 4 ya 04)")
+    new_date = None
+    if (body.rev_date or "").strip():
+        try:
+            new_date = datetime.strptime(body.rev_date.strip(), "%Y-%m-%d").date()
+        except Exception:
+            raise HTTPException(400, "rev_date must be YYYY-MM-DD")
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT MAX(rev_no) rev_no, MAX(rev_date) rev_date, COUNT(*) n
+                         FROM maintenance_pm_check_point
+                        WHERE zone=%s AND line=%s AND machine_no=%s""",
+                    (body.zone, body.line, body.machine_no))
+        ctx = cur.fetchone() or {}
+        if not ctx.get("n"):
+            raise HTTPException(404, "Is machine par abhi koi check point hi nahi hai")
+        old_raw = ctx["rev_no"]
+        # TAKRAAV KI ROK: jo number archive me pehle se hai wo dobara nahi de
+        # sakte — warna ek hi machine par do alag cheezein "Rev 4" kehlatin,
+        # aur history dropdown me dono dikhte.
+        cur.execute("""SELECT DISTINCT rev_no FROM maintenance_pm_check_point_rev
+                        WHERE zone=%s AND line=%s AND machine_no=%s""",
+                    (body.zone, body.line, body.machine_no))
+        taken = {_rev_int(r["rev_no"]) for r in cur.fetchall()}
+        if want in taken and want != _rev_int(old_raw):
+            raise HTTPException(409,
+                f"Rev {want_raw} pehle se history me hai — koi doosra number chunein. "
+                f"(history me: {', '.join(str(t) for t in sorted(taken))})")
+        cur2 = conn.cursor()
+        if new_date is not None:
+            cur2.execute("""UPDATE maintenance_pm_check_point SET rev_no=%s, rev_date=%s
+                             WHERE zone=%s AND line=%s AND machine_no=%s""",
+                         (want_raw, new_date, body.zone, body.line, body.machine_no))
+        else:
+            cur2.execute("""UPDATE maintenance_pm_check_point SET rev_no=%s
+                             WHERE zone=%s AND line=%s AND machine_no=%s""",
+                         (want_raw, body.zone, body.line, body.machine_no))
+        touched = cur2.rowcount
+        try:
+            from main import write_audit
+            write_audit(conn, action="PM_REV_EDIT", entity_type="pm_check_point",
+                        details=(f"{body.zone}/{body.line}/{body.machine_no}: "
+                                 f"Rev {old_raw} -> {want_raw}"
+                                 + (f", date {new_date}" if new_date else "")),
+                        user=admin)
+        except Exception:
+            pass                    # audit na likh paye to bhi sudhaar hona chahiye
+        conn.commit()
+    return {"ok": True, "old_rev": old_raw, "new_rev": want_raw,
+            "rev_date": (new_date.isoformat() if new_date else None),
+            "points_updated": touched}
 
 
 @router.put("/check-point-rev")

@@ -25,7 +25,7 @@ const fyOf = (dateStr) => {
 };
 
 export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
-  const { token } = useAuth();
+  const { token, isAdmin } = useAuth();
   const api = useCallback(async (path, opts = {}) => {
     const r = await fetch(`/api/pm${path}`, {
       ...opts,
@@ -171,6 +171,32 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
     catch (e) { say(String(e.message || e), "err"); }
   };
 
+  // ── Admin ka rev SUDHAAR (bump se ALAG) ────────────────────────────
+  // Bump rev aage badhata hai aur purane points archive karta hai.  Ye sirf
+  // ABHI ke rev ka number/date theek karta hai — points ko haath nahi lagta.
+  // Galat rev chadh jaye to wapas laane ka yahi raasta hai, isliye admin-only.
+  const [revFix, setRevFix]   = useState({ open: false, no: "", date: "" });
+  const openRevFix = () => setRevFix({ open: true,
+                                       no: String(revs.current?.rev_no ?? ""),
+                                       date: String(revs.current?.rev_date ?? "").slice(0, 10) });
+  const saveRevFix = async () => {
+    const no = (revFix.no || "").trim();
+    if (!no) { say("Rev no. daaliye", "err"); return; }
+    if (!window.confirm(
+      `Rev ${revs.current?.rev_no ?? "—"} ko badal kar Rev ${no} karein?
+` +
+      `Points waise ke waise rahenge — sirf revision ka number/date badlega.`)) return;
+    setBusy(true);
+    try {
+      const r = await api(`/check-point-rev-edit`, { method: "PUT", body: JSON.stringify({
+        zone, line, machine_no: mno, rev_no: no, rev_date: revFix.date || "" }) });
+      say(`Rev ${r.old_rev} → ${r.new_rev} ✓ (${r.points_updated} point par lagi)`);
+      setRevFix({ open: false, no: "", date: "" });
+      loadRevs(); loadPoints();
+    } catch (e) { say(String(e.message || e), "err"); }
+    finally { setBusy(false); }
+  };
+
   const bumpRev = async () => {
     const nxt = parseInt(revs.current?.rev_no || "0", 10) + 1;   // AUTO — rev khud current + 1
     const q = pending.length
@@ -305,6 +331,51 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
               ? `Save ${pending.length} point → Rev ${parseInt(revs.current?.rev_no || "0", 10) + 1}`
               : `Bump to Rev ${parseInt(revs.current?.rev_no || "0", 10) + 1}`)}</button>
           <span style={{ fontSize: 11, color: "#94a3b8" }}>Rev khud +1 hoti hai; purana rev archive ho ke Revision dropdown me dikhta.</span>
+        </div>
+      )}
+
+      {/* ── Rev number theek karo — SIRF ADMIN ──────────────────────────
+          Upar wala bump rev aage badhata hai aur purane points archive karta
+          hai.  Ye uske liye hai jab rev GALAT chadh gayi ho — number/date
+          seedha theek kar dete hain, points ko chhue bina. */}
+      {isAdmin && mno && isCurrent && (
+        <div style={{ ...card, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end",
+                      borderLeft: "4px solid #b45309", background: "#fffbeb" }}>
+          {!revFix.open ? (
+            <>
+              <div style={{ fontWeight: 800, fontSize: 12.5, color: "#92400e", alignSelf: "center" }}>
+                Rev number galat chadh gaya? Abhi <b>Rev {revs.current?.rev_no ?? "—"}</b> hai.
+              </div>
+              <button onClick={openRevFix}
+                      style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #b45309",
+                               background: "#fff", color: "#b45309", fontWeight: 800, fontSize: 12.5,
+                               cursor: "pointer" }}>Rev theek karo</button>
+              <span style={{ fontSize: 11, color: "#b45309", opacity: .8 }}>
+                Sirf admin. Points nahi badalte, na koi archive banta hai.
+              </span>
+            </>
+          ) : (
+            <>
+              <div><div style={{ fontSize: 10.5, fontWeight: 800, color: "#92400e", marginBottom: 4 }}>REV NO.</div>
+                <input value={revFix.no} onChange={(e) => setRevFix((s) => ({ ...s, no: e.target.value }))}
+                       style={{ ...sel, minWidth: 90 }} placeholder="4" /></div>
+              <div><div style={{ fontSize: 10.5, fontWeight: 800, color: "#92400e", marginBottom: 4 }}>REV DATE</div>
+                <input type="date" value={revFix.date}
+                       onChange={(e) => setRevFix((s) => ({ ...s, date: e.target.value }))}
+                       style={{ ...sel, minWidth: 150 }} /></div>
+              <button onClick={saveRevFix} disabled={busy}
+                      style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "#b45309",
+                               color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                {busy ? "…" : "Save"}</button>
+              <button onClick={() => setRevFix({ open: false, no: "", date: "" })}
+                      style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid #cbd5e1",
+                               background: "#fff", color: "#475569", fontWeight: 700, fontSize: 12.5,
+                               cursor: "pointer" }}>Cancel</button>
+              <span style={{ fontSize: 11, color: "#b45309" }}>
+                Jo number history me pehle se hai wo nahi le sakte — do "Rev 4" ban jaate.
+              </span>
+            </>
+          )}
         </div>
       )}
 
