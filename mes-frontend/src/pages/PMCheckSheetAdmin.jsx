@@ -197,6 +197,39 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
     finally { setBusy(false); }
   };
 
+  // ── Sab revision ke number EK SAATH badalna (admin only) ───────────
+  // `revFix` sirf chalu rev ka number badalta hai, isliye 0 aur 1 ko aapas me
+  // 5 aur 6 karna usse nahi ho pata — beech me do rev ka ek number ban jaata.
+  // Yahan poori list ek saath jaati hai aur ek hi baar me lagti hai.
+  const [renum, setRenum] = useState({ open: false, map: {} });
+  const revRows = () => {
+    const cur = revs.current ? [{ ...revs.current, live: true }] : [];
+    const old = (revs.history || []).filter((h) => String(h.rev_no) !== String(revs.current?.rev_no));
+    return [...cur, ...old];
+  };
+  const openRenum = () => {
+    const m = {};
+    revRows().forEach((r) => { m[String(r.rev_no)] = String(r.rev_no); });
+    setRenum({ open: true, map: m });
+  };
+  const saveRenum = async () => {
+    const rows = revRows().map((r) => ({ old: String(r.rev_no), new: String(renum.map[String(r.rev_no)] ?? "").trim() }));
+    const badle = rows.filter((r) => r.old !== r.new);
+    if (!badle.length) { say("Kuch badla hi nahi", "err"); return; }
+    const kaLine = badle.map((r) => `Rev ${r.old}  →  Rev ${r.new}`).join("\n");
+    if (!window.confirm("Ye badlav karein?\n\n" + kaLine +
+        "\n\nPoints bilkul nahi badlenge. Bhari hui check sheets par purana number waisa hi rahega.")) return;
+    setBusy(true);
+    try {
+      const r = await api(`/check-point-rev-renumber`, { method: "PUT", body: JSON.stringify({
+        zone, line, machine_no: mno, revs: rows }) });
+      say(`Ho gaya ✓ chalu rev ab Rev ${r.new_current} (${r.live_rows} + ${r.archive_rows} row)`);
+      setRenum({ open: false, map: {} });
+      loadRevs(); loadPoints();
+    } catch (e) { say(String(e.message || e), "err"); }
+    finally { setBusy(false); }
+  };
+
   const bumpRev = async () => {
     const nxt = parseInt(revs.current?.rev_no || "0", 10) + 1;   // AUTO — rev khud current + 1
     const q = pending.length
@@ -341,7 +374,52 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
       {isAdmin && mno && isCurrent && (
         <div style={{ ...card, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end",
                       borderLeft: "4px solid #b45309", background: "#fffbeb" }}>
-          {!revFix.open ? (
+          {renum.open ? (
+            /* ── Sab revision ke number ek saath ── */
+            <div style={{ width: "100%" }}>
+              <div style={{ fontWeight: 800, fontSize: 13, color: "#92400e", marginBottom: 8 }}>
+                Sab revision ke number badlo — naye number bharke ek saath Save karo
+              </div>
+              <table style={{ borderCollapse: "collapse", fontSize: 12.5, marginBottom: 10 }}>
+                <thead><tr>
+                  <th style={{ textAlign: "left", padding: "4px 14px 4px 0", fontSize: 10.5, color: "#92400e" }}>ABHI</th>
+                  <th style={{ textAlign: "left", padding: "4px 14px 4px 0", fontSize: 10.5, color: "#92400e" }}>POINT</th>
+                  <th style={{ textAlign: "left", padding: "4px 0", fontSize: 10.5, color: "#92400e" }}>NAYA NUMBER</th>
+                </tr></thead>
+                <tbody>
+                  {revRows().map((r) => (
+                    <tr key={String(r.rev_no)}>
+                      <td style={{ padding: "3px 14px 3px 0", fontWeight: 800 }}>
+                        Rev {r.rev_no}
+                        {r.live && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: "#16a34a" }}>CHALU</span>}
+                      </td>
+                      <td style={{ padding: "3px 14px 3px 0", color: "#64748b" }}>{r.count ?? "—"}</td>
+                      <td style={{ padding: "3px 0" }}>
+                        <input value={renum.map[String(r.rev_no)] ?? ""}
+                               onChange={(e) => setRenum((s) => ({ ...s, map: { ...s.map, [String(r.rev_no)]: e.target.value } }))}
+                               style={{ ...sel, minWidth: 80, padding: "5px 8px" }} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <button onClick={saveRenum} disabled={busy}
+                        style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "#b45309",
+                                 color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                  {busy ? "…" : "Save"}</button>
+                <button onClick={() => setRenum({ open: false, map: {} })}
+                        style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid #cbd5e1",
+                                 background: "#fff", color: "#475569", fontWeight: 700, fontSize: 12.5,
+                                 cursor: "pointer" }}>Cancel</button>
+                <span style={{ fontSize: 11, color: "#b45309", lineHeight: 1.5 }}>
+                  Points bilkul nahi badlenge. Chalu rev ka number sabse bada rehna chahiye,
+                  aur do rev ka ek number nahi ho sakta. Bhari hui check sheets par purana
+                  number waisa hi rahega — wo us din ka record hai.
+                </span>
+              </div>
+            </div>
+          ) : !revFix.open ? (
             <>
               <div style={{ fontWeight: 800, fontSize: 12.5, color: "#92400e", alignSelf: "center" }}>
                 Rev number galat chadh gaya? Abhi <b>Rev {revs.current?.rev_no ?? "—"}</b> hai.
@@ -350,6 +428,10 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
                       style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #b45309",
                                background: "#fff", color: "#b45309", fontWeight: 800, fontSize: 12.5,
                                cursor: "pointer" }}>Rev theek karo</button>
+              <button onClick={openRenum}
+                      style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #b45309",
+                               background: "#fff", color: "#b45309", fontWeight: 800, fontSize: 12.5,
+                               cursor: "pointer" }}>Sab rev ke number badlo</button>
               <span style={{ fontSize: 11, color: "#b45309", opacity: .8 }}>
                 Sirf admin. Points nahi badalte, na koi archive banta hai.
               </span>
