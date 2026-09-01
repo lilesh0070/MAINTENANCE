@@ -74,8 +74,10 @@ export default function ParetoAnalysis() {
   const topN = 0;   // show ALL (the Top-N "Show" selector was removed)
   const [loading, setLoading] = useState(false);
 
-  // On first load default to the current FY with its FIRST month (April)
-  // pre-selected; the user can switch Month to "All Months" or any other.
+  // Pehli baar khulne par: current FY + ABHI ka mahina.  Pehle FY ka PEHLA
+  // mahina (April) chunta tha, to September me bhi April ka data khulta —
+  // aur dekhne wale ko lagta ki is mahine kuch hua hi nahi.  BDHistory aur
+  // HistoryCard pehle se isi tareeqe se chalte hain, wahi yahan bhi.
   const booted = useRef(false);
   useEffect(() => {
     if (!token) return;
@@ -86,7 +88,11 @@ export default function ParetoAnalysis() {
         booted.current = true;
         const cur = list.find((v) => v.is_current) || list[0];
         setFFy(cur.fy);
-        setFMonth(fyMonths(cur.fy)[0]?.value || "");
+        const now = new Date();
+        const cm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        const ms = fyMonths(cur.fy);
+        // abhi ka mahina us FY me na aaye (purani FY chuni ho) to pehla mahina
+        setFMonth(ms.some((m) => m.value === cm) ? cm : (ms[0]?.value || ""));
       }
     }).catch(() => setYears([]));
     api.get("/api/machines/", token).then((m) => setMaster(Array.isArray(m) ? m : [])).catch(() => setMaster([]));
@@ -220,7 +226,13 @@ export default function ParetoAnalysis() {
             <select className="pa-sel" value={fFy}
                     onChange={(e) => { const v = e.target.value;
                                        setFFy(v);
-                                       setFMonth(v ? (fyMonths(v)[0]?.value || "") : ""); }}>
+                                       if (!v) { setFMonth(""); return; }
+                                       // FY badli: agar abhi ka mahina usi FY me hai to wahi,
+                                       // warna us FY ka pehla mahina.
+                                       const n = new Date();
+                                       const c = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
+                                       const mm = fyMonths(v);
+                                       setFMonth(mm.some((m) => m.value === c) ? c : (mm[0]?.value || "")); }}>
               <option value="">All Financial Years</option>
               {years.map((y) => <option key={y.fy} value={y.fy}>{y.fy}{y.is_current ? "  (current)" : ""}</option>)}
             </select>
