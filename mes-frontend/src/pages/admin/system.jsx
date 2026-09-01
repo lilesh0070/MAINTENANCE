@@ -30,6 +30,9 @@ export const ADMIN_SECTIONS = [
       // sirf admin ko dikhe (AdminShell tab-filter isko hide karta hai).
       { key: "users",        label: "Users & Access", icon: "👥", adminOnly: true },
       { key: "loginhistory", label: "Login History",  icon: "🔐", adminOnly: true },
+      // Delete History — audit-log ka wo hissa jo pehle kahin dikhta hi nahi tha.
+      // adminOnly: mitane ka record dekhna oversight ka kaam hai.
+      { key: "deletehistory", label: "Delete History", icon: "🗑", adminOnly: true },
     ],
   },
   {

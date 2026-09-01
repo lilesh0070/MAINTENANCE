@@ -526,13 +526,18 @@ def audit_log(
     date_from: str = None,
     date_to:   str = None,
     action:    str = None,
+    actions:   str = None,
     username:  str = None,
-    user=Depends(get_current_user)
+    q:         str = None,
+    user=Depends(require_admin)          # audit padhna admin ka kaam
 ):
     """Paged audit-log read.  Optional filters:
       • date_from / date_to (inclusive)
-      • action  — exact match
+      • action  — exact match (ek hi kaam)
+      • actions — comma se alag kai kaam, jaise "ANDON_HISTORY_DELETE,AUTO_SLIP_DELETE".
+                  Delete History page ek saath SAARE delete maangta hai, isliye jodi gayi.
       • username — filter to one user (NEW 2026-05-18)
+      • q — details / username / action me dhoondho (machine no, slip id waghairah)
     """
     with get_conn() as conn:
         cur    = dict_cursor(conn)
@@ -547,6 +552,17 @@ def audit_log(
         if action:
             where.append("action = %s")
             params.append(action)
+        elif actions:
+            names = [a.strip() for a in str(actions).split(",") if a.strip()]
+            if names:
+                where.append("action = ANY(%s)")
+                params.append(names)
+        if q and str(q).strip():
+            # ek hi khaane se teeno me dhoondh — details, username, action
+            like = "%" + str(q).strip() + "%"
+            where.append("(COALESCE(details,'') ILIKE %s OR COALESCE(username,'') ILIKE %s "
+                         "OR action ILIKE %s)")
+            params += [like, like, like]
         if username:
             where.append("username = %s")
             params.append(username)
@@ -568,7 +584,7 @@ def audit_log(
 
 
 @app.get("/api/audit/actions")
-def audit_actions(user=Depends(get_current_user)):
+def audit_actions(user=Depends(require_admin)):
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("SELECT DISTINCT action FROM maintenance_audit_log ORDER BY action")
@@ -576,7 +592,7 @@ def audit_actions(user=Depends(get_current_user)):
 
 
 @app.get("/api/audit/users")
-def audit_users(user=Depends(get_current_user)):
+def audit_users(user=Depends(require_admin)):
     """Return every user with their last login + 24-h activity count.
 
     2026-05-18 — Backs the "Users · Last Login" top card on the Audit
@@ -603,7 +619,7 @@ def audit_users(user=Depends(get_current_user)):
 
 @app.get("/api/audit/logins")
 def audit_logins(fy: str = "", month: str = "", date: str = "", username: str = "",
-                 user=Depends(get_current_user)):
+                 user=Depends(require_admin)):
     """Login/Logout activity — kisne kab login kiya, kab logout.  Har AUTH_LOGIN
     ko usi user ke agle AUTH_LOGOUT se pair karta hai (logout_at NULL = abhi tak
     logout nahi hua).  Filters: fy(2026-27) · month(YYYY-MM) · date(YYYY-MM-DD) ·
@@ -643,7 +659,7 @@ def audit_logins(fy: str = "", month: str = "", date: str = "", username: str = 
 
 
 @app.get("/api/audit/active-logins")
-def audit_active_logins(user=Depends(get_current_user)):
+def audit_active_logins(user=Depends(require_admin)):
     """Abhi kaun-kaun logged-in hai — har user ka LATEST login jo token-window
     ({TOKEN_EXPIRE_HOURS}h) ke andar hai AUR uske baad koi AUTH_LOGOUT nahi.
     JWT stateless hai isliye ye best-effort estimate hai (bina logout ke browser

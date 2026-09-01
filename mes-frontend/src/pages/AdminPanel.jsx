@@ -15,6 +15,7 @@ import { ADMIN_SECTIONS } from "./admin/system";
 import { SlipThresholdPage } from "./admin/slipthreshold";
 import { BreakdownMailPage } from "./admin/breakdownmail";
 import { LoginHistoryPage } from "./admin/loginhistory";
+import { DeleteHistoryPage } from "./admin/deletehistory";
 
 // Render a tab's body.  Centralised so AdminPanel and DepartmentPanel
 // stay perfectly in sync — DepartmentPanel re-uses this same dispatch.
@@ -32,6 +33,7 @@ export function renderAdminTab(sectionKey, tabKey, props) {
     case "admin/users":
     case "maintenance/users": return <UsersPage       {...t} />;
     case "maintenance/loginhistory": return <LoginHistoryPage {...t} />;
+    case "maintenance/deletehistory": return <DeleteHistoryPage {...t} />;
     default: return null;
   }
 }
