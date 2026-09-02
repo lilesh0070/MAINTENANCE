@@ -17,6 +17,10 @@ __pycache__/
 # ─── Logs ────────────────────────────────────────────────────
 *.log
 Phase2/logs/
+logs/
+
+# ─── start.sh ki runtime PID files (machine-specific) ────────
+.run/
 
 # ─── DB / data backups & caches (regenerated, not source) ────
 *backup*.csv
