@@ -22,3 +22,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# ─── Capacitor / Android ────────────────────────────────────
+# `android/` khud git me rehna chahiye (usme app ka naam, icon, permission
+# waghairah hote hain), par build ka kachra nahi — wo har build par banta hai
+# aur bahut bhaari hota hai.
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/app/release/
+android/capacitor-cordova-android-plugins/

@@ -1,0 +1,12 @@
+{
+  "appId": "com.toyotaboshoku.mes",
+  "appName": "Maintenance MES",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": true
+  },
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  }
+}
