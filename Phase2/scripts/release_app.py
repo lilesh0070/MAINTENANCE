@@ -38,6 +38,8 @@ FRONT = os.path.join(ROOT, "mes-frontend")
 APP_DIR = os.path.join(PHASE2, "app")
 VER_FILE = os.path.join(FRONT, "app.version.json")
 APK_SRC = os.path.join(FRONT, "android", "app", "build", "outputs", "apk", "debug", "app-debug.apk")
+ARCHIVE = os.path.join(APP_DIR, "archive")
+KEEP = 5          # itne purane version sambhaal kar rakhte hain, baaki hata dete hain
 
 
 def run(cmd, cwd, label):
@@ -46,6 +48,39 @@ def run(cmd, cwd, label):
     if r.returncode != 0:
         print("\n  RUK GAYE — '%s' fail hua (code %s).  Upar ki galti dekhein." % (label, r.returncode))
         sys.exit(1)
+
+
+def vkey(v):
+    """"1.0.10" ko "1.0.9" se BADA maano.  Seedhi string se ye ulta nikalta hai."""
+    out = []
+    for part in str(v).split("."):
+        try:
+            out.append(int(part))
+        except ValueError:
+            out.append(-1)
+    return tuple(out)
+
+
+def trim_archive(keep=KEEP):
+    """Aakhri `keep` version rakho, purane hata do.  Kya hua wo chhupate nahi."""
+    if not os.path.isdir(ARCHIVE):
+        return
+    found = []
+    for f in os.listdir(ARCHIVE):
+        if f.startswith("maintenance-") and f.endswith(".apk"):
+            found.append((vkey(f[len("maintenance-"):-len(".apk")]), f))
+    found.sort(reverse=True)                      # naya sabse upar
+    rakhe, hatae = found[:keep], found[keep:]
+    print()
+    print("  purane version (%s tak rakhte hain):" % keep)
+    for _, f in rakhe:
+        print("     rakha  : %s" % f)
+    for _, f in hatae:
+        try:
+            os.remove(os.path.join(ARCHIVE, f))
+            print("     hataya : %s" % f)
+        except OSError as e:
+            print("     hata NAHI paye: %s  (%s)" % (f, e))
 
 
 def bump(v):
@@ -62,6 +97,8 @@ def main():
     ap.add_argument("--version", help="apna version dena ho to (warna khud +1)")
     ap.add_argument("--notes", default="", help="is version me kya badla (app me dikhega)")
     ap.add_argument("--skip-build", action="store_true", help="APK pehle se bani ho to sirf server par rakho")
+    ap.add_argument("--keep", type=int, default=KEEP,
+                    help="kitne purane version rakhne hain (default %d)" % KEEP)
     args = ap.parse_args()
 
     old = ""
@@ -98,6 +135,12 @@ def main():
         json.dump({"version": new, "notes": args.notes,
                    "released_at": datetime.now().isoformat(timespec="seconds")},
                   f, indent=2, ensure_ascii=False)
+
+    # Ek copy version ke naam se bhi — taaki kuch bigad jaye to peeche ja saken.
+    # `maintenance.apk` hamesha sabse nayi rehti hai; endpoint wahi deta hai.
+    os.makedirs(ARCHIVE, exist_ok=True)
+    shutil.copy2(APK_SRC, os.path.join(ARCHIVE, "maintenance-%s.apk" % new))
+    trim_archive(args.keep)
 
     mb = os.path.getsize(os.path.join(APP_DIR, "maintenance.apk")) / 1048576
     print("\n  HO GAYA")
