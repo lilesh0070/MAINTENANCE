@@ -38,8 +38,9 @@ const SERVERS = [
 
 const PROBE_MS = 2500;             // itni der me jawab na aaye to us raaste ko chhod do
 
-/** APK ke andar chal rahe hain ya browser me? */
-function isNativeApp() {
+/** APK ke andar chal rahe hain ya browser me?  (Layout aur Settings
+ *  dono yahi poochhte hain — do jagah do copy rakhna galat hota.) */
+export function isNativeApp() {
   if (typeof window === "undefined") return false;
   const c = window.Capacitor;
   if (c && typeof c.isNativePlatform === "function") return c.isNativePlatform();
@@ -48,6 +49,16 @@ function isNativeApp() {
 }
 
 const NATIVE = isNativeApp();
+
+// APK me body par ek nishaan laga dete hain, taaki CSS sirf app ke liye kuch
+// badal sake aur WEBSITE BILKUL NA CHHUE.  (Jaise browser ka default
+// `body { margin: 8px }` — website par wo jaisa hai waisa rehta hai, app me
+// hata dete hain warna phone par kinare safed patti dikhti hai.)
+if (typeof document !== "undefined" && NATIVE) {
+  document.documentElement.classList.add("in-app");
+  if (document.body) document.body.classList.add("in-app");
+  else document.addEventListener("DOMContentLoaded", () => document.body.classList.add("in-app"));
+}
 
 /** Website par "" (kuch nahi jodo), APK par abhi jo raasta chal raha hai. */
 export let API_BASE =

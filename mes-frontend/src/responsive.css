@@ -42,8 +42,17 @@
 /* ── Phones (≤ 640px) ───────────────────────────────────────────────── */
 @media (max-width: 640px) {
   /* The page itself must never scroll sideways on a phone — wide children
-     (tables above) get their own scroll, so nothing important is hidden. */
-  html, body { max-width: 100vw; overflow-x: hidden; }
+     (tables above) get their own scroll, so nothing important is hidden.
+     
+     2026-09-02: pehle yahan `html, body { max-width:100vw; overflow-x:hidden }`
+     tha aur usi se phone par DAAYEN 16px ki safed patti aa rahi thi.  Wajah:
+     `overflow-x:hidden` body ko scroll-container bana deta hai, aur browser
+     uske ANDAR scrollbar ki jagah chhod deta hai — body 375 ki jagah 359 chaudi
+     reh jaati thi.  `clip` scroll-container banata hi nahi, isliye jagah nahi
+     chhodta.  `max-width:100vw` bhi hataya: 100vw me scrollbar gina jaata hai,
+     jo desktop par ulta overflow deta hai. */
+  html { overflow-x: clip; }
+  body { overflow-x: clip; max-width: 100%; }
 
   /* Inputs / selects / textareas become fluid so forms don't overflow. */
   input, select, textarea, button {
@@ -54,4 +63,50 @@
   /* Tame the desktop "hero" font sizes so headings don't blow the width. */
   h1 { font-size: clamp(20px, 6vw, 34px); }
   h2 { font-size: clamp(18px, 5vw, 28px); }
+}
+
+
+/* ── SIRF APK ke andar ──────────────────────────────────────────────
+ * `in-app` class sirf tab lagti hai jab app APK me chal rahi ho
+ * (apiBase.js lagata hai).  Website par ye rules kabhi lagte hi nahi,
+ * isliye chalti hui site par asar shoonya hai.
+ *
+ * body ka 8px margin browser ka apna default hai.  Desktop par wo ek
+ * patli safed dhaari deta hai jo koi notice nahi karta, par phone par
+ * wahi 16px (8+8) kinare par saaf safed patti bankar dikhta hai —
+ * dark login page par bahut bhadda lagta hai.
+ */
+html.in-app, body.in-app {
+  margin: 0;
+  padding: 0;
+  overflow-x: clip;
+}
+
+/* Phone ka notch / status bar — content uske neeche na chhupe. */
+body.in-app {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Input par tap karte hi phone ZOOM kar deta hai agar font 16px se chhota ho —
+   phir poora layout tedha dikhta hai aur user ko haath se zoom-out karna padta
+   hai.  App me har input ko kam se kam 16px de dete hain; dikhne me farak
+   bahut kam hai, par ye chidhaane wali baat khatam ho jaati hai. */
+body.in-app input,
+body.in-app select,
+body.in-app textarea {
+  font-size: max(16px, 1em);
+}
+
+/* Ungli se dabane layak — 32px se chhote button phone par baar-baar chook
+   jaate hain.  Sirf app me, taaki desktop ka ghana layout na bigde. */
+body.in-app button,
+body.in-app [role="button"] {
+  min-height: 32px;
+}
+
+/* Chaudi table phone par apne andar scroll karti hai (upar wala rule).  App me
+   uspar halka sa ishara de dete hain ki ye khiskaayi ja sakti hai. */
+body.in-app table {
+  -webkit-overflow-scrolling: touch;
 }
