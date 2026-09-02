@@ -3,6 +3,7 @@ import SlideNav from "./SlideNav";
 import FullscreenButton from "./FullscreenButton";
 import DisplayToolbar from "./DisplayToolbar";
 import AIAssistant from "./AIAssistant";
+import AppUpdate from "./AppUpdate";
 
 // The wall-dashboard pages get the full display toolbar (Light/Dark + aspect +
 // fullscreen); every other page keeps just the plain full-screen button.
@@ -26,6 +27,11 @@ export default function Layout({ children }) {
 
       {/* Floating nav — always visible on top */}
       <SlideNav />
+
+      {/* App ka update check — upar beech me.  SIRF APK me dikhta hai;
+          website par ye component pehli line par hi null laut jaata hai,
+          isliye wahan na button aata hai na koi request jaati hai. */}
+      <AppUpdate />
 
       {/* Maintenance AI assistant — ek hi jagah lagi hai, isliye HAR page par
           milti hai: Breakdown, ANDON, CAPA, PM, Spare, KPI, wall-display, sab.

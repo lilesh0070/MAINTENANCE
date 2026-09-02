@@ -64,6 +64,7 @@ from routers.andon           import router as andon_router
 from routers.dashboard_zones import router as dashboard_zones_router
 from routers.machine_running_hours import router as machine_running_hours_router
 from routers.kpi_ui_settings import router as kpi_ui_settings_router
+from routers.app_update import router as app_update_router
 from routers.breakdown_mail  import router as breakdown_mail_router
 
 # ── App ────────────────────────────────────────────────────────
@@ -159,6 +160,7 @@ app.include_router(dashboard_zones_router)      # Dashboard Pending-Breakdown zo
 app.include_router(machine_running_hours_router) # Per-machine running hours → MTBF calculation (KPI Target)
 app.include_router(kpi_ui_settings_router)      # Admin-editable KPI page appearance (colors/axis)
 app.include_router(breakdown_mail_router)       # Breakdown escalation mail (Engineer -> Plant Head)
+app.include_router(app_update_router)         # Android app ka update check + APK download
 
 
 # NOTE (maintenance-only slice): the manpower / kanban / report-scheduler

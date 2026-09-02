@@ -39,3 +39,9 @@ Thumbs.db
 
 # ─── Claude Code ka local launch config (machine-specific) ───
 .claude/
+
+# ─── Android app ki release ─────────────────────────────────
+# APK har release par 6+ MB ki banti hai — git me nahi rakhni.  Wo server par
+# `Phase2/app/` me rehti hai aur wahin se phone download karte hain.
+# version.json bhi wahin banta hai, isliye wo bhi nahi.
+Phase2/app/
