@@ -77,20 +77,20 @@ function AndonTable({ rows, fullscreenRef, isFullscreen, toggleFullscreen }) {
         flexDirection: "column", borderRadius: 0, border: "none",
       } : {}),
     }}>
-      <div style={{
+      <div className="an-band" style={{
         padding: "14px 20px",
         background: "linear-gradient(135deg,#dc2626,#b91c1c)",
         color: "#fff", display: "flex", alignItems: "center",
         justifyContent: "space-between", gap: 10,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ fontSize: 22, animation: liveCount ? "blinkDot 1.2s infinite" : "none" }}>🔔</span>
+          <span className="an-band-bell" style={{ fontSize: 22, animation: liveCount ? "blinkDot 1.2s infinite" : "none" }}>🔔</span>
           <div>
-            <div style={{ fontFamily: "'Barlow Condensed',sans-serif",
+            <div className="an-band-title" style={{ fontFamily: "'Barlow Condensed',sans-serif",
                           fontSize: 22, fontWeight: 800, letterSpacing: ".02em" }}>
               MAINTENANCE ANDON
             </div>
-            <div style={{ fontSize: 11, opacity: 0.9, fontWeight: 600 }}>
+            <div className="an-band-sub" style={{ fontSize: 11, opacity: 0.9, fontWeight: 600 }}>
               {liveCount === 0 ? "All lines running ✓" : `${liveCount} active call${liveCount>1?"s":""}`}
             </div>
           </div>

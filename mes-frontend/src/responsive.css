@@ -110,3 +110,92 @@ body.in-app [role="button"] {
 body.in-app table {
   -webkit-overflow-scrolling: touch;
 }
+
+/* ── App ka page-header (Maintenance Dashboard, Deviations) ───────────
+ * DIKKAT: ye header phone par TV wala roop le leta hai.  `.md-portrait`
+ * class ORIENTATION se lagti hai, chaudai se nahi — aur phone bhi portrait
+ * hai aur 9:16 wala TV bhi.  TV 1080 chaudi hoti hai, phone sirf 412.
+ *
+ * Nateeja (emulator me naapa gaya):
+ *     topbar padding : 0 78px 0 88px  → 166px pi gaya, sirf 246px bacha
+ *     title          : 28px, 270px chaudi → 246 me nahi samati, kat gayi
+ *     9:16 button    : 358→405  (gear 358→398 ke THEEK NEECHE dabba)
+ *     16:9 / ⛶       : 409→456, 466→502  — screen 412 se BAHAR
+ *
+ * Sab kuch `body.in-app` ke andar hai, isliye TV aur website ko ye rules
+ * kabhi chhute hi nahi — wahan `in-app` class lagti hi nahi.
+ */
+
+/* 9:16 / 16:9 / fullscreen — ye TV board ke control hain.  Phone khud hi
+   poori screen par chalta hai, aur app me FullscreenButton pehle se hata
+   hua hai.  Yahan ye sirf jagah khaate the aur bahar nikal jaate the. */
+body.in-app .md-fs-btn { display: none !important; }
+
+/* Padding TV ka tha.  Ab utni hi jagah rakhte hain jitni sach me chahiye:
+   baayein slide-nav ka logo (36px + 8px kinara), daayein ⚙ Settings (40px
+   + 14px kinara). */
+body.in-app .md-topbar {
+  padding-left: 52px !important;
+  padding-right: 60px !important;
+}
+
+/* 28px TV ke liye tha.  412 par 'Maintenance Dashboard' usme samata hi nahi.
+   19px par wo poora aa jaata hai aur padhne me bhi bada rehta hai. */
+body.in-app .md-title { font-size: 19px !important; }
+
+/* Slide-nav ka logo — 45px ka gol dabba header ke bilkul upar chadha rehta
+   tha.  App me thoda chhota aur kinare ke paas, taaki title ko jagah mile. */
+body.in-app button[aria-label="Toggle navigation"] {
+  width: 36px !important;
+  height: 36px !important;
+  left: 8px !important;
+  top: 10px !important;
+}
+
+/* ── Dashboard ke KPI card ────────────────────────────────────────────
+ * Ye bhi TV ke naap par bane the: `.md-portrait .md-tiles` 4 barabar
+ * column deta hai, jo 1080 chaudi TV par theek hai.  Phone (412) par har
+ * card sirf 81px ka reh jaata tha — itni jagah me `AWAITING RESPONSE`
+ * aur `Call open, no ack yet` DO-DO line me toot jaate the, aur usi
+ * toot-ne se card 91px LAMBE ho jaate the.  Patle aur lambe.
+ *
+ * Ab: kinare ki padding kam (26 -> 12) aur gap kam (12 -> 6), jisse har
+ * card 81 se 93px chaudha ho gaya; font kase gaye.  Nateeja 93 x 66 --
+ * ek hi line me, aur 27% chhota.  Char me se teen label ab EK line me
+ * aa jaate hain.
+ *
+ * Sab `body.in-app` ke andar -- TV aur website jaise the waise.
+ */
+/* padding-top 16 -> 8: header ki neeli line aur pehle card ke beech
+   16px ka faasla phone par khaali-khaali lag raha tha. */
+body.in-app .md-body  { padding-left: 12px !important; padding-right: 12px !important;
+                        padding-top: 8px !important; }
+/* gap 12 -> 6 : cards ke AAPAS ka faasla.
+   margin-bottom 12 -> 6 : cards aur neeche wali ANDON patti ka faasla. */
+body.in-app .md-tiles { gap: 6px !important; margin-bottom: 6px !important; }
+body.in-app .md-tiles > div { padding: 6px 7px !important; }
+/* teeno line: label, bada number, aur neeche ki chhoti detail */
+body.in-app .md-tiles > div > div:first-child  { font-size: 8px  !important; line-height: 1.15 !important; }
+body.in-app .md-tiles > div > div:nth-child(2) { font-size: 18px !important; line-height: 1.2  !important; }
+body.in-app .md-tiles > div > div:nth-child(3) { font-size: 8px  !important; line-height: 1.15 !important; }
+
+/* ── ANDON ki laal patti (dashboard ke beech me) ──────────────────────
+ * Ye bhi TV ke naap par thi: padding 14x20, naam 22px, ghanti 22px --
+ * poori patti 70px lambi.  Phone par itni jagah sirf ek heading ko dena
+ * bekaar tha, khaas kar jab uske neeche ki table ko jagah chahiye.
+ *
+ * Ab 51px (27% kam).  Naam ab bhi 16px par saaf padha jaata hai.
+ *
+ * `an-band*` naam AndonTable.jsx me jode gaye hain -- sirf naam, style
+ * bilkul waisi hi.  Website/TV par un naamon par koi CSS hai hi nahi,
+ * isliye wahan kuch nahi badalta.  (Pehle structure se pakadne ki koshish
+ * ki thi -- `.md-col-a > div:nth-child(2) > div:first-child` -- par wo
+ * itna nazuk tha ki dhaancha badalte hi chup-chaap kaam karna band kar
+ * deta, ya galat cheez pakad leta.)
+ */
+body.in-app .an-band        { padding: 9px 12px !important; }
+body.in-app .an-band-bell   { font-size: 16px !important; }
+body.in-app .an-band-title  { font-size: 16px !important; }
+body.in-app .an-band-sub    { font-size: 10px !important; }
+/* Fullscreen button -- patti chhoti hui to ye uske hisaab se bada lagne laga. */
+body.in-app .an-band button { font-size: 10px !important; padding: 5px 9px !important; }
