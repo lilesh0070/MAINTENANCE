@@ -25,7 +25,7 @@ hi hai.)
 
 FILE KAHAN RAKHNI HAI
 ---------------------
-    Phase2/app/mes.apk        <- nayi APK
+    Phase2/app/maintenance.apk   <- nayi APK  (purana naam `mes.apk` bhi chalta hai)
     Phase2/app/version.json   <- {"version": "1.0.1", "notes": "..."}
 
 Dono `scripts/release_app.py` apne aap rakh deta hai — haath se copy karne ki
@@ -43,7 +43,18 @@ from fastapi.responses import FileResponse
 router = APIRouter(prefix="/api/app", tags=["app-update"])
 
 _APP_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app")
-_APK = os.path.join(_APP_DIR, "mes.apk")
+# Naam badalte waqt purani APK bhi pade ho sakti hai (server par purana code
+# chal raha ho, ya file pehle se `mes.apk` naam se rakhi ho).  Isliye dono
+# naam dekh lete hain — pehla jo mile wahi.  Naya naam pehle.
+_APK_NAMES = ("maintenance.apk", "mes.apk")
+
+
+def _apk_path():
+    for n in _APK_NAMES:
+        p = os.path.join(_APP_DIR, n)
+        if os.path.isfile(p):
+            return p
+    return os.path.join(_APP_DIR, _APK_NAMES[0])   # naya naam — error saaf aaye
 _META = os.path.join(_APP_DIR, "version.json")
 
 
@@ -59,11 +70,12 @@ def _read_meta() -> dict:
 def app_version(request: Request):
     """Abhi server par kaunsi APK padi hai.  App isi se apna version milata hai."""
     meta = _read_meta()
-    have_apk = os.path.isfile(_APK)
-    size_mb = round(os.path.getsize(_APK) / 1048576, 1) if have_apk else 0
+    apk = _apk_path()
+    have_apk = os.path.isfile(apk)
+    size_mb = round(os.path.getsize(apk) / 1048576, 1) if have_apk else 0
     built = None
     if have_apk:
-        built = datetime.fromtimestamp(os.path.getmtime(_APK)).isoformat(timespec="seconds")
+        built = datetime.fromtimestamp(os.path.getmtime(apk)).isoformat(timespec="seconds")
     # apk_url usi pate par banao jispar app ne poochha hai — app Ethernet se
     # aaya ho ya WiFi se, download bhi usi raaste se jayega.
     base = str(request.base_url).rstrip("/")
@@ -80,12 +92,13 @@ def app_version(request: Request):
 @router.get("/download")
 def app_download():
     """APK khud.  Android ka download manager ise seedha uthata hai."""
-    if not os.path.isfile(_APK):
+    apk = _apk_path()
+    if not os.path.isfile(apk):
         raise HTTPException(404, "Abhi koi APK server par rakhi hi nahi hai")
     meta = _read_meta()
     ver = (meta.get("version") or "").replace(" ", "")
-    name = f"MaintenanceMES-{ver}.apk" if ver else "MaintenanceMES.apk"
-    return FileResponse(_APK, media_type="application/vnd.android.package-archive",
+    name = f"Maintenance-{ver}.apk" if ver else "Maintenance.apk"
+    return FileResponse(apk, media_type="application/vnd.android.package-archive",
                         filename=name)
 
 
@@ -95,7 +108,8 @@ def app_health():
     return {
         "folder":       _APP_DIR,
         "folder_hai":   os.path.isdir(_APP_DIR),
-        "apk_hai":      os.path.isfile(_APK),
+        "apk_hai":      os.path.isfile(_apk_path()),
+        "apk_file":     os.path.basename(_apk_path()),
         "version_hai":  os.path.isfile(_META),
         "version":      _read_meta().get("version") or "",
     }

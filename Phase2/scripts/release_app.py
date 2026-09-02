@@ -8,7 +8,7 @@ KYA KARTA HAI (isi kram me)
 2. `npm run build`            -> website ka naya bundle
 3. `npx cap sync android`     -> bundle ko Android project me copy
 4. `gradlew assembleDebug`    -> APK
-5. APK ko `Phase2/app/mes.apk` par rakh deta hai
+5. APK ko `Phase2/app/maintenance.apk` par rakh deta hai
 6. `Phase2/app/version.json` likh deta hai
 
 Uske baad har phone ke app me "Update" dabate hi naya version dikhega aur
@@ -93,16 +93,16 @@ def main():
         sys.exit(1)
 
     os.makedirs(APP_DIR, exist_ok=True)
-    shutil.copy2(APK_SRC, os.path.join(APP_DIR, "mes.apk"))
+    shutil.copy2(APK_SRC, os.path.join(APP_DIR, "maintenance.apk"))
     with open(os.path.join(APP_DIR, "version.json"), "w", encoding="utf-8") as f:
         json.dump({"version": new, "notes": args.notes,
                    "released_at": datetime.now().isoformat(timespec="seconds")},
                   f, indent=2, ensure_ascii=False)
 
-    mb = os.path.getsize(os.path.join(APP_DIR, "mes.apk")) / 1048576
+    mb = os.path.getsize(os.path.join(APP_DIR, "maintenance.apk")) / 1048576
     print("\n  HO GAYA")
     print("     version : %s" % new)
-    print("     APK     : %s  (%.1f MB)" % (os.path.join(APP_DIR, "mes.apk"), mb))
+    print("     APK     : %s  (%.1f MB)" % (os.path.join(APP_DIR, "maintenance.apk"), mb))
     print("     ab har phone ke app me 'Update' dabate hi ye naya version dikhega.")
     print("\n  DHYAN: backend restart ki zaroorat NAHI — file seedha padhi jaati hai.")
 
