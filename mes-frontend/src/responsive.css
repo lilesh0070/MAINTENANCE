@@ -698,3 +698,12 @@ body.in-app .mk-card { padding: 9px 10px 8px !important; }
 body.in-app .mk-card > div:first-child  { font-size: 11px !important; letter-spacing: 0 !important; }
 body.in-app .mk-card > div:nth-child(2) { font-size: 26px !important; }
 body.in-app .mk-card > div:last-child   { font-size: 11px !important; }
+
+/* Chhah chart do-do karke aate the (`.mk-portrait .mk-charts` -- wahi TV wala
+   9:16 raasta, jispar phone bhi chala jaata hai).  372px me do baant kar
+   har chart 174-201px ka reh jaata tha -- itne me mahine ke naam aur bar
+   dono nahi samate.  Ab ek-ek: poora 372px, height wahi 269px.
+   (Column barabar bhi nahi the -- 201 aur 174 -- kyunki `1fr` ka matlab
+   `minmax(auto,1fr)` hai aur pehle chart ka min-content bada tha.)
+   Page 1435 -> 2221px, par phone par scroll karna hi hai. */
+body.in-app .mk-charts { grid-template-columns: 1fr !important; }
