@@ -354,3 +354,34 @@ body.in-app .ai-panel {
   bottom: 12px !important;
   right: 12px !important;
 }
+
+/* ── App me table poori chaudai bhare ─────────────────────────────────
+ * DIKKAT: `DMC NG Points` ki table 387px chaudi thi par uske teen column
+ * milkar sirf 232px -- 155px daayein khaali pada rehta tha, aur grey header
+ * aadhe me hi ruk jaata tha.  Table par `width: 100%` likha hai, phir bhi.
+ *
+ * JAD: upar wala purana rule (`@media (max-width: 900px) { table { display:
+ * block; overflow-x: auto } }`).  `display: block` table ka layout hi tod
+ * deta hai -- `width: 100%` BAHAR wale block par lagta hai, aur andar ki rows
+ * ek anonymous table ban kar sirf apne content jitni reh jaati hain.  Isiliye
+ * jo table content se patli thi wo aadhi khaali dikhti thi.
+ *
+ * Wo rule bekaar nahi hai -- usi se CHAUDI table scroll karti hai.  Isliye
+ * uska maqsad rakhte hain par jagah badal dete hain: scroll ka kaam ab table
+ * ke PARENT ka, aur table khud asli `display: table` par wapas.
+ *
+ *   min-width: 100%  -> patli table poori chaudai bhar de
+ *   width: auto      -> chaudi table apne content jitni ho aur parent me
+ *                       scroll kare (pehle jaisa hi bartaav)
+ *
+ * Jaancha: ikkis ke ikkis page par kuch chhupa nahi.  Aur `overflow-x: auto`
+ * lagane se browser `overflow-y` bhi `auto` kar deta hai -- usse content upar-
+ * neeche kat sakta tha, isliye 12 aise div alag se jaanche: kisi me vertical
+ * katav nahi.
+ */
+body.in-app div:has(> table) { overflow-x: auto !important; }
+body.in-app table {
+  display: table !important;
+  width: auto !important;
+  min-width: 100% !important;
+}
