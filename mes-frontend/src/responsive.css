@@ -481,3 +481,21 @@ body.in-app .an-ttl  { font-size: 14px !important; white-space: nowrap !importan
    par tab chhote karne se ek saath zyada dikhte hain (3.5 ki jagah ~5). */
 body.in-app .an-tabs { gap: 5px !important; margin-bottom: 10px !important; }
 body.in-app .an-tabs > * { padding: 6px 10px !important; font-size: 11px !important; }
+
+/* ── ANDON → Call → Output ka Bits wala hissa ─────────────────────────
+ * Row ka dhaancha: [22px] [78px] [130px] [bachi jagah].  Pehle teen 230px
+ * le lete hain, to aakhri column ko phone par sirf 75px milte hain.  Usme
+ * `breakdown band hone par` wala chip baithta hai jo 153px ka hai aur
+ * `white-space: nowrap` par -- yaani 40px bahar nikal kar CHHUP jaata tha.
+ *
+ * Font chhota karke thoosne ki jagah use APNI LINE de dete hain: row ko wrap
+ * hone do aur chip wale column ko poori chaudai.  Tab chip aaram se 153px me
+ * ek line par baith jaata hai aur padhne me bhi bada rehta hai.
+ */
+body.in-app .an-bitrow { flex-wrap: wrap !important; }
+body.in-app .an-bitrow > div:last-child { flex: 1 1 100% !important; }
+/* Row wrap hone se `Off kab` label bhi apni line par chala gaya aur input row
+   ke UPAR baith gaya -- jabki wo neeche wale chip ka label hai, upar wale
+   khaano ka nahi.  Chip khud hi likh deta hai kab OFF hoga
+   (`breakdown band hone par`), isliye phone par ye label bekaar hai. */
+body.in-app .an-bitrow > div:last-child:has(> .an-lbl) { display: none !important; }

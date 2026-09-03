@@ -1025,7 +1025,7 @@ export default function AndonSystem() {
                   </div>
 
                   {/* labels — ek hi baar */}
-                  <div className="an-row" style={{ marginBottom:3, flexWrap:"nowrap" }}>
+                  <div className="an-row an-bitrow" style={{ marginBottom:3, flexWrap:"nowrap" }}>
                     <div style={{ flex:"0 0 22px" }} />
                     <div style={{ flex:"0 0 78px" }}><label className="an-lbl">Type</label></div>
                     <div style={{ flex:"0 0 130px" }}><label className="an-lbl">Bit no</label></div>
@@ -1039,7 +1039,7 @@ export default function AndonSystem() {
                     { n: 2, t: "bit2_type", v: "bit2_no", show: outDeptOffAck(outForm.department),
                       rule: "breakdown band hone par", color: "#0e7490", ph: "khali = nahi lagegi" },
                   ].filter((b) => b.show).map((b) => (
-                    <div key={b.n} className="an-row" style={{ alignItems:"center", marginBottom:6, flexWrap:"nowrap" }}>
+                    <div key={b.n} className="an-row an-bitrow" style={{ alignItems:"center", marginBottom:6, flexWrap:"nowrap" }}>
                       <div style={{ flex:"0 0 22px", fontSize:14, fontWeight:800, color:"#94a3b8" }}>{b.n}</div>
                       <div style={{ flex:"0 0 78px" }}>
                         <select className="an-in" style={{ width:"100%" }} value={outForm[b.t] || "M"}
@@ -1053,7 +1053,7 @@ export default function AndonSystem() {
                                placeholder={b.ph} />
                       </div>
                       <div style={{ flex:"1 1 auto", minWidth:0 }}>
-                        <span style={{ display:"inline-block", whiteSpace:"nowrap", fontSize:11.5, fontWeight:800,
+                        <span className="an-rule-chip" style={{ display:"inline-block", whiteSpace:"nowrap", fontSize:11.5, fontWeight:800,
                                        color:b.color, background:b.color + "14", border:"1px solid " + b.color + "33",
                                        padding:"3px 9px", borderRadius:99 }}>
                           {b.rule}
