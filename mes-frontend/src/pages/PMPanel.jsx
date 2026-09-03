@@ -739,7 +739,7 @@ export default function PMPanel() {
       {/* header */}
       <div style={{ display:"flex", alignItems:"center", gap:12, flexWrap:"wrap", marginBottom:14 }}>
         <span style={{ fontSize:18, fontWeight:900, color:"#0f172a" }}>🛠 Preventive Maintenance</span>
-        <div style={{ display:"flex", gap:4, background:"#e2e8f0", borderRadius:8, padding:3 }}>
+        <div className="pm-tabs" style={{ display:"flex", gap:4, background:"#e2e8f0", borderRadius:8, padding:3 }}>
           {[["schedule","Schedule",0],["fillpend","🖊 Fill Check Sheets",retData?.total || 0],
             ["engverify","✅ Engineer Verify",verCounts.engineer],
             ["incverify","🏁 In-Charge Approve",verCounts.incharge],
@@ -1198,7 +1198,7 @@ export default function PMPanel() {
             </div>
           )}
 
-          <div style={{display:"grid",gridTemplateColumns:"1fr 320px",gap:14,alignItems:"start"}}>
+          <div className="pm-mail-cols" style={{display:"grid",gridTemplateColumns:"1fr 320px",gap:14,alignItems:"start"}}>
             {/* calendar */}
             <div style={card}>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>

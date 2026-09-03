@@ -250,3 +250,51 @@ body.in-app button[aria-label="Settings"] { position: absolute !important; }
 /* status bar (52px) ke neeche se shuru -- warna dono uske peeche chhup jaate. */
 body.in-app button[aria-label="Toggle navigation"],
 body.in-app button[aria-label="Settings"] { top: calc(env(safe-area-inset-top, 0px) + 10px) !important; }
+
+/* ── App: baaki pages ─────────────────────────────────────────────────
+ * 19 page emulator me ek-ek karke naape gaye.  **11 bilkul theek nikle**
+ * aur unhe chhua nahi.
+ *
+ * Naapne ka tareeqa maayne rakhta hai: pehle maine har wo cheez gin li thi
+ * jo screen se bahar thi -- us hisaab se 8 page kharab lag rahe the.  Par
+ * jo cheez apne dabbe me SCROLL karti hai wo dikkat hai hi nahi.  Sirf wahi
+ * ginna chahiye jo sach me chhup jaaye, jahan pahunchne ka koi raasta na ho.
+ * Sahi naap se pata chala ki CAPA, Spare, Document Update aur Maintenance
+ * Panel **pehle se hi theek the** -- unke liye likhe gaye rule bekaar the,
+ * isliye hata diye.  (Ulta ek rule ne ANDON ko bigaad bhi diya tha.)
+ *
+ * Ye chaar sach ke mujrim hain:
+ */
+
+/* ANDON ke tab: `.an-tabs` sirf `display:flex; gap:8px` tha -- side me
+   khiskane ka koi intezaam nahi.  Isliye `Reports` jaise aakhri tab 251px
+   bahar nikal kar CHHUP jaate the, aur unpar pahuncha hi nahi ja sakta tha. */
+body.in-app .an-tabs { overflow-x: auto !important; flex-wrap: nowrap !important; }
+body.in-app .an-tabs > * { flex: 0 0 auto !important; }
+
+/* KPI ke 9:16 / 16:9 -- wahi TV wale control jo dashboard par hata chuke hain.
+   Baaki controls ko wrap hone do taaki wo bhi bahar na nikle. */
+body.in-app .mk-live > div:first-child { display: none !important; }
+body.in-app .mk-live { flex-wrap: wrap !important; }
+
+/* Preventive Maintenance: `1fr 320px` ka do-column grid.  320px pakka tha,
+   isliye poora grid 600px maangta tha jabki jagah 376px thi -- `Reminder Mail`
+   ka panel 220px bahar chala jaata tha.  Phone par ek hi column theek hai. */
+body.in-app .pm-mail-cols { grid-template-columns: 1fr !important; }
+
+/* Study Material: dono patti `flex nowrap` thi, to `English / हिंदी /
+   ＋ Add Topic` daayein se bahar nikal jaate the.  Wrap hone do. */
+body.in-app .sm-top,
+body.in-app .sm-wrap { flex-wrap: wrap !important; }
+
+/* PM ki tab patti: chhah tab (`Schedule` se `Yearly PM Schedule` tak) ek
+   `flex` me the, na wrap na scroll -- to aakhri do tab 68px bahar CHHUP
+   jaate the.  Wrap ke bajaye scroll rakha hai, taaki goli-jaisi patti ka
+   roop na toote (wo ek hi grey patti par baithe dikhne chahiye). */
+body.in-app .pm-tabs { overflow-x: auto !important; }
+body.in-app .pm-tabs > * { flex: 0 0 auto !important; }
+
+/* KPI ke card: `.mk-portrait .mk-grid` TEEN column deta hai -- phir wahi TV
+   wali kahani.  3 x 130 + 2 x 14 = 418, aur jagah 412 -- 5px bahar.  Phone
+   par do column rakhte hain; tab card chaude bhi ho jaate hain. */
+body.in-app .mk-grid { grid-template-columns: repeat(2, 1fr) !important; }
