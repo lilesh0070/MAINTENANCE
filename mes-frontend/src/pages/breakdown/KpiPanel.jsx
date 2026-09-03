@@ -120,7 +120,7 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
             {fDate || "Today"} · {fZone || "All zones"}{fLine ? ` · ${fLine}` : ""}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div className="kp-filters" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <input type="date" value={fDate} onChange={(e) => setFDate(e.target.value)}
                  style={kpiSelect} title="Breakdown date" />
           <select value={fZone} onChange={(e) => onZone(e.target.value)} style={kpiSelect}>
@@ -262,7 +262,7 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
                   <div style={{ overflowX: "auto", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10,
                                 // more than 10 slips → cap the height and scroll the rest
                                 ...(selSlips.length > 10 ? { maxHeight: 430, overflowY: "auto" } : {}) }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                    <table className="kp-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                       <thead>
                         <tr>
                           {["S.No", "Line", "Shift", "Start", "End", "Status", "Duration", "Reason", "Slip"].map((h) => (

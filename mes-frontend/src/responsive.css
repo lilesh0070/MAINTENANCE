@@ -298,3 +298,28 @@ body.in-app .pm-tabs > * { flex: 0 0 auto !important; }
    wali kahani.  3 x 130 + 2 x 14 = 418, aur jagah 412 -- 5px bahar.  Phone
    par do column rakhte hain; tab card chaude bhi ho jaate hain. */
 body.in-app .mk-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+/* ── Pending Breakdown ka filter row ──────────────────────────────────
+ * Chaar cheezein ek line me honi chahiye thi -- date, All Zones, All Lines,
+ * aur refresh.  Par unki kul chaudai 367px thi + 24px gap = 391px, jabki
+ * jagah sirf 351px.  40px kam pade, isliye `↻` akela neeche gir jaata tha.
+ *
+ * Ab teeno khaane aapas me jagah baant lete hain (`flex: 1 1 0`) aur refresh
+ * apne naap par rehta hai.  `min-width: 0` zaroori hai -- bina iske flex-item
+ * apne content se chhota hota hi nahi, aur wrap phir bhi ho jaata.
+ */
+body.in-app .kp-filters { flex-wrap: nowrap !important; gap: 6px !important; }
+body.in-app .kp-filters > input,
+body.in-app .kp-filters > select {
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+  padding: 5px 6px !important;
+}
+body.in-app .kp-filters > button { flex: 0 0 auto !important; }
+
+/* Usi panel ki table: NAU column (S.No se Slip tak), har cell `9px 12px`
+   -- yaani 216px sirf padding.  Wo apne dabbe me scroll karti hai isliye
+   kuch chhupta nahi, par phone par itna khiskana thakane wala hai.  Padding
+   kasne se 108px bach jaate hain. */
+body.in-app .kp-table th,
+body.in-app .kp-table td { padding: 7px 6px !important; }
