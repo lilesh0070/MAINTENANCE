@@ -849,3 +849,27 @@ body.in-app .bh-search { min-width: 0 !important; width: 100% !important; }
 body.in-app .bh-table th { padding: 6px 6px !important; font-size: 9px !important;
                            line-height: 1.15 !important; }
 body.in-app .bh-table td { padding: 6px 6px !important; font-size: 11px !important; }
+
+/* ==================================================================
+   BD ANALYSIS
+   ------------------------------------------------------------------
+   Naap ne ye nahi pakda tha, aankh ne pakda: chart ke neeche zone ke
+   naam **ek doosre ke UPAR** chhap rahe the -- SEAT_SLIDER, RECLINER,
+   SUB_ASSEMBLY, PRESS_SHOP, THIN_RECLINER, LOOP_PIPE sab ek smear.
+   Meri purani jaanchein sirf ye dekhti thin ki koi cheez apne dabbe se
+   ya screen se bahar to nahi -- **aapas me takrana** dekhti hi nahi thin.
+   (Ab overlap ginne wali jaanch bhi kar li: har chart par 6 jode.)
+
+   Chhah naamon ki kul chaudai **346px**, chart ki jagah **327px** --
+   isliye takrana laazmi tha.
+
+   Jo AAZMAYA aur CHHOD DIYA: font chhota karna.  8px par bhi **5 jode**
+   takra rahe the -- kyunki tick ki jagah wahi rehti hai, sirf akshar
+   chhote hote hain.  Padhna mushkil bhi ho jaata.
+
+   Jo KIYA: chart ko jagah di (560px) aur uske wrapper ko scroll ka dabba
+   banaya -- **0 overlap**, aur font poora 11px hi raha.  Sideways scroll
+   sirf ~230px ka hai (ek screen se bhi kam).  Card ka title wrapper se
+   BAHAR hai, isliye scroll karne par title apni jagah rehta hai. */
+body.in-app .ba-chartwrap { overflow-x: auto !important; }
+body.in-app .ba-chartwrap .recharts-responsive-container { min-width: 560px !important; }

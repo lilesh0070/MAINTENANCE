@@ -298,6 +298,13 @@ export default function BDAnalysis() {
                     No {group}s to plot — pick a {group === "line" ? "zone" : "line"} above.
                   </div>
                 ) : (
+                  /* Khaali wrapper -- iska apna koi style nahi.  Phone par
+                     ise scroll ka dabba banaya jaata hai aur chart ko andar
+                     jagah di jaati hai, taaki X-axis ke zone naam ek doosre
+                     ke upar na chhapein.  Card ka title bahar rehta hai, to
+                     wo khisakta nahi.  Website/TV par ye sirf ek saada div
+                     hai -- ResponsiveContainer usi chaudai ko naapta hai. */
+                  <div className="ba-chartwrap">
                   <ResponsiveContainer width="100%" height={groupHeight(group, chartData.length)}>
                     <BarChart data={chartData}
                               margin={{ top: 28, right: 24, left: 0,
@@ -326,6 +333,7 @@ export default function BDAnalysis() {
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
+                  </div>
                 )}
               </div>
             );
