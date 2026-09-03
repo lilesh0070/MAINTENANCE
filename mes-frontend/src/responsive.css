@@ -571,7 +571,13 @@ body.in-app .app-user,
 body.in-app .bd-user-pill,
 body.in-app .mk-user-pill,
 body.in-app .oj-user-pill,
-body.in-app .st-user-pill { display: none !important; }
+body.in-app .st-user-pill,
+/* md-pill: Deviations par "Signed in as DEMO" -- iska takrav NAAP se nahi,
+   SCREENSHOT se pakda tha.  .md-title absolute-center hai (125-288px) aur
+   pill flow me daayein (219-352px) -- **69px ek doosre ke upar**.  Meri
+   overlap-jaanch sirf LEAF text dekhti thi, aur ye dono leaf nahi (dono ke
+   andar aur element hain), isliye chhoot gaya. */
+body.in-app .md-pill { display: none !important; }
 
 /* ── ANDON → Monitor ke teen card ────────────────────────────────────
  * Wahi kahani jo Dashboard ke KPI card ki thi -- TV ke naap par bane the:
@@ -1056,3 +1062,17 @@ body.in-app .sm-top {
   padding-bottom: 6px !important;
 }
 body.in-app .sm-sub { display: none !important; }
+
+/* HISTORY CARD ka header -- wahi jaal CHAUTHI baar
+   (`.bh-top`, `.su-top`, `.sm-top` ke baad).
+   `.hc-top` par `height: 56px` pakki, aur subtitle "Zone-wise machine
+   history -- Log Book + Break Down Slip" do line me toot kar **title ke upar**
+   chadh jaata tha.  Ab height auto + wrap, subtitle app me chhupi. */
+body.in-app .hc-top {
+  height: auto !important;
+  flex-wrap: wrap !important;
+  row-gap: 6px !important;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+}
+body.in-app .hc-sub { display: none !important; }

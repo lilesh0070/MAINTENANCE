@@ -11,6 +11,7 @@
 //   chartOverlap      chart ke label jo ek doosre ke UPAR chhap rahe hain
 //   usernameDikhRahaHai   app me username dikhna nahi chahiye
 //   lambaiSeBahar     pakki height wale dabbe jinka content neeche nikla
+//   textTakrav        TOPBAR ke andar do cheezein ek doosre ke UPAR
 //   chaudaiTheek      page ki chaudai screen se zyada to nahi
 //
 // CHAAR SEEKH JO IS FILE ME BAITHI HAIN (har ek ek galti se aayi):
@@ -25,6 +26,12 @@
 //   4. username ginte waqt LEAF dekho aur `offsetParent` dekho -- chhupe
 //      hue span ke maa-baap ka textContent bhi "DEMO" lautata hai, aur
 //      band slide-nav ka naam x=-187 par pada rehta hai.
+//
+//   5. takrav-jaanch SIRF topbar tak rakhi hai.  Poore page par chalayi to
+//      17/17 page jhooth me fail hue -- gear aur AI ka button jaan-boojh kar
+//      content ke upar tairte hain, aur band drawer ke item bhi "takrate"
+//      gine jaate hain.  Asli dikkat topbar me hi mili thi (Deviations par
+//      title aur "Signed in as DEMO" pill 69px overlap).
 //
 // AUR SABSE BADI SEEKH: ye jaanch paas ho jaana KAAFI NAHI hai.
 // Har baar SCREENSHOT dekhna -- `select` ka text chup-chaap katta hai,
@@ -82,6 +89,9 @@
 
   const ov = (a, b) => !(a.right <= b.left + .5 || b.right <= a.left + .5 ||
                          a.bottom <= b.top + .5 || b.bottom <= a.top + .5);
+
+  // chart ke tick label aapas me takra rahe hain kya
+  // (`ov` upar hi declare ho chuki hai)
   let chartOverlap = 0, chartCount = 0;
   document.querySelectorAll("svg").forEach(svg => {
     const bx = [...svg.querySelectorAll(".recharts-cartesian-axis-tick-value")]
@@ -92,13 +102,35 @@
       if (ov(bx[i], bx[j])) chartOverlap++;
   });
 
-  // sirf wahi username gino jo SACH ME screen par dikh raha ho.
-  // (band slide-nav ka naam x=-187 par pada rehta hai -- wo galti nahi.)
-  // Sirf wahi ginna jo SACH ME chhap raha ho:
-  //  - element khud dikh raha ho (offsetParent) -- app-user par display:none laga hai
-  //  - LEAF ho -- warna uske maa-baap div ka textContent bhi "DEMO" lautata hai
-  //    aur chhupe hue span ke liye jhootha alarm aata hai
-  //  - screen ke andar ho -- band slide-nav ka naam x=-187 par pada rehta hai
+  // HEADER ke andar text-takrav.  Poore page par ye jaanch bekaar hai:
+  // ⚙ gear aur 🤖 button jaan-boojh kar content ke UPAR tairte hain, aur
+  // band drawer ke item bhi "takrate" gine jaate hain -- ek baar maine aisi
+  // hi khuli jaanch chalayi aur 17/17 page jhooth me fail ho gaye.
+  // Isliye sirf wahi dekho jahan asli dikkat mili thi: topbar ke andar
+  // do alag cheezein ek doosre ke upar (Deviations par title aur
+  // "Signed in as DEMO" pill 69px overlap kar rahe the).
+  const dikhta = e => { const c = getComputedStyle(e);
+    return c.display !== "none" && c.visibility !== "hidden" && +c.opacity > 0.05; };
+  const takrav = [];
+  document.querySelectorAll('[class*="-top"], [class*="topbar"]').forEach(bar => {
+    const br = bar.getBoundingClientRect();
+    if (br.top > 140 || br.height < 20 || br.height > 200) return;   // sirf upar wali patti
+    const kids = [...bar.querySelectorAll('*')].filter(e => {
+      const c = getComputedStyle(e), r = e.getBoundingClientRect();
+      if (c.position === 'fixed') return false;             // tairte button chhod do
+      return e.textContent.trim() && dikhta(e) && r.width > 0 && r.height > 0;
+    });
+    for (let i = 0; i < kids.length; i++) for (let j = i + 1; j < kids.length; j++) {
+      const A = kids[i], B = kids[j];
+      if (A.contains(B) || B.contains(A)) continue;
+      const a = A.getBoundingClientRect(), b = B.getBoundingClientRect();
+      // 4px se kam ka chhoona line-box ka mamool hai, galti nahi
+      const x = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+      const y = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+      if (x > 4 && y > 4)
+        takrav.push(A.textContent.trim().slice(0, 16) + ' <> ' + B.textContent.trim().slice(0, 16) + ' (' + Math.round(x) + 'px)');
+    }
+  });
   const uname = [...document.querySelectorAll("span,div")].filter(s => {
     if (s.children.length) return false;
     if (!/^(DEMO|Administrator)$/i.test(s.textContent.trim())) return false;
@@ -132,6 +164,7 @@
     dabbeSeBahar: dabbeSe.slice(0, 5),
     screenSeBahar: screenSe.slice(0, 5),
     chart: chartCount, chartOverlap,
+    textTakrav: [...new Set(takrav)].slice(0, 5),
     usernameDikhRahaHai: uname,
     lambaiSeBahar: lambaiSe.slice(0, 3),
     pageW: document.body.scrollWidth, viewW: W,
