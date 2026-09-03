@@ -642,16 +642,44 @@ body.in-app .an-tbl th { white-space: nowrap !important; }
  *
  * Poore page ki lambai 1724 -> 1502px.
  */
-body.in-app .mk-fybar   { padding: 8px 10px !important; gap: 5px 8px !important; }
-body.in-app .mk-fy-left { gap: 5px 6px !important; }
-body.in-app .mk-fy-label  { font-size: 10px !important; letter-spacing: 0 !important; }
+body.in-app .mk-fybar { padding: 8px 10px !important; gap: 5px 8px !important; }
+
+/* `FINANCIAL YEAR` label hata diya -- uske bagal wala select khud `2026-27`
+   dikha raha hai, to label sirf jagah kha raha tha (94px). */
+body.in-app .mk-fy-label { display: none !important; }
+
+/* Chaaron filter EK line me.  `flex: 1 1 100%` zaroori hai -- bina uske ye
+   dabba khud sikud jaata hai aur andar ke select ko baantne ko jagah hi nahi
+   milti (naapa tha: 352px maujood the par select 62px par ruke the). */
+body.in-app .mk-fy-left {
+  flex: 1 1 100% !important;
+  flex-wrap: nowrap !important;
+  gap: 4px !important;
+}
 body.in-app .mk-fy-select {
   width: auto !important;
   min-width: 0 !important;
-  flex: 1 1 92px !important;
-  font-size: 11px !important;
-  padding: 5px 6px !important;
+  font-size: 10px !important;
+  padding: 5px 4px !important;
 }
+/* Saal wale ko sabse kam jagah (sirf `2026-27`), machine wale ko sabse zyada
+   (`All Machine No.` sabse lamba text hai).  Ye naap AANKH se tay hue --
+   pehle 62px par `2026-2` me se `7` kat raha tha aur 66px par `All Zone` me
+   se `s`.  Select apna text CHUP-CHAAP kaat deta hai (scrollWidth nahi
+   badalta), isliye screenshot dekhe bina pata hi nahi chalta. */
+body.in-app .mk-fy-select:not(.mk-filter)      { flex: 0 0 74px !important; }
+body.in-app .mk-fy-select.mk-filter            { flex: 1 1 0 !important; }
+body.in-app .mk-fy-select.mk-filter:last-child { flex: 1.3 1 0 !important; }
+
+/* Annual Index / Fullscreen / Customize / Live -- sab ek line me.
+   Pehle `Live` shabd akela agli line par gir jaata tha. */
+body.in-app .mk-live {
+  flex: 1 1 100% !important;
+  flex-wrap: nowrap !important;
+  gap: 5px !important;
+  white-space: nowrap !important;
+}
+body.in-app .mk-live button { font-size: 10px !important; padding: 5px 6px !important; }
 
 body.in-app .mk-grid { gap: 6px !important; }
 body.in-app .mk-card { padding: 9px 10px 8px !important; }
