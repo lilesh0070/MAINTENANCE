@@ -323,3 +323,34 @@ body.in-app .kp-filters > button { flex: 0 0 auto !important; }
    kasne se 108px bach jaate hain. */
 body.in-app .kp-table th,
 body.in-app .kp-table td { padding: 7px 6px !important; }
+
+/* ── Dashboard ke KPI card ka label ───────────────────────────────────
+ * `AWAITING RESPONSE` akela do line me toot raha tha, baaki teen ek line me.
+ * Wajah font nahi, LETTER-SPACING thi: 0.64px x 17 akshar = 11px sirf akshar
+ * ke beech ki jagah, aur card me sirf 79px the.  Bade screen par ye spacing
+ * sundar lagti hai, par 93px ke card me wahi 11px line tudwa deti hai.
+ */
+body.in-app .md-tiles > div > div:first-child { letter-spacing: 0 !important; }
+
+/* ── AI wala robot button ─────────────────────────────────────────────
+ * 56x56 ka button neeche-daayen `fixed` hai, z-index 10000 par -- yaani jo bhi
+ * us kone me ho, wo dhak jaata hai (jaise `Open register →`).
+ *
+ * Do cheezein: button thoda chhota aur kone ke aur paas, AUR page ke neeche
+ * itni jagah chhod di jaye ki aakhri content uske neeche se nikal sake.  Bina
+ * uske page ka bilkul aakhri hissa hamesha dhaka rehta -- use dekhne ka koi
+ * raasta hi nahi bachta.
+ */
+body.in-app .ai-fab { width: 44px !important; height: 44px !important;
+                      bottom: 12px !important; right: 12px !important; }
+body.in-app .md-body { padding-bottom: 64px !important; }
+
+/* Chat panel khud 400x560 ka hai + 24px kinara = 448px, jabki screen 412px --
+   wo bhi bahar nikal jaata tha.  App me screen ke naap par rakhte hain. */
+body.in-app .ai-panel {
+  width: calc(100vw - 24px) !important;
+  max-width: 100% !important;
+  height: min(560px, calc(100vh - 90px)) !important;
+  bottom: 12px !important;
+  right: 12px !important;
+}

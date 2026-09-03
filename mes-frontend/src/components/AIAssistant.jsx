@@ -439,7 +439,7 @@ export default function AIAssistant({ pageContext = {} }) {
           dikhega.  Right par koi takraav nahi (Fullscreen button upar-daayen
           top:18 par hai, ye neeche bottom:24 par). */}
       {!open && (
-        <button onClick={() => openChat()} style={{
+        <button className="ai-fab" onClick={() => openChat()} style={{
           position:"fixed", bottom:24, right:24, zIndex:10000,
           width:56, height:56, borderRadius:16,
           background:"linear-gradient(135deg,#060912,#0a0f1a)",
@@ -484,7 +484,7 @@ export default function AIAssistant({ pageContext = {} }) {
 
       {/* ── Chat Panel ── */}
       {open && (
-        <div ref={panelRef} style={{
+        <div ref={panelRef} className="ai-panel" style={{
           position:"fixed", bottom:24, right:24, zIndex:10000,
           width:400, height:560,
           background:"linear-gradient(145deg,#060912 0%,#080e1a 50%,#060912 100%)",
