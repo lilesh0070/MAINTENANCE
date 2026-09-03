@@ -63,8 +63,8 @@ export default function AndonMonitor({ embedded = false }) {
 
   const STAT = [
     ["Total Calls",    selToday,  "#1e40af", `${sel || "—"} · today · 7 AM–6:30 AM`],
-    ["Active Calls",   selActive, (selActive ? "#dc2626" : "#16a34a"), "abhi chalu"],
-    ["Longest Active", selRows.length ? fmtDuration(selLongest) : "0s", "#7c3aed", "sabse lambi chalu call"],
+    ["Active Calls",   selActive, (selActive ? "#dc2626" : "#16a34a"), "active right now"],
+    ["Longest Active", selRows.length ? fmtDuration(selLongest) : "0s", "#7c3aed", "longest running call"],
   ];
 
   return (
@@ -124,7 +124,7 @@ export default function AndonMonitor({ embedded = false }) {
           </div>
 
           {/* ── department buttons ── */}
-          <div className="am-h">Department — click karke uska live call dekho</div>
+          <div className="am-h">Departments — select one to see its live calls</div>
           <div className="am-btns">
             {depts.map((d) => {
               const on = d.active > 0;
@@ -150,7 +150,7 @@ export default function AndonMonitor({ embedded = false }) {
           {selRows.length === 0 ? (
             <div className="am-empty">
               <div style={{ fontSize:34 }}>✅</div>
-              <div style={{ fontWeight:700, color:"#334155", marginTop:6 }}>{sel} me abhi koi active call nahi.</div>
+              <div style={{ fontWeight:700, color:"#334155", marginTop:6 }}>No active calls in {sel}.</div>
             </div>
           ) : selRows.map((r) => {
             const el = liveElapsed(r);
