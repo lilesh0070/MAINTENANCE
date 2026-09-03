@@ -47,8 +47,8 @@ export function MtbfRunningHours({ toast, readOnly = false, onBack }) {
   useEffect(() => { load(); }, [load]);
 
   const save = async () => {
-    if (!machine.trim()) { toast?.("Machine daalo", "err"); return; }
-    if (hours === "" || isNaN(parseFloat(hours))) { toast?.("Running hours daalo", "err"); return; }
+    if (!machine.trim()) { toast?.("Enter a machine", "err"); return; }
+    if (hours === "" || isNaN(parseFloat(hours))) { toast?.("Enter running hours", "err"); return; }
     setSaving(true);
     try {
       await api.post("/api/machine-running-hours/", {
@@ -149,7 +149,7 @@ export function MtbfRunningHours({ toast, readOnly = false, onBack }) {
       </div>
       <Card>
         {loading ? <Spinner /> : rows.length === 0 ? (
-          <EmptyState text="Abhi kuch save nahi hua" sub={`FY ${fy} — machine + running hours daalo`} />
+          <EmptyState text="Nothing saved yet" sub={`FY ${fy} — enter a machine and its running hours`} />
         ) : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>

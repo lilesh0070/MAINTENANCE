@@ -238,7 +238,7 @@ export default function AndonSystem() {
   const deleteHistRow = async (r) => {
     if (!r?.id) return;
     if (!window.confirm(
-      `Ye call history se hamesha ke liye hat jayegi:
+      `This call will be permanently removed from history:
 
 ` +
       `${histDept} · ${r.zone || "-"} / ${r.line || "-"}
@@ -246,7 +246,7 @@ export default function AndonSystem() {
       `${r.date} ${r.start_time || "-"} → ${r.end_time || "-"}
 
 ` +
-      `Wapas nahi aayegi.  Aage badhein?`)) return;
+      `This cannot be undone. Continue?`)) return;
     setHistDel(r.id);
     try {
       await api("/history/delete", { method: "POST", body: JSON.stringify({ ids: [r.id] }) });
@@ -399,7 +399,7 @@ export default function AndonSystem() {
       if (ok) flash(ok);
     } catch (e) {
       const text = String(e?.message || e);
-      if (e?.status === 409) setAlertBox({ title: "Ye IP / naam pehle se use me hai", text });
+      if (e?.status === 409) setAlertBox({ title: "This IP / name is already in use", text });
       else flash(text.slice(0, 140));
     }
   };
@@ -528,12 +528,12 @@ export default function AndonSystem() {
     if (!ids.length) return;
     // Delete wapas nahi aata — isliye ginti ke saath saaf poochte hain.
     if (!window.confirm(
-      `${ids.length} call history row hamesha ke liye delete ho jayengi.
+      `${ids.length} call history rows will be permanently deleted.
 ` +
-      `Ye wapas nahi aayengi.  Aage badhein?`)) return;
+      `This cannot be undone. Continue?`)) return;
     try {
       const r = await api("/history/delete", { method: "POST", body: JSON.stringify({ ids }) });
-      flash(`${r.deleted} row delete ho gayi`);
+      flash(`${r.deleted} rows deleted`);
       await loadCallHistory();
     } catch (e) {
       flash(String(e?.message || e).slice(0, 140));
@@ -636,8 +636,8 @@ export default function AndonSystem() {
     setOutRechecking(id);
     try {
       const r = await api(`/call-outputs/${id}/recheck`, { method: "POST" });
-      flash(r.ok ? "PLC pahunch me hai — connection dobara ban raha hai"
-                 : `PLC tak nahi pahuncha — ${PLC_WHY[r.reason]?.tag || r.reason}`);
+      flash(r.ok ? "PLC is reachable — reconnecting"
+                 : `Could not reach the PLC — ${PLC_WHY[r.reason]?.tag || r.reason}`);
       const o = await api("/call-outputs");
       setOuts(o || []);
     } catch { /* chup-chaap — writer agle cycle me khud bhi koshish karega */ }
@@ -659,7 +659,7 @@ export default function AndonSystem() {
       <div className="an-row" style={{ marginBottom: 6 }}>
         <b style={{ fontSize: 14 }}>{label} mapping</b>
         {outFor?.name && <span style={{ fontSize: 11.5, color: "#64748b", fontWeight: 600 }}>· {outFor.name}</span>}
-        <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#94a3b8" }}>PLC register ki value → {label.toLowerCase()} naam.</span>
+        <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#94a3b8" }}>PLC register value → {label.toLowerCase()} name.</span>
       </div>
       <table className="an-tbl">
         <thead><tr><th style={{ width: 110 }}>Device</th><th style={{ width: 150 }}>Device No</th><th style={{ width: 120 }}>Value</th><th>{label} Name</th><th style={{ width: 40 }}></th></tr></thead>
@@ -811,7 +811,7 @@ export default function AndonSystem() {
                     <div style={{ marginTop:14, paddingTop:12, borderTop:"1px dashed #e2e8f0" }}>
                       <label style={{ fontSize:13, fontWeight:700, display:"flex", alignItems:"center", gap:7 }}>
                         <input type="checkbox" checked={plcForm.sub_on} onChange={(e) => setPlcForm({ ...plcForm, sub_on: e.target.checked })} />
-                        Sub PLC — Model / Fault kisi <u>doosre</u> PLC se lein? <span style={{ fontWeight:600, color:"#64748b" }}>(ANDON isi main PLC ka hi rahega)</span>
+                        Sub PLC — read Model / Fault from a <u>different</u> PLC? <span style={{ fontWeight:600, color:"#64748b" }}>(ANDON stays on this main PLC)</span>
                       </label>
                       {plcForm.sub_on && (
                         <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10, marginTop:12 }}>
@@ -827,7 +827,7 @@ export default function AndonSystem() {
                             <select className="an-in" style={{ width:"100%" }} value={plcForm.sub_series || "Q"} onChange={(e) => setPlcForm({ ...plcForm, sub_series: e.target.value })}>
                               {["Q","FX5U","iQ-R","L"].map((s) => <option key={s} value={s}>{s}</option>)}
                             </select></div>
-                          <div style={{ gridColumn:"1 / -1", fontSize:11.5, color:"#94a3b8" }}>Pehle Sub Machine chunein, phir uske PLC ki IP daalein. Model & Fault register isi Sub PLC se padhe jaayenge; ANDON ke bits main PLC se hi.</div>
+                          <div style={{ gridColumn:"1 / -1", fontSize:11.5, color:"#94a3b8" }}>Pick the Sub Machine first, then enter its PLC IP. Model & Fault registers are read from this Sub PLC; ANDON bits still come from the main PLC.</div>
                         </div>
                       )}
                     </div>
@@ -996,7 +996,7 @@ export default function AndonSystem() {
               <div className="an-card an-form-sm" style={{ marginBottom:14 }}>
                 <b style={{ fontSize:14 }}>{outEdit ? "Edit mapping" : "Add Call → Output mapping"}</b>
                 {/* Lamba samjhaane wala paragraph hata diya — wahi baat ab neeche
-                    har bit ke saamne "Off kab" me likhi hai, jahan uski zaroorat
+                    har bit ke saamne "Off trigger" me likhi hai, jahan uski zaroorat
                     hai.  Do jagah likhne se form bhara-bhara lagta tha. */}
                 <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:9, marginTop:12 }}>
                   <div><label className="an-lbl">Department (call)</label>
@@ -1021,7 +1021,7 @@ export default function AndonSystem() {
                 <div style={{ marginTop:14, paddingTop:12, borderTop:"1px dashed #cbd5e1" }}>
                   <b style={{ fontSize:13 }}>Bits</b>
                   <div style={{ fontSize:11.5, color:"#64748b", margin:"2px 0 10px" }}>
-                    Call aate hi ON. OFF alag-alag hota hai — neeche likha hai.
+                    Turns ON as soon as a call arrives. When it turns OFF varies — see below.
                   </div>
 
                   {/* labels — ek hi baar */}
@@ -1029,15 +1029,15 @@ export default function AndonSystem() {
                     <div style={{ flex:"0 0 22px" }} />
                     <div style={{ flex:"0 0 78px" }}><label className="an-lbl">Type</label></div>
                     <div style={{ flex:"0 0 130px" }}><label className="an-lbl">Bit no</label></div>
-                    <div style={{ flex:"1 1 auto", minWidth:0 }}><label className="an-lbl">Off kab</label></div>
+                    <div style={{ flex:"1 1 auto", minWidth:0 }}><label className="an-lbl">Off trigger</label></div>
                   </div>
 
                   {[
                     { n: 1, t: "bit_type", v: "bit_no", show: true,
-                      rule: outDeptOffAck(outForm.department) ? "ACC hone par" : "breakdown band hone par",
+                      rule: outDeptOffAck(outForm.department) ? "On acknowledge" : "When breakdown closes",
                       color: outDeptOffAck(outForm.department) ? "#b45309" : "#0e7490", ph: "e.g. 1000" },
                     { n: 2, t: "bit2_type", v: "bit2_no", show: outDeptOffAck(outForm.department),
-                      rule: "breakdown band hone par", color: "#0e7490", ph: "khali = nahi lagegi" },
+                      rule: "When breakdown closes", color: "#0e7490", ph: "blank = not used" },
                   ].filter((b) => b.show).map((b) => (
                     <div key={b.n} className="an-row an-bitrow" style={{ alignItems:"center", marginBottom:6, flexWrap:"nowrap" }}>
                       <div style={{ flex:"0 0 22px", fontSize:14, fontWeight:800, color:"#94a3b8" }}>{b.n}</div>
@@ -1064,9 +1064,9 @@ export default function AndonSystem() {
 
                   {outForm.department && !outDeptOffAck(outForm.department) && (
                     <div style={{ fontSize:11.5, color:"#94a3b8", marginTop:2 }}>
-                      Doosri bit sirf <b>Maintenance</b> aur <b>Tool Room</b> ke liye hai —
-                      inhi ka bit response par girta hai. {outForm.department} ka bit to
-                      pehle se call band hone par hi girta hai.
+                      The second bit is only for <b>Maintenance</b> and <b>Tool Room</b> —
+                      only their bit drops on response. {outForm.department}'s bit
+                      already drops only when the call closes.
                     </div>
                   )}
                 </div>
@@ -1092,15 +1092,15 @@ export default function AndonSystem() {
                       <span style={{ width:9, height:9, borderRadius:"50%", flex:"0 0 auto",
                                      background: w ? "#16a34a" : "#dc2626",
                                      boxShadow: w ? "0 0 0 3px rgba(22,163,74,.2)" : "0 0 0 3px rgba(220,38,38,.2)" }} />
-                      {w ? <>Writer active — <span style={{ fontFamily:"monospace" }}>{w.writer}</span> backend bits maintain kar raha ({w.writer_age}s pehle)</>
-                         : <>Koi active writer nahi — bits abhi maintain nahi ho rahe (jis backend pe ANDON_OUTPUT_ENABLED=1 wo band hai)</>}
+                      {w ? <>Writer active — <span style={{ fontFamily:"monospace" }}>{w.writer}</span> backend is maintaining the bits (last seen {w.writer_age}s ago)</>
+                         : <>No active writer — bits are not being maintained (the backend with ANDON_OUTPUT_ENABLED=1 is down)</>}
                     </div>
                   );
                 })()}
                 <table className="an-tbl">
                   <thead><tr><th>Department</th><th>Output PLC</th><th>Bit</th><th>Off trigger</th><th>Connection</th><th>Program bit</th><th>PLC bit</th><th>Status</th><th></th></tr></thead>
                   <tbody>
-                    {outs.length === 0 && <tr><td colSpan={9} style={{ color:"#94a3b8", padding:16, textAlign:"center" }}>Koi mapping nahi — upar se add karo.</td></tr>}
+                    {outs.length === 0 && <tr><td colSpan={9} style={{ color:"#94a3b8", padding:16, textAlign:"center" }}>No mappings yet — add one above.</td></tr>}
                     {outs.map((o) => (
                       <tr key={o.id}>
                         <td style={{ fontWeight:700 }}>{o.department}</td>
@@ -1114,17 +1114,17 @@ export default function AndonSystem() {
                           {o.bit2_allowed && (
                             <div style={{ color: (o.bit2_no || "").trim() ? "#0e7490" : "#cbd5e1" }}>
                               <span style={{ color:"#94a3b8", marginRight:6 }}>2</span>
-                              {(o.bit2_no || "").trim() ? `${o.bit2_type || "M"}${o.bit2_no}` : "lagi nahi"}
+                              {(o.bit2_no || "").trim() ? `${o.bit2_type || "M"}${o.bit2_no}` : "not set"}
                             </div>
                           )}
                         </td>
                         <td style={{ fontSize:12, lineHeight:1.75 }}>
                           <div style={{ color: o.off_on_ack ? "#b45309" : "#0e7490", fontWeight:700 }}>
-                            {o.off_on_ack ? "ACC hone par" : "Breakdown band hone par"}
+                            {o.off_on_ack ? "On acknowledge" : "When breakdown closes"}
                           </div>
                           {o.bit2_allowed && (
                             <div style={{ color: (o.bit2_no || "").trim() ? "#0e7490" : "#cbd5e1", fontWeight:700 }}>
-                              {(o.bit2_no || "").trim() ? "Breakdown band hone par" : "—"}
+                              {(o.bit2_no || "").trim() ? "When breakdown closes" : "—"}
                             </div>
                           )}
                         </td>
@@ -1140,7 +1140,7 @@ export default function AndonSystem() {
                             <button className="an-btn gh sm" style={{ marginLeft:8 }}
                                     disabled={outRechecking === o.id}
                                     onClick={() => recheckOut(o.id)}
-                                    title="Is PLC se abhi dobara jodne ki koshish karo">
+                                    title="Try reconnecting to this PLC now">
                               {outRechecking === o.id ? "Checking…" : "↻ Retry"}
                             </button>
                           )}
@@ -1164,13 +1164,13 @@ export default function AndonSystem() {
                             {o.bit_on === true ? "● ON" : o.bit_on === false ? "OFF" : "—"}
                             {o.should_be_on && o.bit_on !== true && (
                               <span style={{ fontSize:10, color:"#b45309", fontWeight:700, marginLeft:6, whiteSpace:"nowrap" }}>
-                                {o.bit_on === false ? "pending" : "padha nahi ja raha"}
+                                {o.bit_on === false ? "pending" : "not being read"}
                               </span>
                             )}
                           </div>
                           {o.bit2_allowed && (
                           <div title={(o.bit2_no || "").trim() && o.bit2_on == null
-                                        ? "Writer ne abhi is bit ki khabar nahi bheji — purana backend bit-2 likhta hi nahi. Restart ke baad aayega."
+                                        ? "The writer has not reported this bit yet — the older backend does not write bit 2. It will appear after a restart."
                                         : undefined}
                                style={{ color: !(o.bit2_no || "").trim() ? "#cbd5e1"
                                              : o.bit2_on === true ? "#16a34a"
@@ -1179,7 +1179,7 @@ export default function AndonSystem() {
                               : o.bit2_on === true ? "● ON" : o.bit2_on === false ? "OFF" : "— ?"}
                             {o.should_be_on2 && o.bit2_on !== true && (
                               <span style={{ fontSize:10, color:"#b45309", fontWeight:700, marginLeft:6, whiteSpace:"nowrap" }}>
-                                {o.bit2_on === false ? "pending" : "khabar nahi"}
+                                {o.bit2_on === false ? "pending" : "no status"}
                               </span>
                             )}
                           </div>
@@ -1214,7 +1214,7 @@ export default function AndonSystem() {
                             gridTemplateColumns:`repeat(${Math.max(totals.length,1)}, minmax(0,1fr))` }}>
                 {totals.map((t) => (
                   <div key={t.department} onClick={() => openHistory(t.department)}
-                       title={`${t.department} ki poori history dekho`}
+                       title={`View full history for ${t.department}`}
                        style={{
                         background:"#fff", border:"1px solid #e2e8f0", borderRadius:12,
                         padding:"12px 14px", borderTop:`3px solid ${t.color || "#64748b"}`,
@@ -1356,7 +1356,7 @@ export default function AndonSystem() {
                         <td><span className="an-chip" style={{ background:"#dbeafe", color:"#1d4ed8", fontWeight:800, padding:"2px 10px" }}>{r.total}</span></td>
                       </tr>
                     ))}
-                    {!fhRows.length && <tr><td colSpan={6} style={{ color:"#94a3b8" }}>Is range me koi fault record nahi.</td></tr>}
+                    {!fhRows.length && <tr><td colSpan={6} style={{ color:"#94a3b8" }}>No fault records in this range.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -1408,7 +1408,7 @@ export default function AndonSystem() {
                     </>
                   ) : (
                     <span style={{ fontSize:11.5, color:"#94a3b8" }}>
-                      delete sirf admin kar sakta hai
+                      only an admin can delete
                     </span>
                   )}
                 </span>
@@ -1594,7 +1594,7 @@ export default function AndonSystem() {
                         <div style={{ marginTop:18, borderTop:"1px solid #f1f5f9", paddingTop:14 }}>
                           <div style={{ fontSize:11, color:"#94a3b8", fontWeight:700,
                                         textTransform:"uppercase", marginBottom:8 }}>
-                            Department-wise (kis par kitna waqt gina)
+                            Department-wise (time counted against each)
                           </div>
                           <table style={{ width:"100%", borderCollapse:"collapse" }}>
                             <tbody>
@@ -1769,7 +1769,7 @@ export default function AndonSystem() {
                 <div style={{ padding:40, textAlign:"center", color:"#94a3b8" }}>Loading…</div>
               ) : !histData || !histData.rows.length ? (
                 <div style={{ padding:40, textAlign:"center", color:"#94a3b8" }}>
-                  Is date range me {histDept} ki koi call nahi.
+                  No {histDept} calls in this date range.
                 </div>
               ) : (
                 <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
@@ -1802,7 +1802,7 @@ export default function AndonSystem() {
                         {isAdmin && (
                           <td style={{ padding:"9px 14px", whiteSpace:"nowrap", textAlign:"right" }}>
                             <button onClick={() => deleteHistRow(r)} disabled={histDel === r.id}
-                                    title="Is call ko history se hata do"
+                                    title="Remove this call from history"
                                     style={{ border:"1px solid #fecaca", background:"#fff", color:"#dc2626",
                                              borderRadius:7, cursor:"pointer", padding:"3px 9px",
                                              fontSize:12, fontWeight:800,
@@ -1843,8 +1843,8 @@ export default function AndonSystem() {
               <div style={{ marginTop:14, padding:"10px 12px", background:"#fef2f2",
                             border:"1px solid #fecaca", borderRadius:9,
                             fontSize:12.5, color:"#991b1b" }}>
-                Ek IP sirf EK hi PLC ko de sakte hain. Do board ek hi IP par hon to
-                dono ka data ek hi line par chala jayega aur pata bhi nahi chalega.
+                One IP can belong to only ONE PLC. If two boards share an IP,
+                both boards' data lands on the same line and no one will notice.
               </div>
             </div>
             <div style={{ padding:"0 20px 18px", textAlign:"right" }}>
@@ -1852,7 +1852,7 @@ export default function AndonSystem() {
                       style={{ border:"none", background:"#dc2626", color:"#fff",
                                borderRadius:9, padding:"9px 22px", fontSize:13,
                                fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>
-                Samajh gaya
+                Got it
               </button>
             </div>
           </div>

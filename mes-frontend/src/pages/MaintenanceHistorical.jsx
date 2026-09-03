@@ -699,7 +699,7 @@ export default function MaintenanceHistorical() {
               <span className="hd-sec-t">Filled Auto Breakdown Slips (ANDON)</span>
               <span className="hd-sec-c" style={{ background:"#dc2626" }}>{autoList.length}</span>
               <span style={{ marginLeft:"auto", fontSize:11.5, color:"#94a3b8" }}>
-                ANDON se auto-generated — click View Slip (read-only)
+                Auto-generated from ANDON — click View Slip (read-only)
               </span>
             </div>
             <div className={autoList.length > 4 ? "hd-scroll" : undefined}>
@@ -985,7 +985,7 @@ export default function MaintenanceHistorical() {
               <span className="hd-sec-t">Break Down Log Book</span>
               <span className="hd-sec-c" style={{ background:"#0891b2" }}>{lbList.length}</span>
               <span style={{ marginLeft:"auto", fontSize:11.5, color:"#94a3b8" }}>
-                side me khiska kar baaki column dekhein
+                scroll sideways for more columns
               </span>
             </div>
             <div className={"hd-scroll-x" + (lbList.length > 4 ? " hd-scroll" : "")}>

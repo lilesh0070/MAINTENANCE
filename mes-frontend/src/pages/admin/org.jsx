@@ -48,10 +48,10 @@ export function UsersPage({ toast, readOnly = false }) {
   const createUser = async () => {
     const uname = form.username.trim();
     if (!uname||!form.password) { toast("Username and password required","err"); return; }
-    if (!form.role) { toast("Role select karo","err"); return; }
+    if (!form.role) { toast("Select a role","err"); return; }
     // Duplicate username — frontend pe turant rok (backend bhi 400 deta hai).
     if (users.some(u => (u.username||"").toLowerCase() === uname.toLowerCase())) {
-      toast("Ye username pehle se hai — dusra chuno","err"); return;
+      toast("Username already exists — pick another","err"); return;
     }
     setSaving(true);
     try {
@@ -75,7 +75,7 @@ export function UsersPage({ toast, readOnly = false }) {
   const resetPassword = async (u) => {
     const pw = prompt(`New password for "${u.username}":`);
     if (pw == null) return;                       // cancel dabaya
-    if (!pw.trim()) { toast("Password khaali nahi","err"); return; }
+    if (!pw.trim()) { toast("Password cannot be empty","err"); return; }
     try { await api.put(`/api/users/${u.id}/password`, { password: pw }, token); toast("Password reset ✓"); load(); }
     catch(e) { toast(e.message,"err"); }
   };
@@ -212,7 +212,7 @@ export function UsersPage({ toast, readOnly = false }) {
                         </button>
                       </div>
                     ) : (
-                      <span style={{ color:"#cbd5e1", fontStyle:"italic", fontSize:12 }}>Reset PW se set karo</span>
+                      <span style={{ color:"#cbd5e1", fontStyle:"italic", fontSize:12 }}>Set via Reset PW</span>
                     )}
                   </td>
                   <td style={{ padding:"12px 14px", fontFamily:"monospace", fontSize:11, color:"#64748b" }}>{u.last_login?new Date(u.last_login).toLocaleString("en-IN"):"Never"}</td>

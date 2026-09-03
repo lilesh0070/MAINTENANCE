@@ -180,7 +180,7 @@ export default function DMCSupervisorVerify() {
     const opNg = operatorNg();
     const opMissing = opNg.filter((p) => !(sheet.reasons[`${p.id}_${d0}`] || "").trim());
     if (opMissing.length) {
-      alert(`Operator ne ${opMissing.length} point(s) Not-OK (✗) kiye hain — pehle unka reason bharo, phir verify.`);
+      alert(`The operator marked ${opMissing.length} point(s) Not-OK (✗) — enter a reason for each before verifying.`);
       return;
     }
     // { point_id: reason } — operator NG points ke reason backend ko bhejo
@@ -357,11 +357,11 @@ export default function DMCSupervisorVerify() {
                   {opNgPending.length > 0 && (
                     <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 800, color: "#b45309",
                                    background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "7px 11px" }}>
-                      ⚠ {opNgPending.length} operator ✗ reason pending — neeche bharo
+                      ⚠ {opNgPending.length} operator ✗ reason(s) pending — fill them below
                     </span>
                   )}
                   <button onClick={verify} disabled={saving || opNgPending.length > 0}
-                          title={opNgPending.length > 0 ? "Pehle operator ke NG points ka reason bharo" : ""}
+                          title={opNgPending.length > 0 ? "Enter a reason for the operator's NG points first" : ""}
                           style={{ marginLeft: opNgPending.length > 0 ? 10 : "auto", padding: "10px 24px", borderRadius: 8, border: "none",
                                    background: "#16a34a", color: "#fff", fontWeight: 800, fontSize: 14,
                                    opacity: opNgPending.length > 0 ? 0.5 : 1,
@@ -396,7 +396,7 @@ export default function DMCSupervisorVerify() {
                     </span>
                   </div>
                   <div style={{ fontSize: 12, color: "#64748b", marginBottom: 10 }}>
-                    Operator ne ye points ✗ (Not-OK) mark kiye — har ek ka reason bharo. Reason bhare bina ye date verify nahi hogi.
+                    The operator marked these points ✗ (Not-OK) — enter a reason for each. This date cannot be verified until every reason is filled.
                   </div>
                   {opNgList.map((p) => {
                     const rk = `${p.id}_${String(sel.day)}`;
@@ -443,12 +443,12 @@ export default function DMCSupervisorVerify() {
                           background: "#fff", border: "1px solid #fecaca", borderRadius: 10,
                           boxShadow: "0 12px 30px rgba(15,23,42,.25)", padding: 12 }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: "#b91c1c", marginBottom: 6 }}>
-                ✗ Not-OK — reason zaroori hai
+                ✗ Not-OK — reason required
               </div>
               {p && <div style={{ fontSize: 11, color: "#475569", marginBottom: 8 }}>#{p.s_no} · {p.check_point}</div>}
               <textarea autoFocus rows={3} value={sheet?.reasons?.[key] || ""}
                         onChange={(e) => onReason(ngPop.id, ngPop.day, e.target.value)}
-                        placeholder="Kya problem hai?"
+                        placeholder="What is the problem?"
                         style={{ width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1",
                                  borderRadius: 8, padding: 8, fontSize: 12.5, fontFamily: "inherit", resize: "vertical" }} />
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>

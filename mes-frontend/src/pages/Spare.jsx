@@ -423,10 +423,10 @@ export default function Spare() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 14, marginBottom: 14 }}>
             <div className="sp-card">
               <h3 className="sp-ch">Zone-wise spare consumption — {focusLabel || "current month"}</h3>
-              <div className="sp-cs">Is mahine kis zone me kitni spare consume hui (quantity)</div>
+              <div className="sp-cs">Spare quantity consumed by zone this month</div>
               {zoneThisMonth.length === 0 ? (
                 <div style={{ padding: "24px 0", textAlign: "center", color: "#94a3b8", fontSize: 12.5, fontStyle: "italic" }}>
-                  {focusLabel} me koi spare consumption nahi.
+                  {focusLabel} has no spare consumption.
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height={Math.max(200, zoneThisMonth.length * 30 + 24)}>
@@ -448,10 +448,10 @@ export default function Spare() {
 
             <div className="sp-card">
               <h3 className="sp-ch">Monthly spare consumption</h3>
-              <div className="sp-cs">Har mahine kitni spare consume hui (quantity)</div>
+              <div className="sp-cs">Spare quantity consumed each month</div>
               {byMonthQty.length === 0 ? (
                 <div style={{ padding: "24px 0", textAlign: "center", color: "#94a3b8", fontSize: 12.5, fontStyle: "italic" }}>
-                  Is filter pe koi spare consumption nahi.
+                  No spare consumption for these filters.
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height={250}>
@@ -475,10 +475,10 @@ export default function Spare() {
           {data && (data.qty_guessed > 0 || data.qty_unknown > 0) && (
             <div className="sp-card" style={{ marginBottom: 14, fontSize: 11.5, color: "#92400e",
                                               background: "#fffbeb", borderColor: "#fde68a" }}>
-              ⓘ Quantity: <b>{data.qty_recorded}</b> rows ka number Manual Slip / Log Book me seedha bhara gaya tha.
-              <b> {data.qty_guessed}</b> rows text se padha gaya hai — wo <b>~</b> ke saath dikh raha hai.
-              <b> {data.qty_unknown}</b> rows me text me quantity likhi hi nahi thi, isliye wahan khaali chhoda hai
-              (galat number dikhane se behtar). Charts isliye entries ginte hain, quantity nahi.
+              ⓘ Quantity: <b>{data.qty_recorded}</b> rows had the quantity entered directly on the Manual Slip / Log Book.
+              <b> {data.qty_guessed}</b> rows were read from free text — those are shown with a <b>~</b>.
+              <b> {data.qty_unknown}</b> rows had no quantity written in the text, so those cells are left blank
+              (better than showing a wrong number). That is why the charts count entries, not quantity.
             </div>
           )}
 
@@ -500,7 +500,7 @@ export default function Spare() {
                   )}
                   {!busy && rows.length === 0 && (
                     <tr><td colSpan={9} style={{ ...td, textAlign: "center", color: "#64748b", padding: 26 }}>
-                      Is filter pe koi spare nahi mila.
+                      No spares found for these filters.
                     </td></tr>
                   )}
                   {!busy && rows.map((r, i) => (
@@ -517,14 +517,14 @@ export default function Spare() {
                       </td>
                       <td style={{ ...td, textAlign: "center", fontWeight: 800, whiteSpace: "nowrap" }}>
                         {r.qty == null ? (
-                          <span style={{ color: "#cbd5e1" }} title="Text me quantity likhi hi nahi thi">—</span>
+                          <span style={{ color: "#cbd5e1" }} title="No quantity was written in the text">—</span>
                         ) : r.qty_source === "recorded" ? (
                           <span style={{ color: "#0f172a" }}>{r.qty}</span>
                         ) : (
                           <span style={{ color: "#b45309" }}
                                 title={r.qty_source === "summed"
-                                  ? "Is text me ek se zyada spare the — sabki quantity jodi gayi hai"
-                                  : "Free text se padha gaya (recorded nahi)"}>~{r.qty}</span>
+                                  ? "This entry listed more than one spare — quantities added together"
+                                  : "Read from free text (not a recorded value)"}>~{r.qty}</span>
                         )}
                       </td>
                     </tr>

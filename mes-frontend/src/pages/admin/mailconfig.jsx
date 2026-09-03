@@ -89,7 +89,7 @@ export const PAGE_PERM_GROUPS = [
     { key: "maintenance-dashboard",      label: "Maintenance Dashboard" },
     { key: "maintenance-kpi",            label: "Maintenance KPI" },
     { key: "maintenance-breakdown",      label: "Breakdown", children: [
-      { key: "maintenance-breakdown-slip",     label: "Breakdown Slip (manual, Breakdown page se)" },
+      { key: "maintenance-breakdown-slip",     label: "Breakdown Slip (manual, from the Breakdown page)" },
       { key: "maintenance-breakdown-history",  label: "BD History" },
       { key: "maintenance-breakdown-analysis", label: "BD Analysis" },
       { key: "maintenance-breakdown-pareto",   label: "Pareto Analysis" },

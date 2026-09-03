@@ -336,7 +336,7 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
                                   ) : <span style={{ color: "#cbd5e1" }}>—</span>}
                                   {onDeleteSlip && (
                                     /* auto-generated slip delete (admin) — galat/extra slip hatane ke liye */
-                                    <button onClick={() => onDeleteSlip(b.id)} title="Slip delete karo" style={{
+                                    <button onClick={() => onDeleteSlip(b.id)} title="Delete this slip" style={{
                                       border: "1px solid #fecaca", background: "#fff", color: "#dc2626",
                                       borderRadius: 7, padding: "4px 10px", fontSize: 11.5, fontWeight: 800,
                                       cursor: "pointer", fontFamily: "inherit" }}>🗑 Delete</button>

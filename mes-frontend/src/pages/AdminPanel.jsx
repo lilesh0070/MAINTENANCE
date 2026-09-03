@@ -238,11 +238,11 @@ export function AdminShell({
               <div style={{ padding:"40px 30px", textAlign:"center" }}>
                 <div style={{ fontSize:40, marginBottom:12 }}>🔒</div>
                 <div style={{ fontSize:15, fontWeight:700, color:"#0f172a", marginBottom:6 }}>
-                  Yahan aapke liye koi tab nahi hai
+                  No tabs available for you
                 </div>
                 <div style={{ fontSize:12, color:"#64748b", maxWidth:460, margin:"0 auto" }}>
-                  Is panel ke saare tab sirf admin ke liye hain.  Zaroorat ho to
-                  admin se access maangein.
+                  Every tab in this panel is admin-only.  If you need access,
+                  please ask an admin.
                 </div>
               </div>
             </Card>

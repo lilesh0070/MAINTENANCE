@@ -550,7 +550,7 @@ export default function BreakdownLogBook() {
               <div className="lb-actions">
                 <button className="lb-btn" onClick={reset}>↺ Reset</button>
                 <button className="lb-btn primary" onClick={save} disabled={saving || !canSubmit}
-                        title={canSubmit ? "" : "Pehle saare fields bharo (aur Spare Used = Yes ho to spares) — tabhi Save enable hoga"}>
+                        title={canSubmit ? "" : "Fill all fields first — plus the spare rows if Spare Used = Yes — to enable Save"}>
                   {saving ? "Saving…" : "💾 Save Entry"}
                 </button>
               </div>

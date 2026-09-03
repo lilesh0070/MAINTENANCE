@@ -781,7 +781,7 @@ export default function MaintenanceKPI() {
               )}
 
               <div style={{ fontSize: 11, color: "#64748b", marginTop: 14 }}>
-                Changes turant preview hote hain. <b>Save</b> pe sabke liye apply. Bar default = card color ka light version; axis max blank = auto.
+                Changes preview instantly. <b>Save</b> applies them for everyone. Bar default = a lighter shade of the card color; blank axis max = auto.
               </div>
             </div>
           )}

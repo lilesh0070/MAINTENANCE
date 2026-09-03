@@ -91,11 +91,11 @@ export function LoginHistoryPage() {
   // jaata (422) aur `catch {}` use chup-chaap nigal leta — button dabate rehne
   // par bhi kuch nahi hota tha.  Ab naam kaafi hai, aur galti chhupti nahi.
   const forceLogout = async (uid, uname) => {
-    if (!uname || !window.confirm(`"${uname}" ko abhi logout karna hai? Uske sab device/tab se session khatam ho jayega.`)) return;
+    if (!uname || !window.confirm(`Log "${uname}" out now? Their session will end on every device and tab.`)) return;
     try {
       await api.post(`/api/users/force-logout?username=${encodeURIComponent(uname)}`, {}, token);
     } catch (e) {
-      window.alert(`"${uname}" ko logout nahi kar paye — ${e?.message || e}`);
+      window.alert(`Could not log "${uname}" out — ${e?.message || e}`);
       return;
     }
     loadActive();
@@ -108,12 +108,12 @@ export function LoginHistoryPage() {
     const qs = new URLSearchParams();
     if (clearFrom) qs.set("date_from", clearFrom);
     if (clearTo) qs.set("date_to", clearTo);
-    const rng = (clearFrom || clearTo) ? `${clearFrom || "shuru"} se ${clearTo || "aaj"}` : "SAARI";
-    if (!window.confirm(`${rng} ki login history PERMANENTLY delete karni hai? Undo nahi hoga.`)) return;
+    const rng = (clearFrom || clearTo) ? `${clearFrom || "the start"} to ${clearTo || "today"}` : "ALL DATES";
+    if (!window.confirm(`Permanently delete login history (${rng})? This cannot be undone.`)) return;
     try {
       const d = await api.delete(`/api/audit/logins?${qs.toString()}`, token);
-      window.alert(`${d?.deleted ?? 0} record delete ho gaye.`);
-    } catch { window.alert("Delete fail hua."); }
+      window.alert(`${d?.deleted ?? 0} records deleted.`);
+    } catch { window.alert("Delete failed."); }
     setShowClear(false); setClearFrom(""); setClearTo("");
     load();
   };
@@ -148,8 +148,8 @@ export function LoginHistoryPage() {
       {mode === "active" ? (
         <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, overflow: "hidden" }}>
           <div style={{ padding: "12px 14px", borderBottom: "1px solid #f1f5f9", display: "flex", alignItems: "center", gap: 8 }}>
-            <b style={{ fontSize: 14, color: "#0f172a" }}>Abhi Logged-In IDs</b>
-            <span style={{ fontSize: 11.5, color: "#94a3b8", fontWeight: 600 }}>· {active.length} active · har 30s refresh</span>
+            <b style={{ fontSize: 14, color: "#0f172a" }}>Currently Logged-In Users</b>
+            <span style={{ fontSize: 11.5, color: "#94a3b8", fontWeight: 600 }}>· {active.length} active · refreshes every 30s</span>
           </div>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -176,12 +176,12 @@ export function LoginHistoryPage() {
                     </td>
                   </tr>
                 ))}
-                {!active.length && <tr><td colSpan={6} style={{ padding: "22px 14px", color: "#94a3b8", textAlign: "center" }}>Abhi koi logged-in nahi.</td></tr>}
+                {!active.length && <tr><td colSpan={6} style={{ padding: "22px 14px", color: "#94a3b8", textAlign: "center" }}>Nobody is logged in right now.</td></tr>}
               </tbody>
             </table>
           </div>
           <div style={{ padding: "8px 14px", fontSize: 11, color: "#94a3b8", borderTop: "1px solid #f1f5f9" }}>
-            JWT stateless — "active" = latest login jiska token abhi valid hai (12h) aur logout nahi hua. Bina logout ke browser band kiya to token expiry tak dikhta rahega.
+            JWT is stateless — "active" means the latest login whose token is still valid (12h) and was not logged out. If the browser is closed without logging out, the user stays listed until the token expires.
           </div>
         </div>
       ) : (
@@ -222,7 +222,7 @@ export function LoginHistoryPage() {
                         style={{ padding: "8px 16px", border: "none", borderRadius: 8, background: "#dc2626", color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>🗑 Delete records</button>
                 <button onClick={() => setShowClear(false)}
                         style={{ padding: "8px 14px", border: "1px solid #cbd5e1", borderRadius: 8, background: "#fff", fontSize: 12.5, fontWeight: 600, cursor: "pointer", color: "#475569" }}>Cancel</button>
-                <span style={{ fontSize: 11, color: "#94a3b8", flex: "1 1 100%" }}>Is date-range ke login/logout records permanently delete honge. Dono date khali chhodo to <b>saari</b> login history. Undo nahi hoga.</span>
+                <span style={{ fontSize: 11, color: "#94a3b8", flex: "1 1 100%" }}>Login/logout records in this date range will be permanently deleted. Leave both dates empty to clear <b>all</b> login history. This cannot be undone.</span>
               </div>
             )}
           </div>
@@ -242,12 +242,12 @@ export function LoginHistoryPage() {
                       <td style={{ ...td, color: "#64748b" }}>{r.role || "—"}</td>
                       <td style={{ ...td, color: "#16a34a", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtDT(r.login_at) || "—"}</td>
                       <td style={{ ...td, color: r.logout_at ? "#b45309" : "#94a3b8", fontWeight: 600, whiteSpace: "nowrap" }}>
-                        {fmtDT(r.logout_at) || "— (logout nahi hua)"}
+                        {fmtDT(r.logout_at) || "— (no logout)"}
                       </td>
                       <td style={{ ...td, color: "#64748b" }}>{dur(r.login_at, r.logout_at) || "—"}</td>
                     </tr>
                   ))}
-                  {!loading && !rows.length && <tr><td colSpan={6} style={{ padding: "22px 14px", color: "#94a3b8", textAlign: "center" }}>Is range me koi login record nahi.</td></tr>}
+                  {!loading && !rows.length && <tr><td colSpan={6} style={{ padding: "22px 14px", color: "#94a3b8", textAlign: "center" }}>No login records in this range.</td></tr>}
                   {loading && <tr><td colSpan={6} style={{ padding: "22px 14px", color: "#94a3b8", textAlign: "center" }}>Loading…</td></tr>}
                 </tbody>
               </table>

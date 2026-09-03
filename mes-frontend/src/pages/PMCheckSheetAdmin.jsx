@@ -161,7 +161,7 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
     setPending((ps) => [...ps, { s_no: npSno, check_point: npCp, judgement_standard: npJs,
                                  method: npMe, machine_name: mcSel?.machine_name || "" }]);
     setNpSno(""); setNpCp(""); setNpJs(""); setNpMe("");
-    say("Point staged — rev update karne par hi save hoga");
+    say("Point staged — saves only on revision update");
   };
   const removePending = (i) => setPending((ps) => ps.filter((_, x) => x !== i));
 
@@ -198,16 +198,16 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
     const p = prevRev();
     if (!p) return;
     const cur = revs.current;
-    const l1 = `• Rev ${cur?.rev_no} ke ${cur?.count ?? "?"} point HAT jayenge`;
-    const l2 = `• Rev ${p.rev_no} (${p.count ?? "?"} point) hu-ba-hu wapas chalu ho jayegi`;
-    const l3 = `Bhari hui check sheets par Rev ${cur?.rev_no} likha hi rahega — wo us din ka record hai.`;
-    if (!window.confirm([`Rev ${cur?.rev_no} hatana hai?`, "", l1, l2, "", l3].join("\n"))) return;
+    const l1 = `• The ${cur?.count ?? "?"} points of Rev ${cur?.rev_no} will be REMOVED`;
+    const l2 = `• Rev ${p.rev_no} (${p.count ?? "?"} points) will be restored exactly as it was`;
+    const l3 = `Filled check sheets will still show Rev ${cur?.rev_no} — that is the record for that day.`;
+    if (!window.confirm([`Remove Rev ${cur?.rev_no}?`, "", l1, l2, "", l3].join("\n"))) return;
     setBusy(true);
     try {
       const r = await api(`/check-point-rev-stepdown`, { method: "PUT", body: JSON.stringify({
         zone, line, machine_no: mno }) });
-      say(`Rev ${r.removed_rev} hata ✓ ab Rev ${r.now_current} chalu (${r.restored_points} point)` +
-          (r.filled_sheets_on_removed_rev ? ` — dhyan: Rev ${r.removed_rev} par ${r.filled_sheets_on_removed_rev} bhari hui sheet hai` : ""));
+      say(`Rev ${r.removed_rev} removed ✓ Rev ${r.now_current} is now current (${r.restored_points} points)` +
+          (r.filled_sheets_on_removed_rev ? ` — note: Rev ${r.removed_rev} has ${r.filled_sheets_on_removed_rev} filled sheet(s)` : ""));
       loadRevs(); loadPoints();
     } catch (e) { say(String(e.message || e), "err"); }
     finally { setBusy(false); }
@@ -216,15 +216,15 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
   const bumpRev = async () => {
     const nxt = parseInt(revs.current?.rev_no || "0", 10) + 1;   // AUTO — rev khud current + 1
     const q = pending.length
-      ? `${pending.length} naya point Rev ${nxt} par save karein?\nAbhi ke points Rev ${revs.current?.rev_no || 0} me archive honge.`
-      : `Sirf revision badhein Rev ${revs.current?.rev_no || 0} → Rev ${nxt}? (koi naya point nahi)`;
+      ? `Save ${pending.length} new point(s) under Rev ${nxt}?\nThe current points will be archived as Rev ${revs.current?.rev_no || 0}.`
+      : `Bump revision only: Rev ${revs.current?.rev_no || 0} → Rev ${nxt}? (no new points)`;
     if (!window.confirm(q)) return;
     setBusy(true);
     try {
       // rev_no khaali bhejte hain → backend khud current+1 karta (single source of truth)
       const r = await api(`/check-point-rev`, { method: "PUT", body: JSON.stringify({
         zone, line, machine_no: mno, rev_no: "", rev_date: nrDate || "", new_points: pending }) });
-      say(`Rev ${r.new_rev} ✓ — ${r.added_points || 0} naye point add${r.old_rev ? `, Rev ${r.old_rev} archived` : ""}`);
+      say(`Rev ${r.new_rev} ✓ — ${r.added_points || 0} new point(s) added${r.old_rev ? `, Rev ${r.old_rev} archived` : ""}`);
       setPending([]); setTouched(false); setSelRev(""); loadRevs(); loadPoints();
     } catch (e) { say(String(e.message || e), "err"); }
     finally { setBusy(false); }
@@ -341,7 +341,7 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
           <div><div style={{ fontSize: 10.5, fontWeight: 800, color: "#64748b", marginBottom: 4 }}>REV DATE</div>
             <input type="date" value={nrDate} onChange={(e) => setNrDate(e.target.value)} style={{ ...sel, minWidth: 150 }} /></div>
           <button onClick={bumpRev} disabled={busy || !revChanged}
-                  title={revChanged ? "" : "Pehle koi point add / delete karo — bina badlav ke revision nahi badalti"}
+                  title={revChanged ? "" : "Add or delete a point first — the revision cannot be bumped without a change"}
                   style={{ padding: "9px 18px", borderRadius: 8, border: "none",
                            background: revChanged ? "#2563eb" : "#cbd5e1",
                            color: revChanged ? "#fff" : "#64748b",
@@ -352,8 +352,8 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
               : `Bump to Rev ${parseInt(revs.current?.rev_no || "0", 10) + 1}`)}</button>
           <span style={{ fontSize: 11, color: revChanged ? "#94a3b8" : "#b45309", fontWeight: revChanged ? 400 : 700 }}>
             {revChanged
-              ? "Rev khud +1 hoti hai; purana rev archive ho ke Revision dropdown me dikhta."
-              : "Pehle koi point add / delete karo — bina badlav ke revision nahi badalti."}
+              ? "The revision increments automatically; the old one is archived and shown in the Revision dropdown."
+              : "Add or delete a point first — the revision cannot be bumped without a change."}
           </span>
         </div>
       )}
@@ -366,24 +366,24 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
         <div style={{ ...card, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center",
                       borderLeft: "4px solid #b45309", background: "#fffbeb" }}>
           <div style={{ fontWeight: 800, fontSize: 12.5, color: "#92400e" }}>
-            Rev galat chadh gaya? <b>Rev {revs.current?.rev_no}</b> hata kar{" "}
-            <b>Rev {prevRev()?.rev_no}</b> wapas chalu kar do.
+            Wrong revision bumped? Remove <b>Rev {revs.current?.rev_no}</b> and{" "}
+            restore <b>Rev {prevRev()?.rev_no}</b>.
           </div>
           <button onClick={stepDownRev} disabled={busy}
                   style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#b45309",
                            color: "#fff", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>
-            {busy ? "…" : `Rev ${revs.current?.rev_no} hatao → Rev ${prevRev()?.rev_no}`}</button>
+            {busy ? "…" : `Remove Rev ${revs.current?.rev_no} → Rev ${prevRev()?.rev_no}`}</button>
           <span style={{ fontSize: 11, color: "#b45309", opacity: .85, lineHeight: 1.5 }}>
-            Sirf admin. Ek baar me ek kadam — phir se dabao to usse pichhli aa jayegi.
-            Sabse purani revision kabhi nahi hatti.
+            Admin only. One step at a time — press again to go back one more.
+            The oldest revision is never removed.
           </span>
         </div>
       )}
 
       {canEdit && pending.length > 0 && (
         <div style={{ ...card, marginTop: 10, borderLeft: "4px solid #d97706", background: "#fffbeb", color: "#92400e", fontSize: 12.5, fontWeight: 700, lineHeight: 1.5 }}>
-          ⚠ {pending.length} naya point <b>PENDING</b> hai — upar <b>Save … → Rev {parseInt(revs.current?.rev_no || "0", 10) + 1}</b> dabao, ye naye rev number ke saath save ho jayenge.
-          Save kiye bina page chhoda / reload kiya to ye <b>hat jayenge</b>.
+          ⚠ {pending.length} new point(s) <b>PENDING</b> — press <b>Save … → Rev {parseInt(revs.current?.rev_no || "0", 10) + 1}</b> above to save them under the new revision.
+          Leaving or reloading the page without saving <b>discards them</b>.
         </div>
       )}
 

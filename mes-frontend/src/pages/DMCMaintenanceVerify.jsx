@@ -372,12 +372,12 @@ export default function DMCMaintenanceVerify() {
                           background: "#fff", border: "1px solid #fecaca", borderRadius: 10,
                           boxShadow: "0 12px 30px rgba(15,23,42,.25)", padding: 12 }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: "#b91c1c", marginBottom: 6 }}>
-                ✗ Not-OK — reason zaroori hai
+                ✗ Not-OK — reason required
               </div>
               {p && <div style={{ fontSize: 11, color: "#475569", marginBottom: 8 }}>#{p.s_no} · {p.check_point}</div>}
               <textarea autoFocus rows={3} value={sheet?.reasons?.[key] || ""}
                         onChange={(e) => onReason(ngPop.id, ngPop.day, e.target.value)}
-                        placeholder="Kya problem hai?"
+                        placeholder="What is the problem?"
                         style={{ width: "100%", boxSizing: "border-box", border: "1px solid #cbd5e1",
                                  borderRadius: 8, padding: 8, fontSize: 12.5, fontFamily: "inherit", resize: "vertical" }} />
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>

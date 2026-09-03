@@ -25,7 +25,7 @@ export function SignPad({ title, onSave, onClose }) {
         <canvas ref={ref} width={408} height={150}
           onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up}
           style={{ width:"100%", height:150, border:"1px dashed #94a3b8", borderRadius:8, background:"#fff", touchAction:"none", cursor:"crosshair", display:"block" }} />
-        <div style={{ fontSize:11, color:"#94a3b8", marginTop:6 }}>Mouse/finger se yahan sign karo.</div>
+        <div style={{ fontSize:11, color:"#94a3b8", marginTop:6 }}>Sign here with your mouse or finger.</div>
         <div style={{ display:"flex", gap:8, marginTop:10, justifyContent:"flex-end" }}>
           <button onClick={clear} style={{ padding:"7px 14px", borderRadius:8, border:bd, background:"#fff", fontWeight:700, fontSize:12, cursor:"pointer", color:"#64748b" }}>Clear</button>
           <button onClick={onClose} style={{ padding:"7px 14px", borderRadius:8, border:bd, background:"#fff", fontWeight:700, fontSize:12, cursor:"pointer", color:"#64748b" }}>Cancel</button>

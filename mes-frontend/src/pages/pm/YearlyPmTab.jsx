@@ -38,7 +38,7 @@ export default function YearlyPmTab({ ypm, ypmFy, setYpmFy, ypmYears, api }) {
               </select>
               {ypmFy && ypmFy !== curFy && (
                 <span style={{ fontSize:11.5, fontWeight:700, color:"#b45309" }}>
-                  ⓘ New FY — plan blank hai; Update Plan → Preventive Yearly se fill karo.
+                  ⓘ New FY — the plan is blank; fill it from Update Plan → Preventive Yearly.
                 </span>
               )}
             </div>

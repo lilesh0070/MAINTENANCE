@@ -163,7 +163,7 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
       {editable && (
         <div style={{ border:sb, borderTop:"none", padding:"8px 10px", background:"#fff" }}>
           <div style={{ fontSize:12.5, fontWeight:900, color:"#111827", marginBottom:8 }}>
-            🔧 Spares Used (is sheet me)
+            🔧 Spares Used (this sheet)
           </div>
           <datalist id="fmt-sheet-spare-names">
             {(spareNames || []).map((nm, k) => <option key={k} value={nm} />)}
@@ -205,7 +205,7 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
               })}
               {(!sheetSpares || sheetSpares.length === 0) && (
                 <tr><td colSpan={6} style={{ border:sb, padding:"6px 8px", fontSize:11, color:"#94a3b8", textAlign:"center" }}>
-                  Koi spare add nahi kiya — niche “＋ Add spare” se add karo.
+                  No spares added — use “＋ Add spare” below.
                 </td></tr>
               )}
             </tbody>

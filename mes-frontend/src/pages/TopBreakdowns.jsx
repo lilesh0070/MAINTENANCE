@@ -206,7 +206,7 @@ export default function TopBreakdowns() {
             <button className="pa-back" onClick={() => nav("/maintenance-breakdown")}>← Back</button>
             <div>
               <div className="pa-title">Top 10 <span>BD</span></div>
-              <div className="pa-sub">Sabse lambe breakdown (down-time) — manual slip</div>
+              <div className="pa-sub">Longest breakdowns by down time — manual slip</div>
             </div>
           </div>
           {user?.username && <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}

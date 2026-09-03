@@ -153,9 +153,9 @@ export default function ProductionBreakdownSlip() {
   const [delSlip, setDelSlip] = useState(null);
   const deleteSlip = async (r) => {
     const src = r?.src;
-    if (!src) { setErr("Is row ka source pata nahi — delete nahi kar sakte."); return; }
+    if (!src) { setErr("This row has no source — it can't be deleted."); return; }
     if (!window.confirm(
-      `Ye slip hamesha ke liye hat jayegi:
+      `This slip will be deleted permanently:
 
 ` +
       `${src === "toolroom" ? "Tool Room" : "Maintenance"} · slip #${r.id}
@@ -165,9 +165,9 @@ export default function ProductionBreakdownSlip() {
       `${fmtDate(r.bd_start_date)} ${r.bd_start_time || ""}
 
 ` +
-      `Iske saath uska Status record aur us par darj spare bhi hat jayenge.
+      `Its status record and the spares logged on it will be deleted too.
 ` +
-      `Wapas nahi aayegi.  Aage badhein?`)) return;
+      `This cannot be undone.  Continue?`)) return;
     setDelSlip(`${src}-${r.id}`);
     try {
       await api.delete(`/api/breakdown-slips/auto/${r.id}?src=${src}`, token);
@@ -175,7 +175,7 @@ export default function ProductionBreakdownSlip() {
     } catch (e) {
       let m = String(e?.message || e);
       try { m = JSON.parse(m).detail || m; } catch { /* plain text */ }
-      setErr("Delete nahi hua — " + m.slice(0, 160));
+      setErr("Delete failed — " + m.slice(0, 160));
     } finally { setDelSlip(null); }
   };
 
@@ -316,11 +316,11 @@ export default function ProductionBreakdownSlip() {
               <div style={{ fontSize: 34 }}>✅</div>
               <div style={{ fontWeight: 700, color: "#334155", marginTop: 6 }}>
                 {zoneSel
-                  ? `${zoneSel} me kuch nahi.`
-                  : tab === "PRODUCTION" ? "Koi production-pending slip nahi."
-                  : tab === "TOOLROOM"   ? "Koi tool room-pending slip nahi."
-                  : tab === "STATUS"     ? "Abhi koi breakdown record nahi."
-                                         : "Koi maintenance-pending slip nahi."}
+                  ? `No slips in ${zoneSel}.`
+                  : tab === "PRODUCTION" ? "No slips pending with Production."
+                  : tab === "TOOLROOM"   ? "No slips pending with Tool Room."
+                  : tab === "STATUS"     ? "No breakdown records yet."
+                                         : "No slips pending with Maintenance."}
               </div>
             </div>
           ) : T.status ? (
@@ -396,7 +396,7 @@ export default function ProductionBreakdownSlip() {
                         {isAdmin && (
                           <button onClick={() => deleteSlip(r)}
                                   disabled={delSlip === `${r.src}-${r.id}`}
-                                  title="Is slip ko hata do (Status aur spare bhi)"
+                                  title="Delete this slip (status and spares too)"
                                   style={{ marginLeft: 8, border: "1px solid #fecaca", background: "#fff",
                                            color: "#dc2626", borderRadius: 7, cursor: "pointer",
                                            padding: "5px 10px", fontSize: 13, fontWeight: 800,

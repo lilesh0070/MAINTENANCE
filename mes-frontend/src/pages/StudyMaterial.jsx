@@ -78,7 +78,7 @@ export default function StudyMaterial() {
   const doTranslate = async (to) => {
     const src = (to === "hi" ? form.body : form.body_hi) || "";
     if (!src.trim()) {
-      flash(to === "hi" ? "Pehle English matter likhein" : "Pehle Hindi matter likhein");
+      flash(to === "hi" ? "Write the English text first" : "Write the Hindi text first");
       return;
     }
     setTranslating(to);
@@ -86,11 +86,11 @@ export default function StudyMaterial() {
       const r = await api.send("/api/study-material/translate", token, "POST",
                                { text: src, to });
       setForm((f) => (to === "hi" ? { ...f, body_hi: r.text } : { ...f, body: r.text }));
-      flash("Translate ho gaya — save karne se pehle ek baar padh lein");
+      flash("Translated — please read it once before saving");
     } catch (e) {
       let m = String(e?.message || "");
       try { m = JSON.parse(m).detail || m; } catch { /* plain text aaya */ }
-      flash("Translate nahi hua — " + m);
+      flash("Translation failed — " + m);
     } finally {
       setTranslating("");
     }
@@ -161,7 +161,7 @@ export default function StudyMaterial() {
   const pick = rows.find((r) => r.id === pickId) || null;
 
   const save = async () => {
-    if (!form?.title?.trim()) { flash("Heading likhna zaroori hai"); return; }
+    if (!form?.title?.trim()) { flash("Heading is required"); return; }
     setSaving(true);
     try {
       const body = {
@@ -178,7 +178,7 @@ export default function StudyMaterial() {
       setForm(null);
       await load();
       if (saved?.id) setPickId(saved.id);
-      flash(form.id ? "Topic update ho gaya" : "Naya topic jud gaya");
+      flash(form.id ? "Topic updated" : "New topic added");
     } catch (e) {
       flash(String(e.message || e).slice(0, 120));
     } finally {
@@ -187,11 +187,11 @@ export default function StudyMaterial() {
   };
 
   const remove = async (r) => {
-    if (!window.confirm(`"${r.title}" hata dein?  Ye wapas nahi aayega.`)) return;
+    if (!window.confirm(`"${r.title}" will be deleted. This cannot be undone.`)) return;
     try {
       await api.send(`/api/study-material/${r.id}`, token, "DELETE");
       await load();
-      flash("Topic hata diya");
+      flash("Topic deleted");
     } catch (e) {
       flash(String(e.message || e).slice(0, 120));
     }
@@ -276,7 +276,7 @@ export default function StudyMaterial() {
             <div>
               <div className="sm-title">Study <span>Material</span></div>
               <div className="sm-sub">
-                Maintenance ke concepts — MTTR, MTBF, LTTR, KPI, Breakdown, PM, DMC, ANDON, CAPA
+                Maintenance concepts — MTTR, MTBF, LTTR, KPI, Breakdown, PM, DMC, ANDON, CAPA
               </div>
             </div>
           </div>
@@ -301,7 +301,7 @@ export default function StudyMaterial() {
                    value={q} onChange={(e) => setQ(e.target.value)} />
             {loading && <div className="sm-empty">Loading…</div>}
             {!loading && shown.length === 0 && (
-              <div className="sm-empty">{rows.length ? "Kuch nahi mila." : "Abhi koi topic nahi."}</div>
+              <div className="sm-empty">{rows.length ? "No matches found." : "No topics yet."}</div>
             )}
             {!loading && groups.map((g) => {
               // Search chalu ho to sab khula rakho — warna nateeje band
@@ -311,7 +311,7 @@ export default function StudyMaterial() {
                 <div key={g.cat}>
                   <button className={"sm-cat sm-cat-btn" + (open ? " open" : "")}
                           onClick={() => toggleCat(g.cat)}
-                          title={open ? "Band karein" : "Kholein"}>
+                          title={open ? "Collapse" : "Expand"}>
                     <span className="sm-cat-arrow">{open ? "▾" : "▸"}</span>
                     <span className="sm-cat-name">{g.cat}</span>
                     <span className="sm-cat-n">{g.items.length}</span>
@@ -361,7 +361,7 @@ export default function StudyMaterial() {
                     <label className="sm-lbl">Matter — English</label>
                     <button type="button" className="sm-tr" disabled={!!translating}
                             onClick={() => doTranslate("hi")}
-                            title="English se हिंदी banao">
+                            title="Translate English to Hindi">
                       {translating === "hi" ? "बन रहा है…" : "→ हिंदी बनाओ"}
                     </button>
                   </div>
@@ -375,12 +375,12 @@ export default function StudyMaterial() {
                     <label className="sm-lbl">Matter — हिंदी</label>
                     <button type="button" className="sm-tr" disabled={!!translating}
                             onClick={() => doTranslate("en")}
-                            title="हिंदी se English banao">
+                            title="Translate Hindi to English">
                       {translating === "en" ? "Making…" : "→ Make English"}
                     </button>
                   </div>
                   <textarea className="sm-in sm-ta" value={form.body_hi || ""}
-                            placeholder="Yahan Hindi me likhein.  Khali chhod denge to is topic par English hi dikhega."
+                            placeholder="Write the Hindi version here. Leave it blank and this topic will show in English."
                             onChange={(e) => setForm({ ...form, body_hi: e.target.value })} />
                 </div>
 
@@ -388,7 +388,7 @@ export default function StudyMaterial() {
                                 fontSize:13, fontWeight:700, color:"#475569" }}>
                   <input type="checkbox" checked={form.active !== false}
                          onChange={(e) => setForm({ ...form, active: e.target.checked })} />
-                  Sabko dikhe (hata kar sirf admin ko dikhega)
+                  Visible to everyone (uncheck to show to admins only)
                 </label>
 
                 <div style={{ display:"flex", gap:10, marginTop:20 }}>
@@ -400,7 +400,7 @@ export default function StudyMaterial() {
               </>
             ) : !pick ? (
               <div className="sm-empty">
-                {loading ? "Loading…" : "Left se koi topic chunein."}
+                {loading ? "Loading…" : "Select a topic from the left."}
               </div>
             ) : (
               <>
@@ -423,7 +423,7 @@ export default function StudyMaterial() {
                 <div className="sm-meta">
                   Last updated by {pick.updated_by || "—"}
                   {pick.updated_at ? ` · ${String(pick.updated_at).slice(0, 10)}` : ""}
-                  {pick.active === false ? " · HIDDEN (sirf admin ko dikh raha hai)" : ""}
+                  {pick.active === false ? "  · HIDDEN (visible to admins only)" : ""}
                 </div>
               </>
             )}

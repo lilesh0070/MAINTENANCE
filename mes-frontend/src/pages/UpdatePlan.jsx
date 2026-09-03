@@ -139,7 +139,7 @@ export function UpdatePlanSection() {
         <div className="up-card" style={{ maxWidth:800, margin:"0 auto" }}>
           <div className="ico">🔒</div>
           <h3>{s.label}</h3>
-          <p>Aapko is section ka access nahi.</p>
+          <p>You do not have access to this section.</p>
         </div>
       </PageShell>
     );
@@ -344,7 +344,7 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
     }
     if (cfg.timesSpares && fill.spare_used === "yes" &&
         !(fill.spares || []).some((s) => String(s.spare_name || "").trim())) {
-      setMsg({ ok: false, text: "Spare Used = YES — kam se kam ek spare ka naam bharo (ya NO karo)." });
+      setMsg({ ok: false, text: "Spare Used = YES — enter at least one spare name (or set it to NO)." });
       return;
     }
     setBusyId(id); setMsg(null);
@@ -374,7 +374,7 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
 
   // Admin-only: galat/extra assign kiya plan delete (backend bhi require_admin gated).
   const remove = async (id) => {
-    if (!window.confirm("Is plan ko delete karna hai? (wapas nahi aayega)")) return;
+    if (!window.confirm("Delete this plan? This cannot be undone.")) return;
     setBusyId(id);
     try {
       const r = await fetch(`${cfg.api}/${id}`, {
@@ -455,7 +455,7 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
           {cfg.assignee && (
             <Fld label="Assigned To (who will do it)">
               <input style={{ ...selStyle, minWidth:200 }} value={assignee}
-                     placeholder="name(s) — kaun karega"
+                     placeholder="name(s)"
                      onChange={(e) => setAssignee(upperCaret(e))} />
             </Fld>
           )}
@@ -610,7 +610,7 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
                                      onChange={() => setFill((f) => ({ ...f, spare_used: "no", spares: [{ ...EMPTY_SPARE }] }))} /> NO
                             </label>
                             {fill.spare_used === "yes" &&
-                              <span style={{ fontSize:11, color:"#b45309", fontWeight:700 }}>· spare details bharni zaroori hai</span>}
+                              <span style={{ fontSize:11, color:"#b45309", fontWeight:700 }}>· spare details are required</span>}
                           </div>
                           {fill.spare_used === "yes" && (<>
                           <datalist id="sun-spare-names">

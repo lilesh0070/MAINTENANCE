@@ -30,7 +30,7 @@ export function SlipThresholdPage({ toast }) {
       const b = r?.target_breakdowns  ?? 10;
       const p = r?.target_pending     ?? 0;
       setVal(v); setOrig(v); setTBd(b); setTBdOrig(b); setTPend(p); setTPendOrig(p);
-    } catch { toast?.("Config load nahi hua", "err"); }
+    } catch { toast?.("Could not load config", "err"); }
     finally { setLoad(false); }
   }, [token, toast]);
   useEffect(() => { load(); }, [load]);
@@ -47,8 +47,8 @@ export function SlipThresholdPage({ toast }) {
       const nb = r?.target_breakdowns  ?? b;
       const np = r?.target_pending     ?? p;
       setVal(nv); setOrig(nv); setTBd(nb); setTBdOrig(nb); setTPend(np); setTPendOrig(np);
-      toast?.(`Save ho gaya ✓  (threshold ${nv} min · target ${nb}/${np})`);
-    } catch (e) { toast?.(e.message || "Save fail", "err"); }
+      toast?.(`Saved ✓  (threshold ${nv} min · target ${nb}/${np})`);
+    } catch (e) { toast?.(e.message || "Save failededed", "err"); }
     finally { setSaving(false); }
   };
 
@@ -68,7 +68,7 @@ export function SlipThresholdPage({ toast }) {
         <>
           <div style={{ display: "flex", alignItems: "flex-end", gap: 14, flexWrap: "wrap" }}>
             <FF label="Threshold (minute)"
-                hint="1 se 60 min. Default 2. Call itne min se zyada khuli rahe to slip banegi.">
+                hint="1 to 60 min. Default 2. A slip is created if a call stays open longer than this.">
               <Input type="number" min="1" max="60" value={val}
                      onChange={(e) => setVal(e.target.value)}
                      style={{ width: 130 }} />
@@ -79,14 +79,14 @@ export function SlipThresholdPage({ toast }) {
             Pending Breakdown — Dashboard Target
           </div>
           <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 12 }}>
-            "Pending Breakdown" panel ke ON/OFF TARGET is hisaab se dikhta hai (count iske ≤ ho to ON TARGET).
+            The "Pending Breakdown" panel shows ON/OFF TARGET against these values (count ≤ target = ON TARGET).
           </div>
           <div style={{ display: "flex", alignItems: "flex-end", gap: 14, flexWrap: "wrap" }}>
-            <FF label="Total Breakdowns target (≤)" hint="Iske andar ho to ON TARGET. Default 10.">
+            <FF label="Total Breakdowns target (≤)" hint="At or below this = ON TARGET. Default 10.">
               <Input type="number" min="0" value={tBd}
                      onChange={(e) => setTBd(e.target.value)} style={{ width: 170 }} />
             </FF>
-            <FF label="Pending Closures target (≤)" hint="Iske andar ho to ON TARGET. Default 0.">
+            <FF label="Pending Closures target (≤)" hint="At or below this = ON TARGET. Default 0.">
               <Input type="number" min="0" value={tPend}
                      onChange={(e) => setTPend(e.target.value)} style={{ width: 170 }} />
             </FF>

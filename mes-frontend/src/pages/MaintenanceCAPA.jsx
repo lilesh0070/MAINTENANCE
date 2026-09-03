@@ -661,7 +661,7 @@ export default function MaintenanceCAPA() {
       {cam && (
         <div className="cam-ov" onClick={() => setCam(null)}>
           <div className="cam-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="cam-hd">📷 Camera — photo lo</div>
+            <div className="cam-hd">📷 Camera — take a photo</div>
             <video ref={videoRef} autoPlay playsInline muted className="cam-vid" />
             <div className="cam-act">
               <button className="cam-shot" onClick={capture}>📸 Capture</button>
@@ -674,7 +674,7 @@ export default function MaintenanceCAPA() {
       {sign && (
         <div className="cam-ov" onClick={() => setSign(null)}>
           <div className="cam-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="cam-hd">✍ Signature — mouse / finger se sign karo</div>
+            <div className="cam-hd">✍ Signature — sign with mouse or finger</div>
             <canvas ref={sigCanvasRef} width={520} height={190} className="sig-canvas"
                     onMouseDown={sigStart} onMouseMove={sigMove} onMouseUp={sigEnd} onMouseLeave={sigEnd}
                     onTouchStart={sigStart} onTouchMove={sigMove} onTouchEnd={sigEnd} />

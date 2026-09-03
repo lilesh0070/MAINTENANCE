@@ -386,10 +386,10 @@ export default function PMPanel() {
     if (!calSheet) return;
     const merged = calSheet.points.map((p, i) => ({ ...p, ...(calSheet.fill[i] || {}) }));
     if (!(merged.length && merged.every(p => String(p.status || "").trim()))) {
-      setMsg("Har check point ka STATUS (OK/NG) bharna zaroori hai"); return;
+      setMsg("Every check point needs a STATUS (OK/NG)"); return;
     }
     if (!calSheet.sign.prepared.trim() || !(calSheet.signImgs || [])[0]) {
-      setMsg("Prepared By (Team Member - Maintenance) ka naam aur signature zaroori hai"); return;
+      setMsg("Prepared By (Team Member - Maintenance) name and signature are required"); return;
     }
     setCalSaving(true); setMsg("");
     try {
@@ -418,8 +418,8 @@ export default function PMPanel() {
       const wasEdit = !!calSheet.fillId;
       setCalSheet(null); setSheetSpares([]); reloadPlan(); setPendRefresh(k => k + 1);
       setMsg(wasEdit
-        ? "✓ Correction save ho gayi — sheet dobara Engineer (Maintenance) ke verify ke liye gayi"
-        : "✓ Check sheet saved — ab Engineer (Maintenance) ke verify ke liye gayi");
+        ? "✓ Correction saved — sent back to Engineer (Maintenance) for verification"
+        : "✓ Check sheet saved — sent to Engineer (Maintenance) for verification");
     } catch (e) { setMsg(String(e.message || e).slice(0, 160)); }
     finally { setCalSaving(false); }
   };
@@ -477,8 +477,8 @@ export default function PMPanel() {
         fill_id: verSheet.id, stage: verStage,
         name: verSheet.vName.trim(), reason: verSheet.vReason.trim() }) });
       setVerSheet(null); reloadVer();
-      setMsg(`↩ ${verSheet.machine_no} wapas bhej di — ${verStage === "engineer"
-        ? "Team Member (Fill Check Sheets)" : "Engineer (Maintenance)"} ke paas. Data safe hai.`);
+      setMsg(`↩ ${verSheet.machine_no} sent back to ${verStage === "engineer"
+        ? "Team Member (Fill Check Sheets)" : "Engineer (Maintenance)"}. The filled data is safe.`);
     } catch (e) { setMsg(String(e.message || e).slice(0, 200)); }
     finally { setVerSaving(false); }
   };
@@ -501,8 +501,8 @@ export default function PMPanel() {
         name: verSheet.vName.trim(), sign_img: verSheet.vSign }) });
       setVerSheet(null); reloadVer();
       setMsg(r.final
-        ? `✓ ${verSheet.machine_no} — In-Charge ne sign kar diya. Sheet ab History me submit ho gayi.`
-        : `✓ ${verSheet.machine_no} verified — ab In-Charge Maintenance ke approve ke liye gayi.`);
+        ? `✓ ${verSheet.machine_no} — In-Charge has signed. The sheet is now submitted to History.`
+        : `✓ ${verSheet.machine_no} verified — sent to In-Charge Maintenance for approval.`);
     } catch (e) { setMsg(String(e.message || e).slice(0, 200)); }
     finally { setVerSaving(false); }
   };
@@ -667,8 +667,8 @@ export default function PMPanel() {
     const allFilled = pointsDone && hasPrepared;
     const gateHint = !pointsDone
       ? "Save unlocks after every check point has a STATUS (OK/NG)"
-      : !calSheet.sign.prepared.trim() ? "Prepared By (Team Member) ka naam daalo"
-      : "Prepared By ka signature baaki hai";
+      : !calSheet.sign.prepared.trim() ? "Enter the Prepared By (Team Member) name"
+      : "Prepared By signature is still missing";
     const onEditCal = (i, k, v) => setCalSheet(s => s ? ({ ...s, fill: { ...s.fill, [i]: { ...(s.fill[i] || {}), [k]: v } } }) : s);
     return (
       <div style={{marginTop:14}}>
@@ -694,10 +694,10 @@ export default function PMPanel() {
           {calSheet.rejectReason && (
             <div style={{flexBasis:"100%", fontSize:11.5, color:"#b91c1c", background:"#fef2f2",
                          border:"1px solid #fecaca", borderRadius:8, padding:"8px 10px"}}>
-              ↩ <b>{calSheet.rejectedFrom || "Verifier"}</b> (code <b>{calSheet.rejectedBy || "—"}</b>) ne wapas bheji:
+              ↩ <b>{calSheet.rejectedFrom || "Verifier"}</b> (code <b>{calSheet.rejectedBy || "—"}</b>) sent this back:
               <b> “{calSheet.rejectReason}”</b>
               <span style={{display:"block", color:"#7f1d1d", fontWeight:600, marginTop:2}}>
-                Purana data waisa hi load hua hai — theek karke dobara sign karo. Wahi sheet update hogi, nayi nahi banegi.
+                Your original data is loaded — fix it and sign again. The same sheet is updated, no new one is created.
               </span>
             </div>
           )}
@@ -795,15 +795,15 @@ export default function PMPanel() {
             <div style={{...card, padding:0, overflow:"hidden", marginBottom:14, borderLeft:"4px solid #dc2626"}}>
               <div style={{padding:"10px 14px", fontWeight:800, fontSize:13, color:"#b91c1c",
                            borderBottom:bd, background:"#fef2f2"}}>
-                ↩ Engineer (Maintenance) ne wapas bheji — correction karke dobara submit karo
+                ↩ Sent back by Engineer (Maintenance) — correct it and submit again
                 <span style={{marginLeft:8, fontSize:11, fontWeight:800, background:"#fee2e2",
                               color:"#b91c1c", borderRadius:99, padding:"1px 10px"}}>{retData.total}</span>
                 <span style={{marginLeft:10, fontSize:11, fontWeight:600, color:"#7f1d1d"}}>
-                  Bhara hua data waisa hi hai — sirf jo theek karna hai wo badlo.
+                  Your filled data is unchanged — edit only what needs fixing.
                 </span>
               </div>
               <table style={{width:"100%", borderCollapse:"collapse"}}>
-                <thead><tr>{["#","Machine No.","Machine","PM Date","Kisne wapas bheji","Code","Reason","Points","Action"].map(h=>(
+                <thead><tr>{["#","Machine No.","Machine","PM Date","Sent Back By","Code","Reason","Points","Action"].map(h=>(
                   <th key={h} style={{border:bd, padding:"6px 8px", fontSize:10.5, fontWeight:800, background:"#f3f4f6", textAlign:"left"}}>{h}</th>))}</tr></thead>
                 <tbody>
                   {retData.rows.map((x,i)=>(
@@ -841,11 +841,11 @@ export default function PMPanel() {
 
           <div style={{...card, padding:0, overflow:"hidden"}}>
             <div style={{padding:"10px 14px", fontWeight:800, fontSize:13, color:"#0f172a", borderBottom:bd}}>
-              Jis machine ka PM ho gaya par check sheet abhi bhari nahi — yaha se fill karo
+              PM done but check sheet not filled yet — fill it here
             </div>
             {items.length===0 ? (
               <div style={{padding:26, textAlign:"center", color:"#16a34a", fontSize:13, fontWeight:700}}>
-                ✓ Koi pending nahi{pendMonth?" is month me":""} — done PMs ki check sheet bhar chuki hai.
+                ✓ Nothing pending{pendMonth?" this month":""} — every done PM has its check sheet filled.
               </div>
             ) : (
               <table style={{width:"100%", borderCollapse:"collapse"}}>
@@ -888,8 +888,8 @@ export default function PMPanel() {
         const accent = verStage === "engineer" ? "#0891b2" : "#15803d";
         const stepNo = verStage === "engineer" ? "2" : "3";
         const nextTxt = verStage === "engineer"
-          ? "Sign karte hi sheet In-Charge Maintenance ke paas jayegi."
-          : "Sign karte hi sheet FINAL ho jayegi aur History me submit hogi.";
+          ? "Once signed, the sheet goes to In-Charge Maintenance."
+          : "Once signed, the sheet is FINAL and submitted to History.";
         const cols = verStage === "engineer"
           ? ["#","Zone","Line","Machine No.","Machine","PM Date","Points","Prepared By","Action"]
           : ["#","Zone","Line","Machine No.","Machine","PM Date","Points","Prepared By","Checked By","Action"];
@@ -908,7 +908,7 @@ export default function PMPanel() {
             </span>
             {(verList?.returned_total || 0) > 0 && (
               <span style={{fontSize:12.5, fontWeight:800, background:"#fee2e2", color:"#b91c1c", borderRadius:99, padding:"3px 12px"}}>
-                ↩ {verList.returned_total} wapas aayi
+                ↩ {verList.returned_total} sent back
               </span>
             )}
             {!verList && <span style={{fontSize:12, color:"#94a3b8"}}>Loading…</span>}
@@ -925,11 +925,11 @@ export default function PMPanel() {
             <div style={{...card, padding:0, overflow:"hidden", marginBottom:14, borderLeft:"4px solid #dc2626"}}>
               <div style={{padding:"10px 14px", fontWeight:800, fontSize:13, color:"#b91c1c",
                            borderBottom:bd, background:"#fef2f2"}}>
-                ↩ In-Charge Maintenance ne wapas bheji — dobara check karke sign karo
+                ↩ Sent back by In-Charge Maintenance — re-check and sign
                 <span style={{marginLeft:8, fontSize:11, fontWeight:800, background:"#fee2e2",
                               color:"#b91c1c", borderRadius:99, padding:"1px 10px"}}>{verList.returned_total}</span>
                 <span style={{marginLeft:10, fontSize:11, fontWeight:600, color:"#7f1d1d"}}>
-                  Data waisa hi hai. Theek lage to sign karo, warna aage Team Member ko wapas bhej do.
+                  The data is unchanged. Sign it if it looks right, otherwise send it back to the Team Member.
                 </span>
               </div>
               <table style={{width:"100%", borderCollapse:"collapse"}}>
@@ -949,7 +949,7 @@ export default function PMPanel() {
                       <td style={{border:bd, padding:"6px 8px", whiteSpace:"nowrap"}}>
                         <button onClick={()=>openVerify(x.id)}
                                 style={{padding:"5px 16px", borderRadius:6, border:"none", background:"#dc2626",
-                                        color:"#fff", cursor:"pointer", fontSize:11.5, fontWeight:800}}>🔁 Dobara check karo</button>
+                                        color:"#fff", cursor:"pointer", fontSize:11.5, fontWeight:800}}>🔁 Re-check</button>
                       </td>
                     </tr>
                   ))}
@@ -961,12 +961,12 @@ export default function PMPanel() {
           <div style={{...card, padding:0, overflow:"hidden"}}>
             <div style={{padding:"10px 14px", fontWeight:800, fontSize:13, color:"#0f172a", borderBottom:bd}}>
               {verStage === "engineer"
-                ? "Team Member ne jo check sheet bhari hain — yaha verify karke sign karo"
-                : "Engineer verify kar chuka hai — yaha final approve karke sign karo"}
+                ? "Check sheets filled by the Team Member — verify and sign here"
+                : "Engineer has verified — give final approval and sign here"}
             </div>
             {rows.length === 0 ? (
               <div style={{padding:26, textAlign:"center", color:"#16a34a", fontSize:13, fontWeight:700}}>
-                ✓ Koi sheet pending nahi — sab verify ho chuki hain.
+                ✓ No sheets pending — everything is verified.
               </div>
             ) : (
               <table style={{width:"100%", borderCollapse:"collapse"}}>
@@ -1014,10 +1014,10 @@ export default function PMPanel() {
                   </b>
                   <span style={{fontSize:11.5, fontWeight:800, color: ready ? "#16a34a" : "#d97706"}}>
                     {ready ? "✓ Code + sign done"
-                           : `✍ Sheet ke niche ${role} me apna code + sign karo`}
+                           : `✍ Enter your code + sign in the ${role} box below the sheet`}
                   </span>
                   <button onClick={submitVerify} disabled={verSaving || !ready}
-                          title={ready ? "" : "Code aur signature dono zaroori hain"}
+                          title={ready ? "" : "Both code and signature are required"}
                           style={{padding:"8px 20px", borderRadius:8, border:"none",
                                   cursor: ready ? "pointer" : "not-allowed",
                                   background: ready ? accent : "#94a3b8",
@@ -1025,12 +1025,12 @@ export default function PMPanel() {
                     {verSaving ? "Saving…" : (verStage === "engineer" ? "✔ Verify & Sign" : "🏁 Approve & Submit")}
                   </button>
                   <button onClick={()=>setVerSheet(s=>s?{...s, rejecting:!s.rejecting, vReason:""}:s)}
-                          title={`Sheet ${verList?.reject_who || ""} ke paas wapas jayegi`}
+                          title={`The sheet goes back to ${verList?.reject_who || ""}`}
                           style={{padding:"8px 16px", borderRadius:8, border:"1px solid #fca5a5",
                                   background: verSheet.rejecting ? "#fee2e2" : "#fff", color:"#b91c1c",
                                   cursor:"pointer", fontSize:12, fontWeight:800}}>
                     ↩ {verSheet.rejecting ? "Reject cancel"
-                        : `Wapas bhejo → ${verStage === "engineer" ? "Team Member" : "Engineer"}`}</button>
+                        : `Send back → ${verStage === "engineer" ? "Team Member" : "Engineer"}`}</button>
                   <button onClick={()=>setVerSheet(null)}
                           style={{padding:"8px 14px", borderRadius:8, border:bd, background:"#fff", cursor:"pointer", fontSize:12, fontWeight:700, color:"#64748b"}}>✕ Close</button>
 
@@ -1040,17 +1040,17 @@ export default function PMPanel() {
                     verSheet.stage === "RET_ENGINEER" ? (
                       <div style={{flexBasis:"100%", fontSize:12, color:"#b91c1c", background:"#fef2f2",
                                    border:"1px solid #fecaca", borderRadius:8, padding:"8px 10px"}}>
-                        ↩ <b>{verSheet.rejected_from || "In-Charge Maintenance"}</b> (code <b>{verSheet.rejected_by || "—"}</b>) ne wapas bheji:
+                        ↩ <b>{verSheet.rejected_from || "In-Charge Maintenance"}</b> (code <b>{verSheet.rejected_by || "—"}</b>) sent this back:
                         <b> “{verSheet.reject_reason}”</b>
                         <span style={{display:"block", color:"#7f1d1d", fontWeight:600, marginTop:2}}>
-                          Data waisa hi hai. Theek lage to code + sign karke aage bhejo, warna Team Member ko wapas bhej do.
+                          The data is unchanged. If it looks right, add your code, sign and forward it; otherwise send it back to the Team Member.
                         </span>
                       </div>
                     ) : (
                       <div style={{flexBasis:"100%", fontSize:11.5, color:"#92400e", background:"#fffbeb",
                                    border:"1px solid #fde68a", borderRadius:8, padding:"7px 10px"}}>
-                        ⓘ Ye sheet pehle <b>{verSheet.rejected_from || "—"}</b> ne wapas bheji thi
-                        (code <b>{verSheet.rejected_by || "—"}</b>): “{verSheet.reject_reason}” — ab correction ke baad dobara aayi hai.
+                        ⓘ This sheet was previously sent back by <b>{verSheet.rejected_from || "—"}</b>
+                        (code <b>{verSheet.rejected_by || "—"}</b>): “{verSheet.reject_reason}” — it is back after correction.
                       </div>
                     )
                   )}
@@ -1058,23 +1058,23 @@ export default function PMPanel() {
                   {verSheet.rejecting && (
                     <div style={{flexBasis:"100%", display:"flex", gap:8, flexWrap:"wrap", alignItems:"center",
                                  background:"#fef2f2", border:"1px solid #fecaca", borderRadius:8, padding:10}}>
-                      <span style={{fontSize:12, fontWeight:800, color:"#b91c1c"}}>Wapas bhejne ka reason:</span>
+                      <span style={{fontSize:12, fontWeight:800, color:"#b91c1c"}}>Reason for sending back:</span>
                       <input value={verSheet.vReason} autoFocus
-                             placeholder="Kya theek karna hai? (zaroori)"
+                             placeholder="What needs fixing? (required)"
                              onChange={e=>setVerSheet(s=>s?{...s, vReason:e.target.value}:s)}
                              onKeyDown={e=>{ if(e.key==="Enter" && verSheet.vName.trim() && verSheet.vReason.trim().length>=3) submitReject(); }}
                              style={{flex:"1 1 320px", padding:7, borderRadius:6, border:"1px solid #fca5a5", fontSize:12}} />
                       <button onClick={submitReject}
                               disabled={verSaving || !verSheet.vName.trim() || verSheet.vReason.trim().length < 3}
-                              title={!verSheet.vName.trim() ? "Pehle apna code daalo (sheet ke niche)" : "Reason likhna zaroori hai"}
+                              title={!verSheet.vName.trim() ? "Enter your code first (at the bottom of the sheet)" : "A reason is required"}
                               style={{padding:"7px 18px", borderRadius:8, border:"none",
                                       cursor: (verSheet.vName.trim() && verSheet.vReason.trim().length>=3) ? "pointer" : "not-allowed",
                                       background: (verSheet.vName.trim() && verSheet.vReason.trim().length>=3) ? "#dc2626" : "#94a3b8",
                                       color:"#fff", fontSize:12.5, fontWeight:800}}>
-                        {verSaving ? "…" : "↩ Wapas bhejo"}</button>
+                        {verSaving ? "…" : "↩ Send Back"}</button>
                       <span style={{flexBasis:"100%", fontSize:10.5, color:"#b91c1c"}}>
-                        Sheet <b>{verList?.reject_who || "—"}</b> ke paas jayegi — ek hi step peeche, poore niche nahi.
-                        Bhara hua data <b>clear nahi hoga</b>. Reject ke liye bhi apna code (sheet ke niche) daalna zaroori hai.
+                        The sheet goes to <b>{verList?.reject_who || "—"}</b> — one step back, not to the start.
+                        The filled data <b>is not cleared</b>. Your code (at the bottom of the sheet) is required for a reject too.
                       </span>
                     </div>
                   )}
@@ -1193,7 +1193,7 @@ export default function PMPanel() {
                 </table>
               )}
               <div style={{padding:"8px 14px", fontSize:11, color:"#94a3b8"}}>
-                Jis machine ka PM ho gaya par check sheet nahi bhari — sab yahan. Fill karte hi list se hat jayegi.
+                Every PM that is done but has no check sheet is listed here. It disappears once you fill it.
               </div>
             </div>
           )}
@@ -1454,7 +1454,7 @@ export default function PMPanel() {
               </div>
               <div style={{ fontSize:11.5, color:"#64748b", marginBottom:6 }}>{pt.check_point || ""}</div>
               <div style={{ fontSize:11.5, color:"#334155", marginBottom:12, fontWeight:600 }}>
-                {calSheet.cp?.machine_no} · {calSheet.cp?.machine_name} — ye spares maintenance_spare me machine_no ke saath (source “PM”) save honge.
+                {calSheet.cp?.machine_no} · {calSheet.cp?.machine_name} — these spares are saved against this machine (source “PM”).
               </div>
               <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12.5 }}>
                 <thead><tr>{["Spare Name","Model No.","Spare ERP No.","Qty",""].map((h) =>

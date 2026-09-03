@@ -32,16 +32,16 @@ const fmtDT = (s) => {
 // Har action ka apna rang + seedha-sada naam.  Jo yahan na ho wo apne raw naam
 // se dikhega — nayi action jodne par page apne aap use dikha dega, khali nahi.
 const LOOK = {
-  ANDON_HISTORY_DELETE: { c: "#b91c1c", bg: "#fee2e2", t: "ANDON call hatai" },
-  AUTO_SLIP_DELETE:     { c: "#b91c1c", bg: "#fee2e2", t: "Auto slip hatai" },
-  SLIP_DELETE:          { c: "#b91c1c", bg: "#fee2e2", t: "Slip hatai" },
-  POINT_DELETE:         { c: "#b91c1c", bg: "#fee2e2", t: "Check point hataya" },
-  PM_REV_STEPDOWN:      { c: "#b45309", bg: "#fef3c7", t: "PM rev hatai" },
-  DMC_REV_STEPDOWN:     { c: "#b45309", bg: "#fef3c7", t: "DMC rev hatai" },
-  PM_REV_EDIT:          { c: "#b45309", bg: "#fef3c7", t: "PM rev badli" },
-  DMC_REV_EDIT:         { c: "#b45309", bg: "#fef3c7", t: "DMC rev badli" },
-  PM_REV_RENUMBER:      { c: "#b45309", bg: "#fef3c7", t: "PM rev number badle" },
-  DMC_REV_RENUMBER:     { c: "#b45309", bg: "#fef3c7", t: "DMC rev number badle" },
+  ANDON_HISTORY_DELETE: { c: "#b91c1c", bg: "#fee2e2", t: "ANDON call deleted" },
+  AUTO_SLIP_DELETE:     { c: "#b91c1c", bg: "#fee2e2", t: "Auto slip deleted" },
+  SLIP_DELETE:          { c: "#b91c1c", bg: "#fee2e2", t: "Slip deleted" },
+  POINT_DELETE:         { c: "#b91c1c", bg: "#fee2e2", t: "Check point deleted" },
+  PM_REV_STEPDOWN:      { c: "#b45309", bg: "#fef3c7", t: "PM revision removed" },
+  DMC_REV_STEPDOWN:     { c: "#b45309", bg: "#fef3c7", t: "DMC revision removed" },
+  PM_REV_EDIT:          { c: "#b45309", bg: "#fef3c7", t: "PM revision edited" },
+  DMC_REV_EDIT:         { c: "#b45309", bg: "#fef3c7", t: "DMC revision edited" },
+  PM_REV_RENUMBER:      { c: "#b45309", bg: "#fef3c7", t: "PM revisions renumbered" },
+  DMC_REV_RENUMBER:     { c: "#b45309", bg: "#fef3c7", t: "DMC revisions renumbered" },
   AUTH_LOGIN:           { c: "#15803d", bg: "#dcfce7", t: "Login" },
   AUTH_LOGOUT:          { c: "#475569", bg: "#f1f5f9", t: "Logout" },
 };
@@ -120,40 +120,40 @@ export function DeleteHistoryPage() {
       {/* ── filter bar ── */}
       <div style={{ ...card, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
         <div>
-          <div style={lbl}>Kya dekhna hai</div>
+          <div style={lbl}>Show</div>
           <select style={{ ...sel, minWidth: 210 }} value={mode}
                   onChange={(e) => { setMode(e.target.value); setPage(0); }}>
-            <option value="delete">Sirf DELETE / hatane wale</option>
-            <option value="all">Sab kuch</option>
+            <option value="delete">Deletions only</option>
+            <option value="all">Everything</option>
             {allActions.map((a) => <option key={a} value={a}>{look(a).t} ({a})</option>)}
           </select>
         </div>
         <div>
-          <div style={lbl}>Kis din se</div>
+          <div style={lbl}>From date</div>
           <input type="date" style={sel} value={from} onChange={(e) => { setFrom(e.target.value); setPage(0); }} />
         </div>
         <div>
-          <div style={lbl}>Kis din tak</div>
+          <div style={lbl}>To date</div>
           <input type="date" style={sel} value={to} onChange={(e) => { setTo(e.target.value); setPage(0); }} />
         </div>
         <div>
-          <div style={lbl}>Kisne kiya</div>
+          <div style={lbl}>Done by</div>
           <select style={{ ...sel, minWidth: 140 }} value={uname}
                   onChange={(e) => { setUname(e.target.value); setPage(0); }}>
-            <option value="">Sab log</option>
+            <option value="">All users</option>
             {users.map((u) => <option key={u.username} value={u.username}>{u.username}</option>)}
           </select>
         </div>
         <div style={{ flex: "1 1 220px" }}>
-          <div style={lbl}>Dhoondho (machine, slip no, kuch bhi)</div>
+          <div style={lbl}>Search (machine, slip no, anything)</div>
           <input style={{ ...sel, width: "100%", fontWeight: 500 }} value={qLive}
-                 placeholder="jaise  YHB_SS_05  ya  Maintenance"
+                 placeholder="e.g.  YHB_SS_05  or  Maintenance"
                  onChange={(e) => setQLive(e.target.value)} />
         </div>
         <button onClick={reset}
                 style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid #cbd5e1",
                          background: "#fff", color: "#475569", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>
-          Filter hatao
+          Reset filters
         </button>
       </div>
 
@@ -162,10 +162,10 @@ export function DeleteHistoryPage() {
         <div style={{ ...card, padding: "10px 16px", display: "flex", alignItems: "baseline", gap: 8 }}>
           <b style={{ fontSize: 22, color: "#0f172a" }}>{total}</b>
           <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>
-            {mode === "delete" ? "delete/hatane wale kaam" : mode === "all" ? "kul entry" : "entry"} — is filter me
+            {mode === "delete" ? "deletions" : mode === "all" ? "total entries" : "entry"} — in this filter
           </span>
         </div>
-        {busy && <span style={{ fontSize: 12, color: "#64748b" }}>load ho raha hai…</span>}
+        {busy && <span style={{ fontSize: 12, color: "#64748b" }}>Loading…</span>}
         {err && <span style={{ fontSize: 12, color: "#b91c1c", fontWeight: 700 }}>{err}</span>}
       </div>
 
@@ -174,10 +174,10 @@ export function DeleteHistoryPage() {
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 820 }}>
           <thead style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
             <tr>
-              <th style={th}>Kab</th>
-              <th style={th}>Kya hua</th>
-              <th style={th}>Kisne</th>
-              <th style={th}>Byora</th>
+              <th style={th}>When</th>
+              <th style={th}>Action</th>
+              <th style={th}>By</th>
+              <th style={th}>Details</th>
             </tr>
           </thead>
           <tbody>
@@ -198,7 +198,7 @@ export function DeleteHistoryPage() {
             })}
             {!rows.length && !busy && (
               <tr><td colSpan={4} style={{ padding: "26px 14px", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
-                {waiting ? "load ho raha hai…" : "Is filter me kuch nahi mila."}
+                {waiting ? "Loading…" : "Nothing found for this filter."}
               </td></tr>
             )}
           </tbody>
@@ -211,18 +211,18 @@ export function DeleteHistoryPage() {
           <button disabled={page === 0 || busy} onClick={() => setPage((p) => Math.max(0, p - 1))}
                   style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #cbd5e1",
                            background: "#fff", color: page === 0 ? "#cbd5e1" : "#475569",
-                           fontWeight: 700, fontSize: 12.5, cursor: page === 0 ? "not-allowed" : "pointer" }}>← Pichhla</button>
+                           fontWeight: 700, fontSize: 12.5, cursor: page === 0 ? "not-allowed" : "pointer" }}>← Previous</button>
           <span style={{ fontSize: 12.5, color: "#64748b", fontWeight: 600 }}>Page {page + 1} / {pages}</span>
           <button disabled={page + 1 >= pages || busy} onClick={() => setPage((p) => p + 1)}
                   style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #cbd5e1",
                            background: "#fff", color: page + 1 >= pages ? "#cbd5e1" : "#475569",
-                           fontWeight: 700, fontSize: 12.5, cursor: page + 1 >= pages ? "not-allowed" : "pointer" }}>Agla →</button>
+                           fontWeight: 700, fontSize: 12.5, cursor: page + 1 >= pages ? "not-allowed" : "pointer" }}>Next →</button>
         </div>
       )}
 
       <div style={{ fontSize: 11.5, color: "#94a3b8", lineHeight: 1.6 }}>
-        Ye record apne aap banta hai aur ise yahan se mitaya nahi ja sakta — mitayi hui cheez
-        wapas nahi aati, isliye "kisne kab kya hataya" ka nishaan bacha rehna zaroori hai.
+        This log is written automatically and cannot be deleted from here — deleted data
+        never comes back, so a record of who deleted what and when must remain.
       </div>
     </div>
   );
