@@ -456,3 +456,28 @@ body.in-app .pm-stats { gap: 4px !important; padding: 6px !important; }
 body.in-app .pm-stats > div { padding: 6px 4px !important; }
 body.in-app .pm-stats > div > div:first-child { font-size: 17px !important; }
 body.in-app .pm-stats > div > div:last-child  { font-size: 8px !important; letter-spacing: 0 !important; }
+
+/* ── ANDON ka upar ka hissa ───────────────────────────────────────────
+ * `.an-top` ka padding `0 26px 0 92px` tha -- baayein 92px slide-nav ke liye
+ * chhoda gaya tha, jo TV ka naap hai.  App me logo sirf 36px ka hai (left 8)
+ * aur gear 40px (right 12), isliye utni hi jagah kaafi hai.  Us 92px ki wajah
+ * se naam ko sirf 181px mile aur `🚦 ANDON Management` DO line me toot gaya.
+ *
+ * Username daayein kinare par tha (353-386) aur gear (358-398) uske THEEK
+ * upar chadha hua tha -- screen par sirf `D` dikh raha tha.  Wo naam waise bhi
+ * ⚙ Settings me poora dikhta hai, isliye app me yahan se hata dete hain.
+ */
+body.in-app .an-top {
+  padding-left: 52px !important;
+  padding-right: 60px !important;
+  height: 50px !important;
+}
+body.in-app .an-user { display: none !important; }
+/* Back ka text sirf 29px ka hai par button 66px ka tha -- padding kam. */
+body.in-app .an-back { padding: 6px 9px !important; font-size: 12px !important; }
+body.in-app .an-ttl  { font-size: 14px !important; white-space: nowrap !important; }
+
+/* Saat tab 768px maangte hain aur jagah 368px hai -- khiskana to padega hi,
+   par tab chhote karne se ek saath zyada dikhte hain (3.5 ki jagah ~5). */
+body.in-app .an-tabs { gap: 5px !important; margin-bottom: 10px !important; }
+body.in-app .an-tabs > * { padding: 6px 10px !important; font-size: 11px !important; }

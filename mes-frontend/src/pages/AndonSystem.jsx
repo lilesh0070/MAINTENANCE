@@ -751,7 +751,7 @@ export default function AndonSystem() {
               <div className="an-ttl">🚦 ANDON <span>Management</span></div>
             </div>
           </div>
-          {user?.username && <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
+          {user?.username && <span className="an-user" style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
         </div>
 
         <div className="an-body">
