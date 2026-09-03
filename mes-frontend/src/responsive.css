@@ -426,3 +426,33 @@ body.in-app .kp-sub { display: none !important; }
  */
 body.in-app .md-cols    { gap: 6px !important; margin-bottom: 6px !important; }
 body.in-app .md-section { margin-bottom: 6px !important; }
+
+/* ── PM This Month ────────────────────────────────────────────────────
+ * 1) Naam aur uske neeche ki line (`September 2026 · 0 Planned`) do line
+ *    leti thi.  Phone par ek line kaafi hai -- dono ek hi patti me.
+ *
+ * 2) Paanch tile ka grid: kinare `12px 14px` aur gap `8px` -- yaani 26+32 =
+ *    58px sirf khaali jagah, aur har tile ke hisse me sirf 65px aaye.
+ *
+ * 3) ASLI DIKKAT -- label tile se BAHAR nikal rahe the.  Naapa:
+ *       COMPLETED  ka text 55px, jagah 45px
+ *       COMPLIANCE ka text 60px, jagah 45px
+ *    Ye dabbe ke naap se pakad me NAHI aata: label ka dabba to 44px me tha,
+ *    par uske andar ka TEXT dabbe se chaudha tha aur bahar paint ho raha tha
+ *    (`overflow` visible hai).  Range se text ki asli chaudai naapni padi.
+ *    Ab font 9.5 se 8px aur letter-spacing hata di.
+ */
+body.in-app .pm-head { padding: 8px 10px !important; gap: 8px !important; }
+body.in-app .pm-headtext {
+  display: flex !important;
+  align-items: baseline !important;
+  flex-wrap: nowrap !important;
+  gap: 6px !important;
+}
+body.in-app .pm-headtext > div:first-child  { font-size: 14px !important; white-space: nowrap !important; }
+body.in-app .pm-headtext > div:nth-child(2) { font-size: 9px  !important; white-space: nowrap !important; }
+
+body.in-app .pm-stats { gap: 4px !important; padding: 6px !important; }
+body.in-app .pm-stats > div { padding: 6px 4px !important; }
+body.in-app .pm-stats > div > div:first-child { font-size: 17px !important; }
+body.in-app .pm-stats > div > div:last-child  { font-size: 8px !important; letter-spacing: 0 !important; }

@@ -278,12 +278,12 @@ function PmThisMonth({ token }) {
       <div style={{ background: "#fff", border: "1px solid #e8edf3", borderRadius: 14,
                     overflow: "hidden", boxShadow: "0 1px 3px rgba(15,23,42,.05)" }}>
         {/* header */}
-        <div style={{ padding: "13px 16px", borderBottom: "1px solid #eef2f7",
+        <div className="pm-head" style={{ padding: "13px 16px", borderBottom: "1px solid #eef2f7",
                       display: "flex", alignItems: "center", gap: 11 }}>
           <span style={{ width: 34, height: 34, borderRadius: 9, background: "#2563eb", color: "#fff",
                          display: "inline-flex", alignItems: "center", justifyContent: "center",
                          fontSize: 17, flexShrink: 0 }}>🛠</span>
-          <div style={{ minWidth: 0 }}>
+          <div className="pm-headtext" style={{ minWidth: 0 }}>
             <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 19, fontWeight: 800,
                           color: "#0f172a", lineHeight: 1.1 }}>PM This Month</div>
             <div style={{ fontSize: 10.5, color: "#8a94a6", fontWeight: 600 }}>
@@ -294,7 +294,7 @@ function PmThisMonth({ token }) {
         </div>
 
         {/* stats */}
-        <div style={{ display: "grid", gap: 8, padding: "12px 14px", background: "#f8fafc",
+        <div className="pm-stats" style={{ display: "grid", gap: 8, padding: "12px 14px", background: "#f8fafc",
                       borderBottom: "1px solid #eef2f7",
                       /* paanchon HAMESHA ek line me — warna "Compliance" akela
                          agli line me chala jaata tha aur adhoora lagta tha */
