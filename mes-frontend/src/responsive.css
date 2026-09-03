@@ -808,3 +808,44 @@ body.in-app .bds-spare-row > button {
   border-left: none !important;
   border-top: 1px solid #cbd5e1 !important;
 }
+
+/* ==================================================================
+   BD HISTORY (Breakdown ka pehla sub-page)
+   ------------------------------------------------------------------
+   `.bh-top` ki height **56px pakki** thi aur wo wrap nahi hota tha.
+   Bachi jagah (412 - 52 - 60 = 300px) me Back + title + subtitle + search
+   (jiska `min-width: 220px` hai) ek saath thoos diye gaye the.  Nateeja:
+   subtitle 6 line me toot kar patti se BAHAR nikal gaya aur search box ke
+   peeche chhap raha tha, title upar se kat gaya tha, aur search 19px screen
+   se bahar tha.
+   ================================================================== */
+body.in-app .bh-top {
+  height: auto !important;
+  flex-wrap: wrap !important;
+  row-gap: 6px !important;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+}
+/* subtitle sirf batati hai ki page kya hai -- title wahi keh deta hai, aur
+   phone par ye 6 line kha rahi thi. */
+body.in-app .bh-sub { display: none !important; }
+/* search apni poori line par -- 220px ka farsh yahan matlab nahi rakhta */
+body.in-app .bh-top > div:last-child { flex: 1 0 100% !important; }
+body.in-app .bh-search { min-width: 0 !important; width: 100% !important; }
+
+/* Table me **29 column** hain -- asli data daal kar naapa to **3347px**,
+   dikhne ki jagah 367px, yaani ek screen me sirf **4 column**.  Ye table
+   pehle se sideways scroll me hai aur wahi theek bhi hai (har column asli
+   jaankari hai, spreadsheet ki tarah) -- bas har cell ki padding TV ke naap
+   ki thi.  6px karte hi table **2615px** (732px kam), ek screen me **5**
+   column, aur row 35 -> 27px.
+
+   Jo AAZMAYA aur CHHOD DIYA: header ko todne dena
+   (`white-space: normal + overflow-wrap: anywhere`).  Table to 1734px reh
+   jaati hai, par header ki patti **210px** oonchi ho jaati hai; aur min-width
+   se rokne par chhote column (shift 46px, line 56px) zabardasti chaude ho
+   jaate hain -- ek screen me 5 ki jagah sirf 4 column bachte hain, yaani
+   ulta ghata.  Isliye sirf padding. */
+body.in-app .bh-table th { padding: 6px 6px !important; font-size: 9px !important;
+                           line-height: 1.15 !important; }
+body.in-app .bh-table td { padding: 6px 6px !important; font-size: 11px !important; }
