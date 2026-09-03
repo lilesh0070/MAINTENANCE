@@ -550,6 +550,7 @@ body.in-app .mw-topbar,
 body.in-app .ng-topbar,
 body.in-app .oj-top,
 body.in-app .ov-top,
+body.in-app .pbs-top,
 body.in-app .pa-top,
 body.in-app .qf-top,
 body.in-app .se-top,
@@ -966,3 +967,11 @@ body.in-app .ba-fld:nth-child(5), body.in-app .ba-fld:nth-child(6) {
 /* Clear -- teesri line par akela, sirf apni chaudai ka */
 body.in-app .ba-fld:nth-child(7) { flex: 0 0 auto !important; }
 body.in-app .ba-fld:nth-child(7) button { font-size: 11px !important; padding: 6px 10px !important; }
+
+/* Production Breakdown Slip ka header: title ka daaya kinara **362px** tak
+   jaata tha aur gear **358px** se shuru hota hai -- 4px ka takrav, screen par
+   "Breakdown" gear se chipka dikhta tha.  Ye page us saanjhi topbar-list me
+   tha hi nahi kyunki iski poori file me **ek bhi CSS class nahi** -- sab kuch
+   inline style hai.  JSX me sirf naam (`pbs-top`) jod kar list me daal diya;
+   style wahin inline hi hai.  Padding inline hai (`0 30px`), isliye list ka
+   `!important` hi use jeetta hai. */
