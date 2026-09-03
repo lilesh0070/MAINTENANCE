@@ -116,7 +116,7 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
                           fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
             Pending Breakdown
           </div>
-          <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
+          <div className="kp-sub" style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
             {fDate || "Today"} · {fZone || "All zones"}{fLine ? ` · ${fLine}` : ""}
           </div>
         </div>

@@ -385,3 +385,17 @@ body.in-app table {
   width: auto !important;
   min-width: 100% !important;
 }
+
+/* Pending Breakdown ke naam ke neeche jo chhoti line thi (`2026-09-03 · All
+   zones`) -- wahi baat theek uske neeche filter me dikh rahi hai, isliye app
+   me do baar padhne ka koi fayda nahi.  Phone par har line mehngi hai. */
+body.in-app .kp-sub { display: none !important; }
+
+/* ── Dashboard ke bade card ke aapas ke faasle ───────────────────────
+ * Sab 12px par the (`.md-cols` ka gap aur margin, aur dono `.md-section` ki
+ * margin).  TV par ye theek lagta hai, par phone ki chhoti screen par utni
+ * khaali jagah bhaari padti hai -- utne me ek aur row aa sakti hai.
+ * Aadha kar diya.  (Card ke ANDAR ki spacing chhui nahi -- sirf beech ki.)
+ */
+body.in-app .md-cols    { gap: 6px !important; margin-bottom: 6px !important; }
+body.in-app .md-section { margin-bottom: 6px !important; }
