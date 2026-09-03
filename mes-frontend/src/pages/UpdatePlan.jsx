@@ -92,7 +92,7 @@ function PageShell({ theme, user, title, sub, children, onBack }) {
               {sub && <div className="up-sub">{sub}</div>}
             </div>
           </div>
-          {user?.username && <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
+          {user?.username && <span className="app-user" style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
         </div>
         <div className="up-body">{children}</div>
       </div>

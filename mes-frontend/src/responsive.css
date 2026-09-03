@@ -1042,3 +1042,17 @@ body.in-app .su-actions {
 body.in-app .su-legend { flex-wrap: wrap !important; gap: 8px !important; font-size: 11px !important; }
 body.in-app .su-save   { padding: 8px 12px !important; font-size: 12px !important; }
 body.in-app .su-title  { font-size: 19px !important; }
+
+/* STUDY MATERIAL ka header -- wahi teesri baar wala jaal:
+   `.sm-top` par `height: 56px` pakki aur wrap nahi.  Daayein taraf
+   bhasha ka toggle + "Add Topic" + username, sab ek 56px ki patti me thuse
+   the -- content **47px neeche** nikal raha tha.  (Yahi `.bh-top` aur
+   `.su-top` par bhi mila tha.)  Ab height auto + wrap. */
+body.in-app .sm-top {
+  height: auto !important;
+  flex-wrap: wrap !important;
+  row-gap: 6px !important;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+}
+body.in-app .sm-sub { display: none !important; }

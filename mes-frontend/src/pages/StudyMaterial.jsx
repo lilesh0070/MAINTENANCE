@@ -289,7 +289,7 @@ export default function StudyMaterial() {
               <button className="sm-btn" onClick={() => setForm({ ...BLANK })}>＋ Add Topic</button>
             )}
             {user?.username && (
-              <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>
+              <span className="app-user" style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>
             )}
           </div>
         </div>

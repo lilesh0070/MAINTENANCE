@@ -573,7 +573,7 @@ export default function MaintenanceHistorical() {
             <div className="hd-title">Historical <span>Data</span></div>
             <div className="hd-sub">Filled breakdown slips — any date</div>
           </div>
-          {user?.username && <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
+          {user?.username && <span className="app-user" style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
         </div>
 
         {/* ── the filter bar (same as everywhere + exact Date) ── */}

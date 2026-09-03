@@ -304,7 +304,7 @@ export default function Spare() {
             <div className="sp-title">🔩 <span>Spare</span></div>
             <div className="sp-sub">Spare consumption — {SOURCES.map(s => SRC_LABEL[s]).join(" · ")}</div>
           </div>
-          {user?.username && <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>{user.username}</span>}
+          {user?.username && <span className="app-user" style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>{user.username}</span>}
         </div>
 
         {/* ── one filter row, same shape as the other analysis pages ── */}
