@@ -119,6 +119,48 @@ async function setupStatusBar() {
     // status bar chadha rahega, par kuch tootega nahi.
   }
 }
+/* ─── DEMO_LOGIN ke saath ka NAQLI DATA — ARZI, HATANA HAI ────────────
+ * Ghar par server milta hi nahi, isliye har page khali dikhta hai aur uska
+ * design nahi ho paata (ANDON Monitor par department hi nahi aate the, bas
+ * `Loading departments...` chipka rehta tha).
+ *
+ * Isliye DEMO me -- aur sirf DEMO me -- kuch jaane-maane raaston ka naqli
+ * jawab de dete hain.  Pehle ASLI server ko aazmate hain; wo fail ho tabhi
+ * naqli jawab jaata hai.  Yaani jahan server milta hai (plant me) wahan
+ * hamesha ASLI data hi dikhega, naqli kabhi nahi.
+ *
+ * Naam aur aakaar backend se hu-ba-hu liye hain (`andon.py` ka
+ * `_DEFAULT_DEPTS` aur `/monitor` ka return), taaki jo design yahan bane wo
+ * asli data par bhi waisa hi baithe.
+ *
+ * ⚠ Ye poora block DEMO_LOGIN ke saath hi hatna hai.
+ */
+function demoOn() {
+  if (!NATIVE) return false;                 // website par kabhi nahi
+  try { return sessionStorage.getItem('mes_demo') === '1'; } catch { return false; }
+}
+
+// andon.py: _DEFAULT_DEPTS = ["Maintenance", "Toolroom", "Quality", "Material", "Other Loss", "Model Setup"]
+const DEMO_DEPTS = ['Maintenance', 'Toolroom', 'Quality', 'Material', 'Other Loss', 'Model Setup'];
+
+const DEMO_REPLY = {
+  // /monitor ka asli return: { rows, departments, stats }
+  '/api/andon/monitor': () => ({
+    rows: [],
+    departments: DEMO_DEPTS.map((name, i) => ({ id: i + 1, name, color: null, active: 0, today: 0 })),
+    stats: { active: 0, longest_seconds: 0, today: 0 },
+  }),
+};
+
+function demoJawab(url) {
+  if (!demoOn()) return null;
+  const path = String(url || '').replace(/^https?:\/\/[^/]+/, '').split('?')[0];
+  const bana = DEMO_REPLY[path];
+  if (!bana) return null;
+  return new Response(JSON.stringify(bana()), {
+    status: 200, headers: { 'Content-Type': 'application/json' },
+  });
+}
 let installed = false;
 let realFetch = null;
 
@@ -189,6 +231,12 @@ export function installApiBase() {
       catch { try { ctl.abort(); } catch { /* ignore */ } }
     }, reqTimeout());
     return realFetch(url, { ...(opts || {}), signal: ctl.signal })
+      .catch((e) => {
+        // DEMO_LOGIN: server na mile to naqli jawab (upar wala block dekhein)
+        const d = demoJawab(typeof url === 'string' ? url : (url && url.url));
+        if (d) return d;
+        throw e;
+      })
       .finally(() => clearTimeout(t));
   };
   window.fetch = (input, init) => {

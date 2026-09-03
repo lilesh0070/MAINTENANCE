@@ -591,3 +591,19 @@ body.in-app .am-stat  { padding: 8px !important; border-radius: 10px !important;
 body.in-app .am-stat .l { font-size: 9px !important; letter-spacing: 0 !important; }
 body.in-app .am-stat .v { font-size: 24px !important; }
 body.in-app .am-stat .s { display: none !important; }
+
+/* ── ANDON → Monitor ke department button ────────────────────────────
+ * Chhah button, 3 ek row me.  TV ke naap: padding `16px 14px` aur naam 19px.
+ * Phone par har button ~110px ka hai, aur `Model Setup` us naap me DO line me
+ * toot jaata hai -- usi toot-ne se us row ke saare button 75px se 98px lambe
+ * ho jaate the (grid me sab barabar oonchai lete hain).
+ *
+ * Naam 13px aur padding 8px karte hi sabse lamba naam bhi ek line me aa jaata
+ * hai, aur button aadhe ho jaate hain.
+ */
+body.in-app .am-btns { gap: 6px !important; margin-bottom: 12px !important; }
+body.in-app .am-btn  { padding: 8px !important; border-radius: 10px !important; }
+body.in-app .am-btn .nm { font-size: 13px !important; }
+body.in-app .am-btn .st { font-size: 10px !important; margin-top: 1px !important; }
+/* badge (active call ki ginti) bhi thoda chhota, warna chhote button par bhaari lagta hai */
+body.in-app .am-badge { min-width: 18px !important; height: 18px !important; top: 6px !important; right: 6px !important; }
