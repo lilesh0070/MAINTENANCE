@@ -180,7 +180,14 @@ export function installApiBase() {
     if (opts && opts.signal) return realFetch(url, opts);
     if (typeof AbortController === "undefined") return realFetch(url, opts);
     const ctl = new AbortController();
-    const t = setTimeout(() => { try { ctl.abort(); } catch { /* ignore */ } }, reqTimeout());
+    // abort() ko WAJAH dena zaroori hai.  Bina wajah ke browser khud ka
+    // sandesh deta hai -- "signal is aborted without reason" -- aur wahi
+    // seedha screen par laal me chhap jaata tha.  User ke liye uska koi
+    // matlab nahi.  Apni wajah dene se page ke catch me yahi sandesh aata hai.
+    const t = setTimeout(() => {
+      try { ctl.abort(new Error("Server se baat nahi ho pa rahi — network dekhein")); }
+      catch { try { ctl.abort(); } catch { /* ignore */ } }
+    }, reqTimeout());
     return realFetch(url, { ...(opts || {}), signal: ctl.signal })
       .finally(() => clearTimeout(t));
   };
