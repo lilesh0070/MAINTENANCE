@@ -270,11 +270,6 @@ body.in-app button[aria-label="Settings"] { top: calc(env(safe-area-inset-top, 0
  * Ye chaar sach ke mujrim hain:
  */
 
-/* ANDON ke tab: `.an-tabs` sirf `display:flex; gap:8px` tha -- side me
-   khiskane ka koi intezaam nahi.  Isliye `Reports` jaise aakhri tab 251px
-   bahar nikal kar CHHUP jaate the, aur unpar pahuncha hi nahi ja sakta tha. */
-body.in-app .an-tabs { overflow-x: auto !important; flex-wrap: nowrap !important; }
-body.in-app .an-tabs > * { flex: 0 0 auto !important; }
 
 /* KPI ke 9:16 / 16:9 -- wahi TV wale control jo dashboard par hata chuke hain.
    Baaki controls ko wrap hone do taaki wo bhi bahar na nikle. */
@@ -477,10 +472,31 @@ body.in-app .an-user { display: none !important; }
 body.in-app .an-back { padding: 6px 9px !important; font-size: 12px !important; }
 body.in-app .an-ttl  { font-size: 14px !important; white-space: nowrap !important; }
 
-/* Saat tab 768px maangte hain aur jagah 368px hai -- khiskana to padega hi,
-   par tab chhote karne se ek saath zyada dikhte hain (3.5 ki jagah ~5). */
-body.in-app .an-tabs { gap: 5px !important; margin-bottom: 10px !important; }
-body.in-app .an-tabs > * { padding: 6px 10px !important; font-size: 11px !important; }
+/* Saat tab ek line me 412px me aa hi nahi sakte (567px maangte hain).  Pehle
+   inhe khiskane wala bana diya tha, par side me khiskana koi karta nahi -- log
+   samajhte hain baaki tab hain hi nahi.  Ab WRAP: saatoon do line me poore
+   dikhte hain, aur kuch screen se bahar nahi jaata.
+
+   Upar wala `overflow-x: auto` aur `flex-wrap: nowrap` yahin se hat rahe hain
+   -- unki jagah ab wrap hai. */
+body.in-app .an-tabs {
+  flex-wrap: wrap !important;
+  overflow-x: visible !important;
+  gap: 5px !important;
+  margin-bottom: 10px !important;
+}
+body.in-app .an-tabs > * {
+  flex: 0 0 auto !important;      /* tab apne naap par rahein, sikude nahi */
+  padding: 6px 10px !important;
+  font-size: 11px !important;
+}
+
+/* `All clear` ke neeche ki samjhaane wali line -- `No active ANDON calls right
+   now. Press a button on the PLC...`.  Wo pehli baar dekhne wale ke liye hai;
+   roz dekhne wale ko `All clear` aur ✅ se hi sab pata chal jaata hai, aur
+   phone par wo teen line kha rahi thi.  Panel ka 34px ka kinara bhi kam. */
+body.in-app .an-panel > p { display: none !important; }
+body.in-app .an-panel { padding: 22px 16px !important; }
 
 /* ── ANDON → Call → Output ka Bits wala hissa ─────────────────────────
  * Row ka dhaancha: [22px] [78px] [130px] [bachi jagah].  Pehle teen 230px
