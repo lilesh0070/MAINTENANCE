@@ -625,3 +625,36 @@ body.in-app .am-badge { min-width: 18px !important; height: 18px !important; top
  * rahe hain, jabki sach me sirf 2-3 toot rahe the.
  */
 body.in-app .an-tbl th { white-space: nowrap !important; }
+
+/* ── Maintenance KPI ──────────────────────────────────────────────────
+ * 1) FILTER KA HISSA 238px ka tha -- screen ka chauthai hissa sirf filter me.
+ *    Wajah: saal ka select 200px chaudha tha (jabki `2026-27` ko 70px chahiye)
+ *    aur baaki teen 150-150 ke -- isliye TEEN alag row ban jaati thi.
+ *    Ab chaaron jagah aapas me baant lete hain (`flex: 1 1 92px`), label chhota,
+ *    padding kam.  Nateeja 112px -- aadhe se bhi kam.  Koi select kat-ta nahi
+ *    (naapa: har select ka scrollWidth uski chaudai ke andar).
+ *
+ * 2) CHHAH KPI CARD: number 46px ka tha (TV ka naap) aur label par
+ *    letter-spacing 1.12px.  179px ke card me `TOTAL BREAKDOWN FREQUENCY`
+ *    TEEN line me toot jaata tha, jisse wo card 156px ka ho jaata.
+ *    Ab number 26px, label 11px bina spacing: card 122 -> 82px
+ *    (lambe wale 156 -> 96px).
+ *
+ * Poore page ki lambai 1724 -> 1502px.
+ */
+body.in-app .mk-fybar   { padding: 8px 10px !important; gap: 5px 8px !important; }
+body.in-app .mk-fy-left { gap: 5px 6px !important; }
+body.in-app .mk-fy-label  { font-size: 10px !important; letter-spacing: 0 !important; }
+body.in-app .mk-fy-select {
+  width: auto !important;
+  min-width: 0 !important;
+  flex: 1 1 92px !important;
+  font-size: 11px !important;
+  padding: 5px 6px !important;
+}
+
+body.in-app .mk-grid { gap: 6px !important; }
+body.in-app .mk-card { padding: 9px 10px 8px !important; }
+body.in-app .mk-card > div:first-child  { font-size: 11px !important; letter-spacing: 0 !important; }
+body.in-app .mk-card > div:nth-child(2) { font-size: 26px !important; }
+body.in-app .mk-card > div:last-child   { font-size: 11px !important; }
