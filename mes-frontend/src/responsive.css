@@ -173,12 +173,16 @@ body.in-app .md-body  { padding-left: 12px !important; padding-right: 12px !impo
                         padding-top: 8px !important; }
 /* gap 12 -> 6 : cards ke AAPAS ka faasla.
    margin-bottom 12 -> 6 : cards aur neeche wali ANDON patti ka faasla. */
-body.in-app .md-tiles { gap: 6px !important; margin-bottom: 6px !important; }
+body.in-app .md-tiles { gap: 4px !important; margin-bottom: 6px !important; }
 body.in-app .md-tiles > div { padding: 6px 7px !important; }
 /* teeno line: label, bada number, aur neeche ki chhoti detail */
 body.in-app .md-tiles > div > div:first-child  { font-size: 8px  !important; line-height: 1.15 !important; }
 body.in-app .md-tiles > div > div:nth-child(2) { font-size: 18px !important; line-height: 1.2  !important; }
-body.in-app .md-tiles > div > div:nth-child(3) { font-size: 8px  !important; line-height: 1.15 !important; }
+/* Teesri line -- `7 AM – 6:30 AM (plant day)` aur `Call open, no ack yet`.
+   Ye samjhane wali baatein hain, roz dekhne wale ko inki zaroorat nahi, aur
+   phone par ye do-do line kha rahi thi.  Chhupa dene se card 66px se 45px ke
+   ho gaye.  (Website/TV par jaisi thi waisi rahengi.) */
+body.in-app .md-tiles > div > div:nth-child(3) { display: none !important; }
 
 /* ── ANDON ki laal patti (dashboard ke beech me) ──────────────────────
  * Ye bhi TV ke naap par thi: padding 14x20, naam 22px, ghanti 22px --
