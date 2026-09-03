@@ -707,3 +707,11 @@ body.in-app .mk-card > div:last-child   { font-size: 11px !important; }
    `minmax(auto,1fr)` hai aur pehle chart ka min-content bada tha.)
    Page 1435 -> 2221px, par phone par scroll karna hi hai. */
 body.in-app .mk-charts { grid-template-columns: 1fr !important; }
+
+/* Chart ke dabbon ke beech 39px khali reh jaata tha -- grid ki 16px gap +
+   upar wale card ki 8px neeche padding + neeche wale ki 14px upar padding.
+   Teeno kas kar 26px.  Gap 8px, padding 10/14/6, aur naam ke neeche 10 -> 6.
+   Page 2221 -> 2121px. */
+body.in-app .mk-charts    { gap: 8px !important; }
+body.in-app .mk-chart     { padding: 10px 14px 6px !important; }
+body.in-app .mk-chart-head { margin-bottom: 6px !important; }
