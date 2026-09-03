@@ -873,3 +873,42 @@ body.in-app .bh-table td { padding: 6px 6px !important; font-size: 11px !importa
    BAHAR hai, isliye scroll karne par title apni jagah rehta hai. */
 body.in-app .ba-chartwrap { overflow-x: auto !important; }
 body.in-app .ba-chartwrap .recharts-responsive-container { min-width: 560px !important; }
+
+/* ==================================================================
+   TOP 10 BD  aur  PARETO ANALYSIS
+   ------------------------------------------------------------------
+   Dono ka topbar `.pa-top` hai (Top 10 bhi wahi class use karta hai).
+   Header cramped to lagta hai par toota NAHI hai -- naapa: subtitle ka
+   neecha kinara 54px, header 57px ka.  Isliye header ko chhua nahi.
+
+   Asli bug ek hi tha: **username** (DEMO) header me gear ke paas dikh raha
+   tha.  Baaki nau page par ye `app-user` se chhupaya gaya tha, in dono
+   par chhoot gaya -- ab class jod di (naam ab bhi Settings me poora dikhta
+   hai).
+
+   TOP 10 ki table: 11 column, asli jaisa data daal kar naapa -- **1072px**,
+   dikhne ki jagah 327px, ek screen me sirf 4 column, aur har row **50px**
+   oonchi (10 row = 500px).  Cell padding TV ke naap ki thi, rank ka badge
+   34px ka aur bar ka column 210px ka tha.
+   Ab: 786px (286px kam), ek screen me 5 column, row **36px** -- 10 row par
+   140px kam scroll.  Table pehle se scroll ke dabbe me hai, wahi theek hai. */
+body.in-app .tb-table th,
+body.in-app .tb-table td { padding: 6px 6px !important; }
+body.in-app .tb-table th { font-size: 9px !important; }
+body.in-app .tb-table td { font-size: 11px !important; }
+/* rank ka badge aur bar ka column -- dono me inline naap tha, isliye !important */
+body.in-app .tb-rank    { width: 24px !important; height: 24px !important; }
+body.in-app .tb-barwrap { min-width: 48px !important; }
+body.in-app .tb-table th:last-child { width: 110px !important; }
+
+/* `.pa-top` ki height bhi 56px pakki thi.  Top 10 par subtitle do line
+   me aakar 54px par khatam hota hai -- yaani sirf **3px** bachte the.  Kaam
+   to kar raha tha, par ek shabd lamba hote hi (ya font badalte hi) kat
+   jaata -- theek wahi jo `.bh-top` par hua tha.  Ab height auto,
+   min-height 56px: header 57 -> 69px, bachi jagah 3 -> 9px. */
+body.in-app .pa-top {
+  height: auto !important;
+  min-height: 56px !important;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+}

@@ -222,7 +222,7 @@ export default function ParetoAnalysis() {
               <div className="pa-sub">Machine down time wise</div>
             </div>
           </div>
-          {user?.username && <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
+          {user?.username && <span className="app-user" style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
         </div>
 
         {/* ── the single filter bar (same as BD History / BD Analysis / CAPA) ── */}
