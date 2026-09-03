@@ -914,44 +914,55 @@ body.in-app .pa-top {
 }
 
 /* ==================================================================
-   BD ANALYSIS ka filter bar -- chaar line se do+ek
+   BD ANALYSIS ka filter bar -- teen-teen
    ------------------------------------------------------------------
-   User: "financial year, month ek line me; baki ke 3 ek line me."
+   User: "financial year, month, zone ek line me; line, machine_no,
+   machine_name ek line -- 3-3; aur Clear ko alag kahin de do."
 
    Pehle chhah filter + Clear = **chaar line, 267px**.  Wajah: har select
    par `min-width: 150px` aur font **16px** -- 368px me do se zyada nahi aate.
 
-   Ab:  L1  Financial Year | Month
-        L2  Zone | Line | Machine No.
-        L3  Machine Name | Clear
-   Patti **267 -> 163px**, aur kisi bhi select ka text nahi katta.
+   Ab:  L1  Financial Year | Month | Zone
+        L2  Line | Machine No. | Machine Name
+        L3  Clear (apni line par, sirf apni chaudai ka)
+   Patti **267 -> 157px**.
 
-   CHAARON KO EK LINE PAR **NAHI** KIYA JA SAKTA -- naap kar dekha:
-   chaar filter + Clear = har filter 72px, text ke liye sirf 42px.  Jabki
-   `All Machine No.` ko 10px font par bhi **67px** aur `All Machine Names` ko
-   **83px** chahiye.  Clear ko alag line par bhejne par bhi (88px har filter,
-   text ko 59px) dono katte hi hain.  Aur `<select>` text **chup-chaap** kaatta
-   hai -- `scrollWidth` badalta hi nahi -- isliye ye galti pakde bina nikal
-   jaati.  Text kaatne se behtar ek line zyada.
+   Font 10px KYUN: teen-teen par har filter 119px ka hota hai, aur select ke
+   andar 108px bachte hain.  12px par `All Financial Years` (115px) aur
+   `All Machine Names` (119px) dono katte the.  11px par bhi
+   `All Machine Names` ka **aakhri 's' kat raha tha**.  10px par sab poora.
+   Label bhi kisi ka nahi toot-ta.
+
+   **NAAPNE KI EK GALTI YAHIN PAKDI:** maine dropdown ke teer ke liye 16px
+   chhode the, isliye ginti ne 11px ko "theek hai" kaha -- par screen par
+   's' kat raha tha.  Asli me teer ~**25px** leta hai.  Yaani sahi jaanch:
+   `text ki chaudai + 25 <= select ki andar wali jagah`.  Aur aakhri faisla
+   hamesha **zoom kiye hue screenshot** se, ginti se nahi.
+
+   `<select>` text **chup-chaap** kaatta hai -- `scrollWidth` badalta hi nahi --
+   isliye har baar canvas se text ki asli chaudai naap kar milaana padta hai,
+   warna galti pakde bina nikal jaati hai.
 
    Dhyan: `.ba-filters` me `align-items: flex-end` hai, to ek hi line ke
    dabbon ka `top` alag-alag hota hai (jiska label do line me toote wo upar
-   se shuru hota hai).  Line ginte waqt **neeche ka kinara** dekhna, top nahi. */
+   se shuru hota hai).  Line ginte waqt **neeche ka kinara** dekhna, top nahi.
+
+   `flex: 0 0 33.333%` rakha (grow/shrink dono band) -- warna aakhri line ka
+   akela item phail kar poori chaudai le leta hai. */
 body.in-app .ba-filters { gap: 6px !important; }
 body.in-app .ba-sel {
-  font-size: 12px !important;
-  padding: 7px 6px !important;
+  font-size: 10px !important;
+  padding: 7px 4px !important;
   min-width: 0 !important;                 /* 150px ka farsh yahi hata hai */
   width: 100% !important;
 }
-/* L1 -- do filter aadhi-aadhi chaudai, to teesra apne aap agli line par */
-body.in-app .ba-fld:nth-child(1),
-body.in-app .ba-fld:nth-child(2) { flex: 1 1 calc(50% - 3px) !important; min-width: 0 !important; }
-/* L2 -- teen barabar */
-body.in-app .ba-fld:nth-child(3),
-body.in-app .ba-fld:nth-child(4),
-body.in-app .ba-fld:nth-child(5) { flex: 1 1 calc(33.333% - 4px) !important; min-width: 0 !important; }
-/* L3 -- Machine Name bachi jagah le, Clear uske saath */
-body.in-app .ba-fld:nth-child(6) { flex: 1 1 auto !important; min-width: 0 !important; }
+/* chhah filter -- teen ek line me (do line ban jaati hain) */
+body.in-app .ba-fld:nth-child(1), body.in-app .ba-fld:nth-child(2),
+body.in-app .ba-fld:nth-child(3), body.in-app .ba-fld:nth-child(4),
+body.in-app .ba-fld:nth-child(5), body.in-app .ba-fld:nth-child(6) {
+  flex: 0 0 calc(33.333% - 4px) !important;
+  min-width: 0 !important;
+}
+/* Clear -- teesri line par akela, sirf apni chaudai ka */
 body.in-app .ba-fld:nth-child(7) { flex: 0 0 auto !important; }
-body.in-app .ba-fld:nth-child(7) button { font-size: 11px !important; padding: 6px 8px !important; }
+body.in-app .ba-fld:nth-child(7) button { font-size: 11px !important; padding: 6px 10px !important; }
