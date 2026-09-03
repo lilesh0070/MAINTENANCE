@@ -105,13 +105,13 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
       overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,.04)",
     }}>
       {/* Header bar with filters + download */}
-      <div style={{
+      <div className="kp-head" style={{
         padding: "12px 18px", borderBottom: "1px solid #e2e8f0",
         background: "#fafbfc",
         display: "flex", alignItems: "center", justifyContent: "space-between",
         flexWrap: "wrap", gap: 12,
       }}>
-        <div>
+        <div className="kp-titlewrap">
           <div style={{ fontFamily: "'Barlow Condensed',sans-serif",
                           fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
             Pending Breakdown

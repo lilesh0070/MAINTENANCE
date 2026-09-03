@@ -312,13 +312,36 @@ body.in-app .mk-grid { grid-template-columns: repeat(2, 1fr) !important; }
  * apne naap par rehta hai.  `min-width: 0` zaroori hai -- bina iske flex-item
  * apne content se chhota hota hi nahi, aur wrap phir bhi ho jaata.
  */
-body.in-app .kp-filters { flex-wrap: nowrap !important; gap: 6px !important; }
+/* Aur aage: naam aur filter DONO ek hi line me.  Pehle naam upar tha aur
+   filter neeche -- do line me 90px chali jaati thi.  Ek line me 44px.
+   Iske liye teeno ko kasna pada: card ka kinara 18px se 10px, naam 14px se
+   11px, aur filter ka font 12px se 10px.  Date phir bhi poora dikhta hai
+   (naapa: scrollWidth 77 = clientWidth 77, yaani kat nahi raha). */
+body.in-app .kp-head {
+  flex-wrap: nowrap !important;
+  gap: 6px !important;
+  align-items: center !important;
+  padding-left: 6px !important;
+  padding-right: 6px !important;
+}
+body.in-app .kp-titlewrap { flex: 0 0 auto !important; }
+body.in-app .kp-titlewrap > div:first-child { font-size: 10px !important; }
+
+body.in-app .kp-filters { flex: 1 1 auto !important; flex-wrap: nowrap !important;
+                          gap: 4px !important; min-width: 0 !important; }
 body.in-app .kp-filters > input,
 body.in-app .kp-filters > select {
-  flex: 1 1 0 !important;
   min-width: 0 !important;
-  padding: 5px 6px !important;
+  font-size: 10px !important;
+  padding: 4px 4px !important;
 }
+/* Date ka khaana baaki do se ZYADA jagah maangta hai.  Barabar baantne par
+   `09/03/2026` me se `26` chup jaata tha -- aur ye AANKHON se hi pakda gaya,
+   naap se nahi: `input type=date` apna text khud kaat deta hai bina
+   `scrollWidth` badle, isliye mera "kat raha hai?" wala check jhooth bol raha
+   tha.  Ab date ko 1.35 hissa milta hai, baaki dono ko 1-1. */
+body.in-app .kp-filters > input  { flex: 1.35 1 0 !important; }
+body.in-app .kp-filters > select { flex: 1 1 0 !important; }
 body.in-app .kp-filters > button { flex: 0 0 auto !important; }
 
 /* Usi panel ki table: NAU column (S.No se Slip tak), har cell `9px 12px`
