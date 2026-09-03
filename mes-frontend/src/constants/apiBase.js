@@ -36,7 +36,10 @@ const SERVERS = [
   "http://192.168.100.24:8892",    // WiFi
 ];
 
-const PROBE_MS = 2500;             // itni der me jawab na aaye to us raaste ko chhod do
+const PROBE_MS = 2500;
+// Har API request ki hadd.  Itni der me jawab na aaye to request FAIL maani
+// jayegi.  Latki hui request se to error bhi nahi milta -- fail hona behtar hai.
+const REQ_TIMEOUT_MS = 15000;             // itni der me jawab na aaye to us raaste ko chhod do
 
 /** APK ke andar chal rahe hain ya browser me?  (Layout aur Settings
  *  dono yahi poochhte hain — do jagah do copy rakhna galat hota.) */
@@ -146,14 +149,33 @@ export function installApiBase() {
   realFetch = window.fetch.bind(window);
 
   // 1) fetch
+  //
+  // TIMEOUT bhi yahin lagta hai.  Jab server pahunch me na ho (WiFi gaya, ya
+  // phone doosre network par hai), to connection na safal hota hai na fail --
+  // wo bas LATKA reh jaata hai.  Aisi request ka `await` kabhi lautta hi nahi,
+  // isliye jo page `loading` par gate karte hain wo HAMESHA ke liye
+  // "Loading..." par atak jaate hain, error tak nahi dikhta.  (Maintenance
+  // Dashboard par yahi hua tha: har second nayi call jaati rahi, ek bhi lauti
+  // nahi, aur `finally { setLoading(false) }` kabhi chala hi nahi.)
+  //
+  // Jis call ne apna `signal` diya hai use haath nahi lagate -- wo apna intezaam
+  // khud kar rahi hai.
+  const withTimeout = (url, opts) => {
+    if (opts && opts.signal) return realFetch(url, opts);
+    if (typeof AbortController === "undefined") return realFetch(url, opts);
+    const ctl = new AbortController();
+    const t = setTimeout(() => { try { ctl.abort(); } catch { /* ignore */ } }, REQ_TIMEOUT_MS);
+    return realFetch(url, { ...(opts || {}), signal: ctl.signal })
+      .finally(() => clearTimeout(t));
+  };
   window.fetch = (input, init) => {
-    if (typeof input === "string") return realFetch(withBase(input), init);
+    if (typeof input === "string") return withTimeout(withBase(input), init);
     // Request object aaya ho to uska url badal kar naya banao
     if (input && typeof input === "object" && typeof input.url === "string"
         && input.url.startsWith("/")) {
-      return realFetch(new Request(withBase(input.url), input), init);
+      return withTimeout(new Request(withBase(input.url), input), init);
     }
-    return realFetch(input, init);
+    return withTimeout(input, init);
   };
 
   // 2) XMLHttpRequest (axios isi par chalta hai)
@@ -161,6 +183,8 @@ export function installApiBase() {
   if (XHR && XHR.prototype && XHR.prototype.open) {
     const realOpen = XHR.prototype.open;
     XHR.prototype.open = function (method, url, ...rest) {
+      // axios/XHR par bhi wahi hadd -- warna wahan bhi request latki reh jaati.
+      if (!this.timeout) this.timeout = REQ_TIMEOUT_MS;
       return realOpen.call(this, method, withBase(url), ...rest);
     };
   }
