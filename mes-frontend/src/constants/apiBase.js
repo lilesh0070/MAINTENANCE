@@ -73,6 +73,35 @@ export function withBase(url) {
   return API_BASE + url;
 }
 
+/**
+ * Status bar ko app ke upar se hatao.
+ *
+ * Android 15 (SDK 35) se app apne aap edge-to-edge chalti hai -- yaani page
+ * status bar ke NEECHE chala jaata hai aur time/battery content par chadh
+ * jaate hain.
+ *
+ * Iska CSS wala ilaaj `env(safe-area-inset-top)` hai, PAR wo yahan bharosemand
+ * nahi nikla: bilkul wahi build emulator me kabhi 52px deta tha aur kabhi 0.
+ * Matlab dikkat bina kisi wajah ke kabhi bhi wapas aa sakti thi.  Isliye CSS
+ * par chhodne ke bajaye Android se hi kehte hain ki WebView ko status bar ke
+ * neeche se hata de -- phir naap ka andaza lagana hi nahi padta.
+ *
+ * WEBSITE PAR KUCH NAHI: NATIVE false hone par ye pehli line par laut jaata
+ * hai, aur `import` bhi andar hai to plugin ka code website ke bundle me
+ * jaata hi nahi.
+ */
+async function setupStatusBar() {
+  if (!NATIVE) return;
+  try {
+    const { StatusBar, Style } = await import('@capacitor/status-bar');
+    await StatusBar.setOverlaysWebView({ overlay: false });   // app ko neeche khisko
+    await StatusBar.setBackgroundColor({ color: '#ffffff' }); // header jaisa safed
+    await StatusBar.setStyle({ style: Style.Light });         // safed par gehre icon
+  } catch {
+    // Plugin na mile (purani APK) to app pehle jaisi hi chalti rahe --
+    // status bar chadha rahega, par kuch tootega nahi.
+  }
+}
 let installed = false;
 let realFetch = null;
 
@@ -140,4 +169,7 @@ export function installApiBase() {
   //    pehli request tab tak SERVERS[0] par jayegi; jawab aate hi base badal
   //    jaata hai aur aage ki saari request sahi raaste par jaati hain.
   pickServer();
+
+  // 4) status bar ko app ke upar se hata do (upar wali tippani dekhein)
+  setupStatusBar();
 }

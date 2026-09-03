@@ -13,6 +13,7 @@
     "@capacitor/android": "^7.6.9",
     "@capacitor/browser": "^7.0.5",
     "@capacitor/core": "^7.6.9",
+    "@capacitor/status-bar": "^7.0.6",
     "axios": "^1.13.6",
     "lucide-react": "^1.6.0",
     "react": "^19.2.4",

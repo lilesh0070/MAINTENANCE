@@ -3,7 +3,8 @@
   "appName": "Maintenance MES",
   "webDir": "dist",
   "android": {
-    "allowMixedContent": true
+    "allowMixedContent": true,
+    "adjustMarginsForEdgeToEdge": "auto"
   },
   "server": {
     "androidScheme": "http",

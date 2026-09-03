@@ -115,7 +115,7 @@ function AndonTable({ rows, fullscreenRef, isFullscreen, toggleFullscreen }) {
                      ...(maxH ? { maxHeight: maxH } : {}),
                      fontSize: isFullscreen ? "1.6vmin" : 13,
                      padding: isFullscreen ? "1vmin 2vmin" : 0 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse",
+        <table className="an-table" style={{ width: "100%", borderCollapse: "collapse",
                          fontSize: isFullscreen ? "inherit" : 13 }}>
           <thead>
             <tr style={{ background: "#f8fafc" }}>

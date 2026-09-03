@@ -149,7 +149,8 @@ body.in-app button[aria-label="Toggle navigation"] {
   width: 36px !important;
   height: 36px !important;
   left: 8px !important;
-  top: 10px !important;
+  /* `top` yahan se hata diya -- neeche status-bar wale block me set hota hai,
+     warna do jagah do value rehti aur takraati. */
 }
 
 /* ── Dashboard ke KPI card ────────────────────────────────────────────
@@ -199,3 +200,53 @@ body.in-app .an-band-title  { font-size: 16px !important; }
 body.in-app .an-band-sub    { font-size: 10px !important; }
 /* Fullscreen button -- patti chhoti hui to ye uske hisaab se bada lagne laga. */
 body.in-app .an-band button { font-size: 10px !important; padding: 5px 9px !important; }
+
+/* ── ANDON ki table ───────────────────────────────────────────────────
+ * Table 506px maangti thi par jagah sirf 387px thi -- 119px chhupa rehta,
+ * `RESPONSE TIME` aadha aur `DURATION` poora gayab.  (Wo apne dabbe me
+ * scroll to karti thi, par phone par side me khiskana koi karta nahi --
+ * log samajhte hain column hai hi nahi.)
+ *
+ * Asli mujrim padding thi: har cell `12px 16px`, yaani 6 column x 32px =
+ * **192px sirf khali jagah**.  8px 6px karte hi table 387px me aa gayi --
+ * chhah ke chhah column dikhne lage, bina kisi ko chhote kiye.
+ */
+body.in-app .an-table th,
+body.in-app .an-table td { padding: 8px 6px !important; }
+
+/* ── Status bar (upar ka time / battery) ──────────────────────────────
+ * Android 15 (SDK 35) app ko edge-to-edge kar deta hai, isliye page
+ * status bar ke NEECHE chala jaata hai.  `env(safe-area-inset-top)` yahan
+ * 52px deta hai (136 physical px, punch-hole cutout ke saath) -- isiliye
+ * koi fix number likhna galat hota, har phone ka alag hai.
+ *
+ * body ki padding se page to hat gaya, PAR teen cheezein phir bhi upar
+ * chipki rehti hain kyunki wo `fixed`/`sticky` hain -- unhe padding hilati
+ * hi nahi.  Teeno ko alag se neeche khiskana pada:
+ *   - header khud `position: sticky; top: 0` hai.  Scroll karte hi wo
+ *     status bar tak chadh jaata tha, aur logo/gear 62px par ruke rehte the
+ *     -- phir wo header se nikal kar content par taerne lagte the.
+ *
+ * User ka faisla: **sab ek saath scroll ho** -- header, logo, gear, sab.
+ * Kuch bhi upar chipka nahi rehta.
+ *
+ * Pehle header `sticky` tha aur logo/gear `fixed`.  Usme ek gadbad thi jo
+ * sirf SCROLL karne par dikhti thi: header status bar ke neeche (52px par)
+ * tika rehta tha, aur uske UPAR ki 52px patti khali/paardarshi thi -- to
+ * scroll karte hi cards us patti me se JHALAKNE lagte the, yaani header ke
+ * upar taerte dikhte the.
+ *
+ * Ab teeno saath khiskte hain (naap kar dekha: 200px scroll par teeno
+ * theek 64px upar gaye), isliye wo jhalak wali dikkat rehti hi nahi.
+ *
+ * logo/gear `absolute` kiye hain, `static` nahi -- warna wo apni jagah
+ * (upar-baayen / upar-daayen kona) chhod kar page ke behaav me aa jaate.
+ * Bina kisi positioned parent ke `absolute` document ke sapeksh baithta hai,
+ * yaani page ke saath scroll ho jaata hai -- yahi chahiye tha.
+ */
+body.in-app .md-topbar { position: static !important; }
+body.in-app button[aria-label="Toggle navigation"],
+body.in-app button[aria-label="Settings"] { position: absolute !important; }
+/* status bar (52px) ke neeche se shuru -- warna dono uske peeche chhup jaate. */
+body.in-app button[aria-label="Toggle navigation"],
+body.in-app button[aria-label="Settings"] { top: calc(env(safe-area-inset-top, 0px) + 10px) !important; }
