@@ -571,3 +571,23 @@ body.in-app .bd-user-pill,
 body.in-app .mk-user-pill,
 body.in-app .oj-user-pill,
 body.in-app .st-user-pill { display: none !important; }
+
+/* ── ANDON → Monitor ke teen card ────────────────────────────────────
+ * Wahi kahani jo Dashboard ke KPI card ki thi -- TV ke naap par bane the:
+ * padding `16px 20px`, number 44px, aur label par `letter-spacing: .06em`.
+ * Phone par har card ~116px ka reh jaata hai, jisme:
+ *   - label DO line me toot-ta tha (`TOTAL CALLS`, `LONGEST ACTIVE`)
+ *   - neeche ki samjhaane wali line bhi DO line me (`— · today · 7 AM–6:30 AM`)
+ * Isi toot-ne se card 130px lambe ho gaye the.
+ *
+ * `.s` wali line (`abhi chalu`, `sabse lambi chalu call`, `... today ...`)
+ * samjhaane ke liye hai -- roz dekhne wale ko label aur number se hi sab pata
+ * chal jaata hai.  App me hata di.
+ */
+body.in-app .am-stats { gap: 6px !important; margin-bottom: 10px !important; }
+body.in-app .am-stat  { padding: 8px !important; border-radius: 10px !important; }
+/* letter-spacing hatane se label ek line me aa jaate hain (wahi cheez
+   Dashboard ke `AWAITING RESPONSE` par bhi kaam aayi thi) */
+body.in-app .am-stat .l { font-size: 9px !important; letter-spacing: 0 !important; }
+body.in-app .am-stat .v { font-size: 24px !important; }
+body.in-app .am-stat .s { display: none !important; }
