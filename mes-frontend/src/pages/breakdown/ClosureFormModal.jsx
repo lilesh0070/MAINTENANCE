@@ -1029,11 +1029,13 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                   {spareMaster.map((m, idx) => <option key={idx} value={m.spare_name} />)}
                 </datalist>
                 {rows.map((sp, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "stretch",
-                                        borderBottom: "1px solid #cbd5e1" }}>
+                  <div key={i} className="bds-spare-row"
+                       style={{ display: "flex", alignItems: "stretch",
+                                borderBottom: "1px solid #cbd5e1" }}>
                     {[["spare_name", "SPARE NAME"], ["spare_model_no", "MODEL NUMBER"],
                       ["spare_cnmm_no", "SPARE ERP NUMBER"], ["spare_qty", "QUANTITY"]].map(([k, l], ci) => (
-                      <div key={k} style={{ ...cell, borderRight: ci === 3 && !spEdit ? "none" : cell.borderRight }}>
+                      <div key={k} className="bds-spare-cell"
+                           style={{ ...cell, borderRight: ci === 3 && !spEdit ? "none" : cell.borderRight }}>
                         <div style={lbl}>{l}{rows.length > 1 && ci === 0 ? ` ${i + 1}` : ""}</div>
                         <input style={inp} value={sp[k] || ""} disabled={!spEdit}
                                type={k === "spare_qty" ? "number" : "text"}
@@ -1090,12 +1092,18 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
           </div>
           <div className="bds-sign-grid">
             {[
-              { key: "prepared_by",          obj: data.prepared_by },
-              { key: "received_by",          obj: data.received_by },
-              { key: "line_leader_operator", obj: data.line_leader_operator },
-              { key: "quality_engineer",     obj: data.quality_engineer },
-            ].map(({ key, obj }) => (
-              <div key={key} className="bds-sign-cell">
+              { key: "prepared_by",          obj: data.prepared_by, sign: "PREPARED BY :-" },
+              { key: "received_by",          obj: data.received_by, sign: "RECEIVED BY :-" },
+              { key: "line_leader_operator", obj: data.line_leader_operator,
+                sign: "HANDOVER TO :- ( LINE LEADER / OPERATOR )" },
+              { key: "quality_engineer",     obj: data.quality_engineer,
+                sign: "HANDOVER TO :- ( QUALITY ENGINEER )" },
+            ].map(({ key, obj, sign }) => (
+              /* `data-sign` sirf phone ke liye hai: wahan chaar column ek
+                 column ban jaate hain, upar wali heading-patti chhup jaati
+                 hai aur yahi text cell ke andar ::before se aata hai.
+                 Website/TV par ye attribute bekaar pada rehta hai. */
+              <div key={key} className="bds-sign-cell" data-sign={sign}>
                 {/* Only NAME — there's no clean way to capture a real
                     handwritten signature in a web form, so we drop the
                     SIGN row entirely.  Older slips that already saved

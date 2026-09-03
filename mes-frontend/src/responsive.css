@@ -715,3 +715,96 @@ body.in-app .mk-charts { grid-template-columns: 1fr !important; }
 body.in-app .mk-charts    { gap: 8px !important; }
 body.in-app .mk-chart     { padding: 10px 14px 6px !important; }
 body.in-app .mk-chart-head { margin-bottom: 6px !important; }
+
+/* ==================================================================
+   BREAK DOWN SLIP -- phone par ek column ka form
+   ------------------------------------------------------------------
+   Slip kagaz ki hoo-ba-hoo nakal hai: teen column ka grid, har cell me
+   label BAAYEIN aur input DAAYEIN.  Har label par `min-width: 140px` hai,
+   to sirf teen label = 3 x (140 + 16 padding + 1 border) = 471px --
+   412px ke phone se pehle hi bahar, input ginne se bhi pehle.  Isliye
+   font/padding chhota karne se kaam nahi chalta; dhaancha badalna padta
+   hai: ek column, aur har cell me label UPAR, input NEECHE.
+
+   Slip 1041px chaudi thi (jagah 388px).  Sideways scroll hoti to thi, par
+   scroll karne par zyadatar khaali safed jagah milti thi -- kyunki sirf
+   do-teen row itni chaudi thin, baaki chhoti.
+
+   Sab kuch `body.in-app` ke andar hai, to website aur TV par kagaz wali
+   shakal jyon ki tyon rehti hai.  Print bhi nahi chhua -- wo alag iframe
+   me bante HTML se hota hai, ye file wahan pahunchti hi nahi.
+   ================================================================== */
+
+/* -- letterhead: logo aur X chhote, taaki naam ko jagah mile -- */
+body.in-app .bds-logo      { width: 74px !important; padding: 6px !important; }
+body.in-app .bds-logo-tb   { font-size: 24px !important; }
+body.in-app .bds-logo-sub  { font-size: 7px !important; }
+body.in-app .bds-company   { font-size: 13px !important; }
+body.in-app .bds-doc-title { font-size: 11px !important; }
+body.in-app .bds-close-x   { width: 38px !important; font-size: 24px !important; }
+
+/* -- teen column -> ek column; har cell me label upar, input neeche -- */
+body.in-app .bds-grid-3 { grid-template-columns: 1fr !important; }
+body.in-app .bds-cell {
+  flex-direction: column !important;
+  align-items: stretch !important;
+  min-height: 0 !important;
+}
+body.in-app .bds-cell-label {
+  min-width: 0 !important;                 /* 140px ka farsh yahi hata hai */
+  border-right: none !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+  padding: 4px 8px !important;
+}
+body.in-app .bds-cell-input input,
+body.in-app .bds-cell-input select { min-height: 30px !important; padding: 5px 8px !important; }
+
+/* -- category ke do grid: tick wala column dono me barabar rakhna zaroori
+      hai, warna heading aur row ki line aapas me nahi milti -- */
+body.in-app .bds-cat-head { grid-template-columns: 1fr 56px !important; }
+body.in-app .bds-cat-row  { grid-template-columns: 96px 1fr 56px !important; }
+body.in-app .bds-cat-cell-code,
+body.in-app .bds-cat-cell-desc { padding: 5px 6px !important; font-size: 10px !important; }
+
+/* -- textarea wali row: 220px ka label column hata kar label upar -- */
+body.in-app .bds-row { grid-template-columns: 1fr !important; min-height: 0 !important; }
+body.in-app .bds-row-label {
+  border-right: none !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+}
+body.in-app .bds-row-input textarea { min-height: 52px !important; }
+
+/* -- tick wali teen line (PROBLEM RELATED TO / TYPE OF PROBLEM / SPARE
+      USED?) flex thin bina wrap ke -- ab toot kar agli line par ja sakti hain -- */
+body.in-app .bds-relto-row { flex-wrap: wrap !important; gap: 6px 16px !important; }
+
+/* -- signature: chaar column -> ek.  Heading ki alag patti chhupa kar wahi
+      text har cell ke andar `data-sign` se aata hai (text JSX me hi rehta
+      hai, CSS me dobara nahi likha).  Alag patti ko sirf 1 column karna
+      kaafi nahi tha: dono alag grid hain, to pehle chaaron heading aati
+      aur uske baad chaaron input -- kaunsa naam kiska, pata hi na chalta. -- */
+body.in-app .bds-sign-head { display: none !important; }
+body.in-app .bds-sign-grid { grid-template-columns: 1fr !important; }
+body.in-app .bds-sign-cell {
+  border-right: none !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+}
+body.in-app .bds-sign-cell:last-child { border-bottom: none !important; }
+body.in-app .bds-sign-cell::before {
+  content: attr(data-sign);
+  display: block; padding-bottom: 3px;
+  font-size: 10px; font-weight: 800; color: #0f172a; letter-spacing: .02em;
+}
+
+/* -- spare ki row: chaar cell + delete = 372px me har cell ~83px, jabki
+      `SPARE ERP NUMBER` ka label nowrap hai aur utne me aata hi nahi.
+      Ab do-do karke wrap hote hain. -- */
+body.in-app .bds-spare-row  { flex-wrap: wrap !important; }
+body.in-app .bds-spare-cell { flex: 1 1 45% !important; }
+/* delete (garbage) button do-do cell ke baad akela ek line par bach jaata tha;
+   ab poori chaudai ki patti ban jaata hai -- saaf dikhta hai ki kis spare ka hai. */
+body.in-app .bds-spare-row > button {
+  flex: 1 0 100% !important;
+  border-left: none !important;
+  border-top: 1px solid #cbd5e1 !important;
+}
