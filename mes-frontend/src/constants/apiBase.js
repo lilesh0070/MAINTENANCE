@@ -227,7 +227,7 @@ export function installApiBase() {
     // seedha screen par laal me chhap jaata tha.  User ke liye uska koi
     // matlab nahi.  Apni wajah dene se page ke catch me yahi sandesh aata hai.
     const t = setTimeout(() => {
-      try { ctl.abort(new Error("Server se baat nahi ho pa rahi — network dekhein")); }
+      try { ctl.abort(new Error("Could not reach the server — please check the network")); }
       catch { try { ctl.abort(); } catch { /* ignore */ } }
     }, reqTimeout());
     return realFetch(url, { ...(opts || {}), signal: ctl.signal })

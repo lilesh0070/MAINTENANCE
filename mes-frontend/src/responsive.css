@@ -642,7 +642,19 @@ body.in-app .an-tbl th { white-space: nowrap !important; }
  *
  * Poore page ki lambai 1724 -> 1502px.
  */
-body.in-app .mk-fybar { padding: 8px 10px !important; gap: 5px 8px !important; }
+body.in-app .mk-fybar { padding: 8px 10px !important; gap: 5px 8px !important;
+                        margin-bottom: 8px !important; }
+
+/* `Annual Index` wali line aur neeche ke card ke beech 82px ka faasla tha:
+   fybar ki 22px margin + error patti (41px) + uski 18px margin.  Phone par
+   itni khali jagah bhaari padti hai.  Teeno kas kar 48px kar diya.
+   (Error patti sirf tab dikhti hai jab server na mile -- plant me nahi
+   dikhegi, aur tab ye faasla sirf 8px reh jaayega.) */
+body.in-app .mk-err {
+  padding: 8px 10px !important;
+  margin-bottom: 8px !important;
+  font-size: 12px !important;
+}
 
 /* `FINANCIAL YEAR` label hata diya -- uske bagal wala select khud `2026-27`
    dikha raha hai, to label sirf jagah kha raha tha (94px). */
