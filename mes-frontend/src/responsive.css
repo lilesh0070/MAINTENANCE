@@ -975,3 +975,70 @@ body.in-app .ba-fld:nth-child(7) button { font-size: 11px !important; padding: 6
    inline style hai.  JSX me sirf naam (`pbs-top`) jod kar list me daal diya;
    style wahin inline hi hai.  Padding inline hai (`0 30px`), isliye list ka
    `!important` hi use jeetta hai. */
+
+/* ==================================================================
+   SKILL & TRAINING -> OJT (On-the-Job Training)
+   ------------------------------------------------------------------
+   Yahan **chhah cheezein sach me chhupi** thi -- "Duration" aur "Date of
+   Training" ke poore field screen se **351px bahar** the, yaani phone par
+   dikhte hi nahi the.  Wajah: `.oj-frow` do column ka grid hai aur uske
+   column **320 + 320 = 640px** bane, jabki dabba sirf 249px ka tha.
+
+   Uske alawa (aankh se pakda, naap se nahi): **Save button company ke naam
+   ke UPAR chadha hua tha** -- `.oj-card-actions` `position: absolute` hai
+   aur phone par naam chaudai bhar failta hai, to dono ek hi jagah aa gaye.
+
+   `.oj-body` aur `.oj-tabs` par **40px x 2 = 80px** side padding thi
+   (wahi TV wala naap), aur `.oj-flabel` par `min-width: 120px` + nowrap.
+   ================================================================== */
+body.in-app .oj-body { padding: 0 10px !important; }
+body.in-app .oj-tabs { padding: 0 10px !important; flex-wrap: wrap !important; gap: 6px !important; }
+body.in-app .oj-tab  { padding: 8px 12px !important; font-size: 12px !important; }
+body.in-app .oj-new  { padding: 8px 12px !important; font-size: 12px !important; margin-left: 0 !important; }
+
+/* do column -> ek; label ka 120px farsh hataya aur use toot-ne diya */
+body.in-app .oj-frow   { grid-template-columns: 1fr !important; gap: 0 !important; }
+body.in-app .oj-flabel { min-width: 0 !important; white-space: normal !important; }
+
+/* Save button ko behaav me le aao -- naam ke upar se hata */
+body.in-app .oj-card-actions {
+  position: static !important;
+  justify-content: center !important;
+  margin-top: 8px !important;
+}
+
+/* table ke cell TV ke naap ke the */
+body.in-app .oj-tbl-wrap { padding: 8px 8px 4px !important; }
+body.in-app .oj-tbl th,
+body.in-app .oj-tbl td   { padding: 6px 4px !important; }
+body.in-app .oj-tbl th   { font-size: 10px !important; }
+
+/* ==================================================================
+   SKILL & TRAINING -> SKILL UPGRADATION
+   ------------------------------------------------------------------
+   **Save button pahunch se BAHAR tha** -- x=444 par, jabki screen 412 ki
+   hai, aur `.su-root` ke `overflow: hidden` ne use kaat diya.  Yaani
+   phone se ye page save ho hi nahi sakta tha.
+
+   Wajah: `.su-top` par padding `14px 26px 14px 96px` (96px TV ke
+   slide-nav ke liye) aur `justify-content: space-between` bina wrap ke --
+   to baayein title aur daayein `.su-actions` (legend + Save) ek hi line par
+   thoos diye gaye.  Ye page us saanjhi topbar-list me bhi nahi tha.
+
+   Ab: padding 52/10, patti wrap karti hai, aur actions apni poori line par.
+   Save ab x=335-402 par -- screen ke andar. */
+body.in-app .su-top {
+  padding: 8px 10px 8px 52px !important;
+  flex-wrap: wrap !important;
+  row-gap: 8px !important;
+  gap: 10px !important;
+}
+body.in-app .su-actions {
+  flex: 1 0 100% !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  justify-content: space-between !important;
+}
+body.in-app .su-legend { flex-wrap: wrap !important; gap: 8px !important; font-size: 11px !important; }
+body.in-app .su-save   { padding: 8px 12px !important; font-size: 12px !important; }
+body.in-app .su-title  { font-size: 19px !important; }

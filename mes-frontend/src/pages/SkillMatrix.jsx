@@ -376,7 +376,7 @@ export default function SkillMatrix() {
               <div className="se-sub">Skill evaluation · once per 3-month cycle</div>
             </div>
           </div>
-          {user?.username && <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
+          {user?.username && <span className="app-user" style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
         </div>
 
         <div className="se-tabs">
