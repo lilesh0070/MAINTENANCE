@@ -45,13 +45,16 @@ export default function Layout({ children }) {
           otherwise just the full-screen toggle. */}
       {pathname === "/maintenance-dashboard"
         ? null   /* dashboard has its own topbar ⛶ Fullscreen — no floating control */
-        : isDisplay
-          ? <DisplayToolbar showTheme={pathname === "/maintenance-overview"} />
-          /* APK me fullscreen bemaani hai — app khud poori screen par hai —
-             aur wo upar-daayen wahi jagah ghera hai jahan ⚙ Settings baithta
-             hai.  Isliye app me use chhod dete hain; website par jaisa tha
-             waisa hi. */
-          : isNativeApp() ? null : <FullscreenButton />}
+        : isNativeApp()
+          /* APK me ye DONO bemaani hain: app khud poori screen par hai, aur
+             DisplayToolbar ka LIGHT/Fill/⛶ deewar par lagi TV ke liye hai.
+             Aur dono upar-daayen THEEK wahi jagah gherte hain jahan ⚙ Settings
+             baithta hai — Overview par to kaali patti title ke UPAR chadh kar
+             use dhak hi rahi thi.  Website/TV par jaisa tha waisa hi. */
+          ? null
+          : isDisplay
+            ? <DisplayToolbar showTheme={pathname === "/maintenance-overview"} />
+            : <FullscreenButton />}
     </div>
   );
 }

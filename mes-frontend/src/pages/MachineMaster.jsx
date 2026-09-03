@@ -233,7 +233,7 @@ export default function MachineMaster() {
             <div className="mm-title">🏭 <span>Machine Master</span></div>
             <div className="mm-sub">Zone · Line · Machine No · Machine Name · IP — the single source for every dropdown</div>
           </div>
-          {user?.username && <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>{user.username}</span>}
+          {user?.username && <span className="app-user" style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>{user.username}</span>}
         </div>
 
         <div className="mm-filters">

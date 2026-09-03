@@ -243,7 +243,7 @@ export default function BDHistory() {
           <div style={{ display:"flex", alignItems:"center", gap:12 }}>
             <input className="bh-search" placeholder="Search zone / line / machine…"
                    value={q} onChange={(e) => setQ(e.target.value)} />
-            {user?.username && <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
+            {user?.username && <span className="app-user" style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
           </div>
         </div>
 

@@ -243,7 +243,7 @@ export default function MaintenanceOverview() {
             <select className="ov-fy" value={fy} onChange={(e) => setFy(e.target.value)}>
               {years.map((y) => <option key={y.fy} value={y.fy}>{y.fy}{y.is_current ? " (current)" : ""}</option>)}
             </select>
-            {user?.username && <span style={{ fontWeight: 600 }}>{user.username}</span>}
+            {user?.username && <span className="app-user" style={{ fontWeight: 600 }}>{user.username}</span>}
           </div>
         </div>
 

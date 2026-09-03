@@ -379,7 +379,7 @@ export default function BreakdownLogBook() {
               <button className={view === "entry" ? "on" : ""} onClick={() => setView("entry")}>Data Entry</button>
               <button className={view === "list"  ? "on" : ""} onClick={() => setView("list")}>List</button>
             </div>
-            {user?.username && <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
+            {user?.username && <span className="app-user" style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
           </div>
         </div>
 

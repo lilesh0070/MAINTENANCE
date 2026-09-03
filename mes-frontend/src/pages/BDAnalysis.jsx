@@ -215,7 +215,7 @@ export default function BDAnalysis() {
               <div className="ba-sub">Breakdown analysis</div>
             </div>
           </div>
-          {user?.username && <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
+          {user?.username && <span className="app-user" style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
         </div>
 
         {/* ── the single filter bar ── */}

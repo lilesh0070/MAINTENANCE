@@ -499,3 +499,59 @@ body.in-app .an-bitrow > div:last-child { flex: 1 1 100% !important; }
    khaano ka nahi.  Chip khud hi likh deta hai kab OFF hoga
    (`breakdown band hone par`), isliye phone par ye label bekaar hai. */
 body.in-app .an-bitrow > div:last-child:has(> .an-lbl) { display: none !important; }
+
+/* ── HAR PAGE ka header — wahi TV wala padding ────────────────────────
+ * Is file me sabse upar 25 topbar class ki ek list hai jinpar
+ * `padding-right: 78px` lagta hai -- wo jagah FullscreenButton ke liye thi,
+ * jo app me hai hi nahi (Layout.jsx use app me render nahi karta).  Aur inme
+ * se zyadatar ke BAAYEIN 88-96px slide-nav ke liye chhode gaye hain, jabki
+ * app ka logo sirf 36px ka hai (left 8 par).
+ *
+ * Naapa (emulator me, ek-ek page kholkar): PANDRAH page par 166-174px sirf
+ * padding me ja rahe the -- 412px ki screen ka lagbhag 40%.  Isi se title,
+ * subtitle aur button toot rahe the.
+ *
+ * Ab sab par wahi naap jo Maintenance Dashboard par tay hua: 52 baayein
+ * (logo 36 + 8 kinara + 8 saans), 60 daayein (gear 40 + 12 kinara + 8).
+ *
+ * `md-topbar` (Dashboard) aur `an-top` (ANDON) yahan JAAN-BOOJH KAR nahi hain
+ * -- unke apne rule pehle se hain, aur Dashboard ko chhedna nahi hai.
+ */
+body.in-app .admin-topbar,
+body.in-app .ba-top,
+body.in-app .bd-topbar,
+body.in-app .bh-top,
+body.in-app .cp-top,
+body.in-app .ddf-topbar,
+body.in-app .dmc-topbar,
+body.in-app .hc-top,
+body.in-app .hd-top,
+body.in-app .lb-top,
+body.in-app .mk-topbar,
+body.in-app .mm-top,
+body.in-app .mp-topbar,
+body.in-app .mw-topbar,
+body.in-app .ng-topbar,
+body.in-app .oj-top,
+body.in-app .ov-top,
+body.in-app .pa-top,
+body.in-app .qf-top,
+body.in-app .se-top,
+body.in-app .sp-top,
+body.in-app .st-topbar,
+body.in-app .sv-topbar,
+body.in-app .up-top {
+  padding-left: 52px !important;
+  padding-right: 60px !important;
+}
+
+/* Username har page ke header me daayein kinare par hota hai -- theek wahan
+   jahan ⚙ Settings ka button taerta hai.  Log Book par to `DEMO` uske neeche
+   dab hi gaya tha.  Wo naam Settings me poora dikhta hai, isliye app ke page
+   header se hata dete hain.  (`md-user-pill` chhoda hai -- wo Dashboard ka
+   hai aur wahan pehle se portrait me chhupta hai.) */
+body.in-app .app-user,
+body.in-app .bd-user-pill,
+body.in-app .mk-user-pill,
+body.in-app .oj-user-pill,
+body.in-app .st-user-pill { display: none !important; }

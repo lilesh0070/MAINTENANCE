@@ -107,7 +107,7 @@ export default function AndonMonitor({ embedded = false }) {
           <div className="am-top">
             <button className="am-back" onClick={() => nav(-1)}>← Back</button>
             <div className="am-title">🔔 ANDON <span>Monitor</span></div>
-            <div style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user?.username || ""}</div>
+            <div className="app-user" style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user?.username || ""}</div>
           </div>
         )}
 

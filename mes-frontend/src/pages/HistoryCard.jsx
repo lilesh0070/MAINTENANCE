@@ -291,7 +291,7 @@ export default function HistoryCard() {
               <div className="hc-sub">Zone-wise machine history — Log Book + Break Down Slip</div>
             </div>
           </div>
-          {user?.username && <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
+          {user?.username && <span className="app-user" style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
         </div>
 
         <div className="hc-body">
