@@ -607,3 +607,21 @@ body.in-app .am-btn .nm { font-size: 13px !important; }
 body.in-app .am-btn .st { font-size: 10px !important; margin-top: 1px !important; }
 /* badge (active call ki ginti) bhi thoda chhota, warna chhote button par bhaari lagta hai */
 body.in-app .am-badge { min-width: 18px !important; height: 18px !important; top: 6px !important; right: 6px !important; }
+
+/* ── ANDON ki table ke column heading ─────────────────────────────────
+ * Do-shabd wale heading phone par DO line me toot jaate the --
+ * `Machine No`, `Fault Name`, `Output PLC`, `Off trigger`, `Program bit`,
+ * `Zone / Line / M/C`.  Ek line par rok diya.
+ *
+ * Ye surakshit hai kyunki table pehle se apne dabbe me side me scroll karti
+ * hai (naapa: dabba 335px, table 565px).  Heading chaude hone se table thodi
+ * aur chaudi hogi, par chhupegi kuch nahi -- ye alag se jaancha (chaaron tab
+ * par 'table chhupi: 0').
+ *
+ * ⚠ PEHLE MAINE GALAT WAJAH SOCHI THI: laga ki `letter-spacing` se toot rahe
+ * hain.  Wo rule lagakar naapa to farq SHOONYA nikla -- kyunki maine dabbe ki
+ * OONCHAI dekhi thi, jisme padding (8+8) judi hui hai.  Sahi naap text ke apne
+ * box (Range) se hoti hai.  Isi galti se pehle laga tha ki 8-11 heading toot
+ * rahe hain, jabki sach me sirf 2-3 toot rahe the.
+ */
+body.in-app .an-tbl th { white-space: nowrap !important; }
