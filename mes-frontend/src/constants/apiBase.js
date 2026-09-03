@@ -37,9 +37,23 @@ const SERVERS = [
 ];
 
 const PROBE_MS = 2500;
-// Har API request ki hadd.  Itni der me jawab na aaye to request FAIL maani
-// jayegi.  Latki hui request se to error bhi nahi milta -- fail hona behtar hai.
-const REQ_TIMEOUT_MS = 15000;             // itni der me jawab na aaye to us raaste ko chhod do
+// Har API request ki hadd -- par DO alag, kyunki dono haalat bahut alag hain:
+//
+//   server mil gaya    -> 20s.  Plant me sab kuch LAN par hai aur ~15ms me
+//                         aata hai; ye lambi hadd sirf kisi bhaari report ke
+//                         liye hai, taaki wo bewajah fail na ho.
+//   server nahi mila   -> 3.5s.  Shuru me hi dono raaste tatol liye gaye the
+//                         aur koi nahi mila -- ab 15 second aur rukne ka koi
+//                         matlab nahi, jawab aana hi nahi hai.  Jaldi fail ho
+//                         to page ka apna catch chal jaata hai aur user ko
+//                         khaali screen ki jagah error dikhta hai.
+//
+// (Bina iske Maintenance Dashboard 16 SECOND tak khaali 'Loading...' dikhata
+//  tha -- itna koi nahi rukta, log samajhte hain app hi kharab hai.)
+const REQ_TIMEOUT_OK   = 20000;
+const REQ_TIMEOUT_DOWN = 3500;
+let serverMila = false;          // pickServer() ise sach batata hai
+const reqTimeout = () => (serverMila ? REQ_TIMEOUT_OK : REQ_TIMEOUT_DOWN);             // itni der me jawab na aaye to us raaste ko chhod do
 
 /** APK ke andar chal rahe hain ya browser me?  (Layout aur Settings
  *  dono yahi poochhte hain — do jagah do copy rakhna galat hota.) */
@@ -123,8 +137,10 @@ async function pickServer() {
   try {
     const winner = await Promise.any(SERVERS.map(tryOne));
     API_BASE = winner;
+    serverMila = true;            // ab lambi hadd theek hai (bhaari report chal sake)
   } catch {
     API_BASE = SERVERS[0];        // koi nahi mila — pehla hi rakho, error saaf aayega
+    serverMila = false;           // ab jaldi fail karo, 15s rukna bekaar hai
   }
   return API_BASE;
 }
@@ -164,7 +180,7 @@ export function installApiBase() {
     if (opts && opts.signal) return realFetch(url, opts);
     if (typeof AbortController === "undefined") return realFetch(url, opts);
     const ctl = new AbortController();
-    const t = setTimeout(() => { try { ctl.abort(); } catch { /* ignore */ } }, REQ_TIMEOUT_MS);
+    const t = setTimeout(() => { try { ctl.abort(); } catch { /* ignore */ } }, reqTimeout());
     return realFetch(url, { ...(opts || {}), signal: ctl.signal })
       .finally(() => clearTimeout(t));
   };
@@ -184,7 +200,7 @@ export function installApiBase() {
     const realOpen = XHR.prototype.open;
     XHR.prototype.open = function (method, url, ...rest) {
       // axios/XHR par bhi wahi hadd -- warna wahan bhi request latki reh jaati.
-      if (!this.timeout) this.timeout = REQ_TIMEOUT_MS;
+      if (!this.timeout) this.timeout = reqTimeout();
       return realOpen.call(this, method, withBase(url), ...rest);
     };
   }
