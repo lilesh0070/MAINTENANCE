@@ -1180,3 +1180,123 @@ body.in-app .hd-fld:nth-child(-n+6) { flex: 0 0 calc(33.333% - 4px) !important; 
 /* Machine Name bachi jagah le, Clear uske saath */
 body.in-app .hd-fld:nth-child(7) { flex: 1 1 auto !important; min-width: 0 !important; }
 body.in-app .hd-fld:nth-child(8) { flex: 0 0 auto !important; }
+
+/* ==================================================================
+   SAARE PAGE KE HEADER -- title beech me
+   ------------------------------------------------------------------
+   Pehle patti ko `justify-content: center` karke dekha tha.  Kaam nahi
+   aaya, kyunki har page ka dhaancha alag hai -- kahin Back aur title ek hi
+   wrapper me, kahin title ke baad button, kahin patti do row me toot-ti
+   hai.  Us tareeqe se Log Book 129 par, CAPA 145 par aur Study Material
+   240 par reh gaye the (screen ka center **206**).
+
+   Isliye title ko KHUD center par bithaya -- bhai-bandon ka dhaancha kuch
+   bhi ho, farak nahi padta.  Ab har page par title theek 206-207 par hai.
+   ================================================================== */
+body.in-app .admin-topbar,
+body.in-app .ba-top,
+body.in-app .bd-topbar,
+body.in-app .bh-top,
+body.in-app .cp-top,
+body.in-app .ddf-topbar,
+body.in-app .dmc-topbar,
+body.in-app .hc-top,
+body.in-app .hd-top,
+body.in-app .lb-top,
+body.in-app .mk-topbar,
+body.in-app .mm-top,
+body.in-app .mp-topbar,
+body.in-app .mw-topbar,
+body.in-app .ng-topbar,
+body.in-app .oj-top,
+body.in-app .ov-top,
+body.in-app .pbs-top,
+body.in-app .pa-top,
+body.in-app .qf-top,
+body.in-app .se-top,
+body.in-app .sp-top,
+body.in-app .st-topbar,
+body.in-app .sv-topbar,
+body.in-app .up-top,
+body.in-app .su-top,
+body.in-app .sm-top,
+body.in-app .md-topbar { position: relative !important; }
+
+body.in-app .am-title,
+body.in-app .ba-title,
+body.in-app .bh-title,
+body.in-app .lb-title,
+body.in-app .mw-title,
+body.in-app .ng-title,
+body.in-app .sv-title,
+body.in-app .ddf-title,
+body.in-app .hc-title,
+body.in-app .dmc-title,
+body.in-app .mm-title,
+body.in-app .bd-title,
+body.in-app .cp-title,
+body.in-app .hd-title,
+body.in-app .mk-title,
+body.in-app .oj-title,
+body.in-app .oc-title,
+body.in-app .pa-title,
+body.in-app .se-title,
+body.in-app .st-title,
+body.in-app .su-title,
+body.in-app .sp-title,
+body.in-app .sm-title,
+body.in-app .up-title {
+  position: absolute !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  top: 8px !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+  pointer-events: none !important;         /* neeche ke button dabte rahen */
+}
+
+/* Subtitle: title ab absolute hai, to subtitle uske peeche aa jaata hai.
+   App me wo waise bhi kam kaam ka hai (title wahi baat keh deta hai). */
+body.in-app .ba-sub,
+body.in-app .bd-sub,
+body.in-app .bh-sub,
+body.in-app .hc-sub,
+body.in-app .hd-sub,
+body.in-app .lb-sub,
+body.in-app .mm-sub,
+body.in-app .oj-sub,
+body.in-app .ov-sub,
+body.in-app .pa-sub,
+body.in-app .se-sub,
+body.in-app .sm-sub,
+body.in-app .sp-sub,
+body.in-app .st-sub,
+body.in-app .su-sub,
+body.in-app .up-sub { display: none !important; }
+
+/* Log Book: `Data Entry / List` ka toggle header me hi hai aur centered
+   title uske upar chadh jaata tha (37px naapa).  Toggle ko doosri row par. */
+body.in-app .lb-top { flex-wrap: wrap !important; row-gap: 6px !important; }
+body.in-app .lb-top > div:last-child { flex: 1 0 100% !important; justify-content: center !important; }
+body.in-app .sm-top { padding-left: 52px !important; padding-right: 60px !important; }
+
+
+/* Teen page ke title ka apna koi class nahi tha, isliye upar wale rule
+   unpar lage hi nahi -- screenshot me ye teeno baayein dikh rahe the
+   (naap ne inhe "title nahi mila" kaha tha, galti nahi batayi). */
+
+/* Document Update aur Maintenance Panel -- title `.admin-logo` ke andar hai */
+body.in-app .admin-logo {
+  position: absolute !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+  pointer-events: none !important;
+}
+
+/* Preventive Maintenance -- iska header patti nahi, content ke andar ka
+   section-header hai jiske saath tab isi line par hain.  Title ka apna
+   class nahi, isliye `:has()` se uske maa-baap ko pakda (Android 15 ke
+   WebView me `:has()` chalta hai -- pehle jaancha ja chuka hai). */
+body.in-app div:has(> .pm-tabs) { justify-content: center !important; }
