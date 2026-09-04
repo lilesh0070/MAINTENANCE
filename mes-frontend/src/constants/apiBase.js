@@ -119,6 +119,40 @@ async function setupStatusBar() {
     // status bar chadha rahega, par kuch tootega nahi.
   }
 }
+/* ─── Phone ka BACK button ─────────────────────────────────────
+ * Bina `@capacitor/app` ke phone ka back JS tak pahunchta hi nahi --
+ * Capacitor seedha activity band kar deta hai, yaani APP MINIMISE ho jaati
+ * hai.  Jaancha tha: dashboard -> Breakdown -> BD History (history 3) ke
+ * baad back dabane par launcher aa gaya, page peeche nahi gaya.
+ *
+ * Ab: pehle koi khula hua modal band karo; phir peeche jaane laayak history
+ * ho to peeche jao; aur ghar (dashboard/login) par ho to app se bahar.
+ *
+ * Sirf APK me -- website par ye import chalta hi nahi (NATIVE false hai).
+ */
+async function setupBackButton() {
+  if (!NATIVE) return;
+  try {
+    const { App } = await import('@capacitor/app');
+    App.addListener('backButton', () => {
+      // 1) Break Down Slip jaisa modal khula ho to pehle wahi band karo,
+      //    warna bhara hua form bina bataye chala jayega.
+      const x = document.querySelector('.bds-close-x');
+      if (x && x.getBoundingClientRect().width > 0) { x.click(); return; }
+
+      // 2) peeche jaane laayak jagah hai?
+      const p = window.location.pathname;
+      const ghar = p === '/' || p === '/login' || p === '/dashboard';
+      if (!ghar && window.history.length > 1) { window.history.back(); return; }
+
+      // 3) ghar par hain -- ab back ka matlab app se bahar
+      App.exitApp();
+    });
+  } catch {
+    // Plugin na mile (purani APK) to pehle jaisa hi chalta rahe.
+  }
+}
+
 /* ─── DEMO_LOGIN ke saath ka NAQLI DATA — ARZI, HATANA HAI ────────────
  * Ghar par server milta hi nahi, isliye har page khali dikhta hai aur uska
  * design nahi ho paata (ANDON Monitor par department hi nahi aate the, bas
@@ -267,4 +301,5 @@ export function installApiBase() {
 
   // 4) status bar ko app ke upar se hata do (upar wali tippani dekhein)
   setupStatusBar();
+  setupBackButton();
 }
