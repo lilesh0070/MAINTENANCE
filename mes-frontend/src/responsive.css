@@ -1089,3 +1089,39 @@ body.in-app .hc-sub { display: none !important; }
    Ye view kisi tab-sweep me nahi aata (button dabane par khulta hai), isliye
    pehle chhoot gaya tha.  Ab jaanch me "logo/gear se takrav" bhi hai. */
 body.in-app .ix-bar { padding-left: 26px !important; }
+
+/* ==================================================================
+   HISTORICAL DATA ke aath tab -- teen-teen
+   ------------------------------------------------------------------
+   User: "breakdown slip, auto breakdown slip aur baaki screen se bahar ho
+   rahe hain -- inko 3-3 karo."
+
+   `.hd-picks` ek hi line me thi (`nowrap` + `overflow-x: auto`) --
+   asli chaudai **1468px**, dikhne ki jagah 412px.  Yaani saat tab sirf
+   sideways scroll karne par milte the.
+
+   Ab 3-3-2 me, patti **129px**.  Har chip 119px ka.
+
+   CHIP KO DO LINE LENE DENA ZAROORI THA: `nowrap` ke saath 119px me
+   **har font par text kat raha tha** -- 12.5px par saat chip, 9px par bhi
+   do.  `white-space: normal` karte hi sab poora aa gaya.
+
+   Font 10px KYUN, 11px kyun nahi: 11px par "DMC Check Sheets" teen line
+   le leta hai aur doosri row 54px ki ho jaati hai jabki baaki 41px ki --
+   patti bebarabar dikhti hai (149px).  10px par saare chip **barabar
+   38px** ke, patti 129px.  Screenshot se tay kiya, ginti se nahi. */
+body.in-app .hd-picks {
+  flex-wrap: wrap !important;
+  overflow-x: visible !important;          /* ab scroll ki zaroorat nahi */
+  gap: 6px !important;
+}
+body.in-app .hd-pick {
+  flex: 0 0 calc(33.333% - 4px) !important;
+  min-width: 0 !important;
+  white-space: normal !important;          /* yahi asli kunji hai */
+  text-align: center !important;
+  justify-content: center !important;
+  line-height: 1.2 !important;
+  font-size: 10px !important;
+  padding: 6px 5px !important;
+}
