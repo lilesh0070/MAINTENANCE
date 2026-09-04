@@ -401,7 +401,8 @@ export default function MaintenanceCAPA() {
   const clearFilters = () => { setFFy(fyOf(nowYm)); setFMonth(nowYm); setFZone(""); setFLine(""); setFMno(""); };
 
   const tile = (label, val, color, sub) => (
-    <div style={{ background:"#fff", border:"1px solid #e2e8f0", borderTop:`3px solid ${color}`, borderRadius:14, padding:"14px 18px", minWidth:150 }}>
+    <div className="cp-tile"
+         style={{ background:"#fff", border:"1px solid #e2e8f0", borderTop:`3px solid ${color}`, borderRadius:14, padding:"14px 18px", minWidth:150 }}>
       <div style={{ fontSize:11.5, fontWeight:800, letterSpacing:".05em", textTransform:"uppercase", color:"#64748b" }}>{label}</div>
       <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:38, fontWeight:800, color, lineHeight:1 }}>{loading ? "…" : val}</div>
       <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>{sub}</div>
@@ -569,7 +570,11 @@ export default function MaintenanceCAPA() {
 
             {/* Cards ab FILTER ke hisaab se — upar ki ginti aur neeche ki
                 list hamesha ek hi baat kahein. */}
-            <div style={{ display:"flex", gap:14, marginBottom:16, flexWrap:"wrap" }}>
+            {/* `cp-tiles`/`cp-tile` sirf NAAM hain -- style yahin inline hi
+                rehti hai.  Phone par chaar card ek-ek karke aate the (har ek
+                188px, aur do ke liye 390px chahiye jabki jagah 364px), isliye
+                app me inhe do-do kiya jaata hai. */}
+            <div className="cp-tiles" style={{ display:"flex", gap:14, marginBottom:16, flexWrap:"wrap" }}>
               {tile("Total CAPA", shown.length, "#2563eb", "Breakdowns of 60 min or more")}
               {tile("Open", open, "#dc2626", "QPR not closed yet")}
               {tile("Closed", closed, "#16a34a", "QPR filled and closed")}

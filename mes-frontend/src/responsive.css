@@ -1300,3 +1300,20 @@ body.in-app .admin-logo {
    class nahi, isliye `:has()` se uske maa-baap ko pakda (Android 15 ke
    WebView me `:has()` chalta hai -- pehle jaancha ja chuka hai). */
 body.in-app div:has(> .pm-tabs) { justify-content: center !important; }
+
+/* CAPA ke chaar card (Total CAPA / Open / Closed / All CAPA) ek-ek karke
+   aate the: har card `min-width: 150px` ke saath **188px** ka ban jaata tha,
+   aur do ke liye 188x2 + 14 gap = **390px** chahiye jabki row sirf **364px**
+   ki hai.  Ab do-do -- har card (364-8)/2 = 178px.
+   Card ka apna koi class nahi tha (sab inline), isliye JSX me sirf naam
+   jode: `cp-tiles` aur `cp-tile`. */
+body.in-app .cp-tiles { gap: 8px !important; }
+body.in-app .cp-tile {
+  flex: 0 0 calc(50% - 4px) !important;
+  min-width: 0 !important;                 /* 150px ka farsh yahi hata hai */
+  padding: 10px 12px !important;
+  /* ZAROORI: card `content-box` hai, isliye flex-basis 178px ke UPAR
+     padding (24) aur border (2) jud jaate the -- card 204px ka ban jaata
+     tha aur do ek line me nahi aate the.  Pehli koshish isi se fail hui. */
+  box-sizing: border-box !important;
+}
