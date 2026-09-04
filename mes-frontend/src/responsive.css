@@ -1363,3 +1363,103 @@ body.in-app .sp-btn { font-size: 11px !important; padding: 6px 10px !important; 
    class nahi, isliye `:has(> .sp-card)` se pakda. */
 body.in-app div:has(> .sp-card) { gap: 8px !important; margin-bottom: 8px !important; }
 body.in-app .sp-card { padding: 10px 12px !important; }
+
+/* ==================================================================
+   IN-APP "← Back" BUTTON -- app me chhupa diye
+   ------------------------------------------------------------------
+   Phone ka apna back ab kaam karta hai (dekho `setupBackButton()` in
+   `apiBase.js`), isliye ye button phone par dohra ho gaya tha aur header
+   ki jagah kha raha tha.  Website par jyon ka tyon hai.
+
+   Hatane se pehle aath page par phone ka back jaancha -- BD Analysis,
+   Skill Upgradation, Study Material, Log Book, History Card, Machine
+   Manual, OJT, Spare -- sab par theek se peeche gaya aur app khuli rahi.
+
+   Ye pandrah `nav(...)` karte hain, yaani route badalte hain -- wahi kaam
+   phone ka back bhi karta hai.
+
+   ⚠ `ix-back` ("← Back to KPI") JAAN-BOOJH KAR CHHODA HAI.  Wo route
+   nahi badalta, sirf view (`setShowIndex(false)`) -- path `/maintenance-kpi`
+   hi rehta hai.  Jaancha: Annual Index me phone ka back seedha `/dashboard`
+   par phenk deta hai, KPI page chhod kar.  Wo button hata dete to us view se
+   KPI par lautne ka raasta hi nahi bachta.
+   ================================================================== */
+body.in-app .am-back,
+body.in-app .an-back,
+body.in-app .ba-back,
+body.in-app .bh-back,
+body.in-app .lb-back,
+body.in-app .hc-back,
+body.in-app .mm-back,
+body.in-app .oj-back,
+body.in-app .oc-back,
+body.in-app .pa-back,
+body.in-app .qf-back,
+body.in-app .se-back,
+body.in-app .su-back,
+body.in-app .sm-back,
+body.in-app .up-back { display: none !important; }
+
+/* Back chhupane ka SIDE-EFFECT, aur uska ilaaj.
+   Kai header me baayein sirf DO cheezein thin: Back button aur title.
+   Title ab `absolute` hai (behaav se bahar) aur Back `display: none` --
+   yaani us dabbe me behaav wala kuch bacha hi nahi, aur wo **zero chaudai**
+   ka ho gaya (naapa: 52-52).  Nateeja:
+     OJT           -- poora header girkar 29px ka (CSS height `0px`), aur
+                      absolute title 7px neeche nikal gaya
+     Study Material-- daayein ka bhasha-toggle + Add Topic upar chadh kar
+                      centered title se takra gaye (117px)
+   Isliye har topbar ko ek farsh de diya. */
+body.in-app .admin-topbar,
+body.in-app .ba-top,
+body.in-app .bd-topbar,
+body.in-app .bh-top,
+body.in-app .cp-top,
+body.in-app .ddf-topbar,
+body.in-app .dmc-topbar,
+body.in-app .hc-top,
+body.in-app .hd-top,
+body.in-app .lb-top,
+body.in-app .mk-topbar,
+body.in-app .mm-top,
+body.in-app .mp-topbar,
+body.in-app .mw-topbar,
+body.in-app .ng-topbar,
+body.in-app .oj-top,
+body.in-app .ov-top,
+body.in-app .pbs-top,
+body.in-app .pa-top,
+body.in-app .qf-top,
+body.in-app .se-top,
+body.in-app .sp-top,
+body.in-app .st-topbar,
+body.in-app .sv-topbar,
+body.in-app .up-top,
+body.in-app .su-top,
+body.in-app .sm-top,
+body.in-app .md-topbar { min-height: 52px !important; }
+
+/* Study Material: daayein ka saamaan apni row par -- Back hatne ke baad wo
+   pehli row me aa gaya tha aur title ke upar chadh raha tha. */
+body.in-app .sm-top > div:last-child {
+  flex: 1 0 100% !important;
+  justify-content: center !important;
+  margin-top: 34px !important;           /* absolute title ke neeche */
+}
+
+/* BD History: search wali patti ko apni line par rakho.
+   Back chhupane ke baad baayan dabba khaali (52-52) ho gaya aur search upar
+   chadh aayi -- centered title theek uske UPAR chhapne laga (title y8-35,
+   search y14-50).  Use poori chaudai dekar neeche bhej diya. */
+body.in-app .bh-top > div:last-child {
+  flex: 1 0 100% !important;
+  margin-top: 36px !important;            /* absolute title ke neeche */
+}
+
+/* OJT ka header: Back hatne ke baad dono bachche shoonya-oonchai ke ho gaye,
+   to 81px me se 28px sirf padding tha aur title ke neeche khaali safedi
+   dikhti thi.  Padding 14 -> 6, ab baaki panno jaisa 65px. */
+body.in-app .oj-top {
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+}
