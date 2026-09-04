@@ -1274,10 +1274,22 @@ body.in-app .st-sub,
 body.in-app .su-sub,
 body.in-app .up-sub { display: none !important; }
 
-/* Log Book: `Data Entry / List` ka toggle header me hi hai aur centered
-   title uske upar chadh jaata tha (37px naapa).  Toggle ko doosri row par. */
-body.in-app .lb-top { flex-wrap: wrap !important; row-gap: 6px !important; }
-body.in-app .lb-top > div:last-child { flex: 1 0 100% !important; justify-content: center !important; }
+/* Log Book ka `Data Entry / List` toggle.
+   Pehle ise doosri row par bhej diya tha, par title `absolute` hai (jagah
+   nahi ghera), isliye toggle upar khisak kar header se **16px neeche** nikal
+   gaya -- header ki lakeer par chadha hua dikhta tha (naapa: toggle y 39-73,
+   header 57 par khatam).
+
+   Ab wo chhota ho kar title ke daayein, header ke andar baith jaata hai:
+   x 255-352, y 11-45.  Title 243 par khatam hota hai, to takrav nahi. */
+body.in-app .lb-top { flex-wrap: nowrap !important; }
+body.in-app .lb-top > div:last-child { flex: 0 0 auto !important; margin-left: auto !important; }
+body.in-app .lb-toggle button { font-size: 10px !important; padding: 5px 7px !important; }
+
+/* Form ke upar ka lamba hint ("Serial No. is generated automatically on save
+   ...") -- phone par paanch line kha raha tha.  Uska koi class nahi, par wo
+   `.lb-form` ka pehla bachcha hai. */
+body.in-app .lb-form > div:first-child { display: none !important; }
 body.in-app .sm-top { padding-left: 52px !important; padding-right: 60px !important; }
 
 
