@@ -1142,3 +1142,41 @@ body.in-app .hd-sec-h > span:last-child {
   flex: 1 0 100% !important;
   order: 9 !important;                     /* hamesha aakhir me */
 }
+
+/* ==================================================================
+   HISTORICAL DATA ka filter bar -- teen-teen
+   ------------------------------------------------------------------
+   Pehle saat filter + Clear = **paanch line, 270px** (har select par
+   `min-width: 148px` aur font 16px).
+
+   Ab:  L1  Financial Year | Month | Date
+        L2  Zone | Line | Machine No.
+        L3  Machine Name (bachi jagah) | Clear
+   Patti **270 -> 163px**, kisi ka text nahi katta.
+
+   USER NE CHAAR MAANGE THE L1 PAR (FY, Month, Date, Zone) -- NAAP KAR
+   DEKHA, WO HO HI NAHI SAKTA:
+     * chaar barabar (87px har ek) -> text ko sirf 52px; `All Financial Years`
+       ko 10px par bhi 80px chahiye.  8px aur 7px par bhi katta raha.
+     * FY ko chaudi karke baaki teen ko patla kiya (120/72/72/72) -> ab
+       `All Months` (46>37) aur `All Zones` (41>37) kat gaye.
+     * Chaaron ki kam-se-kam maang jodne par ~369px banti hai jabki jagah
+       368px -- aur `input type=date` apna picker alag se maangta hai.
+   Isliye Zone ko L2 par rakha (zone -> line -> machine ka kram bhi wahi
+   rehta hai) aur Machine Name L3 par -- uska text sabse lamba hai
+   (`Auto from Machine No.`) aur wahan use 284px milte hain.
+
+   Font 10px: 11px par `Financial Year` kat jaata tha (88 > 81). */
+body.in-app .hd-filters { gap: 6px !important; }
+body.in-app .hd-fld select,
+body.in-app .hd-fld input {
+  font-size: 10px !important;
+  padding: 7px 4px !important;
+  min-width: 0 !important;                 /* 148px ka farsh yahi hata hai */
+  width: 100% !important;
+}
+/* pehle chhah -- teen ek line me (do line ban jaati hain) */
+body.in-app .hd-fld:nth-child(-n+6) { flex: 0 0 calc(33.333% - 4px) !important; min-width: 0 !important; }
+/* Machine Name bachi jagah le, Clear uske saath */
+body.in-app .hd-fld:nth-child(7) { flex: 1 1 auto !important; min-width: 0 !important; }
+body.in-app .hd-fld:nth-child(8) { flex: 0 0 auto !important; }
