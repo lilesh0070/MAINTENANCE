@@ -1329,3 +1329,37 @@ body.in-app .cp-tile {
      tha aur do ek line me nahi aate the.  Pehli koshish isi se fail hui. */
   box-sizing: border-box !important;
 }
+
+/* ==================================================================
+   SPARE -- filter teen-teen, aur card paas-paas
+   ------------------------------------------------------------------
+   Pehle aath filter + do button = **saat line, 406px** (har select par
+   `min-width: 150px` aur font 16px).
+
+   Ab:  L1  Financial Year | Month | Zone
+        L2  Line | Machine No. | Machine Name
+        L3  Source | Search (bachi jagah) | Clear
+        L4  Export CSV
+   Patti **406 -> 213px**, kisi ka text nahi katta (Search ko 179px milte
+   hain -- uska placeholder sabse lamba hai). */
+body.in-app .sp-filters { gap: 6px !important; }
+body.in-app .sp-fld select,
+body.in-app .sp-fld input {
+  font-size: 10px !important;
+  padding: 7px 4px !important;
+  min-width: 0 !important;                 /* 150px/210px ka farsh yahi hata hai */
+  width: 100% !important;
+}
+/* pehle saat -- teen ek line me (Source L3 par pahunch jaata hai) */
+body.in-app .sp-fld:nth-child(-n+7) { flex: 0 0 calc(33.333% - 4px) !important; min-width: 0 !important; }
+/* Search bachi jagah le -- Source ke saath ek line me */
+body.in-app .sp-fld:nth-child(8)   { flex: 1 1 auto !important; min-width: 0 !important; }
+body.in-app .sp-fld:nth-child(n+9) { flex: 0 0 auto !important; }
+body.in-app .sp-btn { font-size: 11px !important; padding: 6px 10px !important; }
+
+/* Card paas-paas.  Har card apne alag wrapper me hai, aur asli faasla
+   wrapper ki `margin-bottom: 14px` se aata tha -- uske `gap` se nahi.
+   (Pehle sirf gap kam kiya tha aur faasla 14 hi raha.)  Wrapper ka koi
+   class nahi, isliye `:has(> .sp-card)` se pakda. */
+body.in-app div:has(> .sp-card) { gap: 8px !important; margin-bottom: 8px !important; }
+body.in-app .sp-card { padding: 10px 12px !important; }
