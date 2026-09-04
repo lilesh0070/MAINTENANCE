@@ -1076,3 +1076,16 @@ body.in-app .hc-top {
   padding-bottom: 6px !important;
 }
 body.in-app .hc-sub { display: none !important; }
+
+/* KPI -> ANNUAL INDEX ("Global Maintenance Index") ka apna alag header hai.
+   `← Back to KPI` button `x=26` se shuru hota tha aur app ka logo
+   `x=8-44` par baitha hai -- button logo ke NEECHE chala jaata tha.
+   `.ix-bar` ki apni padding 0 hai; `.ix-root` sirf 26px deta hai,
+   jabki logo ko 52px chahiye.
+
+   Sirf patti ko khiska rahe hain, `.ix-root` ko nahi -- warna neeche ki
+   poori table bhi 52px andar chali jaati (content 360px hi bacha rehta hai).
+
+   Ye view kisi tab-sweep me nahi aata (button dabane par khulta hai), isliye
+   pehle chhoot gaya tha.  Ab jaanch me "logo/gear se takrav" bhi hai. */
+body.in-app .ix-bar { padding-left: 26px !important; }

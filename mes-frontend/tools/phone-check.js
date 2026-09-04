@@ -12,6 +12,7 @@
 //   usernameDikhRahaHai   app me username dikhna nahi chahiye
 //   lambaiSeBahar     pakki height wale dabbe jinka content neeche nikla
 //   textTakrav        TOPBAR ke andar do cheezein ek doosre ke UPAR
+//   logoGearTakrav    koi button/title app ke LOGO ya GEAR ke neeche
 //   chaudaiTheek      page ki chaudai screen se zyada to nahi
 //
 // CHAAR SEEKH JO IS FILE ME BAITHI HAIN (har ek ek galti se aayi):
@@ -32,6 +33,11 @@
 //      content ke upar tairte hain, aur band drawer ke item bhi "takrate"
 //      gine jaate hain.  Asli dikkat topbar me hi mili thi (Deviations par
 //      title aur "Signed in as DEMO" pill 69px overlap).
+//
+//   6. TAB kholna mat bhoolna.  Har page ka sirf pehla view dekhna kaafi
+//      nahi -- ANDON ke 7, PM ke 6, Historical ke 8, Document Update ke 5
+//      tab hain.  Aur kuch view button dabane par hi khulte hain (KPI ka
+//      Annual Index) -- wahin Back button logo ke neeche mila tha.
 //
 // AUR SABSE BADI SEEKH: ye jaanch paas ho jaana KAAFI NAHI hai.
 // Har baar SCREENSHOT dekhna -- `select` ka text chup-chaap katta hai,
@@ -131,6 +137,31 @@
         takrav.push(A.textContent.trim().slice(0, 16) + ' <> ' + B.textContent.trim().slice(0, 16) + ' (' + Math.round(x) + 'px)');
     }
   });
+  // APP KA LOGO (upar-baayein) aur GEAR (upar-daayein) sab page par tairte
+  // hain.  Topbar par 52/60 padding isi liye hai.  Jis view ka header us
+  // list me nahi hota, wahan button logo ke NEECHE chala jaata hai --
+  // KPI -> Annual Index par yahi hua (Back button x=26, logo x=8-44).
+  const chhotaSa = e => { const r = e.getBoundingClientRect(); return r.width < 260 && r.height < 90; };
+  const tairte = [...document.querySelectorAll('body *')].filter(e => {
+    const c = getComputedStyle(e), r = e.getBoundingClientRect();
+    return c.position === 'fixed' && r.top < 70 && r.width > 25 && r.width < 90 && r.height > 25 && r.height < 90;
+  });
+  const logoGearTakrav = [];
+  tairte.forEach(t => {
+    const tr = t.getBoundingClientRect();
+    document.querySelectorAll('button, a, input, select, [class*="back"], [class*="title"]').forEach(e => {
+      if (e === t || t.contains(e) || e.contains(t) || nav(e)) return;
+      if (getComputedStyle(e).position === 'fixed') return;   // doosra tairta hua nahi
+      if (!chhotaSa(e)) return;
+      const r = e.getBoundingClientRect();
+      if (r.width < 5 || r.height < 5) return;
+      const x = Math.min(r.right, tr.right) - Math.max(r.left, tr.left);
+      const y = Math.min(r.bottom, tr.bottom) - Math.max(r.top, tr.top);
+      if (x > 3 && y > 3)
+        logoGearTakrav.push((e.textContent || '').trim().slice(0, 18) + ' (' + Math.round(x) + 'px)');
+    });
+  });
+
   const uname = [...document.querySelectorAll("span,div")].filter(s => {
     if (s.children.length) return false;
     if (!/^(DEMO|Administrator)$/i.test(s.textContent.trim())) return false;
@@ -165,6 +196,7 @@
     screenSeBahar: screenSe.slice(0, 5),
     chart: chartCount, chartOverlap,
     textTakrav: [...new Set(takrav)].slice(0, 5),
+    logoGearTakrav: [...new Set(logoGearTakrav)].slice(0, 4),
     usernameDikhRahaHai: uname,
     lambaiSeBahar: lambaiSe.slice(0, 3),
     pageW: document.body.scrollWidth, viewW: W,
