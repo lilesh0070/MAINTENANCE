@@ -1,5 +1,5 @@
 {
-  "version": "1.0.3",
-  "notes": "Demo login (arzi) — bina server ke poora UI dekhne ke liye",
-  "released_at": "2026-09-02T20:06:33"
+  "version": "1.0.4",
+  "notes": "Mobile design: saare 34 page phone ke naap par; header ka title beech me; phone ka BACK button ab kaam karta hai",
+  "released_at": "2026-09-04T20:28:02"
 }
