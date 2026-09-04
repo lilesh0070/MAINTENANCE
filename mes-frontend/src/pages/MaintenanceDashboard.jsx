@@ -129,7 +129,14 @@ export default function MaintenanceDashboard() {
   //   • 4 stat cards → /api/andon/dashboard (stats)
   //   • zone slip list (KpiPanel) → AUTO slips, /api/maintenance-kpi/ se
   //   • View/Fill Slip → /api/breakdown-slips/auto/{id}
+  // Ek call abhi chal rahi ho to agla tick chhod do -- warna server na milne
+  // par (har call 3.5s) 1-second ke tick se request ka dher lag jaata hai.
+  // Server theek ho to koi farak nahi (endpoint ~15ms ka hai).
+  const busy = useRef(false);
+
   const reload = useCallback(async () => {
+    if (busy.current) return;
+    busy.current = true;
     try {
       // Sirf ANDON ka data — ye har 2 second aata hai (neeche dekho), isliye
       // ismein sirf wahi rakha hai jo sach me badalta rehta hai.
@@ -157,6 +164,7 @@ export default function MaintenanceDashboard() {
     } catch {
       showToast("Failed to load dashboard", "err");
     } finally {
+      busy.current = false;
       setLoading(false);
     }
   }, [token]);

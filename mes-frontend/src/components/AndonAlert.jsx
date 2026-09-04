@@ -44,7 +44,17 @@ export default function AndonAlert() {
   const seen   = useRef(new Set());           // maintenance call-ids already handled
   const booted = useRef(false);               // pehla poll = sirf seed, alert nahi
 
+  // Ek call abhi chal rahi ho to agla tick CHHOD do.  Server na mile to har
+  // call 3.5s (timeout) leti hai jabki tick 2.5s ka hai -- bina is pehredaar
+  // ke request ka dher lag jaata tha (naapa: 9 second me 13 call).  Browser
+  // ek host par ~6 connection rakhta hai, to naye page ka data bhi kataar me
+  // lag jaata tha aur page khulne me der lagti thi.
+  // Server theek ho to koi farak nahi -- call ~15ms me laut aati hai.
+  const busy = useRef(false);
+
   const poll = useCallback(() => {
+    if (busy.current) return;
+    busy.current = true;
     fetch("/api/andon/dashboard", { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
@@ -72,7 +82,8 @@ export default function AndonAlert() {
         });
         if (fresh.length) beep();
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => { busy.current = false; });
   }, [token]);
 
   useEffect(() => {
