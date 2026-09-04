@@ -1125,3 +1125,20 @@ body.in-app .hd-pick {
   font-size: 10px !important;
   padding: 6px 5px !important;
 }
+
+/* Historical ke card ka head: dot + title + ginti + hint, sab ek line me
+   (`nowrap`).  Hint 159px le leta tha aur title sirf **104px** me bach kar
+   **teen line** ka ho jaata tha.  Hint kam zaroori hai -- use apni line par
+   bhej diya: title ab **150px, ek line**, head **82 -> 57px**.
+
+   Ye rule aathon tab par ek jaisa lagta hai -- har tab ka apna `.hd-sec-h`
+   hai aur har ek ka aakhri bachcha wahi hint `<span>` hai (jaancha). */
+body.in-app .hd-sec-h {
+  flex-wrap: wrap !important;
+  row-gap: 4px !important;
+  padding: 10px 12px !important;
+}
+body.in-app .hd-sec-h > span:last-child {
+  flex: 1 0 100% !important;
+  order: 9 !important;                     /* hamesha aakhir me */
+}
