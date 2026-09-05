@@ -1514,3 +1514,19 @@ body.in-app .login-root {
 @media (max-height: 600px) {
   body.in-app .login-left { display: none !important; }
 }
+
+/* ANDON Live Board ke department card -- phone par ek ke UPAR EK aa rahe the.
+   `AndonSystem.jsx` un cards ko EK hi row me rakhta hai, jitne department
+   utne column:
+       gridTemplateColumns: repeat(totals.length, minmax(0,1fr))
+   Plant me chhah department hain, to 412px ki screen par har card sirf
+   **53px** ka bacha (naapa).  26px ka timer us me aata hi nahi tha -- "30:40"
+   card se bahar nikal kar agle card par chhap raha tha, naam "M..." "T..." me
+   kat gaye the, aur "total loss" + "history" ek doosre par chadh gaye the.
+
+   App me 2-2 kar diya: har card 179px, sab poora aa jaata hai.
+   (Grid inline style se aata hai, isliye `!important` chahiye.  JSX me sirf
+   `an-dept-cards` naam jodha hai -- ek bhi style wahan nahi badli.) */
+body.in-app .an-dept-cards {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}

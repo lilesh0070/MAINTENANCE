@@ -21,6 +21,44 @@ import { isNativeApp } from "../constants/apiBase";
 
 const MY_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0";
 
+/* ─── ARZI — UPDATE ABHI LAPTOP SE AATA HAI ───────────────────────────
+ * Plant server par abhi purani APK padi hai aur wahan file rakhne ka koi
+ * raasta nahi hai (SSH/SMB/FTP band).  Tab tak SIRF UPDATE laptop se le
+ * lete hain.
+ *
+ * DHYAN — ye `SERVERS` me nahi daala jaan-boojh kar.  `pickServer()` jo
+ * pehle jawab de use hi POORA API_BASE bana deta hai, yaani laptop jeet
+ * jaata to app ka SAARA data laptop se jaata aur laptop band hote hi app
+ * ruk jaati.  Yahan sirf ye do call laptop par jaati hain -- version
+ * dekhna aur APK utaarna.  Baaki har request plant server par hi jaati hai.
+ *
+ * Laptop na mile to chup-chaap plant server se poochh lete hain (neeche
+ * `""` wahi hai) -- kuch tootta nahi.
+ *
+ * ⚠ Plant server par do file rakhte hi ye poora block hata dena hai.
+ */
+const UPDATE_HOSTS = [
+  "http://192.168.100.30:8892",   // laptop — WiFi (phone yahin se aayega)
+  "http://192.168.30.68:8892",    // laptop — Ethernet (static)
+  "",                             // aakhir me: plant server (jaisa pehle tha)
+];
+
+/** Update ke liye jo pehle jawab de wahi.  `base` khali = plant server. */
+async function updateVersionLao() {
+  let aakhriGalti = null;
+  for (const base of UPDATE_HOSTS) {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => { try { ctl.abort(); } catch { /* ignore */ } }, 3000);
+      const r = await fetch(base + "/api/app/version", { cache: "no-store", signal: ctl.signal });
+      clearTimeout(t);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return await r.json();
+    } catch (e) { aakhriGalti = e; }
+  }
+  throw aakhriGalti || new Error("koi update server nahi mila");
+}
+
 /** "1.2.10" > "1.2.9" — hissa-hissa milao, seedhi string se nahi. */
 function isNewer(server, mine) {
   const a = String(server || "").split(".").map((x) => parseInt(x, 10) || 0);
@@ -44,9 +82,7 @@ export default function AppSettings() {
   const check = useCallback(async (chupchap) => {
     if (!chupchap) { setBusy(true); setErr(""); }
     try {
-      const r = await fetch("/api/app/version", { cache: "no-store" });
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      const d = await r.json();
+      const d = await updateVersionLao();
       setInfo(d);
       setNaya(!!d.apk_ready && isNewer(d.version, MY_VERSION));
     } catch (e) {

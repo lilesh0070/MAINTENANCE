@@ -1210,7 +1210,8 @@ export default function AndonSystem() {
 
               {/* ── Aaj ka per-department TOTAL LOSS — chote cards (7AM–6:30AM plant day).
                   band + chalu dono calls ka down-time; response yahan nahi. ── */}
-              <div style={{ display:"grid", gap:10, marginBottom:16,
+              <div className="an-dept-cards"
+                   style={{ display:"grid", gap:10, marginBottom:16,
                             gridTemplateColumns:`repeat(${Math.max(totals.length,1)}, minmax(0,1fr))` }}>
                 {totals.map((t) => (
                   <div key={t.department} onClick={() => openHistory(t.department)}
