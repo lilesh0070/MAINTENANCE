@@ -1,49 +1,72 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DisplayProvider } from "./context/DisplayContext";
 import Layout from "./components/Layout";
 import AndonAlert from "./components/AndonAlert";
-import { NewBreakdownSlip } from "./pages/breakdown/NewBreakdownSlip";
-import ProductionBreakdownSlip from "./pages/ProductionBreakdownSlip";
 
 // ─── Pages — MAINTENANCE-ONLY SLICE ─────────────────────────────────────────
 // This is a standalone copy of the Maintenance department UI extracted from
 // the full MES.  Only the maintenance pages (+ Login + the Maintenance admin
 // panel) are bundled here.  The shared SlideNav still lists every department,
 // but only maintenance routes exist — other links bounce back to /dashboard.
-import Login                 from "./pages/Login";
-import MaintenanceDashboard  from "./pages/MaintenanceDashboard";
-import MaintenanceHistorical from "./pages/MaintenanceHistorical";
-import MaintenanceCAPA       from "./pages/MaintenanceCAPA";
-import MaintenanceDeviations from "./pages/MaintenanceDeviations";
-import PMPanel               from "./pages/PMPanel";
-import MaintenanceKPI        from "./pages/MaintenanceKPI";
-import MaintenanceOverview   from "./pages/MaintenanceOverview";
-import AndonSystem           from "./pages/AndonSystem";
-import MaintenanceBreakdown  from "./pages/MaintenanceBreakdown";
-import BDHistory             from "./pages/BDHistory";
-import BreakdownLogBook      from "./pages/BreakdownLogBook";
-import BDAnalysis            from "./pages/BDAnalysis";
-import HistoryCard           from "./pages/HistoryCard";
-import QPRForm               from "./pages/QPRForm";
-import ParetoAnalysis        from "./pages/ParetoAnalysis";
-import TopBreakdowns         from "./pages/TopBreakdowns";
-import UpdatePlan, { UpdatePlanSection } from "./pages/UpdatePlan";
-import SkillTraining         from "./pages/SkillTraining";
-import OJT                   from "./pages/OJT";
-import SkillMatrix           from "./pages/SkillMatrix";
-import OrganisationChart     from "./pages/OrganisationChart";
-import SkillUpgradation      from "./pages/SkillUpgradation";
-import MachineManual         from "./pages/MachineManual";
-import StudyMaterial        from "./pages/StudyMaterial";
-import MachineDMC            from "./pages/MachineDMC";
-import DailyDMCFill          from "./pages/DailyDMCFill";
-import DMCSupervisorVerify   from "./pages/DMCSupervisorVerify";
-import DMCMaintenanceVerify  from "./pages/DMCMaintenanceVerify";
-import DMCNgPoint            from "./pages/DMCNgPoint";
-import Spare                 from "./pages/Spare";
-import MachineMaster         from "./pages/MachineMaster";
-import { MaintenanceAdminPanel, DocumentUpdatePanel } from "./pages/AdminPanel";
+//
+// ─── LAZY KYUN ──────────────────────────────────────────────────────────────
+// Pehle ye saare 40 page SEEDHE import hote the, to sab ek hi bundle me chale
+// jaate the -- **2414 KB**, jisme poori recharts bhi.  App khulte hi wo poora
+// bundle utarna aur parse karna padta tha, chahe user ko sirf login screen hi
+// dikhani ho.  Naapa (phone par, thanda start): bundle 1403ms, CSS 1232ms,
+// kul ~4.8 second.
+//
+// Ab har page apna alag chunk hai aur tabhi utarta hai jab wo page khulta hai.
+// `Login` jaan-boojh kar SEEDHA rakha hai -- wahi pehli screen hai, use
+// intezaar nahi karna chahiye.  Layout/AndonAlert bhi seedhe, wo har page par
+// chahiye hote hain.
+import Login from "./pages/Login";
+
+const ProductionBreakdownSlip = lazy(() => import("./pages/ProductionBreakdownSlip"));
+const MaintenanceDashboard  = lazy(() => import("./pages/MaintenanceDashboard"));
+const MaintenanceHistorical = lazy(() => import("./pages/MaintenanceHistorical"));
+const MaintenanceCAPA       = lazy(() => import("./pages/MaintenanceCAPA"));
+const MaintenanceDeviations = lazy(() => import("./pages/MaintenanceDeviations"));
+const PMPanel               = lazy(() => import("./pages/PMPanel"));
+const MaintenanceKPI        = lazy(() => import("./pages/MaintenanceKPI"));
+const MaintenanceOverview   = lazy(() => import("./pages/MaintenanceOverview"));
+const AndonSystem           = lazy(() => import("./pages/AndonSystem"));
+const MaintenanceBreakdown  = lazy(() => import("./pages/MaintenanceBreakdown"));
+const BDHistory             = lazy(() => import("./pages/BDHistory"));
+const BreakdownLogBook      = lazy(() => import("./pages/BreakdownLogBook"));
+const BDAnalysis            = lazy(() => import("./pages/BDAnalysis"));
+const HistoryCard           = lazy(() => import("./pages/HistoryCard"));
+const QPRForm               = lazy(() => import("./pages/QPRForm"));
+const ParetoAnalysis        = lazy(() => import("./pages/ParetoAnalysis"));
+const TopBreakdowns         = lazy(() => import("./pages/TopBreakdowns"));
+const UpdatePlan            = lazy(() => import("./pages/UpdatePlan"));
+const SkillTraining         = lazy(() => import("./pages/SkillTraining"));
+const OJT                   = lazy(() => import("./pages/OJT"));
+const SkillMatrix           = lazy(() => import("./pages/SkillMatrix"));
+const OrganisationChart     = lazy(() => import("./pages/OrganisationChart"));
+const SkillUpgradation      = lazy(() => import("./pages/SkillUpgradation"));
+const MachineManual         = lazy(() => import("./pages/MachineManual"));
+const StudyMaterial         = lazy(() => import("./pages/StudyMaterial"));
+const MachineDMC            = lazy(() => import("./pages/MachineDMC"));
+const DailyDMCFill          = lazy(() => import("./pages/DailyDMCFill"));
+const DMCSupervisorVerify   = lazy(() => import("./pages/DMCSupervisorVerify"));
+const DMCMaintenanceVerify  = lazy(() => import("./pages/DMCMaintenanceVerify"));
+const DMCNgPoint            = lazy(() => import("./pages/DMCNgPoint"));
+const Spare                 = lazy(() => import("./pages/Spare"));
+const MachineMaster         = lazy(() => import("./pages/MachineMaster"));
+
+// Ye NAMED export hain (default nahi), isliye `default` me lapetna padta hai --
+// `lazy()` sirf `{ default: Component }` samajhta hai.
+const NewBreakdownSlip = lazy(() =>
+  import("./pages/breakdown/NewBreakdownSlip").then((m) => ({ default: m.NewBreakdownSlip })));
+const UpdatePlanSection = lazy(() =>
+  import("./pages/UpdatePlan").then((m) => ({ default: m.UpdatePlanSection })));
+const MaintenanceAdminPanel = lazy(() =>
+  import("./pages/AdminPanel").then((m) => ({ default: m.MaintenanceAdminPanel })));
+const DocumentUpdatePanel = lazy(() =>
+  import("./pages/AdminPanel").then((m) => ({ default: m.DocumentUpdatePanel })));
 
 // ─── Protected Route ───────────────────────────────────────────────────────
 // Redirects to /login if not authenticated, or to /dashboard if the role
@@ -115,6 +138,18 @@ function AppRoutes() {
   return (
     <>
       <AndonAlert />
+      {/* Har page ab apna alag chunk hai (upar `lazy` wala note dekhein), aur
+          `Suspense` wahi hai jo chunk aane tak kuch dikhata hai.  Fallback
+          jaan-boojh kar Protected wale loading screen jaisa hi rakha hai --
+          page badalte waqt ek naya-sa parda na dikhe. */}
+      <Suspense fallback={
+        <div style={{ height: "100vh", display: "flex", alignItems: "center",
+                      justifyContent: "center", background: "#f8fafc" }}>
+          <div style={{ width: 32, height: 32, borderRadius: "50%",
+                        border: "3px solid #e2e8f0", borderTopColor: "#1e40af",
+                        animation: "spin 0.7s linear infinite" }} />
+        </div>
+      }>
       <Routes>
       {/* Public */}
       <Route path="/login" element={<Login />} />
@@ -299,6 +334,7 @@ function AppRoutes() {
       {/* Catch-all → root (other-department links from SlideNav land here). */}
       <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </>
   );
 }

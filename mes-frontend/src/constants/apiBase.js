@@ -158,6 +158,10 @@ async function setupBackButton() {
 let installed = false;
 let realFetch = null;
 
+// Pichhli baar jo server chala tha uska pata yahan yaad rehta hai.
+// (localStorage app me tikta hai -- `androidScheme: https` ke baad.)
+const PICKED_KEY = "mes_last_server";
+
 /** Dono raaston ko EK SAATH tatolo; jo pehle jawab de wahi le lo. */
 async function pickServer() {
   if (!NATIVE || !realFetch) return API_BASE;
@@ -170,13 +174,29 @@ async function pickServer() {
       .then(() => { clearTimeout(t); resolve(base); })
       .catch((e) => { clearTimeout(t); reject(e); });
   });
+  // Pichhli baar jo server mila tha, use PEHLE akela aazmao.  Plant me raasta
+  // roz wahi rehta hai, aur tab dono ko tatolne me lagne wale ~700ms har baar
+  // app khulne par bach jaate hain (naapa gaya).  Wo na mile to neeche wala
+  // poora race chalta hai, yaani network badle to bhi app khud sambhal leti hai.
+  let yaad = null;
+  try { yaad = localStorage.getItem(PICKED_KEY); } catch { /* ignore */ }
+  if (yaad && SERVERS.includes(yaad)) {
+    try {
+      API_BASE = await tryOne(yaad);
+      serverMila = true;
+      return API_BASE;
+    } catch { /* nahi mila -- neeche sabko aazmate hain */ }
+  }
+
   try {
     const winner = await Promise.any(SERVERS.map(tryOne));
     API_BASE = winner;
     serverMila = true;            // ab lambi hadd theek hai (bhaari report chal sake)
+    try { localStorage.setItem(PICKED_KEY, winner); } catch { /* ignore */ }
   } catch {
     API_BASE = SERVERS[0];        // koi nahi mila — pehla hi rakho, error saaf aayega
     serverMila = false;           // ab jaldi fail karo, 15s rukna bekaar hai
+    try { localStorage.removeItem(PICKED_KEY); } catch { /* ignore */ }
   }
   return API_BASE;
 }

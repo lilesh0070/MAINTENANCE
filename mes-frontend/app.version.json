@@ -1,5 +1,5 @@
 {
-  "version": "1.1.3",
-  "notes": "Naam sirf Maintenance; app band karne par logout nahi hoga; ANDON card 2-2; update laptop se",
-  "released_at": "2026-09-05T10:31:06"
+  "version": "1.1.4",
+  "notes": "App khulne me lagne wala waqt 4.8s se 1.4s -- har page ab alag chunk, aur pichhla server yaad rehta hai",
+  "released_at": "2026-09-05T11:07:37"
 }
