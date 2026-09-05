@@ -95,6 +95,26 @@ export default function AppSettings() {
 
   if (!NATIVE) return null;                       // WEBSITE PAR KUCH NAHI
 
+  /* ─── ARZI — SIRF TV PAR, JAWAB MILTE HI HATANA ─────────────────────
+   * TV par app phone jaisi khul rahi thi ya nahi, ye andaze se tay nahi ho
+   * sakta: `width=device-width` ke saath CSS viewport = asli pixel /
+   * devicePixelRatio, aur TV kya dpr batati hai ye TV hi jaanti hai.
+   * Isliye TV se seedha number mangwa rahe hain.
+   *
+   * PHONE PAR KABHI NAHI DIKHTA -- `in-app-tv` class sirf badi screen par
+   * lagti hai (`apiBase.js`). */
+  const tvHai = typeof document !== "undefined"
+    && document.documentElement.classList.contains("in-app-tv");
+  const tvNaap = tvHai ? (
+    <div style={{ position: "fixed", left: 8, bottom: 8, zIndex: 99998,
+                  background: "rgba(15,23,42,.86)", color: "#fff", padding: "6px 10px",
+                  borderRadius: 8, fontSize: 13, fontFamily: "monospace", lineHeight: 1.5 }}>
+      css {window.innerWidth}×{window.innerHeight} · dpr {window.devicePixelRatio}
+      {" · touch "}{navigator.maxTouchPoints}
+      {" · screen "}{window.screen.width}×{window.screen.height}
+    </div>
+  ) : null;
+
   const download = async () => {
     const url = info?.apk_url;
     if (!url) return;
@@ -113,6 +133,7 @@ export default function AppSettings() {
 
   return (
     <>
+      {tvNaap}
       {/* gear — upar daayen */}
       <button onClick={() => { setOpen(true); check(false); }}
               aria-label="Settings"

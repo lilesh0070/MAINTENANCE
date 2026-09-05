@@ -91,12 +91,22 @@ const NATIVE = isNativeApp();
 //   badi screen  (TV)      -> `in-app-tv`   = koi rule nahi, board waisa hi
 //                                             jaisa aaj browser me dikhta hai
 // 900px isliye ki phone khada ho (412) ya leta (839), dono neeche rehte
-// hain; TV (~1350) upar.  `in-app-tv` abhi khaali hai — aage TV ke liye kuch
-// karna pade to jagah taiyaar hai.
+// hain; TV upar.  `in-app-tv` abhi khaali hai — aage TV ke liye kuch karna
+// pade to jagah taiyaar hai.
+//
+// ⚠ SHAK KI HAALAT ME PHONE HI MAANO.  Do galtiyon me se ek bahut buri hai:
+//   TV ko phone samjha  -> board bhadda lagega, scroll karna padega (chalega)
+//   phone ko TV samjha  -> 412px par website ka layout = app hi bekaar
+// Isliye chaudai pata na chale (0 aaye) to bhi `in-app` hi lagta hai.
+//
+// Ek baar TOUCH se pehchaanne ki koshish ki thi (TV me touch nahi hota), par
+// wo ulti pad gayi: emulator ne ek baar `maxTouchPoints = 0` bata diya aur
+// PHONE ko TV samajh liya gaya.  Us raaste par tab tak nahi jaana jab tak
+// asli TV ke number saamne na hon.
 const CHHOTI_SCREEN = 900;
 if (typeof document !== "undefined" && NATIVE) {
-  const chhoti = (window.innerWidth || 0) < CHHOTI_SCREEN;
-  const nishaan = chhoti ? "in-app" : "in-app-tv";
+  const phoneHai = (window.innerWidth || 0) < CHHOTI_SCREEN;
+  const nishaan = phoneHai ? "in-app" : "in-app-tv";
   document.documentElement.classList.add(nishaan);
   if (document.body) document.body.classList.add(nishaan);
   else document.addEventListener("DOMContentLoaded", () => document.body.classList.add(nishaan));
