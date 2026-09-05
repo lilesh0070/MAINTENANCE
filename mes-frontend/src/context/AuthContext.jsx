@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { isNativeApp } from "../constants/apiBase";
 
 const AuthContext = createContext(null);
 
@@ -75,7 +76,21 @@ export const SUBPAGE_PARENT = {
 // token).  Old localStorage keys are cleared on first run for a clean
 // migration.
 const AUTH_KEYS = ["mes_token","mes_username","user_role","user_id","user_dept_slug"];
+
+// APP ME ALAG — aur sirf app me.
+// Upar wali policy BROWSER TABS ke liye hai: ek tab me login karke doosre tab
+// me URL se andar ghus jaana rokna tha.  APK me tab hote hi nahi — wo aadmi ke
+// apne phone par akela app hai.  Wahan sessionStorage ka matlab sirf itna tha
+// ki app band karte hi logout ho jaata tha, aur har baar dobara login karna
+// padta tha.  Isliye app me localStorage.
+//
+// WEBSITE PAR KUCH NAHI BADLA — wahan `NATIVE` false hai, sessionStorage hi
+// chalta hai aur purani localStorage keys pehle jaisi saaf hoti rehti hain.
+const NATIVE_AUTH = isNativeApp();
+const store = () => (NATIVE_AUTH ? localStorage : sessionStorage);
+
 (function migrateOldLocalStorage() {
+  if (NATIVE_AUTH) return;          // app me localStorage HI ghar hai, use mat mitao
   try {
     for (const k of AUTH_KEYS) {
       if (localStorage.getItem(k) !== null) localStorage.removeItem(k);
@@ -84,9 +99,9 @@ const AUTH_KEYS = ["mes_token","mes_username","user_role","user_id","user_dept_s
 })();
 
 const ss = {
-  get:    (k) => { try { return sessionStorage.getItem(k); } catch { return null; } },
-  set:    (k,v) => { try { sessionStorage.setItem(k, v); } catch {} },
-  remove: (k) => { try { sessionStorage.removeItem(k); } catch {} },
+  get:    (k) => { try { return store().getItem(k); } catch { return null; } },
+  set:    (k,v) => { try { store().setItem(k, v); } catch {} },
+  remove: (k) => { try { store().removeItem(k); } catch {} },
 };
 
 export function AuthProvider({ children }) {

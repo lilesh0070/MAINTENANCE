@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Maintenance MES</string>
-    <string name="title_activity_main">Maintenance MES</string>
+    <string name="app_name">Maintenance</string>
+    <string name="title_activity_main">Maintenance</string>
     <string name="package_name">com.toyotaboshoku.mes</string>
     <string name="custom_url_scheme">com.toyotaboshoku.mes</string>
 </resources>
