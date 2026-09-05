@@ -38,4 +38,10 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- ANDON call aane par phone thartharata hai (AndonAlert.jsx).  Ye
+         "normal" permission hai, install ke waqt hi mil jaati hai aur user se
+         kuch poochha nahi jaata.  Bina iske navigator.vibrate() chupchaap
+         kuch nahi karta, koi error bhi nahi deta. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 </manifest>

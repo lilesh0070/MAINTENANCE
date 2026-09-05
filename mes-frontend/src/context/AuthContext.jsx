@@ -1,33 +1,8 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { isNativeApp } from "../constants/apiBase";   // DEMO_LOGIN
 
 const AuthContext = createContext(null);
 
 const API = "";
-
-/* ─── DEMO LOGIN — ARZI INTEZAAM, HATANA HAI ───────────────────────────────
- * Sirf APK ke andar poora UI dekhne ke liye.  Jahan server na mile (ghar par)
- * wahan bhi saare page khul jaate hain, taaki design ka kaam company network
- * ke bina ho sake.
- *
- * ⚠ KAAM KHATAM HOTE HI YE HATANA HAI.  Poora saamaan dhoondhne ke liye:
- *     grep -rn "DEMO_LOGIN" mes-frontend/src
- *
- * Asli data is raaste se KABHI nahi dikh sakta -- token naqli hai, isliye asli
- * server har request par 401 dega.  Ye sirf khaali UI hai, aur sirf app me:
- * button `isNativeApp()` ke peeche hai, website par kabhi nahi dikhta.
- */
-const DEMO_KEY   = "mes_demo";
-const DEMO_TOKEN = "DEMO-NAQLI-TOKEN";
-const DEMO_USER  = {
-  id: 0, username: "DEMO", role: "admin",
-  departmentId: null, departmentName: "Maintenance", departmentSlug: "maintenance",
-  permissions: {},
-};
-function isDemo() {
-  if (!isNativeApp()) return false;     // website par ye raasta hai hi nahi
-  try { return sessionStorage.getItem(DEMO_KEY) === "1"; } catch { return false; }
-}
 
 // Sub-page → parent page mapping.  Har sub-page ki apni permission key hai, PAR
 // agar admin ne us sub-key ko explicitly set NAHI kiya, to wo parent page ki
@@ -145,7 +120,6 @@ export function AuthProvider({ children }) {
   };
 
   useEffect(() => {
-    if (isDemo()) { setUser(DEMO_USER); setLoading(false); return; }   // DEMO_LOGIN
     if (!token) { setLoading(false); return; }
     let cancelled = false;
     // Load /me with retry.  Only a 401 (token really invalid) logs out; a
@@ -178,7 +152,6 @@ export function AuthProvider({ children }) {
   // pata nahi chalta jab tak wo koi request na kare.  Isliye har 10s `/me` se
   // token validate karte hain — 401 aate hi yahin se session clear + login page.
   useEffect(() => {
-    if (isDemo()) return;                        // DEMO_LOGIN — naqli token par 401 aayega
     if (!token) return;
     const check = () => {
       fetch(`${API}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
@@ -227,24 +200,12 @@ export function AuthProvider({ children }) {
     return data;
   };
 
-  // DEMO_LOGIN — bina server ke andar jao.  Sirf UI dekhne ke liye.
-  const demoLogin = () => {
-    ss.set(DEMO_KEY, "1");
-    ss.set("mes_token", DEMO_TOKEN);
-    ss.set("mes_username", DEMO_USER.username);
-    ss.set("user_role", DEMO_USER.role);
-    setToken(DEMO_TOKEN);
-    setUser(DEMO_USER);
-    setLoading(false);
-  };
-
   const logout = () => {
     // best-effort AUTH_LOGOUT audit (JWT stateless — server-side session nahi).
     // Token clear karne se PEHLE bhejo taaki request me abhi wala token jaye.
-    if (token && !isDemo()) {                    // DEMO_LOGIN — naqli token mat bhejo
+    if (token) {
       fetch(`${API}/api/auth/logout`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
     }
-    ss.remove(DEMO_KEY);                          // DEMO_LOGIN
     setToken("");
     setUser(null);
     for (const k of AUTH_KEYS) ss.remove(k);
@@ -286,7 +247,6 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       token, user, loading, login, logout,
-      demoLogin, isDemo: isDemo(),                // DEMO_LOGIN
       authHdr, isAdmin,
       canAccess, canWrite, API,
       theme, themeKey,

@@ -12,6 +12,44 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { isNativeApp } from "../constants/apiBase";
+
+const NATIVE = isNativeApp();
+
+/* ─── App me tharthari (vibration) ────────────────────────────────────
+ * Phone jeb me ho to beep sunai nahi deta -- isliye APK me popup ke saath
+ * phone thartharata bhi hai.  Jab tak popup dikh raha hai tab tak, aur
+ * popup hatte hi (khud response aane par ya Dismiss dabane par) band.
+ *
+ * WEBSITE PAR ISKA KOI ASAR NAHI -- `NATIVE` wahan false hai, to neeche wala
+ * effect pehli line par hi laut jaata hai.  (TV board bhi website hi hai.)
+ *
+ * `navigator.vibrate` KYUN NAHI:
+ *   Chrome use tab tak rok deta hai jab tak user ne us page ko chhua na ho.
+ *   Emulator par khud dekha -- logcat me har call par:
+ *     "Blocked call to navigator.vibrate because user hasn't tapped on the
+ *      frame or any embedded frame yet"
+ *   Yahi haalat asli me sabse zaroori hai: phone jeb me pada hai, kisi ne
+ *   kuch chhua nahi, aur tabhi ANDON call aati hai.  Usi waqt wo chup rehta.
+ *
+ * Isliye Capacitor ka `Haptics` -- wo seedha Android ke Vibrator tak jaata
+ * hai, Chrome ki ye rok us par lagti hi nahi.  Uske paas pattern nahi hai,
+ * to pattern hum khud banate hain: har 2s par do chhote buzz.
+ */
+const BUZZ_MS   = 400;    // ek buzz kitna lamba
+const DUSRA_MS  = 600;    // pehle buzz se doosre tak
+const CHAKKAR_MS = 2000;  // poora chakkar: buzz, buzz, phir viraam
+
+let hapticsMod;           // ek hi baar load hota hai (false = mila hi nahi)
+async function buzz(ms) {
+  try {
+    if (hapticsMod === undefined) {
+      try { hapticsMod = await import("@capacitor/haptics"); }
+      catch { hapticsMod = false; }
+    }
+    if (hapticsMod) await hapticsMod.Haptics.vibrate({ duration: ms });
+  } catch { /* plugin na ho to app waise hi chalti rahe */ }
+}
 
 // short attention beep (two tones) via Web Audio — best-effort (browser
 // pehli user-interaction se pehle audio block kar sakta, visual alert phir bhi aata).
@@ -92,6 +130,30 @@ export default function AndonAlert() {
     const id = setInterval(poll, 2500);
     return () => clearInterval(id);
   }, [muted, poll]);
+
+  // Popup dikhte hi tharthari shuru, hatte hi band.  Cleanup dono haalat
+  // sambhaal leta hai -- Dismiss dabaya ho, response aa gaya ho, page badla
+  // ho ya app band ho rahi ho.  `zinda` isliye chahiye ki doosra buzz ek
+  // timeout par hai: bina iske Dismiss ke baad bhi wo ek baar chal jaata.
+  useEffect(() => {
+    if (!NATIVE) return;                       // website par kuch nahi
+    if (muted || !alerts.length) return;       // popup hai hi nahi
+
+    let zinda = true;
+    let doosra = null;
+    const chakkar = () => {
+      if (!zinda) return;
+      buzz(BUZZ_MS);
+      doosra = setTimeout(() => { if (zinda) buzz(BUZZ_MS); }, DUSRA_MS);
+    };
+    chakkar();
+    const id = setInterval(chakkar, CHAKKAR_MS);
+    return () => {
+      zinda = false;
+      clearInterval(id);
+      if (doosra) clearTimeout(doosra);
+    };
+  }, [muted, alerts.length]);
 
   if (muted || !alerts.length) return null;
   const dismiss = (id) => setAlerts((prev) => prev.filter((a) => a.id !== id));
