@@ -156,39 +156,9 @@ export default function AppSettings() {
               <span style={lbl}>App version</span>
               <b>v{MY_VERSION}</b>
             </div>
-            <div style={row}>
+            <div style={{ ...row, borderBottom: "none" }}>
               <span style={lbl}>On server</span>
               <b>{busy ? "checking…" : (info?.version ? "v" + info.version : "—")}</b>
-            </div>
-
-            {/* ─── ARZI — APP KHULNE KA NAAP, HATANA HAI ──────────────────
-                Emulator par naap bharosemand nahi tha (ek hi build par DOM
-                ready 1697ms bhi aaya aur 3370ms bhi -- shor sudhaar se bada).
-                Isliye asli phone se number chahiye: waqt file AANE me ja raha
-                hai ya kahin aur.  Jawab milte hi ye poora block hata dena. */}
-            <div style={{ ...row, borderBottom: "none", alignItems: "flex-start" }}>
-              <span style={lbl}>App khulne ka naap</span>
-              <b style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", lineHeight: 1.6 }}>
-                {(() => {
-                  try {
-                    const n = performance.getEntriesByType("navigation")[0] || {};
-                    const r = performance.getEntriesByType("resource");
-                    const m = r.find((x) => x.name.includes("/assets/index-") && x.name.endsWith(".js")) || {};
-                    const ms = (v) => Math.round(v || 0) + "ms";
-                    const jsAaya  = m.responseEnd || 0;
-                    const domTaiyaar = n.domContentLoadedEventEnd || 0;
-                    return (
-                      <>
-                        main JS aane me · <span style={{ color: "#b45309" }}>{ms(m.duration)}</span><br />
-                        HTML aane me · <span style={{ color: "#b45309" }}>{ms((n.responseEnd || 0) - (n.requestStart || 0))}</span><br />
-                        JS ke baad chalne me · <span style={{ color: "#b45309" }}>{ms(domTaiyaar - jsAaya)}</span><br />
-                        DOM taiyaar · <span style={{ color: "#0f172a" }}>{ms(domTaiyaar)}</span><br />
-                        kul file · <span style={{ color: "#0f172a" }}>{r.length}</span>
-                      </>
-                    );
-                  } catch { return "naap nahi mila"; }
-                })()}
-              </b>
             </div>
 
             {err && (
