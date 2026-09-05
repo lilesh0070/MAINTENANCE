@@ -38,8 +38,9 @@ const MY_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0
  * ⚠ Plant server par do file rakhte hi ye poora block hata dena hai.
  */
 const UPDATE_HOSTS = [
-  "http://192.168.100.30:8892",       // laptop — WiFi (phone yahin se aayega)
-  "http://192.168.30.68:8892",        // laptop — Ethernet (static)
+  "http://192.168.1.100:8892",        // laptop — abhi wali WiFi
+  "http://192.168.100.30:8892",       // laptop — plant WiFi
+  "http://192.168.30.68:8892",        // laptop — plant Ethernet (static)
   "http://pc-maint-019.local:8892",   // laptop — naam se (IP badal jaye to)
   "",                                 // aakhir me: plant server (jaisa pehle tha)
 ];

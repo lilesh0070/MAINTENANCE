@@ -1,5 +1,5 @@
 {
-  "version": "1.3.3",
-  "notes": "TV par sab ek screen me (layout ko poore 1350 milte hain); naap wali line hatai",
-  "released_at": "2026-09-05T18:03:26"
+  "version": "1.4.0",
+  "notes": "Demo login wapas (ghar par UI dekhne ke liye); splash ab page aane tak rukta hai; naya WiFi IP",
+  "released_at": "2026-09-05T18:34:16"
 }

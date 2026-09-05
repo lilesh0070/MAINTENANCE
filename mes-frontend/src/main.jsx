@@ -14,16 +14,41 @@ createRoot(document.getElementById("root")).render(
   </StrictMode>
 );
 
-// Splash hatao — par tabhi jab page SACH ME chhap chuka ho.  `render()` ke
-// turant baad hataate to ek pal ko khaali screen jhalakti (React ne DOM to
-// bana diya hota hai, browser ne paint nahi kiya hota).  Do frame rukne se wo
-// jhalak nahi aati.  Fade CSS me hai, isliye yahan sirf class lagani hai.
-// Website par ye kuch nahi karta — wahan splash hai hi nahi.
+/* Splash hatao — par tabhi jab ASLI PAGE aa jaye.
+ *
+ * Pehle `render()` ke do frame baad hata dete the.  Wo bahut jaldi tha:
+ * React ne DOM bana diya hota hai par app abhi bhi `loading` me hoti hai
+ * (`/api/auth/me` ka intezaar), aur us beech ek khaali/spinner wali screen
+ * dikhti thi.  User ne yahi kaha -- "splash bas ek pal ko aata hai".
+ *
+ * Ab intezaar karte hain ki page par SACH ME kuch chhap jaye: `#root` me
+ * kuch dikhne laayak aa jaye (login form ho ya dashboard).  Har frame par
+ * dekhte hain, aur mil jaane par fade karke hata dete hain.
+ *
+ * SURAKSHA: 12 second ki hadd.  Kuch bhi atak jaye (server, koi error) to
+ * bhi splash hamesha ke liye chipka na rah jaye -- warna app hi bekaar.
+ *
+ * Website par ye kuch nahi karta -- wahan splash hai hi nahi. */
 (function splashHatao() {
   const sp = document.getElementById("boot-splash");
   if (!sp) return;
-  requestAnimationFrame(() => requestAnimationFrame(() => {
+  const shuru = Date.now();
+  const HADD = 12000;
+
+  const hatao = () => {
     sp.classList.add("ja-raha");
-    setTimeout(() => sp.remove(), 500);      // CSS ka fade 450ms ka hai
-  }));
+    setTimeout(() => sp.remove(), 500);       // CSS ka fade 450ms ka hai
+  };
+
+  const dekho = () => {
+    if (Date.now() - shuru > HADD) { hatao(); return; }
+    const root = document.getElementById("root");
+    // "asli page" = root me kuch chhap chuka hai aur wo sirf spinner nahi
+    const taiyaar = root && root.firstElementChild
+      && root.getBoundingClientRect().height > 80
+      && (root.innerText || "").trim().length > 20;
+    if (taiyaar) { requestAnimationFrame(hatao); return; }   // ek frame aur, paint ho jaye
+    requestAnimationFrame(dekho);
+  };
+  requestAnimationFrame(dekho);
 })();
