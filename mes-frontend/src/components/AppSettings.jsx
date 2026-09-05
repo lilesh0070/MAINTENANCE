@@ -37,28 +37,35 @@ const MY_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0
  *
  * ⚠ Plant server par do file rakhte hi ye poora block hata dena hai.
  */
+// Laptop ka WiFi IP DHCP se milta hai aur badalta rehta hai, isliye jitne
+// pate ab tak dekhe hain sab yahan pade hain.  Kram maayne nahi rakhta --
+// neeche sab EK SAATH aazmaye jaate hain.
 const UPDATE_HOSTS = [
-  "http://192.168.1.100:8892",        // laptop — abhi wali WiFi
+  "http://10.101.19.14:8892",         // laptop — abhi wali WiFi
+  "http://192.168.1.100:8892",        // laptop — ghar wali WiFi
   "http://192.168.100.30:8892",       // laptop — plant WiFi
   "http://192.168.30.68:8892",        // laptop — plant Ethernet (static)
-  "http://pc-maint-019.local:8892",   // laptop — naam se (IP badal jaye to)
-  "",                                 // aakhir me: plant server (jaisa pehle tha)
+  "http://pc-maint-019.local:8892",   // laptop — naam se
+  "",                                 // plant server (jaisa pehle tha)
 ];
 
-/** Update ke liye jo pehle jawab de wahi.  `base` khali = plant server. */
+/** Jo PEHLE jawab de wahi le lo.  `base` khali = plant server.
+ *
+ *  Pehle ye ek-ek karke aazmata tha, aur har na-milne wale par 3 second
+ *  lagte the -- list badhne se update check dheema hota ja raha tha (chhah
+ *  pate = 15 second tak).  Ab sab ek saath jaate hain, to list chahe jitni
+ *  lambi ho, waqt utna hi lagta hai jitna sabse tez jawab dene wale ko.
+ *  (Yahi tareeqa `apiBase.js` ka `pickServer()` bhi use karta hai.) */
 async function updateVersionLao() {
-  let aakhriGalti = null;
-  for (const base of UPDATE_HOSTS) {
-    try {
-      const ctl = new AbortController();
-      const t = setTimeout(() => { try { ctl.abort(); } catch { /* ignore */ } }, 3000);
-      const r = await fetch(base + "/api/app/version", { cache: "no-store", signal: ctl.signal });
-      clearTimeout(t);
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return await r.json();
-    } catch (e) { aakhriGalti = e; }
-  }
-  throw aakhriGalti || new Error("koi update server nahi mila");
+  const ek = (base) => new Promise((mila, nahi) => {
+    const ctl = new AbortController();
+    const t = setTimeout(() => { try { ctl.abort(); } catch { /* ignore */ } nahi(new Error("timeout")); }, 3000);
+    fetch(base + "/api/app/version", { cache: "no-store", signal: ctl.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status))))
+      .then((j) => { clearTimeout(t); mila(j); })
+      .catch((e) => { clearTimeout(t); nahi(e); });
+  });
+  return await Promise.any(UPDATE_HOSTS.map(ek));
 }
 
 /** "1.2.10" > "1.2.9" — hissa-hissa milao, seedhi string se nahi. */
