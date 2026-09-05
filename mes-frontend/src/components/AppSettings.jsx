@@ -101,19 +101,26 @@ export default function AppSettings() {
    * devicePixelRatio, aur TV kya dpr batati hai ye TV hi jaanti hai.
    * Isliye TV se seedha number mangwa rahe hain.
    *
-   * PHONE PAR KABHI NAHI DIKHTA -- `in-app-tv` class sirf badi screen par
-   * lagti hai (`apiBase.js`). */
+   * ⚠ Pehle ye SIRF TV par dikhta tha (`in-app-tv` ke peeche) -- aur wahi
+   * galti thi: jab TV ko phone samjha ja raha tha, tab ye line dikhti hi
+   * nahi thi, yaani theek usi haalat me chhup jaati thi jab uski zarurat
+   * thi.  Ab app me HAMESHA dikhta hai (phone par bhi), taaki dono jagah ke
+   * number saamne aa jayein.  Jawab milte hi poora block hatana hai. */
   const tvHai = typeof document !== "undefined"
     && document.documentElement.classList.contains("in-app-tv");
-  const tvNaap = tvHai ? (
+  const tvNaap = (
     <div style={{ position: "fixed", left: 8, bottom: 8, zIndex: 99998,
-                  background: "rgba(15,23,42,.86)", color: "#fff", padding: "6px 10px",
-                  borderRadius: 8, fontSize: 13, fontFamily: "monospace", lineHeight: 1.5 }}>
-      css {window.innerWidth}×{window.innerHeight} · dpr {window.devicePixelRatio}
+                  background: tvHai ? "rgba(6,95,70,.9)" : "rgba(15,23,42,.86)",
+                  color: "#fff", padding: "6px 10px", borderRadius: 8,
+                  fontSize: 12, fontFamily: "monospace", lineHeight: 1.5,
+                  maxWidth: "94vw", wordBreak: "break-all" }}>
+      <b>{tvHai ? "TV" : "PHONE"}</b>
+      {" · css "}{window.innerWidth}×{window.innerHeight}
+      {" · dpr "}{window.devicePixelRatio}
       {" · touch "}{navigator.maxTouchPoints}
-      {" · screen "}{window.screen.width}×{window.screen.height}
+      {" · mobileUA "}{String(/Mobile/.test(navigator.userAgent || ""))}
     </div>
-  ) : null;
+  );
 
   const download = async () => {
     const url = info?.apk_url;

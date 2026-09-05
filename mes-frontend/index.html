@@ -147,17 +147,21 @@
              Yahan (React se PEHLE) isliye lagana padta hai -- viewport baad
              me badalne par layout theek se dobara nahi banta.
 
-             PEHCHAAN -- shak ki haalat me PHONE:
-               badi screen (>=900px)  -> pakka TV
-               ya TOUCH bilkul nahi   -> TV (remote se chalti hai)
-             Phone par touch hamesha hota hai, isliye wo kabhi is me nahi
-             aayega.  Aur agar dono me se kuch pata na chale to phone hi
-             maana jaata hai -- kyunki phone ko TV samajh lena app ko bekaar
-             kar deta hai, jabki TV ko phone samajhna sirf bhadda lagta hai. */
+             PEHCHAAN -- do nishaan:
+               1. UA me "Mobile" shabd     -> phone.  Android ke phone/tablet
+                  WebView ke UA me hamesha "Mobile Safari" hota hai; ANDROID TV
+                  ke UA me ye shabd HOTA HI NAHI.  Yahi sabse pakka nishaan hai.
+               2. badi screen (>=900px)    -> TV
+
+             TOUCH par bharosa CHHOD DIYA: pehle `maxTouchPoints === 0` se TV
+             pehchante the, par asli TV par wo kaam nahi kiya -- wo TV touch
+             report karti hai, aur uska viewport bhi 900 se kam nikla (dpr ki
+             wajah se).  Isliye TV ko phone samajh liya ja raha tha aur charts
+             1-1 aa rahe the. */
           if (app) {
-            var chaudai   = window.innerWidth || 0;
-            var touchNahi = navigator.maxTouchPoints === 0;
-            if (chaudai >= 900 || touchNahi) {
+            var chaudai  = window.innerWidth || 0;
+            var mobileUA = /Mobile/.test(navigator.userAgent || "");
+            if (chaudai >= 900 || !mobileUA) {
               var m = document.querySelector('meta[name="viewport"]');
               if (m) m.setAttribute("content", "width=device-width, initial-scale=0.75");
               document.documentElement.setAttribute("data-tv", "1");
