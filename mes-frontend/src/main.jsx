@@ -13,3 +13,17 @@ createRoot(document.getElementById("root")).render(
     <App />
   </StrictMode>
 );
+
+// Splash hatao — par tabhi jab page SACH ME chhap chuka ho.  `render()` ke
+// turant baad hataate to ek pal ko khaali screen jhalakti (React ne DOM to
+// bana diya hota hai, browser ne paint nahi kiya hota).  Do frame rukne se wo
+// jhalak nahi aati.  Fade CSS me hai, isliye yahan sirf class lagani hai.
+// Website par ye kuch nahi karta — wahan splash hai hi nahi.
+(function splashHatao() {
+  const sp = document.getElementById("boot-splash");
+  if (!sp) return;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    sp.classList.add("ja-raha");
+    setTimeout(() => sp.remove(), 500);      // CSS ka fade 450ms ka hai
+  }));
+})();

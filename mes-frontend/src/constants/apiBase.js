@@ -99,14 +99,13 @@ const NATIVE = isNativeApp();
 //   phone ko TV samjha  -> 412px par website ka layout = app hi bekaar
 // Isliye chaudai pata na chale (0 aaye) to bhi `in-app` hi lagta hai.
 //
-// Ek baar TOUCH se pehchaanne ki koshish ki thi (TV me touch nahi hota), par
-// wo ulti pad gayi: emulator ne ek baar `maxTouchPoints = 0` bata diya aur
-// PHONE ko TV samajh liya gaya.  Us raaste par tab tak nahi jaana jab tak
-// asli TV ke number saamne na hon.
-const CHHOTI_SCREEN = 900;
+// FAISLA YAHAN NAHI HOTA — `index.html` ki chhoti script me hota hai, aur
+// wahi `data-tv="1"` laga deti hai.  Wahan isliye ki TV ke liye viewport
+// (75% zoom) React se PEHLE set karna padta hai; do jagah alag-alag faisla
+// karte to kabhi na kabhi wo aapas me na milte.  Yahan bas wahi padh lete hain.
 if (typeof document !== "undefined" && NATIVE) {
-  const phoneHai = (window.innerWidth || 0) < CHHOTI_SCREEN;
-  const nishaan = phoneHai ? "in-app" : "in-app-tv";
+  const tvHai = document.documentElement.getAttribute("data-tv") === "1";
+  const nishaan = tvHai ? "in-app-tv" : "in-app";
   document.documentElement.classList.add(nishaan);
   if (document.body) document.body.classList.add(nishaan);
   else document.addEventListener("DOMContentLoaded", () => document.body.classList.add(nishaan));
