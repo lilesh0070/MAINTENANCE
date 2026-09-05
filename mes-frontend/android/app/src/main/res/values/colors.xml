@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      App khulte hi jo SAFED jhalak aati thi, wo Android ke window ke default
+      safed rang ki thi.  Ab window par ye rang lagte hain, isliye pehle frame
+      se hi rang wahi hota hai jo app ka hai.
+
+      Dono rang HTML wale splash se hi liye hain, taaki ek se doosre par jaate
+      waqt jhatka na dikhe:
+        splashBackground -> splash ke upar ka aasmani hissa
+        appBackground    -> splash ke neeche ka rang = login page ka background
+    -->
+    <color name="splashBackground">#0284c7</color>
+    <color name="appBackground">#060d1a</color>
+</resources>

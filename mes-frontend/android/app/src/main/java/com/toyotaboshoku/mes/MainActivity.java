@@ -31,9 +31,16 @@ public class MainActivity extends BridgeActivity {
     public void onStart() {
         super.onStart();
         try {
-            WebSettings s = getBridge().getWebView().getSettings();
+            android.webkit.WebView wv = getBridge().getWebView();
+            WebSettings s = wv.getSettings();
             s.setUseWideViewPort(true);
             s.setLoadWithOverviewMode(true);
+
+            // WebView ka apna background bhi SAFED hota hai, aur wahi aakhri
+            // jhalak deta hai -- window ka rang theek karne ke baad bhi.
+            // Isliye use bhi app ke rang par kar dete hain.
+            wv.setBackgroundColor(
+                    androidx.core.content.ContextCompat.getColor(this, R.color.appBackground));
         } catch (Exception e) {
             // Kuch bhi ho to app pehle jaisi chalti rahe.
         }

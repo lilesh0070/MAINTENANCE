@@ -226,7 +226,7 @@ export default function ProductionBreakdownSlip() {
            style={{ background: "#fff", borderBottom: "1px solid #e2e8f0", padding: "0 30px", height: 60,
                     display: "flex", alignItems: "center", gap: 16, position: "sticky", top: 0, zIndex: 40,
                     boxShadow: "0 1px 3px rgba(0,0,0,.06)" }}>
-        <button onClick={() => nav(-1)} style={{ border: "1px solid #cbd5e1", background: "#fff", color: "#334155",
+        <button className="pbs-back" onClick={() => nav(-1)} style={{ border: "1px solid #cbd5e1", background: "#fff", color: "#334155",
                 fontWeight: 700, fontSize: 13, borderRadius: 8, padding: "7px 14px", cursor: "pointer" }}>← Back</button>
         <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 24, fontWeight: 800, color: "#0f172a" }}>
           Production <span style={{ color: T.accent }}>Breakdown Slip</span>

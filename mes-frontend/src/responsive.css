@@ -1530,3 +1530,41 @@ body.in-app .login-root {
 body.in-app .an-dept-cards {
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
 }
+
+/* CAPA: "+ Blank QPR" header ke andar tha, jahan title bhi hai -- bhida-bhida
+   lagta tha.  Ab header ke NEECHE, daayein kone me.  Title `absolute` hai
+   (upar centering wala block), yaani header me ye button hi akela in-flow
+   hai -- isliye use bhi absolute karke neeche khiska diya, aur body ko utni
+   jagah de di. */
+body.in-app .cp-top   { overflow: visible !important; }
+body.in-app .cp-blank {
+  position: absolute !important;
+  top: calc(100% + 8px) !important;
+  right: 12px !important;
+  z-index: 5 !important;
+}
+body.in-app .cp-body  { padding-top: 48px !important; }
+
+/* CAPA ke filter: chhah cheezein ek hi line me thi, phone par sab sikud
+   jaati thi.  Ab TEEN-TEEN:
+     Financial Year · Month · Zone
+     Line · Machine No · Reset
+   `33.333% - 6px` isliye ki beech ka 8px gap do jagah aata hai. */
+/* GRID se, flex se nahi.  Flex ke saath Reset teesri line me chala jaata
+   tha (button ki apni chaudai basis se bada nikal jaati thi).  Grid me
+   "teen column" pakka hai -- 5 select + 1 button = theek 3 + 3. */
+body.in-app .cp-filters {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+  align-items: end !important;
+}
+body.in-app .cp-filters > * { min-width: 0 !important; }
+/* select apne khaane se chauda nikal jaata tha (Zone baaki do se bada dikh
+   raha tha) -- ab teeno barabar. */
+body.in-app .cp-filters .cp-sel { width: 100% !important; }
+
+/* Production Breakdown Slip ka "<- Back" -- is button par koi class thi hi
+   nahi, isliye baaki 15 Back ke saath ye chhoot gaya tha.  Ye bhi `nav(-1)`
+   hi karta hai, yaani phone ka apna back wahi kaam karta hai. */
+body.in-app .pbs-back { display: none !important; }

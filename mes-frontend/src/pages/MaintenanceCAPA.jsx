@@ -516,7 +516,7 @@ export default function MaintenanceCAPA() {
             <button style={btn} onClick={() => window.print()}>🖨 Print</button>
             {sid && <span style={{ fontSize:12, color:"#64748b", fontWeight:700 }}>QPR #{sid}</span>}
           </>) : (
-            <button style={btn} onClick={() => { setPrefill({}); setSid(null); setBdId(null); setSStatus("DRAFT"); setView("form"); }}>+ Blank QPR</button>
+            <button className="cp-blank" style={btn} onClick={() => { setPrefill({}); setSid(null); setBdId(null); setSStatus("DRAFT"); setView("form"); }}>+ Blank QPR</button>
           )}
           {msg && <span className="cp-msg">{msg}</span>}
           <span className="app-user" style={{ marginLeft:"auto", fontSize:12, color:"#64748b", fontWeight:600 }}>{user?.username ? <>Signed in as <b>{user.username}</b></> : ""}</span>
@@ -526,7 +526,7 @@ export default function MaintenanceCAPA() {
           <div className="cp-body">
             {/* ── Filters — default CHAALU MAHINA.  Zone/Line/Machine ke
                    option Machine Master se aate hain. ── */}
-            <div style={{ display:"flex", gap:12, flexWrap:"wrap", alignItems:"flex-end", marginBottom:16 }}>
+            <div className="cp-filters" style={{ display:"flex", gap:12, flexWrap:"wrap", alignItems:"flex-end", marginBottom:16 }}>
               <div className="cp-fld">
                 <label>Financial Year</label>
                 <select className="cp-sel" value={fFy}
