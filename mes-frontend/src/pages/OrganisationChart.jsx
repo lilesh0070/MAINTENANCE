@@ -13,13 +13,28 @@
  *     connectors, Man-Power boxes and coloured Stars.
  *   • Month filter — each save is stored under the current month.
  *
- * Seed: src/data/orgChartSeed.js   Backend: /api/org-chart
+ * Data: DB se (`maintenance_org_chart`)   Backend: /api/org-chart
  * Routing: /skill-training/org-chart
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { ORG_SEED, ORG_SEED_MONTH } from "../data/orgChartSeed";
+/* Pehle yahan `orgChartSeed.js` se ek poora org chart import hota tha --
+ * May 2026 ka, 51 log aur unki 48 photo base64 me andar bandhi hui, kul
+ * **677 KB** (usme se 666 KB sirf photo).  Wo bundle me hamesha jaata tha.
+ *
+ * Ab wo chart DB me hai (`maintenance_org_chart`, month 2026-05), yaani
+ * app aur website dono use wahin se lete hain -- jaisa hona chahiye.
+ *
+ * Fallback ab KHAALI chart hai.  Jaan-boojh kar: agar server na mile to
+ * mahino purana chart dikhana ulta khatarnak hai -- dekhne wale ko lagega
+ * ye aaj ka hai.  Khaali dikhega to pata chalega ki data aaya hi nahi.
+ *
+ * DHYAN: neeche SAARE hisse hone chahiye.  Component `data.edges.map(...)`
+ * bina jaanche chalata hai, to sirf `{title, nodes}` dene par page safed ho
+ * jaata hai -- "Cannot read properties of undefined (reading 'map')".
+ * (Jaanch me isi galti se pakda gaya.) */
+const KHALI_CHART = { title: "Organization Chart", nodes: [], edges: [], stars: [], manpower: [] };
 
 const api = {
   async get(path, token) {
@@ -111,10 +126,10 @@ export default function OrganisationChart() {
         const newest = (savedMonths || months).find((x) => x.month !== m);
         if (newest) {
           const prev = await api.get(`/api/org-chart/?month=${newest.month}`, token);
-          setData(prev.data ? clone(prev.data) : clone(ORG_SEED));
-        } else setData(clone(ORG_SEED));
+          setData(prev.data ? clone(prev.data) : clone(KHALI_CHART));
+        } else setData(clone(KHALI_CHART));
       }
-    } catch { setData(clone(ORG_SEED)); }
+    } catch { setData(clone(KHALI_CHART)); }
     setSel(null); setDirty(false); setEdit(false);
   }, [token, months]);
 
@@ -125,13 +140,13 @@ export default function OrganisationChart() {
       setMonths(list);
       const start = list.length ? list[0].month : curMonth();
       setMonth(start); loadChart(start, list);
-    }).catch(() => setData(clone(ORG_SEED)));
+    }).catch(() => setData(clone(KHALI_CHART)));
   }, [token]);  // eslint-disable-line
 
   const monthOpts = useMemo(() => {
     const map = new Map();
     months.forEach((m) => map.set(m.month, m.label));
-    [curMonth(), ORG_SEED_MONTH].forEach((m) => { if (!map.has(m)) map.set(m, monthLabel(m)); });
+    [curMonth()].forEach((m) => { if (!map.has(m)) map.set(m, monthLabel(m)); });
     return [...map.entries()].map(([m, l]) => ({ month: m, label: l })).sort((a, b) => b.month.localeCompare(a.month));
   }, [months]);
 
