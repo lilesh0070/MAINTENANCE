@@ -1463,3 +1463,54 @@ body.in-app .oj-top {
   padding-top: 6px !important;
   padding-bottom: 6px !important;
 }
+
+/* LOGIN page app me -- pehle bilkul khaali dikhta tha.
+   Login.jsx me do hisse hain: baayein branding (logo + company ka naam +
+   "Maintenance Management System" + teen pill) aur daayein form.  Par uski
+   apni media query 640px se chhoti screen par `.login-left` POORA chhupa
+   deti hai -- yaani phone par na logo aata tha na app ka naam, bas ek kaala
+   parda aur beech me form.
+
+   Ab wahi branding form ke UPAR ek patti bana kar rakh di hai (card ko column
+   kar ke).  Markup me kuch nahi badla -- jo pehle se tha wahi dikha rahe hain.
+   Sirf "Platform" wala chhota label chhupaya, wo phone par bekaar tha. */
+body.in-app .login-card { flex-direction: column !important; align-items: stretch !important; }
+body.in-app .login-left {
+  display: flex !important;
+  width: auto !important;
+  flex-shrink: 1 !important;
+  padding: 20px 22px 18px !important;
+}
+body.in-app .login-logo-row  { margin-bottom: 16px !important; }
+body.in-app .login-hero      { margin-top: 0 !important; }
+body.in-app .login-mes-label { display: none !important; }
+body.in-app .login-headline     { font-size: 30px !important; }
+body.in-app .login-sub-headline { font-size: 13px !important; }
+body.in-app .login-desc {
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+  margin-top: 10px !important;
+  margin-bottom: 14px !important;
+}
+body.in-app .login-stats     { gap: 8px !important; }
+body.in-app .login-stat-pill { padding: 7px 10px !important; }
+body.in-app .login-right     { padding: 22px 22px 26px !important; }
+
+/* `.login-root` par `height: 100vh` + `overflow: hidden` hai, yaani page
+   scroll ho hi nahi sakta.  Branding jodne se content lamba ho gaya, to agar
+   kabhi jagah kam padi to Sign In button pahunch se BAHAR ho jaata aur user
+   kuch kar hi nahi paata.  Isliye app me scroll khol diya. */
+body.in-app .login-root {
+  height: auto !important;
+  min-height: 100vh !important;
+  overflow-y: auto !important;
+}
+
+/* Keyboard khulte hi WebView chhoti ho jaati hai.  Tab branding hata do --
+   form ko poori jagah mil jaye.  600px isliye ki aam phone ki screen
+   (~839px) se neeche hai par keyboard khulne ke baad wali (~450-540px) se
+   upar.  Jaancha: hadd 900 karke dekha to sach me branding hat gayi aur
+   Sign In y675 se y528 par aa gaya. */
+@media (max-height: 600px) {
+  body.in-app .login-left { display: none !important; }
+}
