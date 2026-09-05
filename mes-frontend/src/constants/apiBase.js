@@ -36,17 +36,6 @@
 const SERVERS = [
   "http://192.168.30.15:8892",     // plant server — Ethernet
   "http://192.168.100.24:8892",    // plant server — WiFi
-
-  // ⚠ ARZI — LAPTOP KA PATA, HATANA HAI
-  // Jab tak APK plant server par nahi rakhi jaati, tab tak update laptop se hi
-  // aayega.  Isse app ka "Update" button laptop wale server ko bhi dhoondh
-  // leta hai.
-  //
-  // DHYAN: ye DHCP se mila pata hai aur BADALTA REHTA hai (ek hi din me teen
-  // baar badla: 10.101.19.14 -> 10.93.179.14 -> wapas).  Jab badle, ise yahan
-  // badal kar APK dobara banani padegi.  Plant me `Phase2/app/` ki do file
-  // server par rakhte hi ye line hata deni hai.
-  "http://10.101.19.14:8892",      // laptop (hotspot "iQOO Z9s 5G")
 ];
 
 const PROBE_MS = 2500;
