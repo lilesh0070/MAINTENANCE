@@ -1,5 +1,5 @@
 {
-  "version": "1.4.2",
-  "notes": "Naya WiFi IP; update ke saare pate ab ek saath aazmaye jaate hain",
-  "released_at": "2026-09-05T19:53:58"
+  "version": "1.4.3",
+  "notes": "CAPA ke filter ab ek dusre par nahi chadhte (mobile)",
+  "released_at": "2026-09-05T20:22:04"
 }

@@ -1562,7 +1562,38 @@ body.in-app .cp-filters {
 body.in-app .cp-filters > * { min-width: 0 !important; }
 /* select apne khaane se chauda nikal jaata tha (Zone baaki do se bada dikh
    raha tha) -- ab teeno barabar. */
-body.in-app .cp-filters .cp-sel { width: 100% !important; }
+/* ASLI MUJRIM: `.cp-sel` par `min-width: 140px` laga hai.  Khaana 116px ka
+   hai, to har select 24px BAHAR nikal kar agle par chadh jaata tha -- wahi
+   ek-doosre par chadhna dikh raha tha.  `width:100%` akela kaafi nahi tha,
+   min-width use haraa deta hai; isliye use bhi 0 karna padta hai. */
+body.in-app .cp-filters .cp-sel {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+/* Teen ek line me aane ke baad har dabba sirf 116px ka bacha, par select ka
+   font 16px aur padding 11px tha -- "2026-27 (current)" jaisa text usme
+   samaata hi nahi tha aur arrow ke neeche chala jaata tha.
+   Dhyan: dropdown ka arrow apne aap ~25px kha jaata hai, isliye text ke liye
+   asal me 116 - 12(padding) - 25(arrow) = ~79px hi bachte hain. */
+body.in-app .cp-filters .cp-sel {
+  font-size: 11.5px !important;
+  padding: 6px 6px !important;
+  height: auto !important;
+  text-overflow: ellipsis !important;
+}
+body.in-app .cp-filters label {
+  font-size: 9px !important;
+  letter-spacing: .02em !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+body.in-app .cp-filters .cp-fld { gap: 3px !important; }
+body.in-app .cp-filters > button {
+  font-size: 11.5px !important;
+  padding: 6px 4px !important;
+  white-space: nowrap !important;
+}
 
 /* Production Breakdown Slip ka "<- Back" -- is button par koi class thi hi
    nahi, isliye baaki 15 Back ke saath ye chhoot gaya tha.  Ye bhi `nav(-1)`
