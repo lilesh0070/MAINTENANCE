@@ -2,7 +2,55 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- ─── VIEWPORT: PHONE vs TV ────────────────────────────────────────
+         Viewport meta YAHIN, sabse pehle likhna padta hai.  Pehle neeche
+         (body me) jaakar badalte the -- galat nikla: browser baad me
+         `initial-scale` to maan leta hai par **`width` nahi maanta**, wo
+         page load ke waqt hi tay ho jaati hai.  Isi se TV par chaudai 1350
+         nahi ban rahi thi aur charts bahar ja rahe the.
+
+         TV  -> `width=1350`.  Yahi wo naap hai jispar `.md-portrait` /
+                `.mk-portrait` tune hue the (asli TV ki photo se, 1350x2400).
+                TV chahe kuch bhi dpr bataye, layout ko hamesha 1350 milega.
+         Phone -> pehle jaisa, `width=device-width`.
+
+         PEHCHAAN: UA me "Mobile" shabd.  Android ke phone/tablet WebView ke
+         UA me hamesha "Mobile Safari" hota hai; ANDROID TV ke UA me nahi.
+         (Touch par bharosa chhod diya -- unki TV touch report karti hai.) -->
+    <script>
+      (function () {
+        var tv = false;
+        try {
+          var app = location.protocol === "https:"
+                 && location.hostname === "localhost"
+                 && !location.port;                 // yaani APK
+          if (app) {
+            var mobileUA = /Mobile/.test(navigator.userAgent || "");
+            /* Chaudai ke liye `screen.width` -- `window.innerWidth` NAHI.
+               `useWideViewPort` chalu hone ke baad, meta lagne se PEHLE,
+               WebView default ~980px ki chaudai deta hai.  `innerWidth`
+               dekhte to PHONE bhi 900 paar kar ke TV ban jaata (aur ek baar
+               ban bhi gaya tha).  `screen.width` device ki apni screen hai,
+               viewport ke saath nahi badalti. */
+            var screenW = (window.screen && window.screen.width) || 0;
+            tv = !mobileUA || screenW >= 900;
+          }
+          window.__inApp = app;
+        } catch (e) { /* kuch bhi ho to phone hi maano */ }
+        /* TV -> layout ko poore 1350 chahiye (usi naap par `.md-portrait` /
+           `.mk-portrait` tune hue the).  Ye tabhi chalta hai jab WebView me
+           `useWideViewPort` chalu ho -- wo `MainActivity.java` me kar diya
+           hai; bina uske WebView `width=` maanta hi nahi. */
+        var m = document.createElement("meta");
+        m.name = "viewport";
+        m.content = tv ? "width=1350" : "width=device-width, initial-scale=1.0";
+        document.head.appendChild(m);
+        if (tv) document.documentElement.setAttribute("data-tv", "1");
+        window.__tv = tv;
+      })();
+    </script>
+
     <link rel="icon" type="image/jpeg" href="/logo.jpg" />
     <title>MES — Live Monitor</title>
 
@@ -130,43 +178,11 @@
          aur usme port nahi hota (`androidScheme: https`).  Website kisi asli
          host par chalti hai, ya dev me `http://localhost:9965` -- dono is
          shart se bahar hain, isliye wahan splash dikhta hi nahi. */
+      /* Splash sirf app me.  Faisla upar `<head>` wali script kar chuki hai
+         (`window.__inApp`), yahan bas use maan lete hain. */
       (function () {
         try {
-          var app = location.protocol === "https:"
-                 && location.hostname === "localhost"
-                 && !location.port;
-          if (app) document.getElementById("boot-splash").hidden = false;
-
-          /* ─── TV: 75% ZOOM ────────────────────────────────────────────
-             TV par site BROWSER me 75% zoom par khulti hai, aur usi se view
-             sahi baithta hai.  App me zoom hota hi nahi, isliye wahi view
-             nahi milta.  Yahan wahi 75% laga dete hain -- `initial-scale`
-             browser ke zoom jaisa hi kaam karta hai, aur iske liye TV ke
-             asli pixel jaanne ki zarurat nahi.
-
-             Yahan (React se PEHLE) isliye lagana padta hai -- viewport baad
-             me badalne par layout theek se dobara nahi banta.
-
-             PEHCHAAN -- do nishaan:
-               1. UA me "Mobile" shabd     -> phone.  Android ke phone/tablet
-                  WebView ke UA me hamesha "Mobile Safari" hota hai; ANDROID TV
-                  ke UA me ye shabd HOTA HI NAHI.  Yahi sabse pakka nishaan hai.
-               2. badi screen (>=900px)    -> TV
-
-             TOUCH par bharosa CHHOD DIYA: pehle `maxTouchPoints === 0` se TV
-             pehchante the, par asli TV par wo kaam nahi kiya -- wo TV touch
-             report karti hai, aur uska viewport bhi 900 se kam nikla (dpr ki
-             wajah se).  Isliye TV ko phone samajh liya ja raha tha aur charts
-             1-1 aa rahe the. */
-          if (app) {
-            var chaudai  = window.innerWidth || 0;
-            var mobileUA = /Mobile/.test(navigator.userAgent || "");
-            if (chaudai >= 900 || !mobileUA) {
-              var m = document.querySelector('meta[name="viewport"]');
-              if (m) m.setAttribute("content", "width=device-width, initial-scale=0.75");
-              document.documentElement.setAttribute("data-tv", "1");
-            }
-          }
+          if (window.__inApp) document.getElementById("boot-splash").hidden = false;
         } catch (e) { /* kuch bhi ho to splash mat dikhao */ }
       })();
     </script>
