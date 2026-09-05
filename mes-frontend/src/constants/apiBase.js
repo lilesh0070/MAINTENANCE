@@ -73,10 +73,33 @@ const NATIVE = isNativeApp();
 // badal sake aur WEBSITE BILKUL NA CHHUE.  (Jaise browser ka default
 // `body { margin: 8px }` — website par wo jaisa hai waisa rehta hai, app me
 // hata dete hain warna phone par kinare safed patti dikhti hai.)
+//
+// ─── PHONE vs TV ────────────────────────────────────────────────────────
+// TV bhi Android hai, yaani wahan bhi yahi APK chal sakti hai — aur tab
+// `NATIVE` sach hota hai.  Par `in-app` ke peeche jo ~210 rule hain wo SAB
+// 412px ke phone ke liye likhe gaye hain (padding 52px, title 19px, card
+// 2-2, chart 1-1, Back chhupa hua).  Bina jaanche laga dete to TV ko phone
+// samajh liya jaata aur poora board bigad jaata — bilkul wahi galti jo shuru
+// me thi jab phone ko TV samjha ja raha tha, bas ulti.
+//
+// TV ka layout ALAG hai aur pehle se ho chuka hai — `.md-portrait` /
+// `.mk-portrait` (MaintenanceDashboard.jsx + MaintenanceKPI.jsx), jo asli TV
+// ki photo dekh kar 1350x2400 par tune hue the.  Use kuch nahi chahiye.
+//
+// Isliye chaudai dekh kar tay karte hain:
+//   chhoti screen (phone)  -> `in-app`      = wahi 210 rule
+//   badi screen  (TV)      -> `in-app-tv`   = koi rule nahi, board waisa hi
+//                                             jaisa aaj browser me dikhta hai
+// 900px isliye ki phone khada ho (412) ya leta (839), dono neeche rehte
+// hain; TV (~1350) upar.  `in-app-tv` abhi khaali hai — aage TV ke liye kuch
+// karna pade to jagah taiyaar hai.
+const CHHOTI_SCREEN = 900;
 if (typeof document !== "undefined" && NATIVE) {
-  document.documentElement.classList.add("in-app");
-  if (document.body) document.body.classList.add("in-app");
-  else document.addEventListener("DOMContentLoaded", () => document.body.classList.add("in-app"));
+  const chhoti = (window.innerWidth || 0) < CHHOTI_SCREEN;
+  const nishaan = chhoti ? "in-app" : "in-app-tv";
+  document.documentElement.classList.add(nishaan);
+  if (document.body) document.body.classList.add(nishaan);
+  else document.addEventListener("DOMContentLoaded", () => document.body.classList.add(nishaan));
 }
 
 /** Website par "" (kuch nahi jodo), APK par abhi jo raasta chal raha hai. */
