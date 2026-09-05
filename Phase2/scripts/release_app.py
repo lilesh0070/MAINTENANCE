@@ -29,6 +29,7 @@ import os
 import shutil
 import subprocess
 import sys
+import zipfile
 from datetime import datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -128,6 +129,31 @@ def main():
     if not os.path.isfile(APK_SRC):
         print("\n  APK mili hi nahi: %s" % APK_SRC)
         sys.exit(1)
+
+    # ── APK sach me NAYA version bata rahi hai? ────────────────────────────
+    # App ka version `__APP_VERSION__` se aata hai, jo vite BUILD KE WAQT
+    # bundle me pakka deta hai.  Agar version file to nayi ho par build
+    # purani, to APK khud ko purana samajhti rahegi -- server naya batayega
+    # aur app par "Update" HAMESHA dikhta rahega, install karne ke baad bhi.
+    #
+    # Ye galti DO BAAR ho chuki hai (v1.0.6/1.0.7, aur phir v1.1.7 me
+    # `--skip-build` se).  Isliye ab chup-chaap aage nahi badhte -- APK ke
+    # andar se padh kar milate hain.
+    try:
+        with zipfile.ZipFile(APK_SRC) as z:
+            js = [n for n in z.namelist()
+                  if n.startswith("assets/public/assets/index-") and n.endswith(".js")]
+            andar = z.read(js[0]).decode("utf-8", "ignore") if js else ""
+        if ('"%s"' % new) not in andar and ("'%s'" % new) not in andar and ("`%s`" % new) not in andar:
+            print("\n  RUKA: APK ke andar version %s hai hi nahi." % new)
+            print("     Yaani bundle purana hai.  `--skip-build` ke bina dobara chalao,")
+            print("     warna app par 'Update' hamesha dikhta rahega.")
+            sys.exit(1)
+        print("     jaancha  : APK ke andar version %s hai" % new)
+    except SystemExit:
+        raise
+    except Exception as e:
+        print("     (version jaanch nahi ho payi: %s)" % e)
 
     os.makedirs(APP_DIR, exist_ok=True)
     shutil.copy2(APK_SRC, os.path.join(APP_DIR, "maintenance.apk"))
