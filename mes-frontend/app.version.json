@@ -1,5 +1,5 @@
 {
-  "version": "1.0.5",
-  "notes": "Page khulna tez (poll ka dher ruka); andar ka Back button hataya -- ab phone ka apna back chalta hai",
-  "released_at": "2026-09-04T22:18:00"
+  "version": "1.0.6",
+  "notes": "DEMO login hata; ANDON call aane par popup ke saath phone bhi thartharata hai (popup hatte hi band)",
+  "released_at": "2026-09-05T06:20:00"
 }
