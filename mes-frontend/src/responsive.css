@@ -1662,11 +1662,133 @@ body.in-app-tab table {
   -webkit-overflow-scrolling: touch;
 }
 
-/* ANDON ka topbar -- gear username ke upar chadh raha tha.
-   Naapa: `.an-user` 1221-1254, gear 1226-1266 -- 28px ka takrav, aur
-   "DEMO" gear ke neeche dab jaata tha.  Phone par yahi dikkat thi, wahan
-   naam hi hata diya (412px me jagah hi nahi thi).  Tablet par jagah hai,
-   isliye naam rehne dete hain aur topbar me gear ke liye jagah chhod dete
-   hain -- gear 40px ka hai aur right: 14 par baithta hai, yaani daayein
-   54px ghere hue hai. */
-body.in-app-tab .an-top { padding-right: 64px !important; }
+/* Gear (⚙) ke neeche jo topbar-saamaan dab raha tha.
+   Gear 40px ka hai aur `right: 14` par baithta hai, yaani daayein ka 54px
+   wo ghere hue hai.  Website par gear hota hi nahi, isliye ye topbar apne
+   daayein kinare tak saamaan rakh dete hain.
+
+   Unnattis route par patta-patta (leaf) naap kar dekha -- sirf TEEN jagah
+   takrav mila:
+     .an-top  -- `.an-user` "DEMO"  (1221-1254)
+     .sm-top  -- `.app-user` "DEMO" (1221-1252)
+     .su-top  -- `.su-save` "💾 Save" (1168-1254)  <- ye sabse zaroori,
+                 kyunki wo dabane wala button hai, sirf naam nahi
+
+   Phone par yahi dikkat thi, wahan naam hi hata diya gaya tha (412px me
+   jagah hi nahi thi).  Tablet par jagah hai, isliye saamaan rehne dete hain
+   aur topbar me gear ke liye jagah chhod dete hain.
+
+   (Jaancha: `.su-save` ka takrav Back chhupane se NAHI hua -- Back dikhate
+   hue bhi wahi tha.  Wo pehle se tha.) */
+body.in-app-tab .an-top,
+body.in-app-tab .sm-top,
+body.in-app-tab .su-top { padding-right: 64px !important; }
+
+/* ── Tablet par bhi in-app "← Back" chhupa diye ────────────────────────
+ * Wahi wajah jo phone par thi: Android ka apna back (`setupBackButton()`
+ * in `apiBase.js`) tablet par bilkul waise hi chalta hai, isliye ye button
+ * dohra pad jaata hai.
+ *
+ * ⚠ `ix-back` ("← Back to KPI") YAHAN BHI NAHI hai -- wo route nahi
+ * badalta, sirf view badalta hai (`setShowIndex(false)`), path
+ * `/maintenance-kpi` hi rehta hai.  Use hata dete to Annual Index se KPI
+ * par lautne ka raasta hi na bachta (phone ka back seedha `/dashboard`
+ * phenk deta hai).
+ */
+body.in-app-tab .am-back,
+body.in-app-tab .an-back,
+body.in-app-tab .lb-back,
+body.in-app-tab .oj-back,
+body.in-app-tab .oc-back,
+body.in-app-tab .pbs-back,
+body.in-app-tab .qf-back,
+body.in-app-tab .se-back,
+body.in-app-tab .su-back,
+body.in-app-tab .sm-back,
+body.in-app-tab .up-back { display: none !important; }
+
+/* ⚠ YE PAANCH ALAG HAIN -- INKI CLASS SAJHA HAI.
+ * Naap kar pakda: in paanch page par wahi `-back` class DO button par lagi
+ * hai -- header ka "← Back" AUR filter row ka "✕ Clear":
+ *
+ *     .mm-back -> ["← Back", "✕ Clear"]
+ *     .hc-back -> ["← Back", "✕ Clear"]
+ *     .ba-back -> ["← Back", "✕ Clear"]
+ *     .bh-back -> ["← Back", "✕ Clear"]
+ *     .pa-back -> ["← Back", "✕ Clear"]
+ *
+ * Seedha `.mm-back` likhte to "Clear" bhi gayab ho jaata (aur ek baar ho bhi
+ * gaya tha -- Machine Manual par naapa: `✕ Clear` display:none).  Dono ka
+ * thikana alag hai, isliye topbar tak simit kar dete hain:
+ *     Back  -> `.xx-top` ke andar
+ *     Clear -> `.xx-filters` ke andar
+ *
+ * ⚠ PHONE PAR YE ABHI THEEK NAHI HAI -- upar wale `body.in-app` block me
+ * yahi paanch class BINA topbar ke likhi hain, yaani phone par ye paanch
+ * "✕ Clear" button chhupe hue hain.  User ko bata diya hai; unke kehne par
+ * hi chhedenge (abhi mobile ko haath nahi lagana tha).
+ */
+body.in-app-tab .mm-top .mm-back,
+body.in-app-tab .hc-top .hc-back,
+body.in-app-tab .ba-top .ba-back,
+body.in-app-tab .bh-top .bh-back,
+body.in-app-tab .pa-top .pa-back { display: none !important; }
+
+/* Overview ka Back -- iski apni koi `-back` class hai hi nahi, isliye ye
+   phone wali list me bhi chhoot gaya tha aur PHONE PAR ABHI BHI DIKHTA HAI.
+   Wo `nav("/dashboard")` karta hai, yaani Android ka back wahi kaam karta hai.
+
+   ⚠ `button` lagana ZAROORI hai: `.ov-fy` financial-year wale `<select>` par
+   BHI lagi hai (MaintenanceOverview.jsx:233 button, :243 select).  Sirf
+   `.ov-fy` likhte to dropdown bhi gayab ho jaata. */
+body.in-app-tab button.ov-fy { display: none !important; }
+
+/* ── Log Book: tablet par ek hi screen me, scroll ke bina ──────────────
+ * Naapa (leti tablet, 1280x744): page 882px ka tha, yaani 138px bahar.
+ * Andar ka hisaab:
+ *     .lb-top     57
+ *     card-head   42
+ *     .lb-form   639   (helper 32 + grid 133 + textarea-section 223
+ *                       + spare 111 + attended 97 + padding 44)
+ *     .lb-actions 75
+ *
+ * Sabse badi jagah DO TEXTAREA kha rahe the -- "Problem Observed" aur
+ * "Action Taken", dono par `.full` (grid-column: 1 / -1) hai, isliye poori
+ * chaudai lekar UPAR-NEECHE baithte the: 203px.
+ *
+ * Tablet 1158px chaudi hai -- itni jagah me dono BAGAL-BAGAL aa jaate hain.
+ * Grid 6 khaane ka hai, to teen-teen khaane de dete hain (har ek ~570px,
+ * jo likhne ke liye phone se kahin zyada hai).  Isse ~100px bachte hain.
+ *
+ * Baaki ~40px section ke gap aur form ke padding se.  Font ya input ki
+ * oonchai KAM NAHI KI -- wo padhne/dabane me dikkat deti.
+ *
+ * `.lb-field.full` sirf inhi do par hai (ginker dekha: 2), isliye aur kahin
+ * asar nahi.
+ */
+body.in-app-tab .lb-form .lb-field.full { grid-column: span 3 !important; }
+body.in-app-tab .lb-form .lb-section    { margin-top: 12px !important; }
+body.in-app-tab .lb-form {
+  padding-top: 14px !important;
+  padding-bottom: 14px !important;
+}
+
+/* Textarea bagal-bagal karne se 88px bache (882 -> 794), par 50px aur
+   chahiye the.  Wo padding/gap se nikale hain -- FONT aur INPUT KI OONCHAI
+   HAATH NAHI LAGAYI, warna padhne aur ungli se dabane me dikkat hoti. */
+body.in-app-tab .lb-card-head { padding-top: 8px !important; padding-bottom: 8px !important; }
+body.in-app-tab .lb-actions   { padding-top: 10px !important; padding-bottom: 10px !important; }
+body.in-app-tab .lb-form > div:first-child { margin-bottom: 6px !important; }   /* upar wali hidayat */
+body.in-app-tab .lb-form .lb-section { margin-top: 8px !important; }
+body.in-app-tab .lb-form { padding-top: 10px !important; padding-bottom: 10px !important; }
+body.in-app-tab .lb-form .lb-grid { row-gap: 12px !important; }
+
+/* ASLI SABAB (padding kaatne se ye theek hota hi nahi tha):
+       .lb-root -> min-height: 744px (=100vh)
+                   padding-bottom: 50px
+                   box-sizing: content-box
+       => kul 794px HAMESHA, content chahe jitna chhota ho.
+   Yaani 50px ka scroll content se aa hi nahi raha tha, is dabbe ki apni
+   setting se aa raha tha.  `border-box` karte hi min-height ke ANDAR hi
+   padding gin liya jaata hai aur kul theek 100vh reh jaata hai. */
+body.in-app-tab .lb-root { box-sizing: border-box !important; }
