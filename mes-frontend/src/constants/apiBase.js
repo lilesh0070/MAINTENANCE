@@ -74,39 +74,45 @@ const NATIVE = isNativeApp();
 // `body { margin: 8px }` — website par wo jaisa hai waisa rehta hai, app me
 // hata dete hain warna phone par kinare safed patti dikhti hai.)
 //
-// ─── PHONE vs TV ────────────────────────────────────────────────────────
-// TV bhi Android hai, yaani wahan bhi yahi APK chal sakti hai — aur tab
-// `NATIVE` sach hota hai.  Par `in-app` ke peeche jo ~210 rule hain wo SAB
-// 412px ke phone ke liye likhe gaye hain (padding 52px, title 19px, card
-// 2-2, chart 1-1, Back chhupa hua).  Bina jaanche laga dete to TV ko phone
-// samajh liya jaata aur poora board bigad jaata — bilkul wahi galti jo shuru
-// me thi jab phone ko TV samjha ja raha tha, bas ulti.
+// ─── PHONE vs TABLET vs TV ──────────────────────────────────────────────
+// TV aur tablet bhi Android hain, yaani wahan bhi yahi APK chal sakti hai —
+// aur tab `NATIVE` sach hota hai.  Par `in-app` ke peeche jo ~220 rule hain
+// wo SAB 412px ke phone ke liye likhe gaye hain (padding 52px, title 19px,
+// card 2-2, chart 1-1, Back chhupa hua).  Bina jaanche laga dete to TV ko
+// phone samajh liya jaata aur poora board bigad jaata — bilkul wahi galti jo
+// shuru me thi jab phone ko TV samjha ja raha tha, bas ulti.
 //
 // TV ka layout ALAG hai aur pehle se ho chuka hai — `.md-portrait` /
 // `.mk-portrait` (MaintenanceDashboard.jsx + MaintenanceKPI.jsx), jo asli TV
 // ki photo dekh kar 1350x2400 par tune hue the.  Use kuch nahi chahiye.
 //
-// Isliye chaudai dekh kar tay karte hain:
-//   chhoti screen (phone)  -> `in-app`      = wahi 210 rule
-//   badi screen  (TV)      -> `in-app-tv`   = koi rule nahi, board waisa hi
-//                                             jaisa aaj browser me dikhta hai
-// 900px isliye ki phone khada ho (412) ya leta (839), dono neeche rehte
-// hain; TV upar.  `in-app-tv` abhi khaali hai — aage TV ke liye kuch karna
-// pade to jagah taiyaar hai.
+// Isliye teen nishaan hain:
+//   phone  -> `in-app`      = wahi ~220 rule
+//   tablet -> `in-app-tab`  = phone wale rule NAHI lagte (chaudai kaafi hai,
+//                             website ka apna layout theek baithta hai),
+//                             sirf app ki apni thodi si sudhaar
+//   TV     -> `in-app-tv`   = koi rule nahi, board waisa hi jaisa aaj
+//                             browser me dikhta hai
 //
 // ⚠ SHAK KI HAALAT ME PHONE HI MAANO.  Do galtiyon me se ek bahut buri hai:
 //   TV ko phone samjha  -> board bhadda lagega, scroll karna padega (chalega)
 //   phone ko TV samjha  -> 412px par website ka layout = app hi bekaar
-// Isliye chaudai pata na chale (0 aaye) to bhi `in-app` hi lagta hai.
+// Isliye kism pata na chale to bhi `in-app` hi lagta hai.
 //
-// FAISLA YAHAN NAHI HOTA — `index.html` ki chhoti script me hota hai, aur
-// wahi `data-tv="1"` laga deti hai.  Wahan isliye ki TV ke liye viewport
-// (75% zoom) React se PEHLE set karna padta hai; do jagah alag-alag faisla
-// karte to kabhi na kabhi wo aapas me na milte.  Yahan bas wahi padh lete hain.
+// FAISLA YAHAN NAHI HOTA — `index.html` ki chhoti script me hota hai (jo
+// khud `MainActivity.java` se poochhti hai), aur wahi `data-dev` laga deti
+// hai.  Wahan isliye ki TV ke liye viewport React se PEHLE set karna padta
+// hai; do jagah alag-alag faisla karte to kabhi na kabhi wo aapas me na
+// milte.  Yahan bas wahi padh lete hain.
+//
+// `data-tv` bhi abhi tak lagta hai — purane bartaav ke liye — aur `data-dev`
+// na mile to usi se kaam chal jaata hai.
 if (typeof document !== "undefined" && NATIVE) {
-  const tvHai = document.documentElement.getAttribute("data-tv") === "1";
-  const nishaan = tvHai ? "in-app-tv" : "in-app";
-  document.documentElement.classList.add(nishaan);
+  const de = document.documentElement;
+  const kism = de.getAttribute("data-dev")
+            || (de.getAttribute("data-tv") === "1" ? "tv" : "phone");
+  const nishaan = kism === "tv" ? "in-app-tv" : kism === "tab" ? "in-app-tab" : "in-app";
+  de.classList.add(nishaan);
   if (document.body) document.body.classList.add(nishaan);
   else document.addEventListener("DOMContentLoaded", () => document.body.classList.add(nishaan));
 }

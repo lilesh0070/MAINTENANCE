@@ -3,41 +3,65 @@
   <head>
     <meta charset="UTF-8" />
 
-    <!-- ─── VIEWPORT: PHONE vs TV ────────────────────────────────────────
+    <!-- ─── VIEWPORT: PHONE vs TABLET vs TV ──────────────────────────────
          Viewport meta YAHIN, sabse pehle likhna padta hai.  Pehle neeche
          (body me) jaakar badalte the -- galat nikla: browser baad me
          `initial-scale` to maan leta hai par **`width` nahi maanta**, wo
          page load ke waqt hi tay ho jaati hai.  Isi se TV par chaudai 1350
          nahi ban rahi thi aur charts bahar ja rahe the.
 
-         TV  -> `width=1350`.  Yahi wo naap hai jispar `.md-portrait` /
-                `.mk-portrait` tune hue the (asli TV ki photo se, 1350x2400).
-                TV chahe kuch bhi dpr bataye, layout ko hamesha 1350 milega.
-         Phone -> pehle jaisa, `width=device-width`.
+         TV     -> `width=1350`.  Yahi wo naap hai jispar `.md-portrait` /
+                   `.mk-portrait` tune hue the (asli TV ki photo se, 1350x2400).
+         Tablet -> `width=device-width` (apni asli chaudai, ~800dp)
+         Phone  -> `width=device-width` (pehle jaisa)
 
-         PEHCHAAN: UA me "Mobile" shabd.  Android ke phone/tablet WebView ke
-         UA me hamesha "Mobile Safari" hota hai; ANDROID TV ke UA me nahi.
-         (Touch par bharosa chhod diya -- unki TV touch report karti hai.) -->
+         PEHCHAAN AB JAVA SE AATI HAI -- `MainActivity.java` UA ke aakhir me
+         ` TBDev/...` jod deta hai.  Wahan Android se seedha poochha jaata
+         hai (UI_MODE_TYPE_TELEVISION / FEATURE_LEANBACK, aur
+         smallestScreenWidthDp), jo theek-theek jaanta hai.
+
+         PEHLE UA ke "Mobile" shabd se faisla hota tha.  TV ke liye chalta
+         tha par TABLET par GALAT tha -- Android TABLET ke WebView ke UA me
+         bhi "Mobile" hota hi nahi.  Emulator par naapa (10 inch, 1280x800):
+             mobileUA: false -> tv: true -> tablet ko TV wala layout
+         Yaani 800dp ki screen par 1350 ka layout, sab chhota-chhota.
+
+         PURANA NIYAM HATAYA NAHI HAI -- neeche `else` me jyon ka tyon pada
+         hai, aur DO haalat me chalta hai:
+           1. UA me `TBDev/` mile hi na (purani APK / Java me gadbad)
+           2. Java `TBDev/auto` bheje -- yaani wo khud pakka na kar paaya ho
+              (niche wala regex `auto` se match nahi karta, isliye `else`
+              me chala jaata hai)
+         Java "phone" kabhi bhejta hi nahi.  Iska matlab: jahan shak hai
+         wahan faisla PEHLE JAISA hi hota hai, aur plant wali TV ka bartaav
+         nahi badalta. -->
     <script>
       (function () {
-        var tv = false;
+        var kism = "phone";
         try {
           var app = location.protocol === "https:"
                  && location.hostname === "localhost"
                  && !location.port;                 // yaani APK
           if (app) {
-            var mobileUA = /Mobile/.test(navigator.userAgent || "");
-            /* Chaudai ke liye `screen.width` -- `window.innerWidth` NAHI.
-               `useWideViewPort` chalu hone ke baad, meta lagne se PEHLE,
-               WebView default ~980px ki chaudai deta hai.  `innerWidth`
-               dekhte to PHONE bhi 900 paar kar ke TV ban jaata (aur ek baar
-               ban bhi gaya tha).  `screen.width` device ki apni screen hai,
-               viewport ke saath nahi badalti. */
-            var screenW = (window.screen && window.screen.width) || 0;
-            tv = !mobileUA || screenW >= 900;
+            var ua = navigator.userAgent || "";
+            var se = /TBDev\/(tv|tab|phone)/.exec(ua);
+            if (se) {
+              kism = se[1];                          // Java ne bata diya
+            } else {
+              /* Chaudai ke liye `screen.width` -- `window.innerWidth` NAHI.
+                 `useWideViewPort` chalu hone ke baad, meta lagne se PEHLE,
+                 WebView default ~980px ki chaudai deta hai.  `innerWidth`
+                 dekhte to PHONE bhi 900 paar kar ke TV ban jaata (aur ek baar
+                 ban bhi gaya tha).  `screen.width` device ki apni screen hai,
+                 viewport ke saath nahi badalti. */
+              var mobileUA = /Mobile/.test(ua);
+              var screenW = (window.screen && window.screen.width) || 0;
+              kism = (!mobileUA || screenW >= 900) ? "tv" : "phone";
+            }
           }
           window.__inApp = app;
         } catch (e) { /* kuch bhi ho to phone hi maano */ }
+        var tv = kism === "tv";
         /* TV -> layout ko poore 1350 chahiye (usi naap par `.md-portrait` /
            `.mk-portrait` tune hue the).  Ye tabhi chalta hai jab WebView me
            `useWideViewPort` chalu ho -- wo `MainActivity.java` me kar diya
@@ -47,7 +71,9 @@
         m.content = tv ? "width=1350" : "width=device-width, initial-scale=1.0";
         document.head.appendChild(m);
         if (tv) document.documentElement.setAttribute("data-tv", "1");
+        document.documentElement.setAttribute("data-dev", kism);
         window.__tv = tv;
+        window.__dev = kism;
       })();
     </script>
 

@@ -1599,3 +1599,74 @@ body.in-app .cp-filters > button {
    nahi, isliye baaki 15 Back ke saath ye chhoot gaya tha.  Ye bhi `nav(-1)`
    hi karta hai, yaani phone ka apna back wahi kaam karta hai. */
 body.in-app .pbs-back { display: none !important; }
+
+
+/* ==================================================================
+   TABLET  (`in-app-tab`)  --  Android tablet ke liye
+   ------------------------------------------------------------------
+   PEHLE KYA HO RAHA THA: tablet ko app TV samajh rahi thi.  Faisla UA
+   me "Mobile" shabd se hota tha, aur Android TABLET ke WebView ke UA me
+   bhi wo hota hi nahi.  Emulator par naapa (10 inch, 1280x800 dp):
+
+       mobileUA: false  ->  __tv: true  ->  class "in-app-tv"
+       innerWidth: 1350   (800dp ki screen par!)
+
+   Yaani sab kuch chhota-chhota.  Ab kism `MainActivity.java` se aati hai
+   (UI_MODE_TYPE_TELEVISION + smallestScreenWidthDp), jo pakki hai.
+
+   YAHAN PHONE WALE ~220 RULE JAAN-BOOJH KAR NAHI LAGTE.  Wo saare 412px
+   ke liye tune hue hain (card 2-2, chart 1-1, font 11-12px).  Tablet ki
+   chaudai 800-1280dp hai -- wahan website ka apna layout theek baithta
+   hai.  Naap kar dekha, dono taraf (khadi 800, leti 1280) atharah page
+   par ek bhi jagah layout bahar nahi jaata.
+
+   Isliye yahan sirf wo teen-chaar baatein hain jo "app jaisa" lagne ke
+   liye chahiye -- wahi jo phone ke liye upar `in-app` me likhi hain.
+   ================================================================== */
+
+/* body ka 8px margin browser ka apna default hai -- app me kinare par
+   safed patti bankar dikhta hai.  (Naapa: viewport 800, body 784.) */
+html.in-app-tab, body.in-app-tab {
+  margin: 0;
+  padding: 0;
+  overflow-x: clip;
+}
+
+/* Status bar / notch ke neeche content na chhupe. */
+body.in-app-tab {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Input par tap karte hi WebView ZOOM kar deta hai agar font 16px se
+   chhota ho -- phir poora layout tedha dikhta hai.  Phone par yahi kiya
+   hua hai; tablet par bhi wahi dikkat hai. */
+body.in-app-tab input,
+body.in-app-tab select,
+body.in-app-tab textarea {
+  font-size: max(16px, 1em);
+}
+
+/* Ungli se dabane layak.  Naapa tha: select 37px, sabse chhota button
+   33px -- mouse ke liye theek hai, ungli ke liye chhota.  40px par le
+   aate hain (phone par ye 32px hai kyunki wahan jagah hi kam hai). */
+body.in-app-tab select,
+body.in-app-tab input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+body.in-app-tab button,
+body.in-app-tab [role="button"] {
+  min-height: 40px;
+}
+
+/* Chaudi table apne andar khiskti hai -- usko chikna kar dete hain. */
+body.in-app-tab table {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ANDON ka topbar -- gear username ke upar chadh raha tha.
+   Naapa: `.an-user` 1221-1254, gear 1226-1266 -- 28px ka takrav, aur
+   "DEMO" gear ke neeche dab jaata tha.  Phone par yahi dikkat thi, wahan
+   naam hi hata diya (412px me jagah hi nahi thi).  Tablet par jagah hai,
+   isliye naam rehne dete hain aur topbar me gear ke liye jagah chhod dete
+   hain -- gear 40px ka hai aur right: 14 par baithta hai, yaani daayein
+   54px ghere hue hai. */
+body.in-app-tab .an-top { padding-right: 64px !important; }
