@@ -1,5 +1,5 @@
 {
-  "version": "1.4.16",
-  "notes": "TV ab sahi pehchani jaati hai -- KPI aur Dashboard dono ek screen me; notch wali kaali patti bhi gayi",
-  "released_at": "2026-09-07T16:27:34"
+  "version": "1.4.17",
+  "notes": "KPI me Category filter (A / B / All); app me se Fullscreen aur 9:16-16:9 button hataye",
+  "released_at": "2026-09-07T16:52:36"
 }

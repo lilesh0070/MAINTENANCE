@@ -301,6 +301,8 @@ export default function MaintenanceKPI() {
   const [zoneName, setZoneName]   = useState("");
   const [lineName, setLineName]   = useState("");
   const [machineNo, setMachineNo] = useState("");
+  // Breakdown category — "" = All, warna "A" / "B"
+  const [category, setCategory]   = useState("");
   // Saved KPI targets (maintenance_kpi_target) for the current FY + scope.
   const [targets, setTargets]     = useState({});   // {kpi_key: target_value}
   const timer = useRef(null);
@@ -525,7 +527,7 @@ export default function MaintenanceKPI() {
         setTargets(map);
       })
       .catch(() => setTargets({}));
-  }, [token, fy, zoneName, lineName, machineNo]);
+  }, [token, fy, zoneName, lineName, machineNo, category]);
 
   // Chart metric key → target kpi_key (LTTR chart is in hours; its saved
   // target key is 'lttr_minutes' but the value is entered in the same unit
@@ -584,6 +586,7 @@ export default function MaintenanceKPI() {
       if (zoneName)  qp.set("zone_name", zoneName);
       if (lineName)  qp.set("line_name", lineName);
       if (machineNo) qp.set("machine_no", machineNo);
+      if (category)  qp.set("category", category);
       const qs = qp.toString();
       const [d, t] = await Promise.all([
         api.get(`/api/maintenance-kpi/summary?${qs}`, token),
@@ -598,7 +601,7 @@ export default function MaintenanceKPI() {
     } finally {
       setLoading(false);
     }
-  }, [token, fy, zoneName, lineName, machineNo]);
+  }, [token, fy, zoneName, lineName, machineNo, category]);
 
   // Fetch on FY change + poll live.
   useEffect(() => {
@@ -766,16 +769,26 @@ export default function MaintenanceKPI() {
                 <option value="">All Machine No.</option>
                 {machineOpts.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
+              {/* Breakdown category — register me sirf A aur B hain */}
+              <select className="mk-fy-select mk-filter" value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      title="Breakdown category">
+                <option value="">All Category</option>
+                <option value="A">Category A</option>
+                <option value="B">Category B</option>
+              </select>
             </div>
             <div className="mk-live">
-              <div style={{ display: "inline-flex", gap: 4, marginRight: 6 }}>
+              {/* 9:16 / 16:9 -- APP me chhupe hue hain (`mk-tvbtn`, responsive.css).
+                  Website par jyon ke tyon. */}
+              <div className="mk-tvbtn" style={{ display: "inline-flex", gap: 4, marginRight: 6 }}>
                 <button onClick={() => setAspect("9:16")} title="Portrait 9:16"
                         style={{ ...custBtn, marginRight: 0, ...(portrait ? { background: "#1e40af", color: "#fff", border: "1px solid #1e40af" } : {}) }}>9:16</button>
                 <button onClick={() => setAspect("16:9")} title="Wide 16:9"
                         style={{ ...custBtn, marginRight: 0, ...(!portrait ? { background: "#1e40af", color: "#fff", border: "1px solid #1e40af" } : {}) }}>16:9</button>
               </div>
               <button onClick={() => setShowIndex(true)} style={custBtn} title="Annual Maintenance Index (Book1 format)">📋 Annual Index</button>
-              <button onClick={goFullscreen} style={custBtn} title="Fullscreen (TV)">⛶ Fullscreen</button>
+              <button onClick={goFullscreen} className="mk-tvbtn" style={custBtn} title="Fullscreen (TV)">⛶ Fullscreen</button>
               {isAdmin && (
                 <button onClick={() => setShowCust((v) => !v)} style={custBtn}>⚙ Customize</button>
               )}

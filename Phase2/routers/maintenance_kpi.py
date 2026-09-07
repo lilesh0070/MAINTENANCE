@@ -376,6 +376,7 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
                zone_name:  Optional[str] = Query(None),
                line_name:  Optional[str] = Query(None),
                machine_no: Optional[str] = Query(None),
+               category:   Optional[str] = Query(None, description="breakdown category: A / B"),
                user=Depends(get_current_user)):
     """Six headline maintenance KPIs for a financial year (Apr → Mar):
     MTTR, MTBF, LTTR, breakdowns > 1 hour, total breakdown frequency,
@@ -421,6 +422,10 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
         where += " AND line = %s";  params.append(line_name)
     if machine_no:
         where += " AND machine_no = %s"; params.append(machine_no)
+    if category:
+        # TRIM zaroori hai -- register me ek row 'B  ' (peeche space ke saath)
+        # padi hai, aur bina TRIM ke wo row filter se chhoot jaati.
+        where += " AND TRIM(category) = %s"; params.append(category.strip())
 
     st = "mc_down_time_minutes"
     with get_conn() as conn:
@@ -533,6 +538,7 @@ def fy_trend(fy:         Optional[str] = Query(None, description="e.g. 2025-26")
              zone_name:  Optional[str] = Query(None),
              line_name:  Optional[str] = Query(None),
              machine_no: Optional[str] = Query(None),
+             category:   Optional[str] = Query(None, description="breakdown category: A / B"),
              user=Depends(get_current_user)):
     """Month-by-month series (Apr → Mar, 12 buckets) for the same six
     KPIs as /summary.  Source: maintenance_breakdown_data (the breakdown register),
@@ -551,6 +557,10 @@ def fy_trend(fy:         Optional[str] = Query(None, description="e.g. 2025-26")
         where += " AND line = %s";  params.append(line_name)
     if machine_no:
         where += " AND machine_no = %s"; params.append(machine_no)
+    if category:
+        # TRIM zaroori hai -- register me ek row 'B  ' (peeche space ke saath)
+        # padi hai, aur bina TRIM ke wo row filter se chhoot jaati.
+        where += " AND TRIM(category) = %s"; params.append(category.strip())
 
     st = "mc_down_time_minutes"
     with get_conn() as conn:

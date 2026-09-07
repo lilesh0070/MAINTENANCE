@@ -1792,3 +1792,17 @@ body.in-app-tab .lb-form .lb-grid { row-gap: 12px !important; }
    setting se aa raha tha.  `border-box` karte hi min-height ke ANDAR hi
    padding gin liya jaata hai aur kul theek 100vh reh jaata hai. */
 body.in-app-tab .lb-root { box-sizing: border-box !important; }
+
+/* ── KPI: TV wale teen button APP me nahi ────────────────────────────
+ * `⛶ Fullscreen`, `9:16`, `16:9` -- ye teeno TV/browser ke liye hain.
+ * App to khud hi poori screen par chalti hai (`ScreenMode` ne status bar
+ * bhi hata diya hai), aur aspect ka toggle wahan bemaani hai -- device ka
+ * naap toh badalta nahi.  User ne kaha "app me se ye hata do".
+ *
+ * TEENO app-nishaan par -- phone, tablet AUR TV -- kyunki TV bhi app hi
+ * chalati hai.  WEBSITE PAR JYON KE TYON: wahan ye `body.in-app*` lagta
+ * hi nahi, isliye ek bhi rule nahi pahunchta.
+ */
+body.in-app     .mk-tvbtn,
+body.in-app-tab .mk-tvbtn,
+body.in-app-tv  .mk-tvbtn { display: none !important; }
