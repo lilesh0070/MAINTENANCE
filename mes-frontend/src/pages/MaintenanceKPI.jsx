@@ -19,7 +19,7 @@
  * Routing: /maintenance-kpi — gated to maintenance department users
  * (and admin) via canAccess('maintenance-kpi').
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { onlyProdZones } from "../constants/zones";
 import {
@@ -328,7 +328,9 @@ export default function MaintenanceKPI() {
   // Track viewport height so portrait charts can grow to fill the tall screen.
   const [winH, setWinH] = useState(() => (typeof window !== "undefined" ? window.innerHeight : 900));
   useEffect(() => {
-    const on = () => setWinH(window.innerHeight);
+    // naap badla to `trim` bhi shoonya -- warna screen BADI hone par bhi
+    // charts purane chhote naap par hi atke rehte
+    const on = () => { setWinH(window.innerHeight); setTrim(0); };
     window.addEventListener("resize", on);
     return () => window.removeEventListener("resize", on);
   }, []);
@@ -338,12 +340,80 @@ export default function MaintenanceKPI() {
     document.body.style.margin = "0";
     return () => { document.body.style.margin = prev; };
   }, []);
+
+  /* Charts SHURU KAHAN se ho rahe hain -- yahi naap chart ki oonchai tay
+   * karta hai (neeche `chartH`).  `useLayoutEffect` isliye ki naap paint se
+   * PEHLE ho jaye, warna ek frame ke liye galat oonchai jhalakti hai.
+   *
+   * Ye ghoomta nahi (infinite loop nahi banta): charts ka TOP sirf uske
+   * UPAR wale saamaan se banta hai -- header, filter, cards, title.  Chart
+   * ki oonchai badalne se top nahi badalta. */
+  const chartsRef = useRef(null);
+  const [chartsTop, setChartsTop] = useState(null);
+  /* Chart ke DABBE (card) ka wo hissa jo khud chart nahi hai -- padding aur
+   * upar ki heading.  Naapa: 49px.  Ye ghatana ZAROORI hai, warna hum chart
+   * ki oonchai to theek deте hain par card 49px zyada gherta hai, aur teen
+   * row me 147px bahar nikal jaata hai (yahi asli overflow tha).
+   * Hardcode nahi kiya -- font/padding kabhi badla to naap khud sudhar
+   * jaayega. */
+  const [chartChrome, setChartChrome] = useState(0);
+  // aakhri bacha-khucha jo naap kar kaata jaata hai (neeche dekho)
+  const [trim, setTrim] = useState(0);
+  useLayoutEffect(() => {
+    if (!portrait) { setChartsTop(null); setChartChrome(0); setTrim(0); return; }
+    const naapo = () => {
+      const el = chartsRef.current;
+      if (!el) return;
+      setChartsTop(Math.round(el.getBoundingClientRect().top + (window.scrollY || 0)));
+      const card = el.querySelector(".mk-chart");
+      if (card) {
+        // card kitna bada hai vs jo chart-oonchai humne di thi
+        const farq = Math.round(card.getBoundingClientRect().height) - chartH;
+        // 1px se kam ka farq chhod do -- warna naap-render-naap ka chakkar
+        // chalta rehta hai aur kabhi thehrta nahi
+        if (farq >= 0 && Math.abs(farq - chartChrome) > 1) setChartChrome(farq);
+      }
+      /* AAKHRI SUDHAAR -- jo hisaab ke baad bhi bach jaye.
+       * Upar ka hisaab 7px chhod raha tha (chart library apni oonchai thodi
+       * si round kar deti hai).  Yahan hum hisaab nahi lagate -- SEEDHA
+       * DEKHTE HAIN ki page kitna bahar hai, aur utna hi kaat dete hain.
+       * Sirf KAAT-TE hain, badhate kabhi nahi -- isliye ye ghoomta nahi,
+       * ek-do baar me thehar jaata hai. */
+      const bahar = document.documentElement.scrollHeight - window.innerHeight;
+      if (bahar > 1) setTrim((t) => t + Math.ceil(bahar / CH_ROWS));
+    };
+    naapo();
+    window.addEventListener("resize", naapo);
+    return () => window.removeEventListener("resize", naapo);
+  });
   const cardCfg  = { ...CARD_D,  ...(ui.card  || {}) };
   const chartCfg = { ...CHART_D, ...(ui.chart || {}) };
   // Vertical TV → 6 cards (3×2) + 6 charts 2-per-row (2×3); charts grow to fill
   // the leftover screen height so nothing floats above a big empty gap.
   const cardCfgEff  = portrait ? { ...cardCfg,  valueSize: Math.min(cardCfg.valueSize, 46) } : cardCfg;
-  const chartH      = portrait ? Math.max(220, Math.round((winH - 780) / 3)) : chartCfg.height;
+  /* Chart ki oonchai -- ANDAZE SE NAHI, NAAP SE.
+   *
+   * Pehle yahan `(winH - 780) / 3` tha: 780 ko "upar ka saara saamaan"
+   * maan liya gaya tha.  Wo andaza asli TV par galat nikla -- wahan filter
+   * DO line me jaate hain (Financial Year + Zone, phir Line + Machine No.)
+   * aur uske neeche 9:16 / 16:9 / Annual Index / Fullscreen wali patti bhi
+   * hai.  Yaani upar ka hissa 780 se kaafi zyada tha, charts neeche nikal
+   * gaye aur scroll karna pad raha tha -- jabki yahi page ek screen me
+   * aana chahiye tha.
+   *
+   * Ab hum poochhte hain ki charts SHURU KAHAN se ho rahe hain (`chartsTop`)
+   * aur usi hisaab se baant lete hain.  Filter ek line me ho ya do, font
+   * bada ho ya chhota, TV ka naap kuch bhi ho -- hisaab apne aap theek
+   * baithta hai.
+   *
+   * 3 = 6 chart / 2 column.  Gap 16px, aur neeche 12px ki chhoti si jagah
+   * (`.mk-portrait .mk-body` ki padding-bottom). */
+  const CH_GAP = 16, CH_ROWS = 3, CH_BOTTOM = 12;
+  const chartH = portrait
+    ? Math.max(180, Math.floor(
+        ((chartsTop != null ? winH - chartsTop : winH - 780) - CH_BOTTOM - CH_GAP * (CH_ROWS - 1)) / CH_ROWS
+      ) - chartChrome - trim)
+    : chartCfg.height;
   const chartCfgEff = portrait ? { ...chartCfg, height: chartH, barSize: Math.min(chartCfg.barSize, 30) } : chartCfg;
   const kpiStyle = (key, defAccent) => {
     const s = (ui.kpi && ui.kpi[key]) || {};
@@ -798,7 +868,7 @@ export default function MaintenanceKPI() {
 
           {/* ── Per-card charts (month-by-month for the FY) ─── */}
           <div className="mk-charts-title">Monthly Trend — {data?.fy_label || fy}</div>
-          <div className="mk-charts">
+          <div className="mk-charts" ref={chartsRef}>
             {CARDS.map((def) => {
               const st = kpiStyle(def.key, def.accent);
               return (

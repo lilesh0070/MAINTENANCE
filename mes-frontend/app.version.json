@@ -1,5 +1,5 @@
 {
-  "version": "1.4.13",
-  "notes": "Crash-safety: kahin galti ho to ab khaali screen ki jagah sandesh aur nikalne ka raasta",
-  "released_at": "2026-09-07T14:36:03"
+  "version": "1.4.14",
+  "notes": "TV: KPI ke saare 6 chart ab ek screen me, bina scroll ke",
+  "released_at": "2026-09-07T15:07:50"
 }
