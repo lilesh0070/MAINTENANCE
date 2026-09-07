@@ -1,5 +1,5 @@
 {
-  "version": "1.4.17",
-  "notes": "KPI me Category filter (A / B / All); app me se Fullscreen aur 9:16-16:9 button hataye",
-  "released_at": "2026-09-07T16:52:36"
+  "version": "1.4.18",
+  "notes": "Category filter ke option ab All / A / B",
+  "released_at": "2026-09-07T17:06:50"
 }

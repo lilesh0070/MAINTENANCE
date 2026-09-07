@@ -773,9 +773,9 @@ export default function MaintenanceKPI() {
               <select className="mk-fy-select mk-filter" value={category}
                       onChange={(e) => setCategory(e.target.value)}
                       title="Breakdown category">
-                <option value="">All Category</option>
-                <option value="A">Category A</option>
-                <option value="B">Category B</option>
+                <option value="">All</option>
+                <option value="A">A</option>
+                <option value="B">B</option>
               </select>
             </div>
             <div className="mk-live">
