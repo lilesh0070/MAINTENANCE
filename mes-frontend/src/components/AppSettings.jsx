@@ -49,13 +49,33 @@ const UPDATE_HOSTS = [
   "",                                 // plant server (jaisa pehle tha)
 ];
 
-/** Jo PEHLE jawab de wahi le lo.  `base` khali = plant server.
+/** Sab pate EK SAATH poochho, aur jiske paas SABSE NAYA version ho wahi lo.
  *
- *  Pehle ye ek-ek karke aazmata tha, aur har na-milne wale par 3 second
- *  lagte the -- list badhne se update check dheema hota ja raha tha (chhah
- *  pate = 15 second tak).  Ab sab ek saath jaate hain, to list chahe jitni
- *  lambi ho, waqt utna hi lagta hai jitna sabse tez jawab dene wale ko.
- *  (Yahi tareeqa `apiBase.js` ka `pickServer()` bhi use karta hai.) */
+ *  ⚠ PEHLE YAHAN `Promise.any` THA -- "jo pehle jawab de wahi le lo" -- aur
+ *  wo GALAT tha.  Ek se zyada machine jawab deti hain aur unke version ALAG
+ *  ho sakte hain: laptop par nayi APK padi hoti hai, plant server par purani.
+ *  `Promise.any` sirf tezi dekhta hai, sahi-galat nahi.
+ *
+ *  Emulator par naap kar dekha (laptop 1.4.6, plant server 1.0.2):
+ *      192.168.100.30 -> 1.4.6  (148ms)
+ *      192.168.30.68  -> 1.4.6  (146ms)
+ *      ""  (plant)    -> 1.0.2  (173ms)
+ *      dus baar chala kar dekha -> PURANA 3/10 baar JEET GAYA
+ *
+ *  Jab purana jeetta tha to `isNewer(1.0.2, 1.4.2)` false aata aur app kehti
+ *  "You are on the latest version" -- yaani jo aadmi chaar version peeche
+ *  hai use update KABHI dikhta hi nahi.  Aur ye har baar alag nateeja deta
+ *  hai, isliye ek baar test karke "theek hai" maan lena aasan tha.
+ *
+ *  Ab `allSettled` -- sab ka jawab aane do, phir `isNewer` se sabse naya
+ *  chuno.  Iska daam: pehle sabse tez jawab par hi laut aata tha (~150ms),
+ *  ab jo pate maujood NAHI hain unke 3 second poore lagte hain.  Update
+ *  check khulte hi chup-chaap hota hai, aur button wale me "checking…"
+ *  likha aata hai -- to 3 second dena sahi jawab ke saamne sasta hai.
+ *
+ *  Ye `apiBase.js` ke `pickServer()` se ALAG maamla hai -- wahan sach me
+ *  "jo pehle bole" chahiye (data kisi bhi chalte server se le sakte hain),
+ *  yahan "jiske paas sabse nayi APK ho" chahiye. */
 async function updateVersionLao() {
   const ek = (base) => new Promise((mila, nahi) => {
     const ctl = new AbortController();
@@ -65,7 +85,10 @@ async function updateVersionLao() {
       .then((j) => { clearTimeout(t); mila(j); })
       .catch((e) => { clearTimeout(t); nahi(e); });
   });
-  return await Promise.any(UPDATE_HOSTS.map(ek));
+  const har = await Promise.allSettled(UPDATE_HOSTS.map(ek));
+  const mile = har.filter((r) => r.status === "fulfilled").map((r) => r.value);
+  if (!mile.length) throw new Error("koi server nahi mila");
+  return mile.reduce((sabseNaya, x) => (isNewer(x.version, sabseNaya.version) ? x : sabseNaya));
 }
 
 /** "1.2.10" > "1.2.9" — hissa-hissa milao, seedhi string se nahi. */
