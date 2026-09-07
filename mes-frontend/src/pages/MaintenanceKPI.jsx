@@ -348,6 +348,19 @@ export default function MaintenanceKPI() {
    * Ye ghoomta nahi (infinite loop nahi banta): charts ka TOP sirf uske
    * UPAR wale saamaan se banta hai -- header, filter, cards, title.  Chart
    * ki oonchai badalne se top nahi badalta. */
+  /* ⚠ FIT KA HISAAB SIRF TV JAISI LAMBI SCREEN PAR.
+   *
+   * `portrait` sirf ORIENTATION dekhta hai -- aur PHONE BHI PORTRAIT hota
+   * hai.  Pehle maine yahi galti ki: neeche ka naap-aur-kaato wala hisaab
+   * `portrait` par chala diya, to wo PHONE par bhi chalne laga.  Phone ki
+   * 839px screen me 6 chart kabhi fit ho hi nahi sakte, isliye `trim` har
+   * render par badhta raha aur page HANG ho gaya -- "KPI page khul hi nahi
+   * raha".  (Phone par ye page scroll hota hai, aur wahi theek hai.)
+   *
+   * 1200 isliye: phone khada ho to ~840, leta ho to ~412 -- dono neeche.
+   * TV (2400, ya 1428 jaisi chhoti TV bhi) upar. */
+  const fitKarna = portrait && winH >= 1200;
+
   const chartsRef = useRef(null);
   const [chartsTop, setChartsTop] = useState(null);
   /* Chart ke DABBE (card) ka wo hissa jo khud chart nahi hai -- padding aur
@@ -360,7 +373,7 @@ export default function MaintenanceKPI() {
   // aakhri bacha-khucha jo naap kar kaata jaata hai (neeche dekho)
   const [trim, setTrim] = useState(0);
   useLayoutEffect(() => {
-    if (!portrait) { setChartsTop(null); setChartChrome(0); setTrim(0); return; }
+    if (!fitKarna) { setChartsTop(null); setChartChrome(0); setTrim(0); return; }
     const naapo = () => {
       const el = chartsRef.current;
       if (!el) return;
@@ -380,7 +393,11 @@ export default function MaintenanceKPI() {
        * Sirf KAAT-TE hain, badhate kabhi nahi -- isliye ye ghoomta nahi,
        * ek-do baar me thehar jaata hai. */
       const bahar = document.documentElement.scrollHeight - window.innerHeight;
-      if (bahar > 1) setTrim((t) => t + Math.ceil(bahar / CH_ROWS));
+      // HADD (400px) ZAROORI HAI: agar content kisi wajah se fit ho hi na
+      // sakta ho, to bina hadd ke `trim` har render par badhta rehta aur
+      // page HANG ho jaata.  Yahi galti ek baar ho chuki hai -- phone par
+      // KPI page khulna hi band ho gaya tha.
+      if (bahar > 1 && trim < 400) setTrim((t) => t + Math.ceil(bahar / CH_ROWS));
     };
     naapo();
     window.addEventListener("resize", naapo);
@@ -409,7 +426,7 @@ export default function MaintenanceKPI() {
    * 3 = 6 chart / 2 column.  Gap 16px, aur neeche 12px ki chhoti si jagah
    * (`.mk-portrait .mk-body` ki padding-bottom). */
   const CH_GAP = 16, CH_ROWS = 3, CH_BOTTOM = 12;
-  const chartH = portrait
+  const chartH = fitKarna
     ? Math.max(180, Math.floor(
         ((chartsTop != null ? winH - chartsTop : winH - 780) - CH_BOTTOM - CH_GAP * (CH_ROWS - 1)) / CH_ROWS
       ) - chartChrome - trim)

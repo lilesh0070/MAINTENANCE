@@ -1,5 +1,5 @@
 {
-  "version": "1.4.14",
-  "notes": "TV: KPI ke saare 6 chart ab ek screen me, bina scroll ke",
-  "released_at": "2026-09-07T15:07:50"
+  "version": "1.4.15",
+  "notes": "KPI page ka hang theek (phone par); status bar ab mobile par bhi nahi aata",
+  "released_at": "2026-09-07T16:04:54"
 }

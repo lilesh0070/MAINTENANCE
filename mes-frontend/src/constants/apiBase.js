@@ -115,6 +115,39 @@ if (typeof document !== "undefined" && NATIVE) {
   de.classList.add(nishaan);
   if (document.body) document.body.classList.add(nishaan);
   else document.addEventListener("DOMContentLoaded", () => document.body.classList.add(nishaan));
+
+  /* POORI SCREEN -- upar ka status bar aur neeche ka navigation bar hata do.
+   *
+   * TV par: board deewar par lagta hai, wahan ghadi/battery/back-button ka
+   * koi kaam nahi -- wo sirf ek kaali patti bana dete hain.
+   * PHONE/TABLET par: user ne saaf kaha ki wahan bhi na aaye.
+   *
+   * ⚠ 2026-09-07 se PHONE PAR BHI.  Pehle ye sirf TV par tha aur phone par
+   * status bar jaan-boojh kar rakha gaya tha (`capacitor.config.json` ka
+   * `adjustMarginsForEdgeToEdge: auto` usi ke liye laga tha).  User ne baad
+   * me kaha "mobile version me bhi status bar na aana chahiye", isliye ab
+   * har jagah.  Wo config wali setting chhedi NAHI -- bar chhupte hi uska
+   * margin apne aap shoonya ho jaata hai, aur kabhi wapas laana ho to sirf
+   * ye ek shart hatani padegi.
+   *
+   * Kinare se swipe karne par bar thodi der ko aa jaati hai (Android ka
+   * apna niyam) -- phone par yahi chahiye bhi, warna waqt/battery dekhne ka
+   * koi raasta hi na bache.
+   *
+   * Faisla YAHI se jaata hai, Java me dobara nahi liya jaata -- warna do
+   * jagah do alag jawab ban jaate aur kabhi na kabhi wo aapas me na milte.
+   *
+   * Do baar koshish: bridge kabhi-kabhi zara baad me taiyaar hota hai. */
+  {
+    const poorScreen = () => {
+      try {
+        const P = window.Capacitor?.Plugins?.ScreenMode;
+        if (P?.immersive) { P.immersive({ on: true }); return true; }
+      } catch { /* chhod do -- patti reh jaayegi, app chalti rahegi */ }
+      return false;
+    };
+    if (!poorScreen()) setTimeout(poorScreen, 800);
+  }
 }
 
 /** Website par "" (kuch nahi jodo), APK par abhi jo raasta chal raha hai. */

@@ -102,6 +102,7 @@ public class MainActivity extends BridgeActivity {
         // purane tareeqe (browser) se hoga, baaki app poori chalti rahegi.
         try {
             registerPlugin(ApkUpdate.class);
+            registerPlugin(ScreenMode.class);
         } catch (Throwable t) {
             // chup-chaap chhod do -- JS me plugin na milne par wahan pehle se
             // browser wala raasta rakha hua hai.
@@ -138,6 +139,23 @@ public class MainActivity extends BridgeActivity {
      * PHONE/TABLET PAR ASAR NAHI: wahan meta `width=device-width` hi rehta
      * hai, to chaudai pehle jaisi device-width hi milti hai.
      */
+    /**
+     * TV par poori-screen wapas laga do.  Android app ke saamne aane par
+     * (ya kisi dialog ke baad) status/navigation bar khud wapas dikha deta
+     * hai -- to board par kaali patti phir se aa jaati.  `immersiveChahiye`
+     * sirf tab sach hota hai jab JS ne device ko TV maana ho; phone par ye
+     * kuch nahi karta.
+     */
+    @Override
+    public void onResume() {
+        super.onResume();
+        try {
+            if (ScreenMode.immersiveChahiye) ScreenMode.lagao(this, true);
+        } catch (Throwable t) {
+            // poori screen na lage to bhi app chalti rahe
+        }
+    }
+
     @Override
     public void onStart() {
         super.onStart();
