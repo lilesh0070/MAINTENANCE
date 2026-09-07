@@ -1838,3 +1838,28 @@ body.in-app-tv .pbs-title {
  * shuru hota hai: logo ke khatam hone (75) ke baad 20px ki saaf jagah.
  * (Base 38 tha, isliye 57 ka margin.) */
 body.in-app-tv .pbs-back  { margin-left: 57px !important; }
+
+/* ── APK me TV/browser wale controls kahin nahi ──────────────────────
+ * User: "TV, mobile aur tablet -- APK me jahan bhi 9:16, 16:9, Fullscreen
+ * aur Fullscreen wala box hai, wo hata do."
+ *
+ * Ye teeno cheezein DEEWAR PAR LAGI TV / browser ke liye banayi gayi thi:
+ *   9:16 / 16:9   -- board ka anupat badalne ke liye
+ *   ⛶ Fullscreen  -- browser ko poori screen par le jaane ke liye
+ *   ANDON ka apna ⛶ Fullscreen box
+ *
+ * App me teeno bemaani hain: wo khud hi poori screen par chalti hai
+ * (`ScreenMode` ne status bar tak hata diya hai), aur device ka naap
+ * badalta nahi to anupat ka toggle kisi kaam ka nahi.
+ *
+ * TEENO app-nishaan par -- phone, tablet AUR TV -- kyunki teeno wahi APK
+ * chalate hain.  WEBSITE PAR JYON KE TYON: wahan `body.in-app*` lagta hi
+ * nahi, isliye ek bhi rule nahi pahunchta.
+ *
+ *   .mk-tvbtn  -> Maintenance KPI ke button
+ *   .md-fs-btn -> Maintenance Dashboard ke 9:16 / 16:9 / Fullscreen
+ *   .an-fs-btn -> ANDON patti ka Fullscreen box
+ */
+body.in-app     .mk-tvbtn,  body.in-app     .md-fs-btn,  body.in-app     .an-fs-btn,
+body.in-app-tab .mk-tvbtn,  body.in-app-tab .md-fs-btn,  body.in-app-tab .an-fs-btn,
+body.in-app-tv  .mk-tvbtn,  body.in-app-tv  .md-fs-btn,  body.in-app-tv  .an-fs-btn { display: none !important; }

@@ -1,5 +1,5 @@
 {
-  "version": "1.4.23",
-  "notes": "TV: Breakdown Slip ka header center, Back logo se hata kar",
-  "released_at": "2026-09-07T19:33:50"
+  "version": "1.4.24",
+  "notes": "APK me 9:16 / 16:9 / Fullscreen ke saare button hataye (TV, mobile, tablet)",
+  "released_at": "2026-09-07T20:03:32"
 }

@@ -73,7 +73,9 @@ export const api = {
 };
 
 /* ── Visual primitives ────────────────────────────────────────────── */
-export function Btn({ children, onClick, variant = "default", size = "md", disabled, style, title }) {
+// `className` bhi lena zaroori hai -- iske bina bulane wale ki class
+// chup-chaap gir jaati thi (aur CSS se pakadna namumkin ho jaata).
+export function Btn({ children, onClick, variant = "default", size = "md", disabled, style, title, className }) {
   const base = {
     border: "none", borderRadius: 8, cursor: disabled ? "not-allowed" : "pointer",
     fontFamily: "inherit", fontWeight: 700, transition: "all .15s",
@@ -89,7 +91,7 @@ export function Btn({ children, onClick, variant = "default", size = "md", disab
     success: { background: "linear-gradient(135deg,#16a34a,#15803d)", color: "#fff" },
   };
   return (
-    <button onClick={onClick} disabled={disabled} title={title}
+    <button onClick={onClick} disabled={disabled} title={title} className={className}
             style={{ ...base, ...variants[variant], ...style }}>
       {children}
     </button>

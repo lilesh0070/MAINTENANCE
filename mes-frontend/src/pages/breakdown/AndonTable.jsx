@@ -99,7 +99,7 @@ function AndonTable({ rows, fullscreenRef, isFullscreen, toggleFullscreen }) {
           {/* No manual "Open Breakdown" — entries arrive automatically
               from the collector when the line's status bit goes to
               BREAKDOWN.  Auto-resolves when status returns to RUNNING. */}
-          <Btn variant="ghost" size="sm" onClick={toggleFullscreen}
+          <Btn variant="ghost" size="sm" onClick={toggleFullscreen} className="an-fs-btn"
                style={{ background: "rgba(255,255,255,.18)", color: "#fff", borderColor: "rgba(255,255,255,.35)" }}
                title={isFullscreen ? "Exit fullscreen" : "Fullscreen view"}>
             {isFullscreen ? "🗗 Exit Fullscreen" : "⛶ Fullscreen"}
