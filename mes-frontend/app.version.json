@@ -1,5 +1,5 @@
 {
-  "version": "1.4.15",
-  "notes": "KPI page ka hang theek (phone par); status bar ab mobile par bhi nahi aata",
-  "released_at": "2026-09-07T16:04:54"
+  "version": "1.4.16",
+  "notes": "TV ab sahi pehchani jaati hai -- KPI aur Dashboard dono ek screen me; notch wali kaali patti bhi gayi",
+  "released_at": "2026-09-07T16:27:34"
 }

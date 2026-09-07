@@ -70,8 +70,27 @@ public class MainActivity extends BridgeActivity {
             // aage dekh lete hain
         }
         try {
-            int sw = getResources().getConfiguration().smallestScreenWidthDp;
+            Configuration cf = getResources().getConfiguration();
+            int sw = cf.smallestScreenWidthDp;
             if (mode == Configuration.UI_MODE_TYPE_NORMAL && sw >= 600 && sw < 920) {
+                /* TABLET ya TV?  Dono ki chaudai is band me aa jaati hai.
+                 *
+                 * Plant wali TV ka naap naapa gaya: 804 x 1428 dp -- yaani
+                 * `sw = 804`, theek tablet ki hadd me.  Isi wajah se use
+                 * "tab" mil raha tha aur TV wala 1350 ka layout nahi milta
+                 * tha; nateeja -- Dashboard 411px bahar nikal jaata tha.
+                 *
+                 * Farq NAAP KA ANUPAT hai:
+                 *     TV     16:9  -> 1428 / 804  = 1.78
+                 *     tablet 16:10 -> 1280 / 800  = 1.60   (10 inch)
+                 *            4:3   -> 1024 / 768  = 1.33
+                 * 1.70 ki hadd beech me padti hai, dono se door.
+                 *
+                 * Sirf lamba-chaudai ka anupat dekhte hain, orientation ka
+                 * farq nahi padta -- TV rotate karke lagayi hai. */
+                int lamba  = Math.max(cf.screenWidthDp, cf.screenHeightDp);
+                int chauda = Math.min(cf.screenWidthDp, cf.screenHeightDp);
+                if (chauda > 0 && (double) lamba / chauda >= 1.70) return "tv";
                 return "tab";
             }
         } catch (Exception e) {

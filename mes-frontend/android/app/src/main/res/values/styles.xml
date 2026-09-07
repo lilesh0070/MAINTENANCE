@@ -18,6 +18,23 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:windowBackground">@color/appBackground</item>
+        <!--
+          NOTCH / PUNCH-HOLE WALI JAGAH.
+
+          Status bar to `ScreenMode` plugin chhupa deta hai, par jis phone me
+          upar notch ya punch-hole hota hai, uski patti phir bhi KAALI reh
+          jaati hai - kyunki Android default me app ko wahan tak failne hi
+          nahi deta (`default` = cutout se bacho).
+
+          `shortEdges` kehta hai: chhoti taraf ke cutout ke AAGE tak jao.
+          Isse app poore upar tak fail jaati hai aur wo kaali patti khatam
+          ho jaati hai.
+
+          API 27 (Android 8.1) ka attribute hai; purane Android ise chup-chaap
+          nazarandaz kar dete hain - wahan notch hota hi nahi, isliye koi
+          nuksan nahi.
+        -->
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
 
     <!-- Launch theme.  Yahan bhi pehle `android:background` likha tha, isliye

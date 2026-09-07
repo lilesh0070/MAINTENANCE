@@ -363,45 +363,54 @@ export default function MaintenanceKPI() {
 
   const chartsRef = useRef(null);
   const [chartsTop, setChartsTop] = useState(null);
-  /* Chart ke DABBE (card) ka wo hissa jo khud chart nahi hai -- padding aur
-   * upar ki heading.  Naapa: 49px.  Ye ghatana ZAROORI hai, warna hum chart
-   * ki oonchai to theek deте hain par card 49px zyada gherta hai, aur teen
-   * row me 147px bahar nikal jaata hai (yahi asli overflow tha).
-   * Hardcode nahi kiya -- font/padding kabhi badla to naap khud sudhar
-   * jaayega. */
   const [chartChrome, setChartChrome] = useState(0);
-  // aakhri bacha-khucha jo naap kar kaata jaata hai (neeche dekho)
   const [trim, setTrim] = useState(0);
+
+  /* Naap-aur-kaato ka hisaab -- ek hi baar me nahi baithta, isliye do-teen
+   * baar chalta hai.  Har baar naapte hain, thoda sudhaarte hain, phir naapte
+   * hain.
+   *
+   * ⚠ GINTI KI HADD (`koshish`) -- YEHI SABSE ZAROORI CHEEZ HAI.
+   *
+   * Do baar ye loop bhaag chuka hai aur page HANG ho gaya:
+   *   - pehli baar phone par (`portrait` sab portrait screen par sach hai)
+   *   - doosri baar TV ke ASLI naap (804x1428) par, jahan 6 chart fit ho hi
+   *     nahi sakte -- React ne "Maximum update depth exceeded" (#185) diya
+   *
+   * Sirf `trim` par hadd lagana KAAFI NAHI THA, kyunki `chartsTop` aur
+   * `chartChrome` bhi do naapon ke beech jhoolte reh sakte hain.  Isliye ab
+   * GINTI par hadd hai: 12 koshish ke baad hisaab lagana BAND.  Jo naap us
+   * waqt tak bana wahi rahega -- aur agar page phir bhi fit na ho, to wo
+   * SCROLL karega.  **Scroll hona bura hai; HANG hona bahut bura hai.**
+   *
+   * Ginti tabhi shoonya hoti hai jab sach me kuch badle (screen ka naap,
+   * data, ya portrait/landscape) -- warna wo hadd bemaani ho jaati.  */
+  const koshish = useRef(0);
+  useEffect(() => { koshish.current = 0; }, [fitKarna, winH, data, showIndex]);
+
   useLayoutEffect(() => {
-    if (!fitKarna) { setChartsTop(null); setChartChrome(0); setTrim(0); return; }
-    const naapo = () => {
-      const el = chartsRef.current;
-      if (!el) return;
-      setChartsTop(Math.round(el.getBoundingClientRect().top + (window.scrollY || 0)));
-      const card = el.querySelector(".mk-chart");
-      if (card) {
-        // card kitna bada hai vs jo chart-oonchai humne di thi
-        const farq = Math.round(card.getBoundingClientRect().height) - chartH;
-        // 1px se kam ka farq chhod do -- warna naap-render-naap ka chakkar
-        // chalta rehta hai aur kabhi thehrta nahi
-        if (farq >= 0 && Math.abs(farq - chartChrome) > 1) setChartChrome(farq);
-      }
-      /* AAKHRI SUDHAAR -- jo hisaab ke baad bhi bach jaye.
-       * Upar ka hisaab 7px chhod raha tha (chart library apni oonchai thodi
-       * si round kar deti hai).  Yahan hum hisaab nahi lagate -- SEEDHA
-       * DEKHTE HAIN ki page kitna bahar hai, aur utna hi kaat dete hain.
-       * Sirf KAAT-TE hain, badhate kabhi nahi -- isliye ye ghoomta nahi,
-       * ek-do baar me thehar jaata hai. */
-      const bahar = document.documentElement.scrollHeight - window.innerHeight;
-      // HADD (400px) ZAROORI HAI: agar content kisi wajah se fit ho hi na
-      // sakta ho, to bina hadd ke `trim` har render par badhta rehta aur
-      // page HANG ho jaata.  Yahi galti ek baar ho chuki hai -- phone par
-      // KPI page khulna hi band ho gaya tha.
-      if (bahar > 1 && trim < 400) setTrim((t) => t + Math.ceil(bahar / CH_ROWS));
-    };
-    naapo();
-    window.addEventListener("resize", naapo);
-    return () => window.removeEventListener("resize", naapo);
+    if (!fitKarna) {
+      if (chartsTop !== null) setChartsTop(null);
+      if (chartChrome !== 0) setChartChrome(0);
+      if (trim !== 0) setTrim(0);
+      return;
+    }
+    if (koshish.current >= 12) return;         // bas, ab aur nahi
+    const el = chartsRef.current;
+    if (!el) return;
+
+    koshish.current += 1;
+    const top = Math.round(el.getBoundingClientRect().top + (window.scrollY || 0));
+    if (Math.abs((chartsTop ?? -1) - top) > 1) setChartsTop(top);
+
+    const card = el.querySelector(".mk-chart");
+    if (card) {
+      const farq = Math.round(card.getBoundingClientRect().height) - chartH;
+      if (farq >= 0 && Math.abs(farq - chartChrome) > 1) setChartChrome(farq);
+    }
+
+    const bahar = document.documentElement.scrollHeight - window.innerHeight;
+    if (bahar > 1) setTrim((t) => t + Math.ceil(bahar / CH_ROWS));
   });
   const cardCfg  = { ...CARD_D,  ...(ui.card  || {}) };
   const chartCfg = { ...CHART_D, ...(ui.chart || {}) };
