@@ -1806,3 +1806,31 @@ body.in-app-tab .lb-root { box-sizing: border-box !important; }
 body.in-app     .mk-tvbtn,
 body.in-app-tab .mk-tvbtn,
 body.in-app-tv  .mk-tvbtn { display: none !important; }
+
+/* ── TV: Production Breakdown Slip ka header ─────────────────────────
+ * User: "header center kar, aur Back button ko thoda sa right shift kar."
+ *
+ * Header flex hai aur Back + title dono behaav me the, isliye title
+ * baayein chipka tha (naapa: title x=129, jabki 1351 ki chaudai me center
+ * ~529 hota).
+ *
+ * Title ko `absolute` karke beech me rakha -- BEHAAV SE BAHAR.  Isse wo
+ * Back ki chaudai se azaad ho jaata hai: Back ka text kabhi lamba-chhota
+ * ho, ya `pbs-back` kahin chhup jaye, title phir bhi theek beech me hi
+ * rahega.  (Yahi tareeqa baaki page ke header par bhi laga hua hai.)
+ *
+ * `pointer-events: none` isliye ki title ke upar se koi click Back tak
+ * pahunch sake -- absolute hone se wo poori patti par fail jaata hai.
+ *
+ * SIRF TV PAR: phone aur tablet par `pbs-back` chhupa hua hai (upar ka
+ * block), wahan header ka apna intezaam pehle se theek hai.
+ */
+body.in-app-tv .pbs-top   { position: relative !important; }
+body.in-app-tv .pbs-title {
+  position: absolute !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  pointer-events: none !important;
+}
+/* Back thoda daayein -- kinare se chipka hua lag raha tha */
+body.in-app-tv .pbs-back  { margin-left: 22px !important; }
