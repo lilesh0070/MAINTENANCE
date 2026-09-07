@@ -15,7 +15,8 @@
  * pada ho to gear par laal nishaan aa jaata hai, taaki kisi ko roz kholna na
  * pade.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import qrcode from "qrcode-generator";
 import { useAuth } from "../context/AuthContext";
 import { isNativeApp } from "../constants/apiBase";
 
@@ -37,21 +38,29 @@ const MY_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0
  *
  * ⚠ Plant server par do file rakhte hi ye poora block hata dena hai.
  */
-// Kram maayne nahi rakhta -- neeche sab EK SAATH aazmaye jaate hain.
+// Sab EK SAATH aazmaye jaate hain, aur jiske paas SABSE NAYA version ho wahi
+// jeetta hai.  Version BARABAR ho to list ka PEHLA jeetta hai -- isliye kram
+// yahan maayne rakhta hai, aur PLANT SERVER upar hai.
 //
-// 7 Sep 2026: ghar/purane WiFi ke teen pate HATA DIYE (`10.101.19.14`,
-// `192.168.1.100`, `pc-maint-019.local`).  Wo plant me kabhi milte hi nahi
-// the, aur har ek na-milne par apne 3 second poore leta tha -- update check
-// ~2.6 second ka ho gaya tha.  Ab sirf wahi pate hain jo plant me sach me
-// chalte hain, to check phir se ~150ms me ho jaata hai.
+// Kyun plant server pehle: wo hamesha chalu rehta hai, laptop nahi.  Dono par
+// ek hi version ho (aam haalat) to download ka bojh server par jaana chahiye,
+// laptop par nahi.  Laptop tabhi jeetega jab uske paas SACH ME naya version ho
+// -- yaani release to ho gayi par `push_apk.py` chalana bhool gaye.
 //
-// ⚠ Laptop ghar le jaane par update band ho jaayega (data to plant server se
-// aata hai, wo waise bhi ghar par nahi milta).  Us waqt yahan pata wapas
-// jodna padega.
+// `""` ka matlab: "wahi plant server jispar app pehle se judi hai".  App me ek
+// fetch-interceptor laga hai (`apiBase.js`) jo relative `/api/...` ko
+// `API_BASE` par bhej deta hai.  Ye sabse pakka raasta hai kyunki app usi se
+// to chal rahi hai.  Uske neeche server ke DONO asli pate bhi likhe hain --
+// taaki `API_BASE` kisi wajah se tay na ho paaye to bhi update mil jaaye.
+//
+// ⚠ Laptop ghar le jaane par uske pate kaam nahi karenge (data to plant server
+// se aata hai, wo waise bhi ghar par nahi milta).
 const UPDATE_HOSTS = [
+  "",                                 // plant server — jispar app judi hai
+  "http://192.168.30.15:8892",        // plant server — Ethernet
+  "http://192.168.100.24:8892",       // plant server — WiFi
   "http://192.168.100.30:8892",       // laptop — plant WiFi
   "http://192.168.30.68:8892",        // laptop — plant Ethernet (static)
-  "",                                 // plant server (jaisa pehle tha)
 ];
 
 /** Sab pate EK SAATH poochho, aur jiske paas SABSE NAYA version ho wahi lo.
@@ -84,7 +93,14 @@ const UPDATE_HOSTS = [
 async function updateVersionLao() {
   const ek = (base) => new Promise((mila, nahi) => {
     const ctl = new AbortController();
-    const t = setTimeout(() => { try { ctl.abort(); } catch { /* ignore */ } nahi(new Error("timeout")); }, 3000);
+    // 2.5s.  Pehle 3s tha; list chhoti thi to 1.5s kar ke dekha -- par NAAP
+    // ne roka: paanch pate ek saath maangne par har jawab ~1050ms me aaya
+    // (teen pate the tab ~150ms tha), aur 1500ms par ek baar timeout bhi ho
+    // gaya.  Itni patli chhoot par asli phone/WiFi par check FAIL ho jaata,
+    // jo dheeme check se kahin bura hai.  2.5s me observed 1050ms par dhai
+    // guna chhoot hai, aur `allSettled` ki wajah se sabse bura haal 2.5s hi
+    // rahega -- wo bhi tabhi jab koi pata sach me na mile.
+    const t = setTimeout(() => { try { ctl.abort(); } catch { /* ignore */ } nahi(new Error("timeout")); }, 2500);
     fetch(base + "/api/app/version", { cache: "no-store", signal: ctl.signal })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status))))
       .then((j) => { clearTimeout(t); mila(j); })
@@ -105,6 +121,40 @@ function isNewer(server, mine) {
     if (x !== y) return x > y;
   }
   return false;
+}
+
+/** APK ka QR — kisi doosre phone ko dena ho to wo seedha scan karke utaar le.
+ *
+ *  SVG isliye (GIF/canvas nahi): QR ke chaukhaane seedhi lakeeron ke hain,
+ *  SVG me wo har naap par saaf rehte hain.  Bitmap bada karne par kinare
+ *  dhundhle ho jaate hain aur scan karne me dikkat hoti hai.
+ *
+ *  Chaaron taraf 2 khaane ki KHALI JAGAH (quiet zone) chhodna zaroori hai --
+ *  bina uske kai scanner QR pehchante hi nahi.  Isi liye `viewBox` -2 se
+ *  shuru hota hai aur naap `n + 4` hai.
+ */
+function ApkQr({ text, size = 132 }) {
+  const qr = useMemo(() => {
+    const t = qrcode(0, "M");          // 0 = naap khud chun lo, M = medium sudhaar
+    t.addData(text);
+    t.make();
+    return t;
+  }, [text]);
+
+  const n = qr.getModuleCount();
+  let d = "";
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      if (qr.isDark(r, c)) d += `M${c},${r}h1v1h-1z`;
+    }
+  }
+  return (
+    <svg viewBox={`-2 -2 ${n + 4} ${n + 4}`} width={size} height={size}
+         shapeRendering="crispEdges" aria-label="APK download QR">
+      <rect x={-2} y={-2} width={n + 4} height={n + 4} fill="#fff" />
+      <path d={d} fill="#0f172a" />
+    </svg>
+  );
 }
 
 export default function AppSettings() {
@@ -230,6 +280,29 @@ export default function AppSettings() {
                   {info.apk_ready ? "You are on the latest version ✓" : "No APK on the server yet"}
                 </div>
               )
+            )}
+
+            {/* QR — kisi doosre ko app deni ho to wo seedha scan karke utaar le.
+                Pata wahi hai jo abhi jeeta (`apk_url`), aur `UPDATE_HOSTS` me
+                plant server upar hai -- yaani aam haalat me ye QR SERVER ka
+                pata dikhata hai, jo hamesha chalu rehta hai.  Laptop ka pata
+                tabhi aayega jab uske paas sach me naya version ho. */}
+            {!busy && !err && info?.apk_ready && info?.apk_url && (
+              <div style={{ marginTop: 8, paddingTop: 10, borderTop: "1px solid #f1f5f9",
+                            display: "flex", flexDirection: "column", alignItems: "center" }}>
+                <div style={{ fontSize: 11.5, color: "#64748b", fontWeight: 700,
+                              marginBottom: 7, textAlign: "center" }}>
+                  Kisi aur ko app deni ho? Ye QR scan karayein
+                </div>
+                <div style={{ padding: 7, background: "#fff", borderRadius: 10,
+                              border: "1px solid #e2e8f0" }}>
+                  <ApkQr text={info.apk_url} />
+                </div>
+                <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 6,
+                              wordBreak: "break-all", textAlign: "center", lineHeight: 1.4 }}>
+                  {info.apk_url}
+                </div>
+              </div>
             )}
 
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
