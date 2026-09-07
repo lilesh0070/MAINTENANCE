@@ -1,5 +1,5 @@
 {
-  "version": "1.4.7",
-  "notes": "Update check theek: ab sabse naya version chunta hai (pehle jo pehle bolta wahi le leta tha)",
-  "released_at": "2026-09-07T11:03:00"
+  "version": "1.4.8",
+  "notes": "Ghar wale pate hataye -- update check ab 111ms (pehle 2.6s)",
+  "released_at": "2026-09-07T11:10:51"
 }

@@ -37,15 +37,20 @@ const MY_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0
  *
  * ⚠ Plant server par do file rakhte hi ye poora block hata dena hai.
  */
-// Laptop ka WiFi IP DHCP se milta hai aur badalta rehta hai, isliye jitne
-// pate ab tak dekhe hain sab yahan pade hain.  Kram maayne nahi rakhta --
-// neeche sab EK SAATH aazmaye jaate hain.
+// Kram maayne nahi rakhta -- neeche sab EK SAATH aazmaye jaate hain.
+//
+// 7 Sep 2026: ghar/purane WiFi ke teen pate HATA DIYE (`10.101.19.14`,
+// `192.168.1.100`, `pc-maint-019.local`).  Wo plant me kabhi milte hi nahi
+// the, aur har ek na-milne par apne 3 second poore leta tha -- update check
+// ~2.6 second ka ho gaya tha.  Ab sirf wahi pate hain jo plant me sach me
+// chalte hain, to check phir se ~150ms me ho jaata hai.
+//
+// ⚠ Laptop ghar le jaane par update band ho jaayega (data to plant server se
+// aata hai, wo waise bhi ghar par nahi milta).  Us waqt yahan pata wapas
+// jodna padega.
 const UPDATE_HOSTS = [
-  "http://10.101.19.14:8892",         // laptop — abhi wali WiFi
-  "http://192.168.1.100:8892",        // laptop — ghar wali WiFi
   "http://192.168.100.30:8892",       // laptop — plant WiFi
   "http://192.168.30.68:8892",        // laptop — plant Ethernet (static)
-  "http://pc-maint-019.local:8892",   // laptop — naam se
   "",                                 // plant server (jaisa pehle tha)
 ];
 
