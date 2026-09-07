@@ -1863,3 +1863,209 @@ body.in-app-tv .pbs-back  { margin-left: 57px !important; }
 body.in-app     .mk-tvbtn,  body.in-app     .md-fs-btn,  body.in-app     .an-fs-btn,
 body.in-app-tab .mk-tvbtn,  body.in-app-tab .md-fs-btn,  body.in-app-tab .an-fs-btn,
 body.in-app-tv  .mk-tvbtn,  body.in-app-tv  .md-fs-btn,  body.in-app-tv  .an-fs-btn { display: none !important; }
+
+
+/* ── HAR PAGE KA HEADER BEECH ME (app me) ────────────────────────────
+ * User: "saare header center me hone chahiye -- jaise abhi ANDON
+ * Management vala center me nahi hai, baaki page bhi dekh lo."
+ *
+ * Naapa (TV, viewport 1351, center 676) -- zyadatar title BAAYEIN pade the:
+ *     ANDON 300 (375 door) · CAPA 161 (514) · Historical 182 (493)
+ *     Log Book 258 (417) · Spare 262 (413) · Machine Master 292 (383)
+ *     Overview 322 (354) · History Card 329 (347) · Study Material 395 (280)
+ *
+ * DO WAJAH THI:
+ *  1. Centering ka purana block sirf `body.in-app` (PHONE) par tha --
+ *     TV aur tablet par lagta hi nahi tha.
+ *  2. Us block me kai title-class thi hi nahi (ANDON ka `an-ttl`,
+ *     Overview ka `ov-ttl`, Log Book, Machine Manual, History Card...).
+ *     Ginker dekha: code me 27 title-class hain, block me sirf 15.
+ *
+ * Ab teeno app-nishaan par, aur poori list par.
+ *
+ * Title ko `absolute` karke beech me rakha jaata hai -- BEHAAV SE BAHAR.
+ * Isse wo Back-button/logo ki chaudai se azaad ho jaata hai: unka naap
+ * badle ya wo chhup jayein, title phir bhi theek beech me hi rahega.
+ * `pointer-events: none` isliye ki uske peeche wale button dabte rahen.
+ *
+ * ⚠ `md-title` (Maintenance Dashboard) JAAN-BOOJH KAR CHHODA -- wo page
+ * aur TV ka layout user ke kehne par band khaata hai.
+ *
+ * WEBSITE PAR KUCH NAHI -- wahan `body.in-app*` lagta hi nahi.
+ */
+/* topbar ko naapne ka aadhaar banao, warna title poore page ke hisaab se ghisakta hai */
+body.in-app .admin-topbar,
+body.in-app .ba-top,
+body.in-app .bd-topbar,
+body.in-app .bh-top,
+body.in-app .cp-top,
+body.in-app .ddf-topbar,
+body.in-app .dmc-topbar,
+body.in-app .hc-top,
+body.in-app .hd-top,
+body.in-app .lb-top,
+body.in-app .mk-topbar,
+body.in-app .mm-top,
+body.in-app .mp-topbar,
+body.in-app .mw-topbar,
+body.in-app .ng-topbar,
+body.in-app .oj-top,
+body.in-app .ov-top,
+body.in-app .pa-top,
+body.in-app .qf-top,
+body.in-app .se-top,
+body.in-app .sp-top,
+body.in-app .st-topbar,
+body.in-app .sv-topbar,
+body.in-app .up-top,
+body.in-app .an-top,
+body.in-app .pbs-top,
+body.in-app .sm-top,
+body.in-app .su-top,
+body.in-app-tab .admin-topbar,
+body.in-app-tab .ba-top,
+body.in-app-tab .bd-topbar,
+body.in-app-tab .bh-top,
+body.in-app-tab .cp-top,
+body.in-app-tab .ddf-topbar,
+body.in-app-tab .dmc-topbar,
+body.in-app-tab .hc-top,
+body.in-app-tab .hd-top,
+body.in-app-tab .lb-top,
+body.in-app-tab .mk-topbar,
+body.in-app-tab .mm-top,
+body.in-app-tab .mp-topbar,
+body.in-app-tab .mw-topbar,
+body.in-app-tab .ng-topbar,
+body.in-app-tab .oj-top,
+body.in-app-tab .ov-top,
+body.in-app-tab .pa-top,
+body.in-app-tab .qf-top,
+body.in-app-tab .se-top,
+body.in-app-tab .sp-top,
+body.in-app-tab .st-topbar,
+body.in-app-tab .sv-topbar,
+body.in-app-tab .up-top,
+body.in-app-tab .an-top,
+body.in-app-tab .pbs-top,
+body.in-app-tab .sm-top,
+body.in-app-tab .su-top,
+body.in-app-tv .admin-topbar,
+body.in-app-tv .ba-top,
+body.in-app-tv .bd-topbar,
+body.in-app-tv .bh-top,
+body.in-app-tv .cp-top,
+body.in-app-tv .ddf-topbar,
+body.in-app-tv .dmc-topbar,
+body.in-app-tv .hc-top,
+body.in-app-tv .hd-top,
+body.in-app-tv .lb-top,
+body.in-app-tv .mk-topbar,
+body.in-app-tv .mm-top,
+body.in-app-tv .mp-topbar,
+body.in-app-tv .mw-topbar,
+body.in-app-tv .ng-topbar,
+body.in-app-tv .oj-top,
+body.in-app-tv .ov-top,
+body.in-app-tv .pa-top,
+body.in-app-tv .qf-top,
+body.in-app-tv .se-top,
+body.in-app-tv .sp-top,
+body.in-app-tv .st-topbar,
+body.in-app-tv .sv-topbar,
+body.in-app-tv .up-top,
+body.in-app-tv .an-top,
+body.in-app-tv .pbs-top,
+body.in-app-tv .sm-top,
+body.in-app-tv .su-top {
+  position: relative !important;
+}
+
+body.in-app .am-title,
+body.in-app .an-ttl,
+body.in-app .ba-title,
+body.in-app .bd-title,
+body.in-app .bh-title,
+body.in-app .cp-title,
+body.in-app .ddf-title,
+body.in-app .dmc-title,
+body.in-app .hc-title,
+body.in-app .hd-title,
+body.in-app .lb-title,
+body.in-app .mk-title,
+body.in-app .mm-title,
+body.in-app .mw-title,
+body.in-app .ng-title,
+body.in-app .oc-title,
+body.in-app .oj-title,
+body.in-app .ov-ttl,
+body.in-app .pa-title,
+body.in-app .pbs-title,
+body.in-app .se-title,
+body.in-app .sm-title,
+body.in-app .sp-title,
+body.in-app .st-title,
+body.in-app .su-title,
+body.in-app .sv-title,
+body.in-app .up-title,
+body.in-app-tab .am-title,
+body.in-app-tab .an-ttl,
+body.in-app-tab .ba-title,
+body.in-app-tab .bd-title,
+body.in-app-tab .bh-title,
+body.in-app-tab .cp-title,
+body.in-app-tab .ddf-title,
+body.in-app-tab .dmc-title,
+body.in-app-tab .hc-title,
+body.in-app-tab .hd-title,
+body.in-app-tab .lb-title,
+body.in-app-tab .mk-title,
+body.in-app-tab .mm-title,
+body.in-app-tab .mw-title,
+body.in-app-tab .ng-title,
+body.in-app-tab .oc-title,
+body.in-app-tab .oj-title,
+body.in-app-tab .ov-ttl,
+body.in-app-tab .pa-title,
+body.in-app-tab .pbs-title,
+body.in-app-tab .se-title,
+body.in-app-tab .sm-title,
+body.in-app-tab .sp-title,
+body.in-app-tab .st-title,
+body.in-app-tab .su-title,
+body.in-app-tab .sv-title,
+body.in-app-tab .up-title,
+body.in-app-tv .am-title,
+body.in-app-tv .an-ttl,
+body.in-app-tv .ba-title,
+body.in-app-tv .bd-title,
+body.in-app-tv .bh-title,
+body.in-app-tv .cp-title,
+body.in-app-tv .ddf-title,
+body.in-app-tv .dmc-title,
+body.in-app-tv .hc-title,
+body.in-app-tv .hd-title,
+body.in-app-tv .lb-title,
+body.in-app-tv .mk-title,
+body.in-app-tv .mm-title,
+body.in-app-tv .mw-title,
+body.in-app-tv .ng-title,
+body.in-app-tv .oc-title,
+body.in-app-tv .oj-title,
+body.in-app-tv .ov-ttl,
+body.in-app-tv .pa-title,
+body.in-app-tv .pbs-title,
+body.in-app-tv .se-title,
+body.in-app-tv .sm-title,
+body.in-app-tv .sp-title,
+body.in-app-tv .st-title,
+body.in-app-tv .su-title,
+body.in-app-tv .sv-title,
+body.in-app-tv .up-title {
+  position: absolute !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+  pointer-events: none !important;
+}
