@@ -22,21 +22,20 @@ import { isNativeApp } from "../constants/apiBase";
 
 const MY_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0";
 
-/* ─── ARZI — UPDATE ABHI LAPTOP SE AATA HAI ───────────────────────────
- * Plant server par abhi purani APK padi hai aur wahan file rakhne ka koi
- * raasta nahi hai (SSH/SMB/FTP band).  Tab tak SIRF UPDATE laptop se le
- * lete hain.
+/* ─── UPDATE KAHAN SE AATA HAI ────────────────────────────────────────
+ * Ab **plant server** par bhi APK rehti hai (`push_apk.py` se `apk` branch
+ * par chadhti hai, aur server par `./pull_apk.sh` use utaar leta hai).
+ * Isliye laptop band ho to bhi update milta rehta hai.
  *
- * DHYAN — ye `SERVERS` me nahi daala jaan-boojh kar.  `pickServer()` jo
+ * Laptop ke do pate neeche JAAN-BOOJH KAR rakhe hain: agar kabhi release to
+ * ho jaye par server par chadhana rah jaye, to update phir bhi mil jaata hai.
+ * Kram ki wajah se wo tabhi jeetenge jab unke paas SACH ME naya version ho.
+ *
+ * DHYAN — ye pate `SERVERS` me nahi daale jaan-boojh kar.  `pickServer()` jo
  * pehle jawab de use hi POORA API_BASE bana deta hai, yaani laptop jeet
  * jaata to app ka SAARA data laptop se jaata aur laptop band hote hi app
- * ruk jaati.  Yahan sirf ye do call laptop par jaati hain -- version
- * dekhna aur APK utaarna.  Baaki har request plant server par hi jaati hai.
- *
- * Laptop na mile to chup-chaap plant server se poochh lete hain (neeche
- * `""` wahi hai) -- kuch tootta nahi.
- *
- * ⚠ Plant server par do file rakhte hi ye poora block hata dena hai.
+ * ruk jaati.  Yahan sirf do call jaati hain -- version dekhna aur APK
+ * utaarna.  Baaki har request plant server par hi jaati hai.
  */
 // Sab EK SAATH aazmaye jaate hain, aur jiske paas SABSE NAYA version ho wahi
 // jeetta hai.  Version BARABAR ho to list ka PEHLA jeetta hai -- isliye kram
