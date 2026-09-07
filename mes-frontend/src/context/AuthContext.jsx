@@ -89,30 +89,6 @@ const AUTH_KEYS = ["mes_token","mes_username","user_role","user_id","user_dept_s
 const NATIVE_AUTH = isNativeApp();
 const store = () => (NATIVE_AUTH ? localStorage : sessionStorage);
 
-/* ─── DEMO LOGIN — ARZI, HATANA HAI ──────────────────────────────────
- * Sirf APK ke andar poora UI dekhne ke liye.  Jahan plant ka server na
- * mile (ghar par) wahan bhi saare page khul jaate hain, taaki design ka
- * kaam server ke bina ho sake.
- *
- * ⚠ KAAM KHATAM HOTE HI HATANA HAI.  Poora saamaan dhoondhne ke liye:
- *     grep -rn "DEMO_LOGIN" mes-frontend/src
- *
- * Asli data is raaste se KABHI nahi dikh sakta -- token naqli hai, isliye
- * asli server har request par 401 dega.  Ye sirf khaali UI hai, aur sirf
- * app me: button `isNativeApp()` ke peeche hai, website par kabhi nahi.
- */
-const DEMO_KEY   = "mes_demo";                       // DEMO_LOGIN
-const DEMO_TOKEN = "DEMO-NAQLI-TOKEN";               // DEMO_LOGIN
-const DEMO_USER  = {                                 // DEMO_LOGIN
-  id: 0, username: "DEMO", role: "admin",
-  departmentId: null, departmentName: "Maintenance", departmentSlug: "maintenance",
-  permissions: {},
-};
-function isDemo() {                                  // DEMO_LOGIN
-  if (!NATIVE_AUTH) return false;                    // website par ye raasta hai hi nahi
-  try { return store().getItem(DEMO_KEY) === "1"; } catch { return false; }
-}
-
 (function migrateOldLocalStorage() {
   if (NATIVE_AUTH) return;          // app me localStorage HI ghar hai, use mat mitao
   try {
@@ -159,7 +135,6 @@ export function AuthProvider({ children }) {
   };
 
   useEffect(() => {
-    if (isDemo()) { setUser(DEMO_USER); setLoading(false); return; }   // DEMO_LOGIN
     if (!token) { setLoading(false); return; }
     let cancelled = false;
     // Load /me with retry.  Only a 401 (token really invalid) logs out; a
@@ -192,7 +167,6 @@ export function AuthProvider({ children }) {
   // pata nahi chalta jab tak wo koi request na kare.  Isliye har 10s `/me` se
   // token validate karte hain — 401 aate hi yahin se session clear + login page.
   useEffect(() => {
-    if (isDemo()) return;                        // DEMO_LOGIN
     if (!token) return;
     const check = () => {
       fetch(`${API}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
@@ -208,17 +182,6 @@ export function AuthProvider({ children }) {
     const id = setInterval(check, 10000);   // har 10s token validate
     return () => clearInterval(id);
   }, [token]);
-
-  // DEMO_LOGIN — bina server ke andar jao.  Sirf UI dekhne ke liye.
-  const demoLogin = () => {
-    ss.set(DEMO_KEY, "1");
-    ss.set("mes_token", DEMO_TOKEN);
-    ss.set("mes_username", DEMO_USER.username);
-    ss.set("user_role", DEMO_USER.role);
-    setToken(DEMO_TOKEN);
-    setUser(DEMO_USER);
-    setLoading(false);
-  };
 
   const login = async (username, password) => {
     const fd = new FormData();
@@ -255,10 +218,9 @@ export function AuthProvider({ children }) {
   const logout = () => {
     // best-effort AUTH_LOGOUT audit (JWT stateless — server-side session nahi).
     // Token clear karne se PEHLE bhejo taaki request me abhi wala token jaye.
-    if (token && !isDemo()) {                    // DEMO_LOGIN — naqli token mat bhejo
+    if (token) {
       fetch(`${API}/api/auth/logout`, { method: "POST", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
     }
-    ss.remove(DEMO_KEY);                          // DEMO_LOGIN
     setToken("");
     setUser(null);
     for (const k of AUTH_KEYS) ss.remove(k);
@@ -300,7 +262,6 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       token, user, loading, login, logout,
-      demoLogin, isDemo: isDemo(),                // DEMO_LOGIN
       authHdr, isAdmin,
       canAccess, canWrite, API,
       theme, themeKey,

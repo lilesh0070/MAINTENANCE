@@ -1,5 +1,5 @@
 {
-  "version": "1.4.5",
-  "notes": "Tablet: Back button hataye, Log Book poora ek screen me, gear ke neeche dabe button theek",
-  "released_at": "2026-09-06T16:15:57"
+  "version": "1.4.6",
+  "notes": "DEMO login hata diya -- ab sirf asli server se login",
+  "released_at": "2026-09-07T10:46:03"
 }
