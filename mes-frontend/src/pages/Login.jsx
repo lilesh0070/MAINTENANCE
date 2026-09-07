@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { isNativeApp } from "../constants/apiBase";   // DEMO_LOGIN
 
 export default function Login() {
   const [username, setUsername] = useState("");
@@ -10,7 +11,7 @@ export default function Login() {
   const [showPass, setShowPass] = useState(false);
   const [mounted, setMounted]   = useState(false);
 
-  const { login, token } = useAuth();
+  const { login, token, demoLogin } = useAuth();
   const navigate  = useNavigate();
   useEffect(() => { document.title = "Sign In · Maintenance MES"; }, []);
 
@@ -512,6 +513,18 @@ export default function Login() {
                   }
                 </button>
               </form>
+
+              {/* DEMO_LOGIN — ARZI.  Sirf app me dikhta hai, website par kabhi nahi.
+                  Company wapas jaate hi ye poora block hata dena. */}
+              {isNativeApp() && (
+                <button type="button"
+                        onClick={() => { demoLogin(); navigate("/dashboard", { replace: true }); }}
+                        style={{ width: "100%", marginTop: 10, padding: "11px 0", borderRadius: 10,
+                                 border: "1px dashed #f59e0b", background: "#fffbeb", color: "#92400e",
+                                 fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                  Demo — bina server (sirf design dekhne ke liye)
+                </button>
+              )}
 
               {error && (
                 <div className="login-error">
