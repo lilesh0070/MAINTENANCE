@@ -1832,5 +1832,9 @@ body.in-app-tv .pbs-title {
   transform: translateX(-50%) !important;
   pointer-events: none !important;
 }
-/* Back thoda daayein -- kinare se chipka hua lag raha tha */
-body.in-app-tv .pbs-back  { margin-left: 22px !important; }
+/* Back ko LOGO se hatao.
+ * Naapa: app ka apna logo `x 30 -> 75` gherta hai, aur Back `x 60` se shuru
+ * ho raha tha -- yaani 15px logo ke UPAR chadha hua.  Ab Back `x 95` se
+ * shuru hota hai: logo ke khatam hone (75) ke baad 20px ki saaf jagah.
+ * (Base 38 tha, isliye 57 ka margin.) */
+body.in-app-tv .pbs-back  { margin-left: 57px !important; }
