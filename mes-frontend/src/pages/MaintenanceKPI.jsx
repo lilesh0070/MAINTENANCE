@@ -769,7 +769,11 @@ export default function MaintenanceKPI() {
                 <option value="">All Machine No.</option>
                 {machineOpts.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
-              {/* Breakdown category — register me sirf A aur B hain */}
+              {/* Breakdown category — register me sirf A aur B hain.
+                  Label zaroori hai: "All / A / B" se apne aap pata nahi
+                  chalta ki kis cheez ka filter hai (baaki dropdown khud
+                  bata dete hain -- "All Zones", "All Lines"). */}
+              <span className="mk-fy-label">Category</span>
               <select className="mk-fy-select mk-filter" value={category}
                       onChange={(e) => setCategory(e.target.value)}
                       title="Breakdown category">
