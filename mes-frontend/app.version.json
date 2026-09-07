@@ -1,5 +1,5 @@
 {
-  "version": "1.4.10",
-  "notes": "Download ab app ke andar hi (Chrome nahi khulta) -- progress ke saath, phir seedha Install",
-  "released_at": "2026-09-07T13:26:15"
+  "version": "1.4.11",
+  "notes": "Settings kholne par ab check nahi hota -- sirf 'Check for update' dabane par",
+  "released_at": "2026-09-07T13:39:32"
 }

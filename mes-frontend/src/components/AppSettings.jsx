@@ -236,7 +236,13 @@ export default function AppSettings() {
   return (
     <>
       {/* gear — upar daayen */}
-      <button onClick={() => { setOpen(true); check(false); }}
+      {/* Settings kholne par ab CHECK NAHI hota -- pehle hota tha, aur har
+          baar 5 pate poochhne me "checking…" dikhta rehta tha, chahe user ko
+          update se matlab hi na ho (wo to bas logout ya version dekhne aaya
+          ho).  App khulte hi jo chup-chaap check hota hai (neeche `check(true)`)
+          wo `info` bhar deta hai, isliye kholte hi haal saamne hota hai --
+          bas taaza karna ho to "Check for update" dabao. */}
+      <button onClick={() => setOpen(true)}
               aria-label="Settings"
               style={{ position: "fixed", right: 14, top: 12, zIndex: 10000,
                        width: 40, height: 40, borderRadius: "50%",
@@ -286,6 +292,17 @@ export default function AppSettings() {
             {err && (
               <div style={{ fontSize: 12, color: "#b91c1c", fontWeight: 700, margin: "4px 0 10px" }}>
                 {err}
+              </div>
+            )}
+
+            {/* App khulte wala chup-chaap check kaam na aaya ho (server tab
+                nahi mila) to yahan kuch bhi na dikhta -- khali dabba samajh
+                nahi aata.  Isliye saaf keh dete hain ki kya karna hai. */}
+            {!busy && !err && !info && (
+              <div style={{ fontSize: 12, color: "#64748b", margin: "4px 0 10px", lineHeight: 1.5 }}>
+                Server ka version abhi pata nahi — neeche
+                <b style={{ color: "#475569" }}> Check for update </b>
+                dabaiye.
               </div>
             )}
 
