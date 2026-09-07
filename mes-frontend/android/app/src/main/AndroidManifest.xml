@@ -44,4 +44,11 @@
          kuch poochha nahi jaata.  Bina iske navigator.vibrate() chupchaap
          kuch nahi karta, koi error bhi nahi deta. -->
     <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- App ke andar se hi nayi APK install karne ke liye (ApkUpdate.java).
+         Android 8+ par iske BINA installer khulta hi nahi, aur koi error bhi
+         nahi aata - bas kuch nahi hota.  Ye permission maangne bhar se kuch
+         install nahi hota; user ko phir bhi Android ki apni "Update / Install"
+         wali screen par haan karni padti hai. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>

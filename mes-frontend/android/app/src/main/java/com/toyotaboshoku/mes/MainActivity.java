@@ -91,6 +91,11 @@ public class MainActivity extends BridgeActivity {
      */
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // Plugin `super.onCreate()` se PEHLE register karna padta hai --
+        // wahin Capacitor bridge banata hai aur usi waqt plugin ki list
+        // padhta hai.  Baad me register karne se JS ko plugin milta hi nahi.
+        registerPlugin(ApkUpdate.class);
+
         super.onCreate(savedInstanceState);
         try {
             WebSettings s = getBridge().getWebView().getSettings();

@@ -165,6 +165,8 @@ export default function AppSettings() {
   const [info, setInfo] = useState(null);
   const [err, setErr]   = useState("");
   const [naya, setNaya] = useState(false);
+  const [dl, setDl]       = useState(null);   // null = utar nahi rahi; 0-100 = kitni utri
+  const [dlErr, setDlErr] = useState("");
 
   const check = useCallback(async (chupchap) => {
     if (!chupchap) { setBusy(true); setErr(""); }
@@ -181,11 +183,45 @@ export default function AppSettings() {
 
   if (!NATIVE) return null;                       // WEBSITE PAR KUCH NAHI
 
+  /* APP KE ANDAR HI UTAARO, PHIR INSTALLER KHOLO.
+   *
+   * Pehle yahan Capacitor ka Browser plugin tha, jo CHROME khol deta tha --
+   * user app se bahar chala jaata, download Chrome me hota, phir use
+   * Downloads me jaakar file dhoondhni padti.  Ab `ApkUpdate` (apna Java
+   * plugin) khud utaarta hai, progress yahin dikhti hai, aur poora hote hi
+   * Android ka apna "Update / Install" khul jaata hai.
+   *
+   * Purana raasta hataya NAHI -- agar plugin kisi wajah se na mile to wahi
+   * chal jaata hai, taaki update kabhi POORI tarah band na ho. */
   const download = async () => {
     const url = info?.apk_url;
     if (!url) return;
-    // Bahar ke browser me kholte hain — WebView khud APK download nahi karta,
-    // aur Android ka installer bhi bahar se hi khulta hai.
+
+    const P = window.Capacitor?.Plugins?.ApkUpdate;
+    if (P?.downloadAndInstall) {
+      let sun = null;
+      try {
+        setDlErr("");
+        setDl({ pc: 0, ab: 0 });
+        // `percent` -1 aa sakta hai (server ne length na bheji ho) -- tab
+        // patti ke bajaye "kitne MB aaye" dikhate hain, chup nahi baithte.
+        sun = await P.addListener("progress", (e) =>
+          setDl({ pc: e?.percent ?? -1, ab: e?.abTak || 0 }));
+        const r = await P.downloadAndInstall({ url });
+        if (r?.needsPermission) {
+          setDlErr("Android ne 'unknown apps' ki ijaazat maangi hai — "
+                 + "us screen par is app ko allow karke dobara dabaiye.");
+        }
+      } catch (e) {
+        setDlErr(String(e?.message || e));
+      } finally {
+        try { await sun?.remove(); } catch { /* ignore */ }
+        setDl(null);
+      }
+      return;
+    }
+
+    // ── purana raasta (plugin na mile to) ──────────────────────
     try {
       const B = window.Capacitor?.Plugins?.Browser;
       if (B && B.open) { await B.open({ url }); return; }
@@ -262,15 +298,41 @@ export default function AppSettings() {
                     New version available{info.size_mb ? ` — ${info.size_mb} MB` : ""}
                     {info.notes ? <div style={{ fontWeight: 500, marginTop: 5, color: "#7f1d1d" }}>{info.notes}</div> : null}
                   </div>
-                  <button onClick={download}
+                  <button onClick={download} disabled={dl !== null}
                           style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "none",
-                                   background: "#b91c1c", color: "#fff", fontWeight: 800, fontSize: 14,
-                                   cursor: "pointer" }}>
-                    Download and update
+                                   background: dl !== null ? "#94a3b8" : "#b91c1c",
+                                   color: "#fff", fontWeight: 800, fontSize: 14,
+                                   cursor: dl !== null ? "default" : "pointer" }}>
+                    {dl === null
+                      ? "Download and update"
+                      : dl.pc >= 0
+                        ? `Downloading… ${dl.pc}%`
+                        : `Downloading… ${(dl.ab / 1048576).toFixed(1)} MB`}
                   </button>
+
+                  {/* utarne ki patti — app ke andar hi, Chrome kahin nahi.
+                      Length pata na ho to patti bhari hui dikhati hai (percent
+                      ka jhootha andaza dene se behtar hai). */}
+                  {dl !== null && (
+                    <div style={{ height: 6, borderRadius: 99, background: "#fee2e2",
+                                  marginTop: 8, overflow: "hidden" }}>
+                      <div style={{ height: "100%", background: "#b91c1c",
+                                    width: dl.pc >= 0 ? `${dl.pc}%` : "100%",
+                                    opacity: dl.pc >= 0 ? 1 : 0.45,
+                                    transition: "width .15s linear" }} />
+                    </div>
+                  )}
+
+                  {dlErr && (
+                    <div style={{ fontSize: 11.5, color: "#b91c1c", fontWeight: 700,
+                                  margin: "8px 0 0", lineHeight: 1.5 }}>
+                      {dlErr}
+                    </div>
+                  )}
+
                   <div style={{ fontSize: 11, color: "#94a3b8", margin: "8px 0 4px", lineHeight: 1.5 }}>
-                    Android will ask to install once downloaded. The first time it may ask for
-                    "unknown apps" permission — allow it.
+                    App yahin utaar legi, phir Android ki apni "Update" screen khulegi.
+                    Pehli baar wo "unknown apps" ki ijaazat maang sakta hai — allow kar dein.
                   </div>
                 </>
               ) : (
