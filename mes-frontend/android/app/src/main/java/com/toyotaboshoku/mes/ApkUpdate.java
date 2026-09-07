@@ -92,7 +92,13 @@ public class ApkUpdate extends Plugin {
                     call.reject("Server ne " + code + " kaha");
                     return;
                 }
-                final long kul = con.getContentLengthLong();   // -1 bhi ho sakta hai
+                // ⚠ `getContentLengthLong()` NAHI -- wo API 24 ka hai aur is
+                // app ka `minSdkVersion` 23 hai.  Android 6 par wo method
+                // hota hi nahi, aur chalte waqt `NoSuchMethodError` aata hai
+                // (compile par koi galti nahi dikhti -- isliye ye chup-chaap
+                // baithi rehti).  `getContentLength()` API 1 se hai aur 2 GB
+                // tak theek hai; hamari APK 6 MB ki hai.
+                final long kul = con.getContentLength();       // -1 bhi ho sakta hai
 
                 File out = new File(getContext().getCacheDir(), FILE);
                 // Purani adhoori file padi ho to hata do -- warna uske upar

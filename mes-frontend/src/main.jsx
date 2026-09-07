@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
+import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import "./responsive.css";   // global mobile/tablet layer (desktop untouched)
 import { installApiBase } from "./constants/apiBase";
 
@@ -8,9 +9,15 @@ import { installApiBase } from "./constants/apiBase";
 // API_BASE khali rehta hai aur `/api/...` bilkul pehle jaisa proxy se jaata hai.
 installApiBase();
 
+/* `ErrorBoundary` SABSE UPAR -- kisi bhi page ki koi galti poori app ko
+   khaali na kar de.  Iske bina React galti par poora tree hata deta hai aur
+   sirf khaali screen bachti hai, jo bahar se "app khul hi nahi rahi" lagti
+   hai. */
 createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>
 );
 

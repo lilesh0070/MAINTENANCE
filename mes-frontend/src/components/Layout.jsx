@@ -4,6 +4,7 @@ import FullscreenButton from "./FullscreenButton";
 import DisplayToolbar from "./DisplayToolbar";
 import AIAssistant from "./AIAssistant";
 import AppSettings from "./AppSettings";
+import ErrorBoundary from "./ErrorBoundary";
 import { isNativeApp } from "../constants/apiBase";
 
 // The wall-dashboard pages get the full display toolbar (Light/Dark + aspect +
@@ -21,9 +22,17 @@ export default function Layout({ children }) {
       fontFamily: "'Segoe UI', system-ui, sans-serif",
       fontSize: 14,
     }}>
-      {/* Page content */}
+      {/* Page content.
+          Yahan bhi ek ErrorBoundary hai (upar `main.jsx` wale ke ALAWA) --
+          taaki EK page ki galti poora screen na kha jaye.  Iske andar rehne
+          se nav aur ⚙ Settings chalte rehte hain, yaani banda doosre page par
+          ja sakta hai bina app dobara khole.
+          `key={pathname}` isliye: page badalte hi boundary apne aap saaf ho
+          jaati hai, warna ek baar galti aane ke baad wo screen chipki rehti. */}
       <div style={{ minHeight: "100vh" }}>
-        {children}
+        <ErrorBoundary key={pathname}>
+          {children}
+        </ErrorBoundary>
       </div>
 
       {/* Floating nav — always visible on top */}

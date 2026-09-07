@@ -1,5 +1,5 @@
 {
-  "version": "1.4.11",
-  "notes": "Settings kholne par ab check nahi hota -- sirf 'Check for update' dabane par",
-  "released_at": "2026-09-07T13:39:32"
+  "version": "1.4.13",
+  "notes": "Crash-safety: kahin galti ho to ab khaali screen ki jagah sandesh aur nikalne ka raasta",
+  "released_at": "2026-09-07T14:36:03"
 }

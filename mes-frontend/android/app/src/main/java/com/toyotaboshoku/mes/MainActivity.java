@@ -94,7 +94,18 @@ public class MainActivity extends BridgeActivity {
         // Plugin `super.onCreate()` se PEHLE register karna padta hai --
         // wahin Capacitor bridge banata hai aur usi waqt plugin ki list
         // padhta hai.  Baad me register karne se JS ko plugin milta hi nahi.
-        registerPlugin(ApkUpdate.class);
+        //
+        // ⚠ try/catch JAAN-BOOJH KAR: ye app ke shuru hone ka pehla kaam hai.
+        // Yahan kuch bhi phata (plugin ki class load na ho, koi purana Android
+        // kisi API par atak jaaye) to APP HI NAHI KHULEGI -- aur wo update ke
+        // ek button ke liye bahut badi keemat hai.  Na chala to bas update
+        // purane tareeqe (browser) se hoga, baaki app poori chalti rahegi.
+        try {
+            registerPlugin(ApkUpdate.class);
+        } catch (Throwable t) {
+            // chup-chaap chhod do -- JS me plugin na milne par wahan pehle se
+            // browser wala raasta rakha hua hai.
+        }
 
         super.onCreate(savedInstanceState);
         try {
