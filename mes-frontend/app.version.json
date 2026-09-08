@@ -1,5 +1,5 @@
 {
-  "version": "1.4.29",
-  "notes": "Notch wali jagah ki setting ab seedha window par (theme par bharosa nahi)",
-  "released_at": "2026-09-08T09:30:11"
+  "version": "1.4.30",
+  "notes": "Notch wali kaali patti ka ASLI sabab mila -- CSS ki safe-area padding; ab app sach me poori screen par",
+  "released_at": "2026-09-08T09:49:24"
 }

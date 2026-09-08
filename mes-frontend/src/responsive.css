@@ -84,8 +84,8 @@ html.in-app, body.in-app {
 
 /* Phone ka notch / status bar — content uske neeche na chhupe. */
 body.in-app {
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-top: 0 !important;      /* NOTCH KI JAGAH AB NAHI CHHODTE -- neeche dekho */
+    padding-bottom: 0 !important;
 }
 
 /* Input par tap karte hi phone ZOOM kar deta hai agar font 16px se chhota ho —
@@ -253,7 +253,9 @@ body.in-app button[aria-label="Toggle navigation"],
 body.in-app button[aria-label="Settings"] { position: absolute !important; }
 /* status bar (52px) ke neeche se shuru -- warna dono uske peeche chhup jaate. */
 body.in-app button[aria-label="Toggle navigation"],
-body.in-app button[aria-label="Settings"] { top: calc(env(safe-area-inset-top, 0px) + 10px) !important; }
+/* Gear bhi ab safe-area nahi maangta -- bar chhupe hue hain aur body ki
+   padding hata di gayi hai, to yahan bhi seedha 10px hi theek hai. */
+body.in-app button[aria-label="Settings"] { top: 10px !important; }
 
 /* ── App: baaki pages ─────────────────────────────────────────────────
  * 19 page emulator me ek-ek karke naape gaye.  **11 bilkul theek nikle**
@@ -1634,8 +1636,8 @@ html.in-app-tab, body.in-app-tab {
 
 /* Status bar / notch ke neeche content na chhupe. */
 body.in-app-tab {
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-top: 0 !important;      /* NOTCH KI JAGAH AB NAHI CHHODTE -- neeche dekho */
+    padding-bottom: 0 !important;
 }
 
 /* Input par tap karte hi WebView ZOOM kar deta hai agar font 16px se

@@ -163,6 +163,42 @@ public class MainActivity extends BridgeActivity {
         } catch (Exception e) {
             // Na juda to `index.html` apne purane niyam par chala jaayega.
         }
+
+        /* POORI SCREEN -- YAHIN SE, JS KA INTEZAAR KIYE BINA.
+         *
+         * ⚠ PEHLE YE SIRF JS SE LAGTA THA (`apiBase.js` -> ScreenMode plugin).
+         * Wo NAAZUK tha: plugin bridge taiyaar na ho to code do koshish ke baad
+         * chhod deta tha, aur tab bar/notch wali patti reh jaati thi.  User ke
+         * phone par yahi hua -- emulator par plugin waqt par mil jaata tha,
+         * isliye wahan kabhi nahi dikha.
+         *
+         * Ab ye app khulte hi Java me ho jaata hai.  JS wala raasta bhi rehne
+         * diya hai (bemaani nahi -- do baar lagne se kuch bigadta nahi), par
+         * ab uspar TIKA nahi hai. */
+        try {
+            ScreenMode.immersiveChahiye = true;
+            ScreenMode.lagao(this, true);
+        } catch (Throwable t) {
+            // na lage to app pehle jaisi chalti rahe
+        }
+    }
+
+    /**
+     * Window ko focus milte hi poori screen dobara laga do.
+     *
+     * Android system bars ko KAI mauqon par wapas dikha deta hai -- keyboard
+     * band hone par, kisi dialog ke baad, screen on hone par.  `onResume`
+     * un sab ko nahi pakadta, par focus milna pakadta hai.  Yahi wo jagah hai
+     * jahan immersive ko dobara lagana chahiye.
+     */
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        try {
+            if (hasFocus && ScreenMode.immersiveChahiye) ScreenMode.lagao(this, true);
+        } catch (Throwable t) {
+            // chalne do
+        }
     }
 
     /**
