@@ -733,7 +733,7 @@ export default function MaintenanceKPI() {
         <div className="mk-topbar">
           <div />
           <div className="mk-title">
-            KPI <span>Maintenance</span>
+            Maintenance <span>KPI</span>
           </div>
           {user?.username && (
             <div className="mk-user-pill">Signed in as <b>{user.username}</b></div>

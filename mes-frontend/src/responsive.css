@@ -2071,3 +2071,37 @@ body.in-app-tv .up-title {
   white-space: nowrap !important;
   pointer-events: none !important;
 }
+
+/* ── Maintenance Panel: card dono taraf se poori screen ──────────────
+ * User: "maintenance panel me User & Access wala card dono side se poori
+ * screen par kar do, same Login History wala."
+ *
+ * `AdminPanel.jsx` me hai:
+ *     .admin-body { padding: 30px 40px 0; max-width: 1180px; margin: 0 auto; }
+ *
+ * Wo `max-width` hi card ko beech me rok kar dono taraf khali jagah chhod
+ * raha tha.  User & Access aur Login History DONO isi dabbe ke andar tab
+ * hain (`AdminPanel.jsx` -> `LoginHistoryPage`), isliye ek hi badlav se
+ * dono theek ho jaate hain.
+ *
+ * Side ki padding bhi kam ki -- 40px phone ki 412px screen par dono taraf
+ * milakar 80px kha jaata tha (poore ka 19%).  Phone/tablet par 12px, TV par
+ * 24px (wahan jagah hai, aur bilkul kinare se chipka accha nahi lagta).
+ *
+ * WEBSITE PAR JYON KA TYON -- wahan `max-width: 1180px` jaan-boojh kar hai
+ * (bade monitor par line bahut lambi na ho jaye), aur ye rule wahan lagta
+ * hi nahi.
+ */
+body.in-app     .admin-body,
+body.in-app-tab .admin-body,
+body.in-app-tv  .admin-body { max-width: none !important; }
+
+body.in-app     .admin-body,
+body.in-app-tab .admin-body {
+  padding-left: 12px !important;
+  padding-right: 12px !important;
+}
+body.in-app-tv  .admin-body {
+  padding-left: 24px !important;
+  padding-right: 24px !important;
+}
