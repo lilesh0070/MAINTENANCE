@@ -3,8 +3,6 @@ package com.toyotaboshoku.mes;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Canvas;
-import android.graphics.pdf.PdfDocument;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -13,7 +11,6 @@ import android.print.PrintDocumentAdapter;
 import android.print.PrintManager;
 import android.provider.MediaStore;
 import android.util.Base64;
-import android.view.View;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
@@ -216,147 +213,30 @@ public class SheetTools extends Plugin {
     }
 
     /* ────────────────────────────────────────────────────────────────
-       PDF — ek tap me asli file, print ka parda khole bina
-       ──────────────────────────────────────────────────────────────── */
+       PDF -- yahan `pdfBanao()` tha, HATA DIYA GAYA (2026-09-08)
+       ────────────────────────────────────────────────────────────────
+       `PdfDocument` par WebView ko `draw()` karke PDF banayi thi.  Emulator
+       par baar-baar naap kar dekha to wo bharosemand nahi nikli -- ek hi
+       content par kabhi poora panna aata, kabhi BILKUL KHALI.  Jo cheezein
+       pakdi gayin (har ek chup-chaap hoti thi):
+         • bina-attach View par `postDelayed` ka runnable kabhi chalta hi nahi
+         • pehli `draw()` par Chromium ne abhi paint kiya hi nahi hota
+         • hardware-accelerated WebView software bitmap par kuch nahi likhti
+         • PdfDocument ke canvas par WebView `translate` nazarandaaz kar deta
+           hai -- saare panne byte-to-byte ek jaise aa jaate hain
+         • badi naap par software layer chup-chaap khali de deta hai
+       Har ek ka hal nikla, par natija phir bhi naap-dar-naap badalta raha,
+       aur wo Android ke version/device par nirbhar hai.  Plant me "PDF ban
+       gayi" kehkar khali kaagaz dena, kuch na dene se bura hai.
 
-    /** PDF banane wali WebView — print jaisa hi GC se bachana zaroori hai. */
-    private static WebView pdfWali = null;
+       Ab PDF `chhapo()` se banti hai -- Android ka apna print parda, jisme
+       "Save as PDF" hota hai.  Wo Android ke apne (aazmaye hue) code se
+       banti hai aur usme text vector rehta hai.  Ek tap zyada lagta hai,
+       par file sahi milti hai.
 
-    /**
-     * HTML se seedhe ek PDF file banao aur Downloads me daal do.
-     *
-     * `chhapo()` SE ALAG KYUN
-     * -----------------------
-     * `chhapo()` Android ka print parda kholta hai — wahan user ko printer
-     * (ya "Save as PDF") chunna padta hai.  Yahan kuch nahi chunna: file
-     * seedha ban kar Downloads me girti hai, jaise website par "Download"
-     * dabane se girti hai.
-     *
-     * KAISE — aur JO TAREEQA JAAN-BOOJH KAR NAHI CHUNA
-     * ------------------------------------------------
-     * Aam tareeqa `WebView.createPrintDocumentAdapter()` ko KHUD chalane ka
-     * hai.  Wo yahan chal NAHI sakta: uske callback
-     * (`PrintDocumentAdapter.LayoutResultCallback` / `WriteResultCallback`)
-     * ke constructor package-private hain, to unhe `android.print` package
-     * ke BAHAR se subclass nahi kiya ja sakta.  Internet par iska hal "apni
-     * class ko `package android.print;` me daal do" milta hai — wo system
-     * package me ghusna hai, aur plant ki app me wo jokhim nahi lena.
-     *
-     * Isliye yahan poori tarah PUBLIC API istemal ki hai:
-     * `PdfDocument` par WebView ko seedha `draw()` kar dete hain.  Text
-     * bitmap nahi banta (canvas par vector jaata hai), isliye PDF me akshar
-     * saaf rehte hain aur file bhi bhaari nahi hoti.
-     *
-     * Lamba content apne aap kai panno me bat jaata hai: har panne par
-     * canvas ko utna upar khiska dete hain jitna pichhle panne ne dikhaya.
-     */
-    @PluginMethod
-    public void pdfBanao(final PluginCall call) {
-        final String html  = call.getString("html", "");
-        final String naam  = call.getString("naam", "sheet") + ".pdf";
-        final boolean khada = Boolean.TRUE.equals(call.getBoolean("khada", false));
-        if (html.isEmpty()) { call.reject("HTML khali hai"); return; }
-
-        getActivity().runOnUiThread(new Runnable() {
-            @Override public void run() {
-                try {
-                    // Kaagaz — PDF points me naapta hai (1 point = 1/72 inch).
-                    // A4 = 595 x 842 pt.
-                    final int pw = khada ? 595 : 842;
-                    final int ph = khada ? 842 : 595;
-                    // Content ko kaagaz se DO GUNA chaudai par banate hain aur
-                    // phir aadha kar dete hain -- isse layout usi hisaab se
-                    // banta hai jo kaagaz par chahiye, par naap-jokh (font,
-                    // border) do guna barik hoti hai.
-                    final int cw = pw * 2;
-
-                    final WebView wv = new WebView(getContext());
-                    wv.getSettings().setJavaScriptEnabled(false);
-                    wv.setWebViewClient(new WebViewClient() {
-                        @Override public void onPageFinished(WebView view, String url) {
-                            // Ek frame ruk kar naapte hain -- turant naapne par
-                            // height aksar 0 aati hai (layout abhi bana hi nahi).
-                            view.postDelayed(new Runnable() {
-                                @Override public void run() {
-                                    try {
-                                        banao(view, naam, pw, ph, cw, call);
-                                    } catch (Throwable t) {
-                                        pdfWali = null;
-                                        call.reject("PDF nahi ban payi: " + t.getMessage());
-                                    }
-                                }
-                            }, 350);
-                        }
-                    });
-                    // Screen se bahar, par naap-jokh ke liye poora chauda.
-                    wv.measure(View.MeasureSpec.makeMeasureSpec(cw, View.MeasureSpec.EXACTLY),
-                               View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-                    wv.layout(0, 0, cw, 10);
-                    pdfWali = wv;                       // GC se bachao
-                    wv.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
-                } catch (Throwable t) {
-                    pdfWali = null;
-                    call.reject("PDF nahi ban payi: " + t.getMessage());
-                }
-            }
-        });
-    }
-
-    /** Naapi hui WebView ko panno me baant kar PDF likho. */
-    private void banao(WebView view, String naam, int pw, int ph, int cw, PluginCall call)
-            throws Exception {
-        // Poori lambai naapo (scroll wali nahi -- content ki asli height).
-        view.measure(View.MeasureSpec.makeMeasureSpec(cw, View.MeasureSpec.EXACTLY),
-                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-        int ch = Math.max(view.getMeasuredHeight(), view.getContentHeight());
-        if (ch <= 0) ch = cw;                          // kuch naapa hi na gaya -> ek panna
-        view.layout(0, 0, cw, ch);
-
-        final float s = (float) pw / (float) cw;        // kaagaz me bithane ka paimana
-        final int panneKiContentHeight = Math.max(1, (int) (ph / s));
-        final int panne = Math.max(1, (int) Math.ceil((double) ch / panneKiContentHeight));
-
-        PdfDocument doc = new PdfDocument();
-        try {
-            for (int i = 0; i < panne; i++) {
-                PdfDocument.PageInfo pi =
-                        new PdfDocument.PageInfo.Builder(pw, ph, i + 1).create();
-                PdfDocument.Page page = doc.startPage(pi);
-                Canvas c = page.getCanvas();
-                c.save();
-                c.scale(s, s);
-                c.translate(0, -(float) (i * panneKiContentHeight));
-                view.draw(c);
-                c.restore();
-                doc.finishPage(page);
-            }
-            File tmp = new File(getContext().getCacheDir(), "tb_" + System.currentTimeMillis() + ".pdf");
-            FileOutputStream out = new FileOutputStream(tmp);
-            doc.writeTo(out);
-            out.close();
-            byte[] bytes = padho(tmp);
-            tmp.delete();
-            pdfWali = null;
-
-            String kahan = downloadsMeDaalo(bytes, naam, "application/pdf");
-            JSObject r = new JSObject();
-            r.put("kahan", kahan);
-            r.put("panne", panne);
-            call.resolve(r);
-        } finally {
-            doc.close();
-        }
-    }
-
-    /** Chhoti file ko poora memory me padh lo (PDF yahin se Downloads jaati hai). */
-    private static byte[] padho(File f) throws Exception {
-        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
-        java.io.FileInputStream in = new java.io.FileInputStream(f);
-        byte[] buf = new byte[8192];
-        int k;
-        while ((k = in.read(buf)) > 0) bos.write(buf, 0, k);
-        in.close();
-        return bos.toByteArray();
-    }
-
+       Agar kabhi ek-tap PDF chahiye ho: sahi raasta
+       `PrintDocumentAdapter` ko khud chalana hai (wahi jo PrintManager
+       chalata hai) -- par uske callback ke constructor package-private hain,
+       to class ko `package android.print;` me daalna padta hai.  Wo system
+       package me ghusna hai; is app me wo jokhim nahi liya gaya. */
 }

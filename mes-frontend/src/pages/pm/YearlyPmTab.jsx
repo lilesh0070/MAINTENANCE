@@ -28,10 +28,11 @@ export default function YearlyPmTab({ ypm, ypmFy, setYpmFy, ypmYears, api }) {
           if (pdfBusy) return;
           setPdfBusy(true); setPdfMsg("");
           try {
-            const r = await pdfNikalo(boxRef.current, { naam: naamDo(), css: PRINT_CSS });
-            // App me file bani -- bata do kahan.  Website par print ka parda
-            // khula hai, wahan "ho gaya" kehna jhooth hoga.
-            setPdfMsg(r.native ? `✓ PDF ${r.kahan} me` : "Print window me “Save as PDF” chunein");
+            await pdfNikalo(boxRef.current, { naam: naamDo(), css: PRINT_CSS });
+            // Dono jagah print ka parda khulta hai (app me Android ka, site par
+            // browser ka) aur PDF wahin "Save as PDF" se banti hai.  "Ho gaya"
+            // kehna jhooth hoga -- file abhi bani hi nahi.
+            setPdfMsg("Print window me “Save as PDF” chunein");
             setTimeout(() => setPdfMsg(""), 6000);
           } catch (e) {
             setPdfMsg(e?.message || "PDF nahi ban payi");
@@ -79,13 +80,13 @@ export default function YearlyPmTab({ ypm, ypmFy, setYpmFy, ypmYears, api }) {
                                  cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
                   🖨 Print
                 </button>
-                <button type="button" onClick={pdfDo} disabled={pdfBusy} title="Schedule ki PDF"
+                <button type="button" onClick={pdfDo} disabled={pdfBusy} title="PDF ke liye — print window me &quot;Save as PDF&quot; chunein"
                         style={{ padding:"7px 14px", fontSize:12.5, fontWeight:800, borderRadius:7,
                                  border:"1px solid #1d4ed8",
                                  background: pdfBusy ? "#93c5fd" : "#2563eb", color:"#fff",
                                  cursor: pdfBusy ? "default" : "pointer", fontFamily:"inherit",
                                  whiteSpace:"nowrap" }}>
-                  {pdfBusy ? "PDF ban rahi…" : "⤓ PDF"}
+                  {pdfBusy ? "Khul raha…" : "⤓ PDF"}
                 </button>
                 {pdfMsg && (
                   <span style={{ fontSize:11.5, fontWeight:700,

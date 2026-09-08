@@ -302,17 +302,35 @@ function browserPrint(doc, khada) {
  * "ho gaya" bolna jab kuch hua hi na ho, sabse bura hai.
  *
  * Lautata hai: { native: true, kahan, panne } ya { native: false } */
+/* Ek DOM node ko PDF me utaaro.
+ *
+ * ⚠ YAHAN APNA PDF BANANE WALA CODE THA -- HATA DIYA GAYA (2026-09-08).
+ *
+ * Android me `PdfDocument` par WebView ko `draw()` karke PDF banayi ja
+ * sakti hai, aur wo maine banayi bhi thi.  Emulator par baar-baar naap kar
+ * dekha to wo BHAROSEMAND NAHI nikli -- ek hi content par kabhi poora panna
+ * aata, kabhi BILKUL KHALI.  Jo cheezein pakdi gayin:
+ *   • bina-attach WebView par `postDelayed` ka runnable kabhi chalta hi nahi
+ *   • pehli `draw()` par Chromium ne abhi paint kiya hi nahi hota
+ *   • hardware-accelerated WebView software bitmap par kuch nahi likhti
+ *   • PdfDocument ke canvas par WebView `translate` ko nazarandaaz kar deta
+ *     hai -- saare panne byte-to-byte ek jaise aa jaate hain
+ *   • badi naap par software layer chup-chaap khali de deta hai
+ * Har ek ka hal nikla, par natija phir bhi naap-dar-naap badalta raha.
+ * Aisi cheez plant me nahi bheji ja sakti: "PDF bani" kehkar khali kaagaz
+ * dena, kuch na dene se bura hai.
+ *
+ * ISLIYE AB DONO JAGAH EK HI RAASTA -- PRINT.
+ * App me Android ka apna print parda khulta hai aur website par browser ka;
+ * dono me "Save as PDF" maujood hota hai, aur wo PDF Android/browser ke
+ * apne (aazmaye hue) code se banti hai -- text bhi vector rehta hai.
+ * User ko ek tap zyada lagta hai, par jo file milti hai wo sahi milti hai.
+ *
+ * Lautata hai { native } -- UI isi se tay karta hai ki kya likhna hai. */
 export async function pdfNikalo(node, { naam = "sheet", khada = false, css = "" } = {}) {
   if (!node) return { native: false };
-  const P = nativePul();
-  if (P?.pdfBanao) {
-    const chhapneWala = await tasveeronKoAndarBithao(node);
-    const doc = printDoc(chhapneWala, naam, khada, css);
-    const r = await P.pdfBanao({ html: doc, naam, khada });
-    return { native: true, kahan: r?.kahan || "Downloads", panne: r?.panne };
-  }
   await chhapoNode(node, { naam, khada, css });
-  return { native: false };
+  return { native: !!nativePul()?.chhapo };
 }
 
 /* ══════════════════════════════════════════════════════════════════════
