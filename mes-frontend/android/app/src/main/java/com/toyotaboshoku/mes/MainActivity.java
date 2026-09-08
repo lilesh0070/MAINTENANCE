@@ -4,7 +4,9 @@ import android.app.UiModeManager;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.os.Build;
 import android.os.Bundle;
+import android.view.WindowManager;
 import android.webkit.WebSettings;
 import com.getcapacitor.BridgeActivity;
 
@@ -128,6 +130,33 @@ public class MainActivity extends BridgeActivity {
         }
 
         super.onCreate(savedInstanceState);
+
+        /* NOTCH / PUNCH-HOLE WALI JAGAH TAK APP FAILE.
+         *
+         * Ye setting `styles.xml` me bhi hai (`windowLayoutInDisplayCutoutMode`),
+         * par uspar BHAROSA NAHI kiya ja sakta: Capacitor theme ko CODE me
+         * set karta hai (`BridgeActivity.onCreate` -> `setTheme(...)`), aur
+         * window ban chukne ke BAAD theme badalne se window wale attribute
+         * lagte hi nahi.  Isliye yahan seedha WINDOW par laga rahe hain --
+         * yahi pakka raasta hai.
+         *
+         * ALWAYS (API 30+) chunte hain, SHORT_EDGES nahi: SHORT_EDGES sirf
+         * chhoti taraf ke cutout me jaane deta hai, ALWAYS har haalat me.
+         * Purane Android (28-29) par ALWAYS hai hi nahi, wahan SHORT_EDGES.
+         */
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                WindowManager.LayoutParams lp = getWindow().getAttributes();
+                lp.layoutInDisplayCutoutMode =
+                        (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+                        ? WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                        : WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                getWindow().setAttributes(lp);
+            }
+        } catch (Throwable t) {
+            // na lage to app pehle jaisi chalti rahe
+        }
+
         try {
             WebSettings s = getBridge().getWebView().getSettings();
             s.setUserAgentString(s.getUserAgentString() + " TBDev/" + kisKismKaDevice());
