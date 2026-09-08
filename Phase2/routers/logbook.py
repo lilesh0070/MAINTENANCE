@@ -191,6 +191,10 @@ def create_entry(body: EntryIn, user=Depends(get_current_user)):
                 "zone": data.get("zone"), "line": data.get("line"),
                 "machine_no": data.get("machine_no"), "machine_name": data.get("machine_name"),
                 "used_date": data.get("bd_date"),
+                # slip_id 2026-09-08 me juda -- bina iske entry delete karne par
+                # uske spare Spare report me anaath pade reh jaate the, aur
+                # `clear_usage` unhe kabhi dhoondh hi nahi paata tha.
+                "slip_id": new_id,
             }, spares)
     except Exception as e:
         print(f"[SPARE-MASTER] record failed (logbook): {e}")

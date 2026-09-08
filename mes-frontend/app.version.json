@@ -1,5 +1,5 @@
 {
-  "version": "1.4.31",
-  "notes": "Header ab 'Maintenance KPI'; Maintenance Panel ka card app me poori chaudai par",
-  "released_at": "2026-09-08T10:11:12"
+  "version": "1.4.32",
+  "notes": "Sheet print + Excel download; Historical me admin-only edit/delete; Yearly PM ka print+PDF",
+  "released_at": "2026-09-08T13:03:20"
 }

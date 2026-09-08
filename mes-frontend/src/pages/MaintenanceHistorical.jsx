@@ -23,11 +23,33 @@ import { slipPayload } from "./breakdown/slipPayload";
 import { FormatSheet } from "./pm/FormatSheet";
 import { DmcSheet, groupDmcPoints } from "./DmcSheet";
 import { onlyProdZones } from "../constants/zones";
+import ExcelBtn from "../components/ExcelBtn";
+import RowDelete from "../components/RowDelete";
+import { useNavigate } from "react-router-dom";
+import { aajKaNaam } from "../constants/sheetTools";
+
+/* Backend ki galti ka SANDESH nikalo, JSON ka kachra nahi.
+ *
+ * FastAPI galti ko {"detail": "..."} me bhejta hai.  Pehle yahan seedha
+ * `r.text()` phenka jaata tha, to user ko `{"detail":"Is slip par 1 CAPA
+ * judi hai..."}` aisa dikhta -- asli baat brackets me chhup jaati.  Delete
+ * ke jawab me wajah SAAF dikhni chahiye, warna user samjhega hi nahi ki
+ * mitane se roka kyun gaya. */
+async function _galti(r) {
+  const t = await r.text();
+  try {
+    const j = JSON.parse(t);
+    const d = j?.detail ?? j?.message;
+    if (typeof d === "string") return d;
+    if (Array.isArray(d)) return d.map((x) => x?.msg || JSON.stringify(x)).join(" · ");
+  } catch { /* JSON nahi tha -- neeche saada text hi chala jayega */ }
+  return t || `HTTP ${r.status}`;
+}
 
 const api = {
   async get(path, token) {
     const r = await fetch(path, { headers: { Authorization: `Bearer ${token}` } });
-    if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
+    if (!r.ok) throw new Error(await _galti(r));
     return r.json();
   },
   // admin slip edit ke liye
@@ -37,7 +59,16 @@ const api = {
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
+    if (!r.ok) throw new Error(await _galti(r));
+    return r.json();
+  },
+  // admin delete ke liye
+  async del(path, token) {
+    const r = await fetch(path, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) throw new Error(await _galti(r));
     return r.json();
   },
 };
@@ -138,6 +169,7 @@ const fillMonthLabel = (ym) => { if (!ym) return ""; const [y, m] = ym.split("-"
 
 export default function MaintenanceHistorical() {
   const { token, theme, user, isAdmin, canAccess } = useAuth();
+  const nav = useNavigate();   // CAPA edit ke liye -- uska form apne page par khulta hai
   // ── filters (Machine Master List + FY/Month + exact Date) ──
   // Upar ke buttons me se kaunsa chuna hua hai — ek waqt me wahi section dikhta
   const [sec, setSec]       = useState("BD");
@@ -156,15 +188,18 @@ export default function MaintenanceHistorical() {
   const [viewTicket, setViewTicket] = useState(null);
   // ── filled AUTO breakdown slips (ANDON se) — maintenance_auto_breakdown_slip ──
   const [autoRows, setAutoRows]       = useState([]);
+  const [autoReload, setAutoReload]   = useState(0);   // admin edit ke baad list taaza ho
   const [autoLoading, setAutoLoading] = useState(true);
   const [viewAuto, setViewAuto]       = useState(null);   // fetched auto slip ticket (view)
   // ── the filled PM check sheets ──
   const [pmFmt, setPmFmt]         = useState(null);   // sheet format (layout)
   const [pmRows, setPmRows]       = useState([]);
+  const [pmReload, setPmReload]   = useState(0);    // admin edit ke baad taaza
   const [pmLoading, setPmLoading] = useState(true);
   const [viewSheet, setViewSheet] = useState(null);   // full filled sheet (entries incl.)
   // ── the filled DMC check sheets ──
   const [dmcRows, setDmcRows]       = useState([]);
+  const [dmcReload, setDmcReload]   = useState(0);  // admin edit ke baad taaza
   const [dmcLoading, setDmcLoading] = useState(true);
   const [viewDmc, setViewDmc]       = useState(null);   // full filled DMC sheet (entries incl.)
   // ── sunday plan work + daily work assign ──
@@ -290,7 +325,7 @@ export default function MaintenanceHistorical() {
       .catch(() => { if (!ignore) setDayRows([]); })
       .finally(() => { if (!ignore) setDayLoading(false); });
     return () => { ignore = true; };
-  }, [token, win, winNoDate]);
+  }, [token, win, winNoDate, pmReload]);
 
   // filled DMC check sheets (machine_dmc_filled) — server returns only
   // maintenance-signed sheets; the month window is applied client-side (no date
@@ -304,7 +339,7 @@ export default function MaintenanceHistorical() {
       .catch(() => { if (!ignore) setDmcRows([]); })
       .finally(() => { if (!ignore) setDmcLoading(false); });
     return () => { ignore = true; };
-  }, [token, win]);
+  }, [token, win, dmcReload]);
 
   // filled AUTO breakdown slips (ANDON se) — /api/maintenance-kpi/ ke `breakdowns`
   // me se sirf COMPLETED (bhari hui) slips.  (Ye BD History/manual slip se alag hai.)
@@ -324,7 +359,7 @@ export default function MaintenanceHistorical() {
       .catch(() => { if (!ignore) setAutoRows([]); })
       .finally(() => { if (!ignore) setAutoLoading(false); });
     return () => { ignore = true; };
-  }, [token, win]);
+  }, [token, win, autoReload]);
 
   // Zone/Line/Machine matching is client-side (slip zone names like
   // "SEAT SLIDER" vs master "SEAT_SLIDER" — normalized comparison).
@@ -388,10 +423,16 @@ export default function MaintenanceHistorical() {
      dabate hi wahi modal fill-mode me chala jaata hai.  Sirf admin ko:
      `onEdit` tabhi bhejte hain jab isAdmin ho, isliye faisla ek jagah
      rehta hai aur modal har doosri jagah pehle jaisa hi hai.
-     AUTO (ANDON) slip par ye NAHI dete — uske time/date hardware ke naape
-     hue hain, unhe haath se badalna asli record bigaad dega. */
+     AUTO (ANDON) slip ka edit ALAG raaste se hota hai (`saveAutoEdit` →
+     PUT /api/breakdown-slips/auto/{id}), kyunki ye wala PUT sirf MANUAL
+     table me likhta hai.  Wahan bhi ANDON ke naape hue khaane (date/time/
+     downtime/response) lock rehte hain — UI me bhi aur server par bhi. */
   const [editing, setEditing] = useState(false);
   const [editErr, setEditErr] = useState("");
+  // AUTO slip ka apna edit-flag — uska modal alag hai (viewAuto), isliye
+  // `editing` share nahi kar sakte: ek hi flag hota to ek slip edit karte hi
+  // doosri bhi edit-mode me khul jaati.
+  const [editingAuto, setEditingAuto] = useState(false);
 
   const saveSlipEdit = async (maintSlice, _phase, prodExtra) => {
     const id = viewTicket?.id;
@@ -407,6 +448,175 @@ export default function MaintenanceHistorical() {
       setEditErr(e?.message || "Save failed");
       throw e;                      // modal ka saving-flag reset ho jaye
     }
+  };
+
+  /* AUTO slip ka admin edit.
+     Manual slip se ALAG endpoint isliye ki `PUT /api/breakdown-slips/{id}`
+     sirf MANUAL table me likhta hai — usi se auto slip save karna data
+     galat table me daal deta.  Auto ka apna `PUT /auto/{id}` hai, jo stage
+     ko haath nahi lagata aur ANDON ke naape hue khaane (date/time/downtime)
+     server par bhi lock rakhta hai. */
+  const saveAutoEdit = async (maintSlice, _phase, prodExtra) => {
+    const t = viewAuto;
+    if (!t?.id) return;
+    setEditErr("");
+    try {
+      await api.put(`/api/breakdown-slips/auto/${t.id}`, {
+        maintenance_data: maintSlice || {},
+        production_data:  prodExtra  || {},
+        src: t.src || "maintenance",
+      }, token);
+      setEditingAuto(false);
+      setViewAuto(null);
+      setAutoReload((k) => k + 1);
+    } catch (e) {
+      setEditErr(e?.message || "Save failed");
+      throw e;                      // modal ka saving-flag reset ho jaye
+    }
+  };
+
+  /* ── ADMIN: PM sheet ka edit ─────────────────────────────────────────
+     Sheet khulti READ-ONLY hi hai; admin ko header me "✎ Edit" milta hai.
+     Edit karte waqt asli `viewSheet.entries` ko HAATH NAHI LAGATE — uski
+     ek alag copy (`pmDraft`) par kaam hota hai.  Isse "Cancel" sach me
+     cancel karta hai, aur save fail ho jaye to screen par purana data hi
+     rehta hai (adhoora nahi).
+
+     Save `/admin` wale endpoint par jaata hai, `PUT /check-sheet-fill/{id}`
+     par NAHI — wo "wapas bheji gayi sheet dobara jama karo" hai aur wo
+     checked/approved ke dastakhat mita deta hai. */
+  const [pmEdit,  setPmEdit]  = useState(false);
+  const [pmDraft, setPmDraft] = useState([]);
+  const [pmBusy,  setPmBusy]  = useState(false);
+  const [pmErr,   setPmErr]   = useState("");
+
+  const pmEditShuru = () => {
+    // gehri copy — warna draft badalne par asli entries bhi badal jaatin
+    setPmDraft(JSON.parse(JSON.stringify(viewSheet?.entries || [])));
+    setPmErr(""); setPmEdit(true);
+  };
+  const pmEditBand = () => { setPmEdit(false); setPmDraft([]); setPmErr(""); };
+  const pmSave = async () => {
+    if (!viewSheet?.id) return;
+    setPmBusy(true); setPmErr("");
+    try {
+      await api.put(`/api/pm/check-sheet-fill/${viewSheet.id}/admin`, {
+        zone_name:    viewSheet.zone_name || "",
+        line_name:    viewSheet.line_name || "",
+        machine_no:   viewSheet.machine_no || "",
+        machine_name: viewSheet.machine_name || "",
+        pm_date:      String(viewSheet.pm_date || "").slice(0, 10),
+        entries:      pmDraft,
+        sheet_spares: viewSheet.sheet_spares || [],
+      }, token);
+      setPmEdit(false); setPmDraft([]);
+      setViewSheet(null);
+      setPmReload((k) => k + 1);
+    } catch (e) {
+      setPmErr(e?.message || "Save nahi ho paya");
+    } finally { setPmBusy(false); }
+  };
+
+  /* ── ADMIN: DMC sheet ka edit ────────────────────────────────────────
+     Grid me cell dabane par nishaan badalta hai (khali → ✓ → ✗ → khali).
+     `dmcDraft` me SIRF WAHI cell rakhte hain jo badle — poori sheet nahi.
+     Do faayde:
+       • server ko sirf badla hua bhejte hain, aur wahan merge hota hai —
+         to jo point/din client ne dekhe hi nahi wo kabhi nahi udte;
+       • "kya badla" ginna aasaan rehta hai, jo pushti me dikhana hai.
+
+     ⚠ Backend jis din ki value badalti hai, us din ki supervisor
+     VERIFICATION hata deta hai (aur uske hafte ka maintenance sign) —
+     kyunki wo dastakhat purane data par tha.  Save ke jawab me kitne din
+     dobara khule, wo user ko dikhate hain. */
+  const [dmcEdit,  setDmcEdit]  = useState(false);
+  const [dmcDraft, setDmcDraft] = useState({});
+  const [dmcBusy,  setDmcBusy]  = useState(false);
+  const [dmcErr,   setDmcErr]   = useState("");
+  const [dmcInfo,  setDmcInfo]  = useState("");
+
+  const dmcBase = useMemo(
+    () => (viewDmc ? fillValues(viewDmc.entries, viewDmc.day_meta, viewDmc.week_meta) : {}),
+    [viewDmc]);
+  const dmcShow = useMemo(() => ({ ...dmcBase, ...dmcDraft }), [dmcBase, dmcDraft]);
+
+  const dmcToggle = (pid, d) => {
+    const k = `${pid}_${d}`;
+    setDmcDraft((prev) => {
+      const ab = (k in prev ? prev[k] : dmcBase[k]) || "";
+      const naya = ab === "" ? "OK" : ab === "OK" ? "NG" : "";
+      return { ...prev, [k]: naya };
+    });
+  };
+  const dmcEditBand = () => { setDmcEdit(false); setDmcDraft({}); setDmcErr(""); };
+  const dmcSave = async () => {
+    if (!viewDmc?.id) return;
+    const badle = Object.keys(dmcDraft).filter((k) => (dmcDraft[k] || "") !== (dmcBase[k] || ""));
+    if (!badle.length) { dmcEditBand(); return; }     // kuch badla hi nahi
+    setDmcBusy(true); setDmcErr("");
+    try {
+      // key "pointId_day" -> { id, days: {day: status} }
+      const perPoint = {};
+      badle.forEach((k) => {
+        const i = k.lastIndexOf("_");
+        const pid = k.slice(0, i), d = k.slice(i + 1);
+        (perPoint[pid] ||= { id: isNaN(Number(pid)) ? pid : Number(pid), days: {} });
+        perPoint[pid].days[d] = dmcDraft[k] || "";
+      });
+      const r = await api.put(`/api/machine-dmc/check-sheet-fill/${viewDmc.id}/admin`, {
+        zone:         viewDmc.zone_name || "",
+        line:         viewDmc.line_name || "",
+        machine_no:   viewDmc.machine_no || "",
+        machine_name: viewDmc.machine_name || "",
+        sheet_month:  viewDmc.sheet_month || "",
+        entries:      Object.values(perPoint),
+      }, token);
+      const khule = (r?.verification_cleared || []).length;
+      setDmcEdit(false); setDmcDraft({});
+      setViewDmc(null);
+      setDmcReload((k) => k + 1);
+      setDmcInfo(khule
+        ? `Sheet save ho gayi. ${khule} din ki verification hata di gayi — unhe dobara verify karna hoga.`
+        : "Sheet save ho gayi.");
+      setTimeout(() => setDmcInfo(""), 8000);
+    } catch (e) {
+      setDmcErr(e?.message || "Save nahi ho paya");
+    } finally { setDmcBusy(false); }
+  };
+
+  /* ── ADMIN: mitao ────────────────────────────────────────────────
+     Har raasta backend par `require_admin` ke peeche hai; yahan button bhi
+     `isAdmin &&` ke peeche hai.  DONO jagah rok isliye ki UI ki rok asli
+     rok nahi hoti -- koi seedha API bhi maar sakta hai.
+
+     Delete hone ke baad row ko list se NIKAL dete hain (dobara fetch nahi
+     karte): turant dikhta hai, ek server call kam, aur filter/scroll ki
+     jagah waise ki waisi rehti hai.
+
+     AUTO tab par `src=maintenance` isliye pakka hai ki is tab ka data
+     `/api/maintenance-kpi/` se aata hai, jo sirf `maintenance_auto_breakdown_slip`
+     padhta hai -- toolroom ki slip yahan aati hi nahi (naap kar dekha). */
+  const hatao = {
+    bd:   (id) => api.del(`/api/breakdown-slips/${id}`, token)
+                     .then(() => setRows((x) => x.filter((r) => r.id !== id))),
+    auto: (id) => api.del(`/api/breakdown-slips/auto/${id}?src=maintenance`, token)
+                     .then(() => setAutoRows((x) => x.filter((r) => r.id !== id))),
+    pm:   (id) => api.del(`/api/pm/check-sheet-fill/${id}`, token)
+                     .then(() => setPmRows((x) => x.filter((r) => r.id !== id))),
+    dmc:  (id) => api.del(`/api/machine-dmc/check-sheet-fill/${id}`, token)
+                     .then(() => setDmcRows((x) => x.filter((r) => r.id !== id))),
+    capa: (id) => api.del(`/api/capa-lb/sheet/${id}`, token)
+                     .then(() => setCapaRows((x) => x.filter((r) => r.id !== id))),
+    sun:  (id) => api.del(`/api/sunday-plan/${id}`, token)
+                     .then(() => setSunRows((x) => x.filter((r) => r.id !== id))),
+    day:  (id) => api.del(`/api/daily-plan/${id}`, token)
+                     .then(() => setDayRows((x) => x.filter((r) => r.id !== id))),
+    // Log Book ka delete `/api/breakdown-logbook/` par hai, `/api/logbook/` par
+    // NAHI -- dono ek hi table par hain, par doosra Log Book PAGE ka apna
+    // delete hai jise aam user bhi kar sakta hai.  Historical wala admin-only
+    // rakhna tha, isliye alag raasta.
+    log:  (id) => api.del(`/api/breakdown-logbook/${id}`, token)
+                     .then(() => setLbRows((x) => x.filter((r) => r.id !== id))),
   };
 
   // Log Book — apna alag effect (baaki section ki tarah, taaki ek call fail ho
@@ -496,6 +706,9 @@ export default function MaintenanceHistorical() {
   }, [sec, canAccess]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const fmtD = (iso) => (iso ? String(iso).slice(0, 10) : "—");
+  // Excel ke liye: khali cell KHALI rahe, "—" nahi -- Excel me "—" par
+  // na sort chalta hai na filter, aur wo asli data jaisa dikhne lagta hai.
+  const xl = (v) => (v == null || v === "" ? "" : v);
   const fmtT = (iso) => { const d = iso ? new Date(iso) : null; return d ? d.toTimeString().slice(0, 5) : "—"; };
 
   return (
@@ -545,7 +758,7 @@ export default function MaintenanceHistorical() {
                       background:#f1f5f9; color:#94a3b8; }
         .hd-sec { background:#fff; border:1px solid #e2e8f0; border-radius:14px;
                   box-shadow:0 1px 4px rgba(15,23,42,.06); overflow:hidden; }
-        .hd-sec-h { display:flex; align-items:center; gap:10px; padding:14px 20px; border-bottom:1px solid #eef2f7; }
+        .hd-sec-h { display:flex; align-items:center; gap:10px; padding:14px 20px; border-bottom:1px solid #eef2f7; flex-wrap:wrap; }
         .hd-sec-dot { width:10px; height:10px; border-radius:3px; background:#16a34a; }
         .hd-sec-t { font-size:15px; font-weight:800; color:#0f172a; }
         .hd-sec-c { font-size:12px; font-weight:700; color:#fff; background:#16a34a; border-radius:99px; padding:2px 10px; }
@@ -683,7 +896,16 @@ export default function MaintenanceHistorical() {
                       <td style={{ maxWidth:280 }}>{rowProblem(r)}</td>
                       <td className="hd-min">{rowMin(r)}</td>
                       <td style={{ textAlign:"center" }}>
-                        <button className="hd-view" onClick={() => setViewTicket(r)}>View Slip</button>
+                        <span style={{ display:"inline-flex", gap:6, alignItems:"center" }}>
+                          <button className="hd-view" onClick={() => setViewTicket(r)}>View Slip</button>
+                          {isAdmin && (
+                            <RowDelete
+                              chhota
+                              kya={`Breakdown Slip #${r.id} — ${r.machine_no || "?"} · ${fmtD(r.bd_date || r.slip_date)}`}
+                              saath={["is slip par darj saare spare (Spare report se bhi hat jayenge)"]}
+                              onDelete={() => hatao.bd(r.id)} />
+                          )}
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -726,8 +948,18 @@ export default function MaintenanceHistorical() {
                       <td className="hd-min">{r.mc_down_time_minutes ?? "—"}</td>
                       <td style={{ maxWidth:280 }}>{r.reason || "—"}</td>
                       <td style={{ textAlign:"center" }}>
-                        <button className="hd-view" style={{ background:"#dc2626" }}
-                                onClick={() => openAuto(r.id)}>View Slip</button>
+                        <span style={{ display:"inline-flex", gap:6, alignItems:"center" }}>
+                          <button className="hd-view" style={{ background:"#dc2626" }}
+                                  onClick={() => openAuto(r.id)}>View Slip</button>
+                          {isAdmin && (
+                            <RowDelete
+                              chhota
+                              kya={`Auto Slip #${r.id} — ${r.machine_no || "?"} · ${fmtD(r.bd_date || r.date)}`}
+                              saath={["is slip par darj spare",
+                                      "Status tab ki iski line"]}
+                              onDelete={() => hatao.auto(r.id)} />
+                          )}
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -772,8 +1004,17 @@ export default function MaintenanceHistorical() {
                       <td>{r.rev_no || "—"}</td>
                       <td>{r.filled_by || "—"}</td>
                       <td style={{ textAlign:"center" }}>
-                        <button className="hd-view" style={{ background:"#2563eb" }}
-                                onClick={() => openSheet(r.id)}>View Sheet</button>
+                        <span style={{ display:"inline-flex", gap:6, alignItems:"center" }}>
+                          <button className="hd-view" style={{ background:"#2563eb" }}
+                                  onClick={() => openSheet(r.id)}>View Sheet</button>
+                          {isAdmin && (
+                            <RowDelete
+                              chhota
+                              kya={`PM Check Sheet #${r.id} — ${r.machine_no || "?"} · ${r.pm_date || "?"}`}
+                              saath={["is sheet ke PM spare (usi machine+date ki koi aur sheet na bachi ho to)"]}
+                              onDelete={() => hatao.pm(r.id)} />
+                          )}
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -818,8 +1059,18 @@ export default function MaintenanceHistorical() {
                       <td>{r.rev_no || "—"}</td>
                       <td>{r.filled_by || "—"}</td>
                       <td style={{ textAlign:"center" }}>
-                        <button className="hd-view" style={{ background:"#0d9488" }}
-                                onClick={() => openDmc(r.id)}>View Sheet</button>
+                        <span style={{ display:"inline-flex", gap:6, alignItems:"center" }}>
+                          <button className="hd-view" style={{ background:"#0d9488" }}
+                                  onClick={() => openDmc(r.id)}>View Sheet</button>
+                          {isAdmin && (
+                            <RowDelete
+                              chhota
+                              kya={`DMC Sheet #${r.id} — ${r.machine_no || "?"} · ${r.sheet_month || "?"}`}
+                              saath={["is sheet ke saare NG point",
+                                      "un NG point par maintenance ki darj ki hui corrective action"]}
+                              onDelete={() => hatao.dmc(r.id)} />
+                          )}
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -837,6 +1088,18 @@ export default function MaintenanceHistorical() {
               <span style={{ marginLeft:"auto", fontSize:11.5, color:"#94a3b8" }}>
                 assigned on Update Plan → Sunday Plan Work
               </span>
+              <span style={{ marginLeft:10 }}><ExcelBtn banao={() => ({
+                naam: `Sunday-Plan-Work_${aajKaNaam()}`,
+                sheet: "Sunday Plan Work",
+                headers: ["#", "Sunday", "Zone", "Line", "M/C No", "Machine", "Problem / Work",
+                          "Status", "Action Taken", "Done By", "Start", "End", "Total (min)", "Spares"],
+                rows: sunList.map((r, i) => [
+                  i + 1, xl(r.plan_date), xl(r.zone_name), xl(r.line_name), xl(r.machine_no),
+                  xl(r.machine_name), xl(r.problem), r.status === "DONE" ? "Done" : "Pending",
+                  r.status === "DONE" ? xl(r.work_done) : "", r.status === "DONE" ? xl(r.done_by) : "",
+                  xl(r.start_time), xl(r.end_time), xl(r.duration_minutes), xl(r.spares_used),
+                ]),
+              })} /></span>
             </div>
             <div className={sunList.length > 4 ? "hd-scroll" : undefined}>
               <table className="hd-tbl">
@@ -846,12 +1109,13 @@ export default function MaintenanceHistorical() {
                     <th>M/C No</th><th>Machine</th><th>Problem / Work</th>
                     <th style={{ textAlign:"center" }}>Status</th><th>Action Taken</th><th>Done By</th>
                     <th>Start</th><th>End</th><th>Total</th><th>Spares</th>
+                    {isAdmin && <th style={{ textAlign:"center" }}>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {sunLoading && <tr><td colSpan={14} className="hd-empty">Loading…</td></tr>}
+                  {sunLoading && <tr><td colSpan={isAdmin ? 15 : 14} className="hd-empty">Loading…</td></tr>}
                   {!sunLoading && sunList.length === 0 &&
-                    <tr><td colSpan={14} className="hd-empty">No Sunday work for this filter.</td></tr>}
+                    <tr><td colSpan={isAdmin ? 15 : 14} className="hd-empty">No Sunday work for this filter.</td></tr>}
                   {!sunLoading && sunList.map((r, i) => (
                     <tr key={r.id}>
                       <td>{i + 1}</td>
@@ -874,6 +1138,14 @@ export default function MaintenanceHistorical() {
                       <td style={{ fontFamily:"monospace", color:"#475569" }}>{r.end_time || "—"}</td>
                       <td style={{ fontWeight:700, color:"#334155" }}>{r.duration_minutes != null ? `${r.duration_minutes} min` : "—"}</td>
                       <td style={{ maxWidth:200, color:"#64748b" }}>{r.spares_used || "—"}</td>
+                      {isAdmin && (
+                        <td style={{ textAlign:"center" }}>
+                          <RowDelete chhota
+                            kya={`Sunday Plan Work #${r.id} — ${r.machine_no || "?"} · ${r.plan_date || "?"}`}
+                            saath={["is kaam ka poora record (kis ne kiya, kab, kaunse spare lage)"]}
+                            onDelete={() => hatao.sun(r.id)} />
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -890,6 +1162,17 @@ export default function MaintenanceHistorical() {
               <span style={{ marginLeft:"auto", fontSize:11.5, color:"#94a3b8" }}>
                 assigned on Update Plan → Daily Work Assign
               </span>
+              <span style={{ marginLeft:10 }}><ExcelBtn banao={() => ({
+                naam: `Daily-Work-Assign_${aajKaNaam()}`,
+                sheet: "Daily Work Assign",
+                headers: ["#", "Date", "Zone", "Line", "M/C No", "Machine", "Problem / Work",
+                          "Status", "Action Taken", "Done By"],
+                rows: dayList.map((r, i) => [
+                  i + 1, xl(r.plan_date), xl(r.zone_name), xl(r.line_name), xl(r.machine_no),
+                  xl(r.machine_name), xl(r.problem), r.status === "DONE" ? "Done" : "Pending",
+                  r.status === "DONE" ? xl(r.work_done) : "", r.status === "DONE" ? xl(r.done_by) : "",
+                ]),
+              })} /></span>
             </div>
             <div className={dayList.length > 4 ? "hd-scroll" : undefined}>
               <table className="hd-tbl">
@@ -898,12 +1181,13 @@ export default function MaintenanceHistorical() {
                     <th>#</th><th>Date</th><th>Zone</th><th>Line</th>
                     <th>M/C No</th><th>Machine</th><th>Problem / Work</th>
                     <th style={{ textAlign:"center" }}>Status</th><th>Action Taken</th><th>Done By</th>
+                    {isAdmin && <th style={{ textAlign:"center" }}>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {dayLoading && <tr><td colSpan={10} className="hd-empty">Loading…</td></tr>}
+                  {dayLoading && <tr><td colSpan={isAdmin ? 11 : 10} className="hd-empty">Loading…</td></tr>}
                   {!dayLoading && dayList.length === 0 &&
-                    <tr><td colSpan={10} className="hd-empty">No daily work for this filter.</td></tr>}
+                    <tr><td colSpan={isAdmin ? 11 : 10} className="hd-empty">No daily work for this filter.</td></tr>}
                   {!dayLoading && dayList.map((r, i) => (
                     <tr key={r.id}>
                       <td>{i + 1}</td>
@@ -922,6 +1206,14 @@ export default function MaintenanceHistorical() {
                       </td>
                       <td style={{ maxWidth:220 }}>{r.status === "DONE" ? r.work_done : "—"}</td>
                       <td style={{ fontWeight:700, color:"#334155" }}>{r.status === "DONE" ? r.done_by : "—"}</td>
+                      {isAdmin && (
+                        <td style={{ textAlign:"center" }}>
+                          <RowDelete chhota
+                            kya={`Daily Work Assign #${r.id} — ${r.machine_no || "?"} · ${r.plan_date || "?"}`}
+                            saath={["is kaam ka poora record (kis ne kiya, kab)"]}
+                            onDelete={() => hatao.day(r.id)} />
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -948,11 +1240,12 @@ export default function MaintenanceHistorical() {
                   <th>QPR No</th><th>Problem</th>
                   <th style={{ textAlign:"center" }}>Down Time (min)</th>
                   <th>Closed By</th><th>Closed On</th>
+                  {isAdmin && <th style={{ textAlign:"center" }}>Actions</th>}
                 </tr></thead>
                 <tbody>
-                  {capaLoading && <tr><td colSpan={11} className="hd-empty">Loading…</td></tr>}
+                  {capaLoading && <tr><td colSpan={isAdmin ? 12 : 11} className="hd-empty">Loading…</td></tr>}
                   {!capaLoading && capaList.length === 0 &&
-                    <tr><td colSpan={11} className="hd-empty">
+                    <tr><td colSpan={isAdmin ? 12 : 11} className="hd-empty">
                       {capaRows.length ? "No closed CAPA for this filter."
                                        : "No CAPA closed yet — close one on the CAPA page and it will show here."}
                     </td></tr>}
@@ -969,6 +1262,22 @@ export default function MaintenanceHistorical() {
                       <td style={{ textAlign:"center", fontWeight:800 }}>{r.duration_min ?? "—"}</td>
                       <td style={{ fontWeight:700, color:"#334155" }}>{r.closed_by || "—"}</td>
                       <td style={{ whiteSpace:"nowrap" }}>{fmtD(r.closed_at)}</td>
+                      {isAdmin && (
+                        <td style={{ textAlign:"center" }}>
+                          <span style={{ display:"inline-flex", gap:6, alignItems:"center" }}>
+                            {/* CAPA ka form apne page ke andar khulta hai (alag route nahi),
+                                isliye wahan `?sheet=` ke saath bhejte hain -- wo page use
+                                khol kar seedha form dikha deta hai. */}
+                            <button className="hd-view" style={{ background:"#be185d" }}
+                                    onClick={() => nav(`/maintenance-capa?sheet=${r.id}`)}>✎ Edit</button>
+                            <RowDelete
+                              chhota
+                              kya={`CAPA ${r.qpr_no || "#" + r.id} — ${r.machine_no || "?"}`}
+                              saath={["poori QPR sheet ka bhara hua data"]}
+                              onDelete={() => hatao.capa(r.id)} />
+                          </span>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -987,6 +1296,20 @@ export default function MaintenanceHistorical() {
               <span style={{ marginLeft:"auto", fontSize:11.5, color:"#94a3b8" }}>
                 scroll sideways for more columns
               </span>
+              <span style={{ marginLeft:10 }}><ExcelBtn banao={() => ({
+                naam: `Log-Book_${aajKaNaam()}`,
+                sheet: "Log Book",
+                headers: ["#", "Date", "Shift", "Zone", "Line", "M/C No", "Machine",
+                          "Problem Observed", "Action Taken", "Start", "OK Time",
+                          "Down Time (min)", "Solve (hr)", "Spares Used", "Attended By", "Created By"],
+                rows: lbList.map((r, i) => [
+                  i + 1, xl(String(r.bd_date || "").slice(0, 10)), xl(r.shift), xl(r.zone), xl(r.line),
+                  xl(r.machine_no), xl(r.machine_name), xl(r.problem_observed_by_maintenance),
+                  xl(r.action_taken_on_problem), xl(r.bd_start_time), xl(r.bd_ok_time),
+                  xl(r.mc_down_time_minutes), xl(r.solve_time_hours), xl(r.spares_used),
+                  xl(r.bd_attended_by), xl(r.created_by),
+                ]),
+              })} /></span>
             </div>
             <div className={"hd-scroll-x" + (lbList.length > 4 ? " hd-scroll" : "")}>
               <table className="hd-tbl">
@@ -998,11 +1321,12 @@ export default function MaintenanceHistorical() {
                   <th style={{ textAlign:"center" }}>Down Time (min)</th>
                   <th style={{ textAlign:"center" }}>Solve (hr)</th>
                   <th>Spares Used</th><th>Attended By</th><th>Created By</th>
+                  {isAdmin && <th style={{ textAlign:"center" }}>Actions</th>}
                 </tr></thead>
                 <tbody>
-                  {lbLoading && <tr><td colSpan={16} className="hd-empty">Loading…</td></tr>}
+                  {lbLoading && <tr><td colSpan={isAdmin ? 17 : 16} className="hd-empty">Loading…</td></tr>}
                   {!lbLoading && lbList.length === 0 &&
-                    <tr><td colSpan={16} className="hd-empty">
+                    <tr><td colSpan={isAdmin ? 17 : 16} className="hd-empty">
                       {lbRows.length ? "No log book entries for this filter."
                                      : "No log book entries yet."}
                     </td></tr>}
@@ -1024,6 +1348,14 @@ export default function MaintenanceHistorical() {
                       <td style={{ maxWidth:200 }}>{r.spares_used || "—"}</td>
                       <td>{r.bd_attended_by || "—"}</td>
                       <td>{r.created_by || "—"}</td>
+                      {isAdmin && (
+                        <td style={{ textAlign:"center" }}>
+                          <RowDelete chhota
+                            kya={`Log Book entry #${r.id} — ${r.machine_no || "?"} · ${String(r.bd_date || "").slice(0, 10)}`}
+                            saath={["is entry par darj spare (2026-09-08 se pehle wali entries ke spare chhod diye jaate hain — unme entry ki id likhi hi nahi thi)"]}
+                            onDelete={() => hatao.log(r.id)} />
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -1047,11 +1379,51 @@ export default function MaintenanceHistorical() {
                 PM Check Sheet · {viewSheet.machine_no} · {viewSheet.pm_date}
                 <span style={{ fontWeight:600, color:"#64748b" }}>  (filled by {viewSheet.filled_by || "—"})</span>
               </b>
-              <button className="hd-clear" onClick={() => setViewSheet(null)}>✕ Close</button>
+              <span style={{ display:"flex", gap:8, alignItems:"center" }}>
+                {isAdmin && !pmEdit && (
+                  <button onClick={pmEditShuru}
+                          style={{ padding:"6px 14px", fontSize:12, fontWeight:800, borderRadius:6,
+                                   cursor:"pointer", fontFamily:"inherit",
+                                   border:"1px solid #1d4ed8", background:"#2563eb", color:"#fff" }}>
+                    ✎ Edit
+                  </button>
+                )}
+                {pmEdit && (<>
+                  <button onClick={pmSave} disabled={pmBusy}
+                          style={{ padding:"6px 14px", fontSize:12, fontWeight:800, borderRadius:6,
+                                   cursor:pmBusy ? "default" : "pointer", fontFamily:"inherit",
+                                   border:"none", background:pmBusy ? "#86efac" : "#16a34a", color:"#fff" }}>
+                    {pmBusy ? "Save ho raha…" : "💾 Save"}
+                  </button>
+                  <button onClick={pmEditBand} disabled={pmBusy}
+                          style={{ padding:"6px 14px", fontSize:12, fontWeight:800, borderRadius:6,
+                                   cursor:"pointer", fontFamily:"inherit",
+                                   border:"1px solid #cbd5e1", background:"#fff", color:"#334155" }}>
+                    Cancel
+                  </button>
+                </>)}
+                <button className="hd-clear"
+                        onClick={() => { pmEditBand(); setViewSheet(null); }}>✕ Close</button>
+              </span>
             </div>
+            {pmErr && (
+              <div style={{ background:"#fef2f2", color:"#991b1b", border:"1px solid #fecaca",
+                            padding:"8px 16px", fontSize:12.5, fontWeight:700 }}>{pmErr}</div>
+            )}
+            {pmEdit && (
+              <div style={{ background:"#eff6ff", color:"#1e40af", borderBottom:"1px solid #bfdbfe",
+                            padding:"7px 16px", fontSize:12, fontWeight:600 }}>
+                Edit chaalu — cell me seedha likhein. Dastakhat aur approval waise hi rahenge;
+                audit me darj ho jayega ki admin ne sheet badli.
+              </div>
+            )}
             <FormatSheet
+              printable
+              editable={pmEdit}
+              onEdit={(i, key, val) =>
+                setPmDraft((d) => d.map((e, ix) => (ix === i ? { ...e, [key]: val } : e)))}
               f={pmFmt ? { ...pmFmt, doc_footer: viewSheet.doc_footer || pmFmt.doc_footer } : pmFmt}
-              points={viewSheet.entries || []}
+              points={pmEdit ? pmDraft : (viewSheet.entries || [])}
               rev={{ rev_no: viewSheet.rev_no, rev_date: viewSheet.rev_date }}
               signVals={[viewSheet.prepared_by, viewSheet.checked_by, viewSheet.approved_by]}
               signImgs={viewSheet.sign_imgs || []}
@@ -1077,10 +1449,55 @@ export default function MaintenanceHistorical() {
                 DMC Sheet · {viewDmc.machine_no} · {fillMonthLabel(viewDmc.sheet_month)}
                 <span style={{ fontWeight:600, color:"#64748b" }}>  (filled by {viewDmc.filled_by || "—"})</span>
               </b>
-              <button className="hd-clear" onClick={() => setViewDmc(null)}>✕ Close</button>
+              <span style={{ display:"flex", gap:8, alignItems:"center" }}>
+                {isAdmin && !dmcEdit && (
+                  <button onClick={() => { setDmcDraft({}); setDmcErr(""); setDmcEdit(true); }}
+                          style={{ padding:"6px 14px", fontSize:12, fontWeight:800, borderRadius:6,
+                                   cursor:"pointer", fontFamily:"inherit",
+                                   border:"1px solid #0f766e", background:"#0d9488", color:"#fff" }}>
+                    ✎ Edit
+                  </button>
+                )}
+                {dmcEdit && (<>
+                  <button onClick={dmcSave} disabled={dmcBusy}
+                          style={{ padding:"6px 14px", fontSize:12, fontWeight:800, borderRadius:6,
+                                   cursor:dmcBusy ? "default" : "pointer", fontFamily:"inherit",
+                                   border:"none", background:dmcBusy ? "#86efac" : "#16a34a", color:"#fff" }}>
+                    {dmcBusy ? "Save ho raha…" : "💾 Save"}
+                  </button>
+                  <button onClick={dmcEditBand} disabled={dmcBusy}
+                          style={{ padding:"6px 14px", fontSize:12, fontWeight:800, borderRadius:6,
+                                   cursor:"pointer", fontFamily:"inherit",
+                                   border:"1px solid #cbd5e1", background:"#fff", color:"#334155" }}>
+                    Cancel
+                  </button>
+                </>)}
+                <button className="hd-clear"
+                        onClick={() => { dmcEditBand(); setViewDmc(null); }}>✕ Close</button>
+              </span>
             </div>
-            <DmcSheet groups={groupDmcPoints(viewDmc.entries || [])} footer={viewDmc.doc_footer || null}
-                      values={fillValues(viewDmc.entries, viewDmc.day_meta, viewDmc.week_meta)}
+            {dmcErr && (
+              <div style={{ background:"#fef2f2", color:"#991b1b", border:"1px solid #fecaca",
+                            padding:"8px 16px", fontSize:12.5, fontWeight:700 }}>{dmcErr}</div>
+            )}
+            {dmcEdit && (
+              <div style={{ background:"#f0fdfa", color:"#115e59", borderBottom:"1px solid #99f6e4",
+                            padding:"7px 16px", fontSize:12, fontWeight:600 }}>
+                Edit chaalu — din wale khaane par click karein (khali → ✓ → ✗ → khali).
+                {" "}<b>Dhyan:</b> jis din ka nishaan badlega, us din ki supervisor verification
+                {" "}hata di jayegi (wo dastakhat purane data par tha) — use dobara verify karna hoga.
+                {Object.keys(dmcDraft).length > 0 && (
+                  <span style={{ marginLeft:8, fontWeight:800 }}>
+                    · abhi tak {Object.keys(dmcDraft).filter((k) => (dmcDraft[k] || "") !== (dmcBase[k] || "")).length} khaane badle
+                  </span>
+                )}
+              </div>
+            )}
+            <DmcSheet printable
+                      editable={dmcEdit}
+                      onToggle={dmcEdit ? dmcToggle : null}
+                      groups={groupDmcPoints(viewDmc.entries || [])} footer={viewDmc.doc_footer || null}
+                      values={dmcShow}
                       reasons={fillReasons(viewDmc.entries, viewDmc.day_meta, viewDmc.week_meta)}
                       actions={viewDmc._actions || {}}
                       signGrid dayCodes={fillDayCodes(viewDmc.day_meta, viewDmc.week_meta)}
@@ -1114,12 +1531,26 @@ export default function MaintenanceHistorical() {
         </div>
       )}
 
+      {/* DMC edit ke baad ka sandesh — sabse zaroori baat ye batani hai ki
+          kitne din dobara verify hone ke liye khul gaye.  Wo modal band hone
+          ke BAAD dikhna chahiye, isliye yahan page-level par hai. */}
+      {dmcInfo && (
+        <div style={{ position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)",
+                      zIndex: 9600, background: "#ecfdf5", color: "#065f46",
+                      border: "1px solid #a7f3d0", borderRadius: 10, padding: "10px 16px",
+                      fontSize: 12.5, fontWeight: 700, maxWidth: 460, textAlign: "center" }}
+             onClick={() => setDmcInfo("")}>
+          {dmcInfo}
+        </div>
+      )}
+
       {viewAuto && (
         <ClosureFormModal
           ticket={viewAuto}
-          mode="view"
-          onClose={() => setViewAuto(null)}
-          onSave={() => {}}
+          mode={editingAuto ? "fill" : "view"}
+          onEdit={isAdmin ? () => setEditingAuto(true) : null}
+          onClose={() => { setEditingAuto(false); setEditErr(""); setViewAuto(null); }}
+          onSave={saveAutoEdit}
           token={token}
         />
       )}

@@ -441,7 +441,7 @@ export default function MachineDMCAdmin({ toast, readOnly = false }) {
         ) : points.length === 0 ? (
           <div style={{ ...card, textAlign: "center", color: "#94a3b8", padding: 40 }}>No DMC check points for this machine.</div>
         ) : (
-          <DmcSheet groups={groupDmcPoints(points)} footer={fmtDoc} signGrid
+          <DmcSheet printable groups={groupDmcPoints(points)} footer={fmtDoc} signGrid
                     hdr={{ zone, line, machine_no: mno, machine_name: mcSel?.machine_name || "",
                            rev_no: revs.current?.rev_no, rev_date: revs.current?.rev_date }} />
         )}
@@ -667,7 +667,8 @@ export default function MachineDMCAdmin({ toast, readOnly = false }) {
                 <span style={{ fontWeight: 600, color: "#64748b" }}>  (filled by {viewFill.filled_by || "—"})</span></b>
               <button onClick={() => setViewFill(null)} style={closeBtn}>✕ Close</button>
             </div>
-            <DmcSheet groups={groupDmcPoints(viewFill.entries || [])} footer={viewFill.doc_footer || fmtDoc}
+            <DmcSheet printable
+                      groups={groupDmcPoints(viewFill.entries || [])} footer={viewFill.doc_footer || fmtDoc}
                       values={fillValues(viewFill.entries, viewFill.day_meta, viewFill.week_meta)}
                       reasons={fillReasons(viewFill.entries, viewFill.day_meta, viewFill.week_meta)}
                       actions={viewFill._actions || {}}

@@ -912,6 +912,252 @@ def dmc_save_fill(body: DmcFill, user=Depends(get_current_user)):
     return {"ok": True, "id": new_id, "ng_points": len(ng_rows)}
 
 
+# ════════════════════════════════════════════════════════════════════════
+#  ADMIN — bhari hui DMC sheet ko theek karo / mitao   (2026-09-08)
+# ════════════════════════════════════════════════════════════════════════
+@router.put("/check-sheet-fill/{fid}/admin")
+def dmc_admin_update_fill(fid: int, body: DmcFill, admin=Depends(require_admin)):
+    """Bhari hui DMC sheet ko baad me theek karo — SIRF admin.
+
+    `POST /check-sheet-fill` SE YE ALAG KYUN HAI
+    --------------------------------------------
+    Wahan chain-integrity ki sakht rok hai: jis din ko supervisor ne VERIFY
+    kar diya (ya jis hafte par maintenance ke dastakhat lag gaye) uski value
+    badalna 409 deta hai.  Wo rok bilkul sahi hai — operator ko approved din
+    chhedne nahi dena chahiye.
+
+    Par admin ka poora maqsad hi wo galti sudhaarna hota hai jo approve ho
+    chuki hai.  Isliye yahan rok hataayi gayi hai — EK SHART KE SAATH:
+
+      ⚠ JIS DIN KI VALUE WAQAI BADLI, US DIN KI VERIFICATION HATA DI JAATI
+        HAI (aur uske hafte ke maintenance sign bhi).
+
+    Kyun: verification ka matlab hai "maine YE data dekha aur sahi paaya".
+    Data badal kar verification wahin chhod dena us dastakhat ko jhoota bana
+    deta hai — record dekhne wale ko lagega supervisor ne nayi value dekhi
+    thi, jabki usne purani dekhi thi.  Isliye badle hue din dobara verify
+    hone ke liye khul jaate hain.  Jo din NAHI badle, unki verification
+    jyon ki tyon rehti hai.
+
+    Poora byora audit me jaata hai — kaunse din badle, kiski verification
+    hati.
+    """
+    _ensure_dmc()
+    import re as _re
+    if not _re.match(r"^\d{4}-\d{2}$", body.sheet_month or ""):
+        raise HTTPException(400, "sheet_month must be YYYY-MM")
+    if not body.entries:
+        raise HTTPException(400, "Nothing to save — sheet has no check points")
+
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT * FROM machine_dmc_filled WHERE id=%s FOR UPDATE""", (fid,))
+        prev = cur.fetchone()
+        if not prev:
+            raise HTTPException(404, "DMC sheet not found")
+
+        prev_entries = prev.get("entries") or []
+        prev_day     = dict(prev.get("day_meta") or {})
+        prev_week    = dict(prev.get("week_meta") or {})
+        prev_by_id   = {str(e.get("id")): e for e in prev_entries}
+
+        # ── kaunse din ki value WAQAI badli ──────────────────────────────
+        badle_din = set()
+        for e in body.entries:
+            purane = (prev_by_id.get(str(e.get("id"))) or {}).get("days") or {}
+            for d, v in (e.get("days") or {}).items():
+                if str(purane.get(str(d), "")) != str(v):
+                    badle_din.add(str(d))
+
+        # ── un dino ki verification hatao (aur unke hafte ka sign) ───────
+        hati_verify, hate_hafte = [], set()
+        for d in badle_din:
+            m = prev_day.get(d) or {}
+            if str(m.get("status") or "").upper() == "VERIFIED":
+                naya = dict(m); naya.pop("status", None)
+                naya["reopened_by_admin"] = True
+                prev_day[d] = naya
+                hati_verify.append(d)
+            try:
+                hate_hafte.add(str(_week_of(int(d))))
+            except (TypeError, ValueError):
+                pass
+        hate_hafte_sach = []
+        for w in hate_hafte:
+            m = prev_week.get(w) or {}
+            if str(m.get("status") or "").upper() == "SIGNED":
+                naya = dict(m); naya.pop("status", None)
+                naya["reopened_by_admin"] = True
+                prev_week[w] = naya
+                hate_hafte_sach.append(w)
+
+        # ── entries merge — jo point client ne bheja hi nahi, wo bacha rahe ──
+        merged, dekhe = [], set()
+        for e in body.entries:
+            pid = str(e.get("id")); dekhe.add(pid)
+            purana = prev_by_id.get(pid) or {}
+            days = dict(purana.get("days") or {})
+            rz   = dict(purana.get("reasons") or {})
+            for d, v in (e.get("days") or {}).items():
+                days[str(d)] = v
+            for d, v in (e.get("reasons") or {}).items():
+                if str(v or "").strip():
+                    rz[str(d)] = v
+            merged.append({**e, "days": days, "reasons": rz})
+        for pid, e in prev_by_id.items():
+            if pid not in dekhe:
+                merged.append(e)
+
+        # day_meta me client ki nayi value bhi mila do (status wapas na aa jaye)
+        for d, m in (body.day_meta or {}).items():
+            purana = prev_day.get(str(d)) or {}
+            naya = {**purana, **(m or {})}
+            if str(d) in hati_verify:
+                naya.pop("status", None)          # admin ne dobara khola hai
+            prev_day[str(d)] = naya
+
+        cur2 = conn.cursor()
+        cur2.execute("""
+            UPDATE machine_dmc_filled
+               SET zone_name=%s, line_name=%s, machine_no=%s, machine_name=%s,
+                   rev_no=%s, rev_date=%s, entries=%s::jsonb, signs=%s::jsonb,
+                   sign_imgs=%s::jsonb, day_meta=%s::jsonb, week_meta=%s::jsonb
+             WHERE id=%s
+        """, (body.zone, body.line, body.machine_no, body.machine_name or "",
+              body.rev_no or prev.get("rev_no") or "",
+              body.rev_date or prev.get("rev_date") or "",
+              json.dumps(merged),
+              json.dumps(body.signs if body.signs is not None else (prev.get("signs") or {})),
+              json.dumps(body.sign_imgs if body.sign_imgs is not None else (prev.get("sign_imgs") or {})),
+              json.dumps(prev_day), json.dumps(prev_week), fid))
+
+        # ── NG point dobara bana do (sheet ka aaina hain) ────────────────
+        # Save wali jagah jaisa hi: pehle purane hatao, phir har ✗ se naya.
+        # Purani corrective action (action_taken / closed) ko (point, date) se
+        # milakar bacha lete hain — warna admin ke ek sudhaar se maintenance
+        # ka kiya hua kaam ud jaata.
+        cur.execute("""SELECT point_id, ng_date, action_taken, status, closed_by, closed_at
+                         FROM machine_dmc_fill_ng_point
+                        WHERE zone_name=%s AND line_name=%s AND machine_no=%s AND sheet_month=%s""",
+                    (body.zone, body.line, body.machine_no, body.sheet_month))
+        purane_ng = {}
+        for r in cur.fetchall():
+            nd = r["ng_date"]
+            purane_ng[(r["point_id"], nd.isoformat() if hasattr(nd, "isoformat") else str(nd))] = r
+        cur2.execute("""DELETE FROM machine_dmc_fill_ng_point
+                         WHERE zone_name=%s AND line_name=%s AND machine_no=%s AND sheet_month=%s""",
+                     (body.zone, body.line, body.machine_no, body.sheet_month))
+        ng_rows = []
+        for e in merged:
+            days = e.get("days") or {}
+            rz   = e.get("reasons") or {}
+            for d, st in days.items():
+                if str(st).upper() != "NG":
+                    continue
+                try:
+                    ng_date = f"{body.sheet_month}-{int(d):02d}"
+                except (TypeError, ValueError):
+                    continue
+                keep = purane_ng.get((e.get("id"), ng_date)) or {}
+                ng_rows.append((
+                    body.zone, body.line, body.machine_no, body.machine_name or "",
+                    ng_date, body.sheet_month, fid,
+                    e.get("id"), e.get("s_no"), e.get("category"), e.get("check_point"),
+                    e.get("criteria"), e.get("method"), e.get("resp"), e.get("freq"),
+                    (rz.get(str(d)) or "").strip() or None,
+                    prev.get("filled_by"),
+                    keep.get("action_taken"), keep.get("status") or "OPEN",
+                    keep.get("closed_by"), keep.get("closed_at"),
+                ))
+        if ng_rows:
+            cur2.executemany("""
+                INSERT INTO machine_dmc_fill_ng_point
+                    (zone_name, line_name, machine_no, machine_name, ng_date, sheet_month,
+                     fill_id, point_id, s_no, category, check_point, criteria, method,
+                     resp, freq, reason, filled_by,
+                     action_taken, status, closed_by, closed_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """, ng_rows)
+
+        try:
+            from main import write_audit
+            write_audit(conn, action="DMC_SHEET_EDIT", entity_type="machine_dmc_filled",
+                        entity_id=fid,
+                        details=(f"DMC sheet #{fid} · {body.zone}/{body.line}/"
+                                 f"{body.machine_no} · {body.sheet_month} · "
+                                 f"badle din={len(badle_din)}"
+                                 + (f" ({', '.join(sorted(badle_din, key=lambda x: int(x) if x.isdigit() else 0))})" if badle_din else "")
+                                 + (f" · verification hatai: {', '.join(sorted(hati_verify, key=lambda x: int(x) if x.isdigit() else 0))}" if hati_verify else "")
+                                 + (f" · WK sign hataye: {', '.join(sorted(hate_hafte_sach))}" if hate_hafte_sach else "")
+                                 + f" · NG points={len(ng_rows)}"),
+                        user=admin)
+        except Exception as e:
+            print(f"[DMC] sheet-edit ka audit nahi likha: {e}")
+
+    return {"ok": True, "id": fid, "changed_days": sorted(badle_din),
+            "verification_cleared": sorted(hati_verify),
+            "week_signs_cleared": sorted(hate_hafte_sach),
+            "ng_points": len(ng_rows)}
+
+
+@router.delete("/check-sheet-fill/{fid}")
+def dmc_delete_fill(fid: int, admin=Depends(require_admin)):
+    """Bhari hui DMC sheet mitao — SIRF admin.
+
+    SAATH KYA JAATA HAI
+    -------------------
+    `machine_dmc_fill_ng_point` — is sheet ke har ✗ (NG) se bani rows.  Ye
+    sheet KA HISSA hain (har save par sheet se dobara banti hain), isliye
+    sheet ke saath hi jaati hain.
+
+    ⚠ Unme maintenance ki darj ki hui CORRECTIVE ACTION bhi hoti hai
+    (action_taken / closed_by).  Wo bhi is delete me chali jaayegi — isliye
+    ginti jawab me aur audit me dono jagah bheji jaati hai, taaki admin ko
+    pata rahe ki usne kya mitaya.
+
+    Ek machine ke ek mahine ki EK HI sheet hoti hai (save delete+insert
+    karta hai), isliye NG rows (zone, line, machine, month) se saaf karna
+    poori tarah theek hai — kisi doosri sheet ke NG isse nahi chhutte.
+    """
+    _ensure_dmc()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("SELECT * FROM machine_dmc_filled WHERE id=%s", (fid,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "DMC sheet not found")
+
+        cur.execute("""SELECT COUNT(*) AS n,
+                              COUNT(*) FILTER (WHERE COALESCE(action_taken,'') <> '') AS acted
+                         FROM machine_dmc_fill_ng_point
+                        WHERE zone_name=%s AND line_name=%s AND machine_no=%s AND sheet_month=%s""",
+                    (row.get("zone_name"), row.get("line_name"),
+                     row.get("machine_no"), row.get("sheet_month")))
+        ng = cur.fetchone()
+        n_ng, n_acted = ng["n"], ng["acted"]
+
+        cur.execute("""DELETE FROM machine_dmc_fill_ng_point
+                        WHERE zone_name=%s AND line_name=%s AND machine_no=%s AND sheet_month=%s""",
+                    (row.get("zone_name"), row.get("line_name"),
+                     row.get("machine_no"), row.get("sheet_month")))
+        cur.execute("DELETE FROM machine_dmc_filled WHERE id=%s", (fid,))
+
+        try:
+            from main import write_audit
+            write_audit(conn, action="DMC_SHEET_DELETE", entity_type="machine_dmc_filled",
+                        entity_id=fid,
+                        details=(f"DMC sheet #{fid} · {row.get('zone_name')}/"
+                                 f"{row.get('line_name')}/{row.get('machine_no')} · "
+                                 f"{row.get('sheet_month')} · filled_by={row.get('filled_by')} · "
+                                 f"NG points hataye={n_ng} (unme corrective action wale={n_acted})"),
+                        user=admin)
+        except Exception as e:
+            print(f"[DMC] sheet-delete ka audit nahi likha: {e}")
+
+    return {"ok": True, "deleted": fid, "ng_points_removed": n_ng,
+            "ng_with_action_removed": n_acted}
+
+
 # ── SUPERVISOR VERIFICATION (per date) ─────────────────────────────────────
 def _merge_add_only(prev_entries: list, new_entries: list) -> list:
     """Merge a later stage's own check points into the stored sheet.

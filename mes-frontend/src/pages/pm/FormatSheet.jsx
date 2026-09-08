@@ -20,13 +20,18 @@
 // rectangle, which the caller can then copy / paste / fill-down.  `cellSel` is
 // {r1,r2,c1,c2} over point index and FILL column index.  The S.No column is
 // untouched — it stays a plain serial number.
-export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = false, onEdit = null, signVals = [], signImgs = [], onSign = null, onSignVal = null, signable = null,
+import { useRef } from "react";
+import SheetPrintBtn from "../../components/SheetPrintBtn";
+
+export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = false, printable = false, onEdit = null, signVals = [], signImgs = [], onSign = null, onSignVal = null, signable = null,
                               cellSel = null, onCellDown = null, onCellEnter = null, onSpares = null,
                               sheetSpares = [], onSheetSpare = null, onAddSheetSpare = null, onDelSheetSpare = null, spareNames = [] }) {
   // Spares are no longer captured per check point — the per-row "SPARES USED"
   // cell is left blank and a single sheet-level list is filled at the bottom
   // (fill form only).  onSpares stays in the signature for callers that still
   // pass it; it is unused here now.
+  // Print ke liye sheet ke root ka pata -- SheetPrintBtn isi node ko chhapta hai.
+  const boxRef = useRef(null);
   const canSign = (i) => (signable ? signable.includes(i) : editable);
   const inSel = (r, c) => !!cellSel && r >= cellSel.r1 && r <= cellSel.r2 && c >= cellSel.c1 && c <= cellSel.c2;
   if (!f) return <div style={{ color:"#64748b", padding:20 }}>Loading format…</div>;
@@ -38,7 +43,11 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
   const hf = f.header_fields || [];
   for (let i = 0; i < hf.length; i += 2) pairs.push([hf[i], hf[i + 1]]);
   return (
-    <div style={{ background:"#fff", boxShadow:"0 4px 16px rgba(0,0,0,.12)", padding:10, color:"#111827" }}>
+    <>
+      {/* Button chhapne wale node ke BAHAR hai -- andar hota to print
+          me uski khaali jagah bhi chali jaati. */}
+      {printable && <SheetPrintBtn boxRef={boxRef} naam={f.title || "PM Check Sheet"} />}
+    <div ref={boxRef} style={{ background:"#fff", boxShadow:"0 4px 16px rgba(0,0,0,.12)", padding:10, color:"#111827" }}>
       {/* title band */}
       <table style={{ width:"100%", borderCollapse:"collapse", tableLayout:"fixed" }}><tbody><tr>
         <td style={{ border:sb, width:110, textAlign:"center" }}>
@@ -229,5 +238,6 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
         );
       })()}
     </div>
+    </>
   );
 }

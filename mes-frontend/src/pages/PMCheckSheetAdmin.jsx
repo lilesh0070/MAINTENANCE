@@ -613,7 +613,7 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
             Select zone → line → machine no to open that machine's check sheet (read-only).
           </div>
         ) : (
-          <FormatSheet f={histFmt} points={points} editable={false}
+          <FormatSheet printable f={histFmt} points={points} editable={false}
                        rev={rev}
                        hdr={{ zone, line, machine_no: mno, machine_name: mcSel?.machine_name || "",
                               month: new Date().toLocaleString("en-GB", { month: "short", year: "numeric" }) }} />
@@ -630,6 +630,7 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
               <button onClick={() => setViewFill(null)} style={closeBtn}>✕ Close</button>
             </div>
             <FormatSheet
+              printable
               f={histFmt ? { ...histFmt, doc_footer: viewFill.doc_footer || histFmt.doc_footer } : histFmt}
               points={viewFill.entries || []}
               rev={{ rev_no: viewFill.rev_no, rev_date: viewFill.rev_date }}

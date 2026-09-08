@@ -3,10 +3,41 @@
  * Sign-off (Prepared By / Approved By) supports a drawn signature per role,
  * stored PER FY via PUT /yearly-signoff.
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { SignPad } from "./SignPad";
+import { chhapoNode, pdfNikalo } from "../../constants/sheetTools";
 
 export default function YearlyPmTab({ ypm, ypmFy, setYpmFy, ypmYears, api }) {
+        // Print / PDF ke liye sheet ke root ka pata.
+        const boxRef = useRef(null);
+        const [pdfBusy, setPdfBusy] = useState(false);
+        const [pdfMsg,  setPdfMsg]  = useState("");
+        /* Print ke waqt do cheezein badalni padti hain:
+             • upar wali patti (FY chunna + ye khud button) kaagaz par nahi jaani
+             • grid `maxHeight:70vh; overflow:auto` me baithi hai -- use kholna
+               padta hai, warna print me sirf dikhta hua hissa aata hai aur
+               baaki kat jaata hai (aur wo galti kaagaz nikalne par hi pata
+               chalti hai). */
+        const PRINT_CSS = `
+          .ypm-tools { display:none !important; }
+          .ypm-scroll { max-height:none !important; overflow:visible !important; }
+        `;
+        const naamDo = () => `Yearly-PM-Schedule_${(ypmFy || "").replace(/[^\w-]+/g, "-")}`;
+        const chhapo = () => chhapoNode(boxRef.current, { naam: naamDo(), css: PRINT_CSS });
+        const pdfDo = async () => {
+          if (pdfBusy) return;
+          setPdfBusy(true); setPdfMsg("");
+          try {
+            const r = await pdfNikalo(boxRef.current, { naam: naamDo(), css: PRINT_CSS });
+            // App me file bani -- bata do kahan.  Website par print ka parda
+            // khula hai, wahan "ho gaya" kehna jhooth hoga.
+            setPdfMsg(r.native ? `✓ PDF ${r.kahan} me` : "Print window me “Save as PDF” chunein");
+            setTimeout(() => setPdfMsg(""), 6000);
+          } catch (e) {
+            setPdfMsg(e?.message || "PDF nahi ban payi");
+            setTimeout(() => setPdfMsg(""), 6000);
+          } finally { setPdfBusy(false); }
+        };
         const [signImgs, setSignImgs] = useState([]);
         const [signPad, setSignPad] = useState(null);
         useEffect(() => { setSignImgs((ypm && ypm.signoff_imgs) || []); }, [ypm]);
@@ -27,9 +58,9 @@ export default function YearlyPmTab({ ypm, ypmFy, setYpmFy, ypmYears, api }) {
         const MARK_BG = { due:"#fef08a", done:"#86efac", slip:"#fca5a5" };
         const curFy = (() => { const d=new Date(); const s=d.getMonth()>=3?d.getFullYear():d.getFullYear()-1; return `${s}-${String(s+1).slice(-2)}`; })();
         return (
-          <div style={{ background:"#fff", boxShadow:"0 4px 16px rgba(0,0,0,.12)", padding:10, color:"#111827" }}>
-            {/* ── Financial Year selector ── */}
-            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10, flexWrap:"wrap" }}>
+          <div ref={boxRef} style={{ background:"#fff", boxShadow:"0 4px 16px rgba(0,0,0,.12)", padding:10, color:"#111827" }}>
+            {/* ── Financial Year selector + Print / PDF ── */}
+            <div className="ypm-tools" style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10, flexWrap:"wrap" }}>
               <label style={{ fontSize:12.5, fontWeight:800, color:"#334155" }}>Financial Year:</label>
               <select value={ypmFy} onChange={(e) => setYpmFy(e.target.value)}
                       style={{ fontSize:13.5, fontWeight:700, padding:"7px 14px", border:"1.5px solid #cbd5e1",
@@ -41,6 +72,26 @@ export default function YearlyPmTab({ ypm, ypmFy, setYpmFy, ypmYears, api }) {
                   ⓘ New FY — the plan is blank; fill it from Update Plan → Preventive Yearly.
                 </span>
               )}
+              <span style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:8 }}>
+                <button type="button" onClick={chhapo} title="Poori schedule ka print"
+                        style={{ padding:"7px 14px", fontSize:12.5, fontWeight:800, borderRadius:7,
+                                 border:"1px solid #b91c1c", background:"#dc2626", color:"#fff",
+                                 cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
+                  🖨 Print
+                </button>
+                <button type="button" onClick={pdfDo} disabled={pdfBusy} title="Schedule ki PDF"
+                        style={{ padding:"7px 14px", fontSize:12.5, fontWeight:800, borderRadius:7,
+                                 border:"1px solid #1d4ed8",
+                                 background: pdfBusy ? "#93c5fd" : "#2563eb", color:"#fff",
+                                 cursor: pdfBusy ? "default" : "pointer", fontFamily:"inherit",
+                                 whiteSpace:"nowrap" }}>
+                  {pdfBusy ? "PDF ban rahi…" : "⤓ PDF"}
+                </button>
+                {pdfMsg && (
+                  <span style={{ fontSize:11.5, fontWeight:700,
+                                 color: pdfMsg.startsWith("✓") ? "#15803d" : "#b45309" }}>{pdfMsg}</span>
+                )}
+              </span>
             </div>
             {/* title band */}
             <table style={{ width:"100%", borderCollapse:"collapse", tableLayout:"fixed" }}><tbody><tr>
@@ -54,7 +105,7 @@ export default function YearlyPmTab({ ypm, ypmFy, setYpmFy, ypmYears, api }) {
             </tr></tbody></table>
 
             {/* the schedule grid */}
-            <div style={{ overflow:"auto", maxHeight:"70vh" }}>
+            <div className="ypm-scroll" style={{ overflow:"auto", maxHeight:"70vh" }}>
               <table style={{ borderCollapse:"collapse", minWidth:1500 }}>
                 <thead>
                   <tr>

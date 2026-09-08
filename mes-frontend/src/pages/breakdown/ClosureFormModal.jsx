@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { tasveeronKoAndarBithao, nativeChhapo } from "../../constants/sheetTools";
 import { createRoot } from "react-dom/client";
 import { Btn, api, fmtDuration, fmtDateTime } from "./shared";
 import { upperCaret } from "../../constants/upperCaret";
@@ -601,10 +602,14 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   //      An iframe with an empty title and no surrounding chrome side-steps
   //      both — combined with @page margin:0 we get a clean single-sheet
   //      print of just the slip.
-  const printSlip = () => {
+  const printSlip = async () => {
     const node = document.querySelector(".bds-modal");
     if (!node) return;
-    const slipHtml = node.outerHTML;
+    // APK me print ke liye ek ALAG WebView banti hai jo Capacitor ke local
+    // server se judi nahi hoti -- wahan `/logo.jpg` jaisa rishtedaar rasta
+    // khulta hi nahi aur logo ki jagah tooti tasveer aati hai.  Isliye saari
+    // tasveerein pehle hi HTML ke ANDAR (data: URI) bitha dete hain.
+    const slipHtml = (await tasveeronKoAndarBithao(node)).outerHTML;
     // Pull all the <style> blocks the host page has injected so the slip
     // looks identical inside the iframe (font, table grid, colours).
     const styles = Array.from(document.querySelectorAll("style"))
@@ -699,6 +704,18 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   .bds-cell, .bds-row, .bds-cat-row, .bds-sign-grid > * { page-break-inside: avoid; }
 </style>
 </head><body><div class="bds-print-page"><div class="bds-print-fit">${slipHtml}</div></div></body></html>`;
+
+    // ⚠ APK ME NEECHE WALA IFRAME KUCH NAHI KARTA.
+    // Android WebView `window.print()` ko laagu hi nahi karta -- button
+    // dabta hai aur chup-chaap kuch nahi hota.  Isliye pehle Android ke
+    // apne print (SheetTools plugin) par bhejte hain.  Website par ye pul
+    // hota hi nahi, to seedha purana iframe wala raasta chalta hai -- wo
+    // jaisa tha waisa hi hai.
+    const pul = nativeChhapo(html, "Breakdown Slip");
+    if (pul) {
+      try { await pul; return; }
+      catch { /* na chhap paya to neeche browser wala raasta aazma lo */ }
+    }
 
     const iframe = document.createElement("iframe");
     Object.assign(iframe.style, {

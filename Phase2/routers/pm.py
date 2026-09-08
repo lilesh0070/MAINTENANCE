@@ -736,6 +736,166 @@ def resubmit_check_sheet_fill(fill_id: int, body: CheckSheetFill, user=Depends(g
     return {"id": fill_id, "stage": "FILLED"}
 
 
+# ════════════════════════════════════════════════════════════════════════
+#  ADMIN — bhari hui PM check sheet ko theek karo / mitao   (2026-09-08)
+# ════════════════════════════════════════════════════════════════════════
+@router.put("/check-sheet-fill/{fill_id}/admin")
+def admin_update_check_sheet_fill(fill_id: int, body: CheckSheetFill,
+                                  admin=Depends(require_admin)):
+    """Bhari hui PM sheet ko baad me theek karo — SIRF admin.
+
+    UPAR WALE `PUT /check-sheet-fill/{fill_id}` SE YE ALAG KYUN HAI
+    ---------------------------------------------------------------
+    Wo "wapas bheji gayi sheet dobara jama karo" hai.  Wo:
+      • sirf `stage='REJECTED'` par chalta hai (baaki par 409 deta hai), aur
+      • checked_by / approved_by aur unke waqt MITA deta hai (kyunki sheet
+        dobara sabhi se verify honi chahiye).
+    Admin ke sudhaar ke liye dono galat hain — ek approved sheet me se ek
+    galat likha hua khaana theek karne par poori approval chain ud jaati.
+
+    Isliye ye alag endpoint:
+      • kisi bhi stage par chalta hai,
+      • stage / dastakhat / checked / approved ko HAATH NAHI LAGATA,
+      • aur `chain_log` me ek line jodta hai ki admin ne kab kya theek kiya —
+        taaki record me ye kabhi chhupa na rahe.
+    """
+    _ensure_fill_table()
+    try:
+        pmd = datetime.strptime(body.pm_date, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        raise HTTPException(400, "pm_date must be YYYY-MM-DD")
+    if not body.entries:
+        raise HTTPException(400, "entries is empty — nothing to save")
+    # Bharna poora hi rehna chahiye — aadhi bhari sheet save karke "theek kar
+    # diya" kehna sabse bura natija hai.
+    unfilled = [str(e.get("s_no") or "?") for e in body.entries
+                if not str(e.get("status") or "").strip()]
+    if unfilled:
+        raise HTTPException(400, f"Har check point ka STATUS hona chahiye — "
+                                 f"{len(unfilled)} of {len(body.entries)} khali hain")
+
+    author = admin.get("username") if isinstance(admin, dict) else "admin"
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT id, stage, chain_log, machine_no, pm_date
+                         FROM maintenance_pm_check_sheet_filled
+                        WHERE id=%s FOR UPDATE""", (fill_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Filled check sheet not found")
+
+        purana_mno  = row.get("machine_no")
+        purani_date = row.get("pm_date")
+
+        log = list(row.get("chain_log") or [])
+        log.append(_log("admin-edit", str(row.get("stage") or ""),
+                        str(row.get("stage") or ""), author, author))
+
+        cur2 = conn.cursor()
+        cur2.execute("""
+            UPDATE maintenance_pm_check_sheet_filled
+               SET zone_name=%s, line_name=%s, machine_no=%s, machine_name=%s,
+                   pm_date=%s, entries=%s::jsonb, sheet_spares=%s::jsonb,
+                   chain_log=%s::jsonb
+             WHERE id=%s
+        """, (body.zone_name, body.line_name, body.machine_no, body.machine_name,
+              pmd, json.dumps(body.entries),
+              json.dumps([s for s in (body.sheet_spares or [])
+                          if (s.get("spare_name") or "").strip()]),
+              json.dumps(log), fill_id))
+
+        try:
+            from main import write_audit
+            write_audit(conn, action="PM_SHEET_EDIT",
+                        entity_type="maintenance_pm_check_sheet_filled", entity_id=fill_id,
+                        details=(f"PM sheet #{fill_id} · {body.zone_name}/{body.line_name}"
+                                 f"/{body.machine_no} · {pmd} · stage={row.get('stage')} "
+                                 f"(stage aur dastakhat waise hi rakhe gaye)"),
+                        user=admin)
+        except Exception as e:
+            print(f"[PM] sheet-edit ka audit nahi likha: {e}")
+
+    # ── PM spare dobara likho ────────────────────────────────────────────
+    # Spare `source='PM' + machine_no + used_date` se jude hote hain, sheet id
+    # se nahi.  Isliye agar machine ya date badli ho to PURANI kunji wali rows
+    # bhi hatani padti hain — warna wo anaath padi reh jaati.
+    try:
+        with get_conn() as sconn:
+            c = sconn.cursor()
+            if purana_mno != body.machine_no or purani_date != pmd:
+                c.execute("DELETE FROM maintenance_spare WHERE source='PM' "
+                          "AND machine_no=%s AND used_date=%s", (purana_mno, purani_date))
+            sconn.commit()
+    except Exception as e:
+        print(f"[SPARE-MASTER] PM edit me purani kunji saaf nahi hui ({fill_id}): {e}")
+    _record_pm_spares(body, pmd)
+
+    return {"ok": True, "id": fill_id, "stage": row.get("stage")}
+
+
+@router.delete("/check-sheet-fill/{fill_id}")
+def delete_check_sheet_fill(fill_id: int, admin=Depends(require_admin)):
+    """Bhari hui PM sheet mitao — SIRF admin.
+
+    SAATH KYA JUDA HAI
+    ------------------
+    1. `maintenance_spare` (source 'PM') — is sheet ki spare list.  Ye
+       `machine_no + used_date` se judi hai, sheet id se NAHI.  Isliye seedha
+       mita dena khatarnaak hai: usi machine ki usi date ki DOOSRI sheet bhi
+       ho sakti hai (save har baar nayi row banata hai, dedupe nahi karta) —
+       aur uske spare bhi ud jaate.
+
+       Isliye pehle dekhte hain ki mitane ke BAAD us machine+date ki koi aur
+       sheet bachi to nahi.  Bachi ho to spare chhod dete hain.
+
+    2. `pm_schedule.sheet_id` — naam se lagta hai ishara hai, par wo LEGACY
+       column hai (pm.py me hi likha hai "unused now"); usse yahan koi kadi
+       nahi bansti.
+
+    Delete wapas nahi aata, isliye poora byora audit me jaata hai.
+    """
+    _ensure_fill_table()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT * FROM maintenance_pm_check_sheet_filled WHERE id=%s""",
+                    (fill_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Filled check sheet not found")
+
+        cur.execute("DELETE FROM maintenance_pm_check_sheet_filled WHERE id=%s", (fill_id,))
+
+        # usi machine+date ki koi aur sheet bachi?
+        cur.execute("""SELECT COUNT(*) AS n FROM maintenance_pm_check_sheet_filled
+                        WHERE machine_no=%s AND pm_date=%s""",
+                    (row.get("machine_no"), row.get("pm_date")))
+        baaki = cur.fetchone()["n"]
+        n_spare = 0
+        if not baaki:
+            cur.execute("DELETE FROM maintenance_spare WHERE source='PM' "
+                        "AND machine_no=%s AND used_date=%s",
+                        (row.get("machine_no"), row.get("pm_date")))
+            n_spare = cur.rowcount
+
+        try:
+            from main import write_audit
+            write_audit(conn, action="PM_SHEET_DELETE",
+                        entity_type="maintenance_pm_check_sheet_filled", entity_id=fill_id,
+                        details=(f"PM sheet #{fill_id} · {row.get('zone_name')}/"
+                                 f"{row.get('line_name')}/{row.get('machine_no')} · "
+                                 f"{row.get('pm_date')} · stage={row.get('stage')} · "
+                                 f"filled_by={row.get('filled_by')} · "
+                                 f"spare rows hatai={n_spare}"
+                                 + (f" · usi machine+date ki {baaki} aur sheet bachi hai, "
+                                    f"isliye spare chhode" if baaki else "")),
+                        user=admin)
+        except Exception as e:
+            print(f"[PM] sheet-delete ka audit nahi likha: {e}")
+
+    return {"ok": True, "deleted": fill_id, "spare_rows_removed": n_spare,
+            "other_sheets_same_key": baaki}
+
+
 @router.get("/check-sheet-fills")
 def list_check_sheet_fills(zone:       Optional[str] = Query(None),
                            line:       Optional[str] = Query(None),

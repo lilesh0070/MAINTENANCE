@@ -22,7 +22,8 @@
  *   • onSign   — (key, value) => void
  *   • signableKeys — which sign-off codes are editable at this stage
  * ─────────────────────────────────────────────────────────────────── */
-import { useState } from "react";
+import { useState, useRef } from "react";
+import SheetPrintBtn from "../components/SheetPrintBtn";
 
 const DAYS  = Array.from({ length: 31 }, (_, i) => i + 1);
 
@@ -123,13 +124,15 @@ export function DmcSheet({ hdr = {}, groups = [], footer = null,
                            fillDay = null,          // the date this stage is writing to
 
                            days = sheetMonth ? monthDayList(sheetMonth) : DAYS,
-                           dayBandLabel = "" }) {
+                           dayBandLabel = "", printable = false }) {
   // `days` lets a caller show a subset of the 31 day columns — the Daily DMC
   // Fill page passes only today's day so the operator fills a single column.
   // "full month" = a whole month's worth of columns (28/29/30/31), not just 31.
   const fullMonth = days.length >= 28;
   // read-only reason viewer: click a ✗ cell (that has a reason) to see it
   const [reasonPop, setReasonPop] = useState(null);   // { text, sno, cp, x, y }
+  // Print ke liye sheet ke root ka pata -- SheetPrintBtn isi node ko chhapta hai.
+  const boxRef = useRef(null);
   const sb  = "1px solid #000";
   const signInp = { border: "none", borderBottom: "1px solid #cbd5e1", outline: "none", fontSize: 11.5,
                     fontWeight: 700, fontFamily: "inherit", padding: "1px 4px", minWidth: 240,
@@ -186,7 +189,11 @@ export function DmcSheet({ hdr = {}, groups = [], footer = null,
   const catCell = { ...detail, textAlign: "center", fontWeight: 800, background: "#f8fafc", verticalAlign: "middle" };
 
   return (
-    <div style={{ background: "#fff", boxShadow: "0 4px 16px rgba(0,0,0,.12)", padding: 10, color: "#111827" }}>
+    <>
+      {/* Button chhapne wale node ke BAHAR hai -- andar hota to print
+          me uski khaali jagah bhi chali jaati. */}
+      {printable && <SheetPrintBtn boxRef={boxRef} naam={hdr.title || "Machine DMC"} />}
+    <div ref={boxRef} style={{ background: "#fff", boxShadow: "0 4px 16px rgba(0,0,0,.12)", padding: 10, color: "#111827" }}>
       {/* title band */}
       <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}><tbody><tr>
         <td style={{ border: sb, width: 100, textAlign: "center" }}>
@@ -516,6 +523,7 @@ export function DmcSheet({ hdr = {}, groups = [], footer = null,
         </>
       )}
     </div>
+    </>
   );
 }
 

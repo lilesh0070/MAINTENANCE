@@ -2,4 +2,8 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <external-path name="my_images" path="." />
     <cache-path name="my_cache_images" path="." />
+    <!-- Excel/PDF jo app ne banayi (SheetTools.java).  Android 9 aur
+         usse purane par file yahin girti hai, aur "kis app se kholein"
+         wala chooser bina iske content:// URI bana hi nahi paata. -->
+    <external-files-path name="tb_downloads" path="Download/" />
 </paths>

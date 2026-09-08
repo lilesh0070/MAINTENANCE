@@ -15,6 +15,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useSearchParams } from "react-router-dom";
 import { CAPA_QPR_GRID } from "./capaGrid";
 
 // breakdown field  →  QPR grid cell (input name)
@@ -65,6 +66,7 @@ export default function MaintenanceCAPA() {
   const sigCanvasRef = useRef(null);
   const drawing = useRef(false);
   const [view, setView]   = useState("list");      // "list" | "form"
+  const [qs, setQs]       = useSearchParams();
   const [rows, setRows]   = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -315,6 +317,35 @@ export default function MaintenanceCAPA() {
     }
     setView("form");
   };
+
+  /* Historical Data → CAPA (Closed) → "✎ Edit" yahan `?sheet=<id>` ke saath
+     bhejta hai.  CAPA ka form apne page ke ANDAR khulta hai (uska koi alag
+     route nahi), isliye seedhe link se nahi khulta — ye effect wahi kaam
+     karta hai: sheet load karke form dikha deta hai.
+
+     Param uthate hi URL se HATA dete hain, warna:
+       • "Back to list" dabane ke baad bhi param URL me pada rehta, aur
+       • page refresh karte hi form dobara khul jaata — jo user ne chaha hi
+         nahi tha.
+     `khola` isliye ki React 18 ke strict mode me effect do baar chalta hai
+     aur do fetch na chalein. */
+  const khola = useRef(false);
+  useEffect(() => {
+    const sheet = qs.get("sheet");
+    if (!sheet || khola.current) return;
+    khola.current = true;
+    setQs({}, { replace: true });
+    (async () => {
+      try {
+        const d = await api(`/sheet/${sheet}`);
+        setPrefill(d.data || {}); setSid(d.id); setBdId(d.breakdown_id || null);
+        setSStatus((d.status || "DRAFT").toUpperCase());
+        setView("form");
+      } catch (e) {
+        flash("CAPA khul nahi payi: " + (e.message || ""));
+      }
+    })();
+  }, [qs]);          // eslint-disable-line react-hooks/exhaustive-deps
 
   /* `status` ab hamesha bheja jaata hai.  Pehle nahi bhejte the, isliye backend
      har sheet ko DRAFT kar deta tha aur CAPA kabhi CLOSE ho hi nahi sakti thi —

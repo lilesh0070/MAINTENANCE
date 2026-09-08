@@ -50,6 +50,38 @@ _ALLOWED_SLIP_TABLES = {MANUAL_SLIP_TABLE, AUTO_SLIP_TABLE, TOOLROOM_SLIP_TABLE}
 SRC_TABLES = {"maintenance": AUTO_SLIP_TABLE, "toolroom": TOOLROOM_SLIP_TABLE}
 
 
+# Konsa flat column kis half ke kis field se banta hai.
+#
+# Module level par isliye ki DO endpoint ise istemal karte hain:
+#   POST /auto/{sid}/fill  -> slip bharna (stage aage badhta hai)
+#   PUT  /auto/{sid}       -> admin ka baad wala sudhaar (stage nahi badalta)
+# Ek hi jagah rakhne se dono kabhi alag nahi ho sakte -- do copy hoti to ek
+# me naya field jud jaata aur doosri me chhoot jaata, aur wo chup-chaap hota.
+_FROM_PROD = {
+    "zone": "zone", "line": "line", "machine_no": "machine_no",
+    "machine_name": "machine_name", "slip_date": "date", "shift": "shift",
+    "line_leader_name": "line_leader_name", "model_no": "model_no",
+    "machine_operator_name": "machine_operator_name", "category": "category",
+    "bd_start_time": "bd_start_time", "bd_received_time": "bd_received_time",
+    "bd_ok_time": "bd_ok_time", "bd_start_date": "bd_start_date",
+    "bd_end_date": "bd_end_date", "mc_down_time_minutes": "mc_down_time_minutes",
+    "response_time_minutes": "response_time_minutes", "frequency": "frequency",
+    "problem_reported_by_production": "problem_reported_by_production",
+}
+_FROM_MAINT = {
+    "machine_no": "machine_no", "machine_name": "machine_name",
+    "problem_related_to": "problem_related_to",
+    "type_electrical": "type_of_problem", "type_mechanical": "type_of_problem",
+    "problem_observed_by_maintenance": "problem_observed_by_maintenance",
+    "action_taken_on_problem": "action_taken_on_problem",
+    "spares_used": "spares_used", "spares": "spares",
+    "bd_attended_by": "bd_attended_by",
+    "prepared_by_name": "prepared_by", "received_by_name": "received_by",
+    "line_leader_operator_name": "line_leader_operator",
+    "quality_engineer_name": "quality_engineer",
+}
+
+
 # ── Financial-year + month filter ────────────────────────────────────────
 # FY Apr→Mar chalta hai.  `fy` "2026-2027" ya "2026-27" dono chalte hain;
 # `month` "Apr".."Mar" (khali = poora saal).  Return: (start_date, end_date)
@@ -652,7 +684,9 @@ def update_slip(sid: int, body: BreakdownSlipIn, admin=Depends(require_admin)):
         try:
             from routers.maintenance_spare import record_usage, clear_usage
             with get_conn() as sconn:
-                clear_usage(sconn, sid)
+                # source lazmi -- auto slip ki id bhi 5 ho sakti hai, aur bina
+                # source ke uske spare bhi mit jaate the (maintenance_spare.py dekhein).
+                clear_usage(sconn, sid, "Manual Slip")
                 record_usage(sconn, "Manual Slip", {
                     "zone": row.get("zone"), "line": row.get("line"),
                     "machine_no": row.get("machine_no"), "machine_name": row.get("machine_name"),
@@ -870,7 +904,7 @@ def delete_auto_slip(sid: int, src: str = Query("maintenance"), admin=Depends(re
 
         # 1) is slip par darj spare usage
         from routers.maintenance_spare import clear_usage
-        n_spare = clear_usage(conn, sid)
+        n_spare = clear_usage(conn, sid, "Auto Slip")
 
         # 2) Status tab wali row
         cur.execute("DELETE FROM breakdown_status WHERE slip_id = %s AND bd_for = %s",
@@ -896,6 +930,188 @@ def delete_auto_slip(sid: int, src: str = Query("maintenance"), admin=Depends(re
             "spare_rows_removed": n_spare, "status_rows_removed": n_status}
 
 
+# ════════════════════════════════════════════════════════════════════════
+#  ADMIN — MANUAL slip mitao  (2026-09-08)
+# ════════════════════════════════════════════════════════════════════════
+@router.delete("/{sid}")
+def delete_manual_slip(sid: int, admin=Depends(require_admin)):
+    """MANUAL slip delete — SIRF admin.  Delete wapas nahi aata, isliye yahan
+    har shart pehle jaanchi jaati hai.
+
+    KYA-KYA SAATH JUDA HOTA HAI (aur uska kya karte hain)
+    -----------------------------------------------------
+    1. `maintenance_spare` — is slip par darj spare.  Ye slip KA HISSA hain,
+       isliye saath hatte hain.  `source='Manual Slip'` bhi dete hain, kyunki
+       auto slip ki id bhi wahi ho sakti hai (dekhein maintenance_spare.py).
+
+    2. `breakdown_status` — ismein MANUAL slip aati hi nahi.  Wo table sirf
+       AUTO/toolroom slips ke liye hai (`sync_status` sirf unhi se chalta
+       hai), to yahan chhedne ko kuch nahi.
+
+    3. `maintenance_capa_sheet.breakdown_id` / `maintenance_deviations.breakdown_id`
+       — ⚠ YE SLIP KA HISSA NAHI HAIN.  CAPA aur Deviation apne alag dastavez
+       hain, apni approval ke saath.  Unhe chupke se mita dena, ya unka ishara
+       toota hua chhod dena — dono galat hain (doosri soorat me CAPA khulti to
+       hai par machine/problem khali dikhta hai).
+
+       Isliye aisi slip ka delete ROK diya jaata hai aur jawab me saaf bataya
+       jaata hai ki kya juda hai.  Admin pehle wo dastavez hataye, phir slip.
+       "Chup-chaap kuch galat kar dene" se "saaf mana kar dena" behtar hai.
+    """
+    _ensure_table()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute(f"SELECT * FROM {MANUAL_SLIP_TABLE} WHERE id = %s", (sid,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Slip not found")
+
+        # ── judi hui dastavez? → rok do ─────────────────────────────────
+        rok = []
+        for tbl, naam in (("maintenance_capa_sheet", "CAPA"),
+                          ("maintenance_deviations", "Deviation")):
+            # Table na ho to ginti ka sawaal hi nahi — `to_regclass` NULL
+            # deta hai, error nahi.
+            cur.execute("SELECT to_regclass(%s) AS t", (tbl,))
+            if not cur.fetchone()["t"]:
+                continue
+            cur.execute(f"SELECT COUNT(*) AS n FROM {tbl} WHERE breakdown_id = %s", (sid,))
+            n = cur.fetchone()["n"]
+            if n:
+                rok.append(f"{n} {naam}")
+        if rok:
+            raise HTTPException(
+                409,
+                "Is slip par " + " aur ".join(rok) + " judi hai — pehle wo hatayein, "
+                "phir slip.  (Slip mitane se wo dastavez adhoore reh jaate.)")
+
+        # ── slip ka apna hissa ──────────────────────────────────────────
+        from routers.maintenance_spare import clear_usage
+        n_spare = clear_usage(conn, sid, "Manual Slip")
+
+        cur.execute(f"DELETE FROM {MANUAL_SLIP_TABLE} WHERE id = %s", (sid,))
+
+        try:
+            from main import write_audit
+            write_audit(conn, action="MANUAL_SLIP_DELETE", entity_type=MANUAL_SLIP_TABLE,
+                        entity_id=sid,
+                        details=(f"manual slip #{sid} · {row.get('zone')}/{row.get('line')}"
+                                 f"/{row.get('machine_no')} · {row.get('slip_date')} "
+                                 f"{row.get('bd_start_time')} · spare rows hatai={n_spare}"),
+                        user=admin)
+        except Exception as e:                       # audit kabhi kaam na roke
+            print(f"[SLIP] manual-slip delete ka audit nahi likha: {e}")
+
+    return {"ok": True, "deleted": sid, "spare_rows_removed": n_spare}
+
+
+# ANDON ke NAAPE HUE khaane — admin edit me bhi kabhi nahi badalte.
+# Wahi list frontend (ClosureFormModal ka AUTO_LOCKED_FIELDS) me bhi hai;
+# yahan dobara isliye ki rok agar sirf UI par ho to wo rok nahi, sujhav hai.
+_ANDON_LOCKED_COLS = {
+    "bd_start_date", "bd_end_date",
+    "bd_start_time", "bd_received_time", "bd_ok_time",
+    "response_time_minutes", "mc_down_time_minutes",
+    "problem_related_to",
+    # Ye do form bhejta hi nahi, par likh dena saaf rehta hai.
+    "andon_event_id", "prod_stage",
+}
+
+
+@router.put("/auto/{sid}")
+def admin_update_auto_slip(sid: int, body: AutoSlipFill, admin=Depends(require_admin)):
+    """AUTO slip ko theek karo — SIRF admin.  STAGE KABHI NAHI BADALTA.
+
+    `POST /auto/{sid}/fill` se ye alag kyun hai
+    -------------------------------------------
+    Wo endpoint slip BHARNE ke liye hai: usme stage aage badhta hai
+    (PENDING_PRODUCTION → PENDING_MAINTENANCE → COMPLETED) aur wo har
+    logged-in user ke liye khula hai.  Ye endpoint POORI HO CHUKI slip ko
+    baad me theek karne ke liye hai — isliye admin-only, aur stage ko haath
+    hi nahi lagata.
+
+    ANDON ke naape hue khaane (date / time / downtime / response, aur kis
+    vibhag ko bulaya) yahan bhi lock hain — wo hardware ka record hai, kisi
+    ke bharne ka nahi.  Frontend bhi unhe lock rakhta hai; yahan dobara
+    rokna isliye zaroori hai ki UI ki rok asli rok nahi hoti.
+    """
+    _ensure_table()
+    tbl   = _src_table(body.src or "maintenance")
+    src_l = (body.src or "maintenance").strip().lower()
+    flat  = _halves_to_flat(body.production_data, body.maintenance_data)
+    sent_prod  = set((body.production_data  or {}).keys())
+    sent_maint = set((body.maintenance_data or {}).keys())
+    if not sent_prod and not sent_maint:
+        return {"ok": True, "id": sid, "updated": 0}
+
+    from psycopg2.extras import Json
+    sets, vals, chhode = [], [], []
+    for col, value in flat.items():
+        came = ((col in _FROM_PROD  and _FROM_PROD[col]  in sent_prod) or
+                (col in _FROM_MAINT and _FROM_MAINT[col] in sent_maint))
+        if not came:
+            continue                              # form me tha hi nahi → mat chhedo
+        if col in _ANDON_LOCKED_COLS:
+            chhode.append(col)                    # ANDON ka naapa hua → chhod do
+            continue
+        if col == "spares":
+            keep = [s for s in (value or [])
+                    if isinstance(s, dict) and any(str(v or "").strip() for v in s.values())]
+            sets.append("spares = %s"); vals.append(Json(keep) if keep else None)
+        else:
+            sets.append(f"{col} = %s"); vals.append(_blank_to_none(value))
+
+    if not sets:
+        return {"ok": True, "id": sid, "updated": 0, "locked_skipped": chhode}
+
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute(f"SELECT * FROM {tbl} WHERE id = %s", (sid,))
+        purani = cur.fetchone()
+        if not purani:
+            raise HTTPException(404, "auto slip not found")
+
+        cur2 = conn.cursor()
+        cur2.execute(f"UPDATE {tbl} SET {', '.join(sets)} WHERE id = %s", vals + [sid])
+        sync_status(cur2, tbl, sid)               # status table bhi turant sahi ho
+
+        try:
+            from main import write_audit
+            badle = [s.split(" =")[0] for s in sets]
+            write_audit(conn, action="AUTO_SLIP_EDIT", entity_type=tbl, entity_id=sid,
+                        details=(f"{src_l} slip #{sid} · {purani.get('zone')}/"
+                                 f"{purani.get('line')}/{purani.get('machine_no')} · "
+                                 f"badle: {', '.join(badle)}"
+                                 + (f" · ANDON-lock chhode: {', '.join(chhode)}" if chhode else "")),
+                        user=admin)
+        except Exception as e:
+            print(f"[SLIP] auto-slip edit ka audit nahi likha: {e}")
+
+    # Spare master — manual slip jaisa hi: pehle purane hatao, phir naye likho.
+    if "spares" in (body.maintenance_data or {}):
+        try:
+            from routers.maintenance_spare import record_usage, clear_usage
+            spares = [s for s in ((body.maintenance_data or {}).get("spares") or [])
+                      if isinstance(s, dict) and any(str(v or "").strip() for v in s.values())]
+            with get_conn() as sconn:
+                clear_usage(sconn, sid, "Auto Slip")
+                if spares:
+                    record_usage(sconn, "Auto Slip", {
+                        "zone": purani.get("zone"), "line": purani.get("line"),
+                        "machine_no": purani.get("machine_no"),
+                        "machine_name": purani.get("machine_name"),
+                        "used_date": purani.get("slip_date") or purani.get("bd_start_date"),
+                        "slip_id": sid,
+                    }, spares)
+                sconn.commit()
+        except Exception as e:
+            print(f"[SPARE-MASTER] auto-slip edit spare re-record failed ({sid}): {e}")
+
+    return {"ok": True, "id": sid, "updated": len(sets), "locked_skipped": chhode}
+
+
+
+
 @router.post("/auto/{sid}/fill")
 def fill_auto_slip(sid: int, body: AutoSlipFill, user=Depends(get_current_user)):
     """Maintenance ne form bhara → USI row ko update karo (nayi row nahi).
@@ -915,30 +1131,8 @@ def fill_auto_slip(sid: int, body: AutoSlipFill, user=Depends(get_current_user))
     if not sent_prod and not sent_maint and not body.stage:
         return {"ok": True, "id": sid, "updated": 0}
 
-    # Konsa flat column kis half ke kis field se banta hai
-    from_prod = {
-        "zone": "zone", "line": "line", "machine_no": "machine_no",
-        "machine_name": "machine_name", "slip_date": "date", "shift": "shift",
-        "line_leader_name": "line_leader_name", "model_no": "model_no",
-        "machine_operator_name": "machine_operator_name", "category": "category",
-        "bd_start_time": "bd_start_time", "bd_received_time": "bd_received_time",
-        "bd_ok_time": "bd_ok_time", "bd_start_date": "bd_start_date",
-        "bd_end_date": "bd_end_date", "mc_down_time_minutes": "mc_down_time_minutes",
-        "response_time_minutes": "response_time_minutes", "frequency": "frequency",
-        "problem_reported_by_production": "problem_reported_by_production",
-    }
-    from_maint = {
-        "machine_no": "machine_no", "machine_name": "machine_name",
-        "problem_related_to": "problem_related_to",
-        "type_electrical": "type_of_problem", "type_mechanical": "type_of_problem",
-        "problem_observed_by_maintenance": "problem_observed_by_maintenance",
-        "action_taken_on_problem": "action_taken_on_problem",
-        "spares_used": "spares_used", "spares": "spares",
-        "bd_attended_by": "bd_attended_by",
-        "prepared_by_name": "prepared_by", "received_by_name": "received_by",
-        "line_leader_operator_name": "line_leader_operator",
-        "quality_engineer_name": "quality_engineer",
-    }
+    # Mapping module level par hai (_FROM_PROD / _FROM_MAINT) -- upar dekhein.
+    from_prod, from_maint = _FROM_PROD, _FROM_MAINT
 
     from psycopg2.extras import Json
     sets, vals = [], []
@@ -1013,17 +1207,28 @@ def fill_auto_slip(sid: int, body: AutoSlipFill, user=Depends(get_current_user))
             raise HTTPException(404, "auto slip not found")
 
     # Spares master me bhi likh do (best-effort, manual slip jaisa hi)
+    #
+    # ⚠ DO CHEEZEIN 2026-09-08 ko THEEK KI GAYIN:
+    #   1. `slip_id` bheja hi nahi jaata tha -- to auto slip ke spare NULL
+    #      slip_id par padte the, aur slip delete karte waqt `clear_usage`
+    #      unhe kabhi dhoondh hi nahi paata tha (report me hamesha 0).
+    #   2. `clear_usage` pehle nahi hota tha -- to har dobara-save par wahi
+    #      spare Spare report me phir se chadh jaate the (duplicate).
+    #      Manual slip me ye dono pehle se sahi the; auto me chhoot gaye the.
     try:
         spares = (body.maintenance_data or {}).get("spares")
         if spares:
-            from routers.maintenance_spare import record_usage
+            from routers.maintenance_spare import record_usage, clear_usage
             with get_conn() as sconn:
+                clear_usage(sconn, sid, "Auto Slip")
                 record_usage(sconn, "Auto Slip", {
                     "zone": flat.get("zone"), "line": flat.get("line"),
                     "machine_no": flat.get("machine_no"),
                     "machine_name": flat.get("machine_name"),
                     "used_date": flat.get("slip_date") or flat.get("bd_start_date"),
+                    "slip_id": sid,
                 }, spares)
+                sconn.commit()
     except Exception as e:
         print(f"[SPARE-MASTER] record failed (auto slip {sid}): {e}")
 

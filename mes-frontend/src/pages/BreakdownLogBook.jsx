@@ -13,6 +13,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import ExcelBtn from "../components/ExcelBtn";
+import { aajKaNaam } from "../constants/sheetTools";
 
 const api = {
   async get(path, token) {
@@ -613,6 +615,19 @@ export default function BreakdownLogBook() {
                 <span style={{ marginLeft:"auto", fontSize:12, color:"#64748b", fontWeight:600 }}>
                   {filteredRows.length} entr{filteredRows.length === 1 ? "y" : "ies"}
                 </span>
+                {/* Excel me wahi qatarein jaati hain jo abhi dikh rahi hain (filteredRows),
+                    poora data nahi -- user jo chhaant kar dekh raha hai wahi file me mile.
+                    Cell bhi table wale hi tareeqe se bante hain (spare wale column `spares`
+                    array se judte hain), isliye Excel aur screen kabhi alag nahi honge. */}
+                <ExcelBtn banao={() => ({
+                  naam: `Log-Book_${aajKaNaam()}`,
+                  sheet: "Log Book",
+                  headers: LIST_COLS.map((c) => c.h),
+                  rows: filteredRows.map((r) => LIST_COLS.map((c) => {
+                    const v = SPARE_KEYS.has(c.k) ? spareCell(r, c.k) : r[c.k];
+                    return v == null ? "" : String(v);
+                  })),
+                })} />
               </div>
 
               <div style={{ overflowX:"auto", padding:"4px 0" }}>

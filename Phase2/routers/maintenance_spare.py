@@ -96,15 +96,36 @@ def record_usage(conn, source: str, ctx: dict, spares):
         ))
 
 
-def clear_usage(conn, slip_id: int):
+def clear_usage(conn, slip_id: int, source: str = None):
     """Ek slip ki purani spare entries hata do — slip edit hone par pehle ye,
     phir record_usage() se nayi.  Warna har edit par report me duplicate
-    chadhte jaate.  slip_id NULL wali (purani) rows kabhi nahi chhuti."""
+    chadhte jaate.  slip_id NULL wali (purani) rows kabhi nahi chhuti.
+
+    ⚠ `source` KYUN ZAROORI HAI (2026-09-08 — asli data-loss bug tha)
+    ------------------------------------------------------------------
+    Pehle yahan sirf `WHERE slip_id = %s` tha.  Par slip_id ek table ka nahi,
+    KAI table ka hai — manual slip `maintenance_breakdown_data` se aati hai
+    aur auto slip `maintenance_auto_breakdown_slip` se.  Dono ki id 1 se
+    shuru hoti hain, to **manual slip #5 aur auto slip #5 dono maujood hote
+    hain**.
+
+    Natija: auto slip #5 delete karne par manual slip #5 ke spare mit jaate
+    the — aur jawab me "spare_rows_removed: 3" aata tha, jise padh kar lagta
+    ki isi slip ke spare hate hain.  Chup-chaap galat data.
+
+    Isliye ab `source` bhi maangte hain ("Manual Slip" / "Auto Slip" / …).
+    Purane bulane wale (bina source) pehle jaise hi chalte rehte hain, taaki
+    kahin kuch achanak na ruke — par slip wale saare raaste ab source dete
+    hain."""
     _ensure_table()
     if not slip_id:
         return 0
     cur = conn.cursor()
-    cur.execute("DELETE FROM maintenance_spare WHERE slip_id = %s", (int(slip_id),))
+    if source:
+        cur.execute("DELETE FROM maintenance_spare WHERE slip_id = %s AND source = %s",
+                    (int(slip_id), source))
+    else:
+        cur.execute("DELETE FROM maintenance_spare WHERE slip_id = %s", (int(slip_id),))
     return cur.rowcount
 
 

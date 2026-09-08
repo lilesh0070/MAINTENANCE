@@ -124,6 +124,7 @@ public class MainActivity extends BridgeActivity {
         try {
             registerPlugin(ApkUpdate.class);
             registerPlugin(ScreenMode.class);
+            registerPlugin(SheetTools.class);
         } catch (Throwable t) {
             // chup-chaap chhod do -- JS me plugin na milne par wahan pehle se
             // browser wala raasta rakha hua hai.

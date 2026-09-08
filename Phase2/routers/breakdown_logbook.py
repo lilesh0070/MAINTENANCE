@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from database import get_conn, dict_cursor
-from auth import get_current_user
+from auth import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/breakdown-logbook", tags=["breakdown-logbook"])
 
@@ -253,12 +253,48 @@ def create_entry(body: EntryIn, user=Depends(get_current_user)):
 
 
 @router.delete("/{entry_id}")
-def delete_entry(entry_id: int, user=Depends(get_current_user)):
+def delete_entry(entry_id: int, admin=Depends(require_admin)):
+    """Log Book ki ek entry mitao — SIRF admin (Historical Data se).
+
+    `DELETE /api/logbook/{id}` SE ALAG KYUN
+    ---------------------------------------
+    Wo Log Book PAGE ka apna delete hai — wahan aam user apni likhi entry
+    hata sakta hai, aur wo pehle jaisa hi chhoda gaya hai.  Ye endpoint
+    Historical Data ke liye hai, jahan user ki shart hai ki mitane ka haq
+    sirf admin ke paas rahe.  (Dono ek hi table par hain.)
+
+    SAATH ME SPARE
+    --------------
+    Is entry par darj spare `maintenance_spare` (source 'Log Book') me
+    jaate hain.  2026-09-08 se unme `slip_id` bhi likha jaata hai, isliye
+    unhe theek se dhoondha ja sakta hai.  Us tareekh se PURANI entries me
+    slip_id NULL hai — unke spare jaan-boojh kar chhode jaate hain
+    (`clear_usage` NULL wali rows kabhi nahi chhuta), warna kisi doosri
+    entry ke spare bhi ud sakte the.  Kitne hate, wo jawab me aata hai.
+    """
     _ensure_table()
     with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("DELETE FROM maintenance_logbook_db_history WHERE id=%s", (entry_id,))
-        if cur.rowcount == 0:
+        cur = dict_cursor(conn)
+        cur.execute("SELECT * FROM maintenance_logbook_db_history WHERE id=%s", (entry_id,))
+        row = cur.fetchone()
+        if not row:
             raise HTTPException(404, "Entry not found")
+
+        from routers.maintenance_spare import clear_usage
+        n_spare = clear_usage(conn, entry_id, "Log Book")
+
+        cur.execute("DELETE FROM maintenance_logbook_db_history WHERE id=%s", (entry_id,))
+
+        try:
+            from main import write_audit
+            write_audit(conn, action="LOGBOOK_ENTRY_DELETE",
+                        entity_type="maintenance_logbook_db_history", entity_id=entry_id,
+                        details=(f"log book #{entry_id} · serial={row.get('serial_no')} · "
+                                 f"{row.get('zone')}/{row.get('line')}/{row.get('machine_no')} · "
+                                 f"{row.get('bd_date')} · spare rows hatai={n_spare}"),
+                        user=admin)
+        except Exception as e:
+            print(f"[LOGBOOK] entry-delete ka audit nahi likha: {e}")
+
         conn.commit()
-    return {"ok": True}
+    return {"ok": True, "deleted": entry_id, "spare_rows_removed": n_spare}

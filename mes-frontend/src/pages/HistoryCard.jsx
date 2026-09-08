@@ -13,6 +13,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { onlyProdZones } from "../constants/zones";
+import ExcelBtn from "../components/ExcelBtn";
+import { aajKaNaam } from "../constants/sheetTools";
 
 const api = {
   async get(path, token) {
@@ -261,7 +263,7 @@ export default function HistoryCard() {
         .hc-card-head { background:#0f172a; color:#fff; padding:13px 18px; display:flex; align-items:center;
                         justify-content:space-between; gap:14px; flex-wrap:wrap; }
         .hc-card-title { font-weight:800; font-size:13px; letter-spacing:.08em; text-transform:uppercase; }
-        .hc-tools { display:flex; align-items:center; gap:12px; }
+        .hc-tools { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
         .hc-search { font-size:13px; border:1px solid #334155; background:#1e293b; color:#fff; border-radius:8px;
                      padding:7px 12px; min-width:200px; outline:none; }
         .hc-search::placeholder { color:#94a3b8; }
@@ -360,6 +362,20 @@ export default function HistoryCard() {
               <div className="hc-tools">
                 <input className="hc-search" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} />
                 <span className="hc-count">{rows.length} {rows.length === 1 ? "entry" : "entries"}</span>
+                {/* Excel me wahi qatarein jaati hain jo abhi SAAMNE dikh rahi hain --
+                    zone tab, saare filter aur search lagne ke baad wali.  Poora data
+                    JAAN-BOOJH KAR nahi bhejte: user jo chhaant kar dekh raha hai,
+                    wahi file me milna chahiye.  Cell bhi wahi `cell()` banata hai jo
+                    table banata hai, isliye Excel aur screen kabhi alag nahi honge. */}
+                <ExcelBtn banao={() => ({
+                  naam: `History-Card_${(zone || "All").replace(/[^\w-]+/g, "-")}_${aajKaNaam()}`,
+                  sheet: zone || "History Card",
+                  headers: COLS.map((c) => c.label),
+                  rows: rows.map((e, i) => COLS.map((c) => {
+                    const v = cell(e, c, i);
+                    return v === "—" || v == null ? "" : v;   // Excel me "—" ki jagah khali
+                  })),
+                })} />
               </div>
             </div>
             <div className="hc-scroll">

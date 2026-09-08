@@ -35,7 +35,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from database import get_conn, dict_cursor
-from auth import get_current_user
+from auth import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/capa-lb", tags=["capa-logbook"])
 
@@ -340,15 +340,43 @@ def save_capa_sheet(body: CapaSheet, user=Depends(get_current_user)):
 
 
 @router.delete("/sheet/{sid}")
-def delete_capa_sheet(sid: int, user=Depends(get_current_user)):
+def delete_capa_sheet(sid: int, admin=Depends(require_admin)):
+    """CAPA/QPR sheet mitao — SIRF admin.
+
+    ⚠ 2026-09-08 me DO CHEEZEIN THEEK KI GAYIN:
+      1. Pehle yahan `get_current_user` tha — yaani KOI BHI logged-in user
+         kisi ki bhi CAPA mita sakta tha.  Ab `require_admin`.
+      2. Audit likha hi nahi jaata tha.  Delete wapas nahi aata, isliye kam
+         se kam nishan to rehna chahiye — ab `write_audit` hota hai.
+
+    Is sheet par koi doosri table ishara nahi karti (`breakdown_id` isse
+    BAHAR ki taraf jaata hai, andar ki taraf nahi), isliye saath me kuch aur
+    hatane ki zaroorat nahi.
+    """
     _ensure_capa_sheet()
     with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("DELETE FROM maintenance_capa_sheet WHERE id=%s", (sid,))
-        if cur.rowcount == 0:
+        cur = dict_cursor(conn)
+        cur.execute("SELECT * FROM maintenance_capa_sheet WHERE id=%s", (sid,))
+        row = cur.fetchone()
+        if not row:
             raise HTTPException(404, "QPR sheet not found")
+        cur.execute("DELETE FROM maintenance_capa_sheet WHERE id=%s", (sid,))
+
+        try:
+            from main import write_audit
+            write_audit(conn, action="CAPA_SHEET_DELETE",
+                        entity_type="maintenance_capa_sheet", entity_id=sid,
+                        details=(f"CAPA #{sid} · qpr_no={row.get('qpr_no')} · "
+                                 f"{row.get('zone')}/{row.get('line')}/{row.get('machine_no')} · "
+                                 f"status={row.get('status')} · "
+                                 f"breakdown_id={row.get('breakdown_id')} · "
+                                 f"created_by={row.get('created_by')}"),
+                        user=admin)
+        except Exception as e:
+            print(f"[CAPA] sheet-delete ka audit nahi likha: {e}")
+
         conn.commit()
-    return {"ok": True}
+    return {"ok": True, "deleted": sid}
 
 
 @router.get("/closed")
