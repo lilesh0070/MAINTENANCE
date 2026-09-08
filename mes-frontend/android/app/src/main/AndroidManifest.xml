@@ -22,7 +22,48 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- TV ON HOTE HI APP KHUD KHUL JAYE  the reliable way.
+
+                 `BootReceiver` bhi laga hai, par Android 10+ me "background
+                 se activity kholna" par rok hai  emulator (Android 15) par
+                 naap kar dekha: boot ke baad app NAHI khulti.  Bahut se TV
+                 box use chalne dete hain, par uspar bharosa nahi kiya ja
+                 sakta.
+
+                 Jo PAKKA chalta hai wo ye hai: app ko TV ka HOME bana do.
+                 Android boot hote hi HOME app kholta hai, aur wo rok kisi
+                 par lagti hi nahi  kyunki wo background se shuru nahi
+                 hoti, system khud kholta hai.
+
+                 Ye filter app ko sirf CHUNNE LAYAK banata hai, khud kuch
+                 nahi badalta.  TV par ek baar Settings me "Home app" me
+                 Maintenance chun lein  uske baad har boot par TV seedha
+                 isi me khulegi.  PHONE PAR ASAR NAHI: wahan koi ise Home
+                 chunega hi nahi. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
         </activity>
+
+        <!-- TV/device on hote hi app khud khul jaye (BootReceiver.java).
+             `directBootAware` isliye ki PIN lagne se PEHLE wala broadcast
+             bhi mil jaye — deewar par lagi TV par koi PIN dalne nahi
+             jaata. -->
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:directBootAware="true">
+            <intent-filter android:priority="1000">
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -51,4 +92,9 @@
          install nahi hota; user ko phir bhi Android ki apni "Update / Install"
          wali screen par haan karni padti hai. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- Boot ke baad app khud kholne ke liye (BootReceiver).  Ye "normal"
+         permission hai — install ke waqt hi mil jaati hai, user se kuch
+         poochha nahi jaata. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 </manifest>

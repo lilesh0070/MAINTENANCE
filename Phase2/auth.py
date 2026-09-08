@@ -43,7 +43,22 @@ if not SECRET_KEY:
           "per-process key. All sessions reset on restart. Set JWT_SECRET_KEY "
           "in .env for stable signing.")
 ALGORITHM           = "HS256"
-TOKEN_EXPIRE_HOURS  = 12
+# ── Token kitni der chalega ────────────────────────────────────
+# PEHLE 12 GHANTE THA -- aur usi se TV par ye dikkat aati thi:
+# TV raat bhar band rahi -> 12 ghante nikal gaye -> token khud khatam ->
+# server 401 -> app logout.  User ko lagta tha "TV off/on karne se logout
+# hota hai", par asli wajah OFF/ON nahi, WAQT tha.
+#
+# Ab 30 din.  User ka kehna: "jab tak khud logout na kare tab tak logout
+# na ho."
+#
+# WEBSITE PAR ISKA ASAR NA KE BARABAR HAI -- wahan token `sessionStorage`
+# me rehta hai, jo TAB BAND HOTE HI mit jaata hai.  Yaani browser wala
+# session pehle jaisa hi chhota rehta hai; ye lambi umar sirf APP ko
+# milti hai (wahan `localStorage` hai).
+#
+# `.env` se badla ja sakta hai -- `TOKEN_EXPIRE_HOURS=...`
+TOKEN_EXPIRE_HOURS  = int(os.getenv("TOKEN_EXPIRE_HOURS", "720"))
 
 # ── Crypto ─────────────────────────────────────────────────────
 # Use bcrypt directly (passlib 1.7.4 is incompatible with bcrypt >= 4.1).
@@ -363,7 +378,7 @@ def change_password(
 
 
 @auth_router.get("/me")
-def me(user=Depends(get_current_user)):
+def me(user=Depends(get_current_user), token: str = Depends(oauth2_scheme)):
     """Return current user info (no password hash).  Joins department row
     so the frontend can render '{DeptName} Panel' in the slide-nav for
     department users without a separate fetch.
@@ -397,6 +412,32 @@ def me(user=Depends(get_current_user)):
             err = e; break
     if err is not None:
         raise HTTPException(503, "Permissions temporarily unavailable — please retry")
+
+    # ── Token khud taaza ho jaata hai ──────────────────────────────
+    # App har 10 second par yahi `/me` bulati hai.  Agar token apni aadhi
+    # umar paar kar chuka ho, to yahin ek NAYA token laut a dete hain aur
+    # app use sambhaal leti hai.
+    #
+    # KYUN: pehle token 12 ghante ka tha aur TV raat bhar band rehne par
+    # khud khatam ho jaata tha -- subah 401 -> logout.  Umar to badha di
+    # (30 din), par sirf usse "kabhi logout na ho" poori tarah nahi hota:
+    # 31 din baad phir wahi hota.  Ye renew usko poora karta hai -- jab tak
+    # device chalu hai aur `/me` chal raha hai, token kabhi budhaa hota hi
+    # nahi.
+    #
+    # Aadhi umar par hi naya dete hain (har baar nahi) -- warna har 10
+    # second ek naya token banta aur bekaar ka kaam hota.
+    naya_token = None
+    try:
+        p_ = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        exp_ = int(p_.get("exp", 0)); iat_ = int(p_.get("iat", 0))
+        if exp_ and iat_ and exp_ > iat_:
+            beeta = time.time() - iat_
+            if beeta > (exp_ - iat_) / 2:
+                naya_token = create_token(user["username"], user.get("role"), user.get("id"))
+    except Exception:
+        naya_token = None      # kuch bhi ho to purana token chalta rahe
+
     return {
         "id":              user["id"],
         "username":        user["username"],
@@ -404,4 +445,7 @@ def me(user=Depends(get_current_user)):
         "last_login":      user["last_login"],
         "created_at":      user["created_at"],
         "permissions":     permissions,
+        # naya token -- sirf tab aata hai jab purana apni AADHI UMAR paar kar
+        # chuka ho.  App ise sambhaal leti hai (AuthContext ka 10s wala check).
+        "renewed_token":   naya_token,
     }

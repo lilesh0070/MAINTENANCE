@@ -175,6 +175,28 @@ export function AuthProvider({ children }) {
             setToken(""); setUser(null);
             for (const k of AUTH_KEYS) ss.remove(k);
             if (typeof window !== "undefined" && window.location) window.location.replace("/login");
+            return null;
+          }
+          return r.ok ? r.json() : null;
+        })
+        .then((me) => {
+          /* TOKEN KHUD TAAZA HO JAATA HAI.
+           *
+           * Server tabhi naya token bhejta hai jab purana apni AADHI UMAR
+           * paar kar chuka ho (`renewed_token`).  Yahan use rakh lete hain.
+           *
+           * KYUN ZAROORI HAI: pehle token 12 ghante ka tha, aur TV raat bhar
+           * band rehne par khud khatam ho jaata tha -- subah 401 -> logout.
+           * User ko lagta tha "TV off/on se logout hota hai", par asli wajah
+           * WAQT thi.  Umar to 30 din kar di, par sirf usse "kabhi logout na
+           * ho" poora nahi hota.  Ye renew usko poora karta hai: jab tak
+           * device chalu hai, token kabhi budhaa hota hi nahi.
+           *
+           * Naya token milte hi `token` badalta hai -> ye effect dobara
+           * chalta hai aur naya interval lag jaata hai.  Wahi chahiye. */
+          if (me && me.renewed_token && me.renewed_token !== token) {
+            ss.set("mes_token", me.renewed_token);
+            setToken(me.renewed_token);
           }
         })
         .catch(() => {});                          // network error → ignore (offline etc.)
