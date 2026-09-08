@@ -1,5 +1,5 @@
 {
-  "version": "1.4.27",
-  "notes": "Logout ab nahi hota (token 30 din + khud taaza hota hai); TV on hote hi app khul sakti hai",
-  "released_at": "2026-09-08T09:04:23"
+  "version": "1.4.28",
+  "notes": "Mobile par upar ki kaali patti hatai -- app ab sach me poori screen par",
+  "released_at": "2026-09-08T09:19:25"
 }
