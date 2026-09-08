@@ -82,7 +82,7 @@ public class SheetTools extends Plugin {
         final String html = call.getString("html", "");
         final String naam = call.getString("naam", "Sheet");
 
-        if (html.isEmpty()) { call.reject("HTML khali hai"); return; }
+        if (html.isEmpty()) { call.reject("Nothing to print"); return; }
 
         // PrintManager sirf UI thread par chalega; Capacitor plugin ke
         // method background thread par aate hain, isliye hop zaroori hai.
@@ -94,7 +94,7 @@ public class SheetTools extends Plugin {
                     if (pm == null) {
                         // Kai TV box par print ki seva hoti hi nahi.  Saaf
                         // bata do — JS ise user ko dikha dega.
-                        call.reject("Is device par print ki suvidha nahi hai");
+                        call.reject("Printing is not available on this device");
                         return;
                     }
 
@@ -111,7 +111,7 @@ public class SheetTools extends Plugin {
                                 pm.print(naam, ad, at);
                                 call.resolve();
                             } catch (Throwable t) {
-                                call.reject("Print shuru nahi ho paya: " + t.getMessage());
+                                call.reject("Could not start printing: " + t.getMessage());
                             } finally {
                                 // Reference ab chhoda ja sakta hai — print
                                 // job PrintManager ke paas ja chuka hai.
@@ -124,7 +124,7 @@ public class SheetTools extends Plugin {
                     wv.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
                 } catch (Throwable t) {
                     chhapneWali = null;
-                    call.reject("Print nahi ho paya: " + t.getMessage());
+                    call.reject("Could not print: " + t.getMessage());
                 }
             }
         });
@@ -141,7 +141,7 @@ public class SheetTools extends Plugin {
         final String naam = call.getString("naam", "file.xlsx");
         final String mime = call.getString("mime", "application/octet-stream");
 
-        if (b64.isEmpty()) { call.reject("File khali hai"); return; }
+        if (b64.isEmpty()) { call.reject("The file is empty"); return; }
 
         try {
             byte[] bytes = Base64.decode(b64, Base64.DEFAULT);
@@ -150,7 +150,7 @@ public class SheetTools extends Plugin {
             r.put("kahan", kahan);
             call.resolve(r);
         } catch (Throwable t) {
-            call.reject("File save nahi hui: " + t.getMessage());
+            call.reject("Could not save the file: " + t.getMessage());
         }
     }
 
@@ -176,9 +176,9 @@ public class SheetTools extends Plugin {
                 cv.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
                 uri = getContext().getContentResolver()
                         .insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
-                if (uri == null) throw new Exception("Downloads me jagah nahi mili");
+                if (uri == null) throw new Exception("Could not create the file in Downloads");
                 OutputStream os = getContext().getContentResolver().openOutputStream(uri);
-                if (os == null) throw new Exception("File likhi nahi ja saki");
+                if (os == null) throw new Exception("Could not write the file");
                 os.write(bytes); os.flush(); os.close();
                 kahan = "Downloads";
             } else {
@@ -186,7 +186,7 @@ public class SheetTools extends Plugin {
                 // aur public Downloads ke liye permission maangni padti.  App
                 // ka apna external folder bina permission ke chalta hai.
                 File dir = getContext().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
-                if (dir == null) throw new Exception("Storage nahi mila");
+                if (dir == null) throw new Exception("Storage is not available");
                 if (!dir.exists()) dir.mkdirs();
                 File f = new File(dir, naam);
                 FileOutputStream fos = new FileOutputStream(f);

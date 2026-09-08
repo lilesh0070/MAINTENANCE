@@ -32,10 +32,10 @@ export default function YearlyPmTab({ ypm, ypmFy, setYpmFy, ypmYears, api }) {
             // Dono jagah print ka parda khulta hai (app me Android ka, site par
             // browser ka) aur PDF wahin "Save as PDF" se banti hai.  "Ho gaya"
             // kehna jhooth hoga -- file abhi bani hi nahi.
-            setPdfMsg("Print window me “Save as PDF” chunein");
+            setPdfMsg("Choose “Save as PDF” in the print window");
             setTimeout(() => setPdfMsg(""), 6000);
           } catch (e) {
-            setPdfMsg(e?.message || "PDF nahi ban payi");
+            setPdfMsg(e?.message || "Could not create the PDF");
             setTimeout(() => setPdfMsg(""), 6000);
           } finally { setPdfBusy(false); }
         };
@@ -74,19 +74,19 @@ export default function YearlyPmTab({ ypm, ypmFy, setYpmFy, ypmYears, api }) {
                 </span>
               )}
               <span style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:8 }}>
-                <button type="button" onClick={chhapo} title="Poori schedule ka print"
+                <button type="button" onClick={chhapo} title="Print the full schedule"
                         style={{ padding:"7px 14px", fontSize:12.5, fontWeight:800, borderRadius:7,
                                  border:"1px solid #b91c1c", background:"#dc2626", color:"#fff",
                                  cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
                   🖨 Print
                 </button>
-                <button type="button" onClick={pdfDo} disabled={pdfBusy} title="PDF ke liye — print window me &quot;Save as PDF&quot; chunein"
+                <button type="button" onClick={pdfDo} disabled={pdfBusy} title="For a PDF — choose &quot;Save as PDF&quot; in the print window"
                         style={{ padding:"7px 14px", fontSize:12.5, fontWeight:800, borderRadius:7,
                                  border:"1px solid #1d4ed8",
                                  background: pdfBusy ? "#93c5fd" : "#2563eb", color:"#fff",
                                  cursor: pdfBusy ? "default" : "pointer", fontFamily:"inherit",
                                  whiteSpace:"nowrap" }}>
-                  {pdfBusy ? "Khul raha…" : "⤓ PDF"}
+                  {pdfBusy ? "Opening…" : "⤓ PDF"}
                 </button>
                 {pdfMsg && (
                   <span style={{ fontSize:11.5, fontWeight:700,

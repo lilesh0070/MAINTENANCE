@@ -19,7 +19,7 @@
 import { useState } from "react";
 import { excelNikalo } from "../constants/sheetTools";
 
-export default function ExcelBtn({ banao, label = "Excel", title = "Is table ko Excel me utaarein", style = {} }) {
+export default function ExcelBtn({ banao, label = "Excel", title = "Download this table as Excel", style = {} }) {
   const [chal, setChal] = useState(false);
   const [kehna, setKehna] = useState("");     // { theek } ya galti ka sandesh
 
@@ -29,15 +29,15 @@ export default function ExcelBtn({ banao, label = "Excel", title = "Is table ko 
     try {
       const d = (await banao()) || {};
       if (!d.rows || d.rows.length === 0) {
-        setKehna("Koi qatar nahi — pehle filter badal kar dekhein");
+        setKehna("No rows to export — try changing the filters");
         setTimeout(() => setKehna(""), 4000);
         return;
       }
       const r = await excelNikalo(d);
-      setKehna(r.theek ? (r.kahan ? "✓ " + r.kahan + " me gayi" : "✓ Ho gaya") : r.kyun);
+      setKehna(r.theek ? (r.kahan ? "✓ Saved to " + r.kahan : "✓ Done") : r.kyun);
       setTimeout(() => setKehna(""), r.theek ? 3000 : 6000);
     } catch (e) {
-      setKehna(e?.message || "Excel nahi ban paayi");
+      setKehna(e?.message || "Could not create the Excel file");
       setTimeout(() => setKehna(""), 6000);
     } finally {
       setChal(false);
@@ -64,7 +64,7 @@ export default function ExcelBtn({ banao, label = "Excel", title = "Is table ko 
           ...style,
         }}
       >
-        <span aria-hidden="true">⤓</span> {chal ? "Ban rahi…" : label}
+        <span aria-hidden="true">⤓</span> {chal ? "Preparing…" : label}
       </button>
       {kehna && (
         <span style={{

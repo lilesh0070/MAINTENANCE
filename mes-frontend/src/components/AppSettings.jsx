@@ -107,7 +107,7 @@ async function updateVersionLao() {
   });
   const har = await Promise.allSettled(UPDATE_HOSTS.map(ek));
   const mile = har.filter((r) => r.status === "fulfilled").map((r) => r.value);
-  if (!mile.length) throw new Error("koi server nahi mila");
+  if (!mile.length) throw new Error("No server responded");
   return mile.reduce((sabseNaya, x) => (isNewer(x.version, sabseNaya.version) ? x : sabseNaya));
 }
 
@@ -208,8 +208,8 @@ export default function AppSettings() {
           setDl({ pc: e?.percent ?? -1, ab: e?.abTak || 0 }));
         const r = await P.downloadAndInstall({ url });
         if (r?.needsPermission) {
-          setDlErr("Android ne 'unknown apps' ki ijaazat maangi hai — "
-                 + "us screen par is app ko allow karke dobara dabaiye.");
+          setDlErr("Android needs permission to install from “unknown apps” — "
+                 + "allow this app on that screen, then tap Download again.");
         }
       } catch (e) {
         setDlErr(String(e?.message || e));
@@ -299,9 +299,9 @@ export default function AppSettings() {
                 nahi aata.  Isliye saaf keh dete hain ki kya karna hai. */}
             {!busy && !err && !info && (
               <div style={{ fontSize: 12, color: "#64748b", margin: "4px 0 10px", lineHeight: 1.5 }}>
-                Server ka version abhi pata nahi — neeche
+                The server version isn’t known yet — tap
                 <b style={{ color: "#475569" }}> Check for update </b>
-                dabaiye.
+                below.
               </div>
             )}
 
@@ -347,8 +347,8 @@ export default function AppSettings() {
                   )}
 
                   <div style={{ fontSize: 11, color: "#94a3b8", margin: "8px 0 4px", lineHeight: 1.5 }}>
-                    App yahin utaar legi, phir Android ki apni "Update" screen khulegi.
-                    Pehli baar wo "unknown apps" ki ijaazat maang sakta hai — allow kar dein.
+                    The app downloads here, then Android’s own “Update” screen opens.
+                    The first time, it may ask permission to install from “unknown apps” — please allow it.
                   </div>
                 </>
               ) : (
@@ -370,7 +370,7 @@ export default function AppSettings() {
                             display: "flex", flexDirection: "column", alignItems: "center" }}>
                 <div style={{ fontSize: 11.5, color: "#64748b", fontWeight: 700,
                               marginBottom: 7, textAlign: "center" }}>
-                  Kisi aur ko app deni ho? Ye QR scan karayein
+                  Share the app — scan this QR code to download
                 </div>
                 <div style={{ padding: 7, background: "#fff", borderRadius: 10,
                               border: "1px solid #e2e8f0" }}>

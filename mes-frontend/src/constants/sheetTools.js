@@ -350,8 +350,8 @@ export function xlsxLagao() {
   xlsxWaada = new Promise((res, rej) => {
     const s = document.createElement("script");
     s.src = "/xlsx.full.min.js";
-    s.onload = () => (window.XLSX ? res(window.XLSX) : rej(new Error("XLSX nahi mili")));
-    s.onerror = () => { xlsxWaada = null; rej(new Error("xlsx.full.min.js load nahi hui")); };
+    s.onload = () => (window.XLSX ? res(window.XLSX) : rej(new Error("XLSX not available")));
+    s.onerror = () => { xlsxWaada = null; rej(new Error("Could not load xlsx.full.min.js")); };
     document.head.appendChild(s);
   });
   return xlsxWaada;
@@ -371,7 +371,7 @@ export async function excelNikalo({ naam = "export", headers = [], rows = [], sh
   try {
     XLSX = await xlsxLagao();
   } catch {
-    return { theek: false, kyun: "Excel library nahi mili — page reload karke dobara dekhein" };
+    return { theek: false, kyun: "Excel library not loaded — reload the page and try again" };
   }
 
   try {
@@ -412,7 +412,7 @@ export async function excelNikalo({ naam = "export", headers = [], rows = [], sh
     XLSX.writeFile(wb, file);
     return { theek: true };
   } catch (e) {
-    return { theek: false, kyun: e?.message || "Excel banate waqt dikkat aayi" };
+    return { theek: false, kyun: e?.message || "Something went wrong while creating the Excel file" };
   }
 }
 

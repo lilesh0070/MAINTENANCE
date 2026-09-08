@@ -342,7 +342,7 @@ export default function MaintenanceCAPA() {
         setSStatus((d.status || "DRAFT").toUpperCase());
         setView("form");
       } catch (e) {
-        flash("CAPA khul nahi payi: " + (e.message || ""));
+        flash("Could not open the CAPA: " + (e.message || ""));
       }
     })();
   }, [qs]);          // eslint-disable-line react-hooks/exhaustive-deps

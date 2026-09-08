@@ -1,5 +1,5 @@
 {
-  "version": "1.4.34",
-  "notes": "PDF ab Android/browser ke apne print se (Save as PDF) -- apna rasteriser bharosemand na hone par hataya",
-  "released_at": "2026-09-08T14:55:19"
+  "version": "1.4.35",
+  "notes": "All on-screen text is now in proper English (QR caption, download messages, delete confirmation, print/Excel messages)",
+  "released_at": "2026-09-08T15:20:00"
 }

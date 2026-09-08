@@ -771,8 +771,8 @@ def admin_update_check_sheet_fill(fill_id: int, body: CheckSheetFill,
     unfilled = [str(e.get("s_no") or "?") for e in body.entries
                 if not str(e.get("status") or "").strip()]
     if unfilled:
-        raise HTTPException(400, f"Har check point ka STATUS hona chahiye — "
-                                 f"{len(unfilled)} of {len(body.entries)} khali hain")
+        raise HTTPException(400, f"Every check point needs a STATUS — "
+                                 f"{len(unfilled)} of {len(body.entries)} are empty")
 
     author = admin.get("username") if isinstance(admin, dict) else "admin"
     with get_conn() as conn:

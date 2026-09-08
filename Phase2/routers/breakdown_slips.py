@@ -982,8 +982,9 @@ def delete_manual_slip(sid: int, admin=Depends(require_admin)):
         if rok:
             raise HTTPException(
                 409,
-                "Is slip par " + " aur ".join(rok) + " judi hai — pehle wo hatayein, "
-                "phir slip.  (Slip mitane se wo dastavez adhoore reh jaate.)")
+                "This slip has " + " and ".join(rok) + " linked to it — please remove "
+                "those first, then the slip.  (Deleting the slip would leave those "
+                "documents incomplete.)")
 
         # ── slip ka apna hissa ──────────────────────────────────────────
         from routers.maintenance_spare import clear_usage

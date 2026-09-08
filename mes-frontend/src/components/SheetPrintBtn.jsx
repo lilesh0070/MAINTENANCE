@@ -26,7 +26,7 @@ export default function SheetPrintBtn({ boxRef, naam = "Sheet", khada = false, c
     try {
       await chhapoNode(boxRef?.current, { naam, khada, css });
     } catch (e) {
-      setRuk(e?.message || "Print nahi ho paya");
+      setRuk(e?.message || "Could not print");
       setTimeout(() => setRuk(""), 4000);
     } finally {
       setChal(false);
@@ -42,7 +42,7 @@ export default function SheetPrintBtn({ boxRef, naam = "Sheet", khada = false, c
         type="button"
         onClick={dabaya}
         disabled={chal}
-        title="Is sheet ka print nikaalein"
+        title="Print this sheet"
         style={{
           display: "inline-flex", alignItems: "center", gap: 6,
           padding: "6px 12px", fontSize: 12, fontWeight: 800,
@@ -52,7 +52,7 @@ export default function SheetPrintBtn({ boxRef, naam = "Sheet", khada = false, c
           boxShadow: "0 1px 4px rgba(0,0,0,.2)",
         }}
       >
-        <span aria-hidden="true">🖨</span> {chal ? "Print…" : "Print"}
+        <span aria-hidden="true">🖨</span> {chal ? "Printing…" : "Print"}
       </button>
       {ruk && (
         <div style={{

@@ -43,7 +43,7 @@ export default function RowDelete({
       onDone?.();
     } catch (e) {
       // Backend ka sandesh hi dikhao — "Delete failed" se kuch pata nahi chalta.
-      setRuk(e?.message || "Delete nahi ho paya");
+      setRuk(e?.message || "Could not delete");
     } finally {
       setChal(false);
     }
@@ -54,7 +54,7 @@ export default function RowDelete({
       <button
         type="button"
         className="tb-noprint"
-        title={"Mitao — " + kya}
+        title={"Delete — " + kya}
         onClick={() => { setPoochh(true); setRuk(""); }}
         style={{
           padding: chhota ? "3px 9px" : "5px 12px",
@@ -84,7 +84,7 @@ export default function RowDelete({
           >
             <div style={{ background: "#b91c1c", color: "#fff", padding: "12px 18px",
                           fontWeight: 800, fontSize: 14, letterSpacing: ".04em" }}>
-              PAKKA MITANA HAI?
+              DELETE — ARE YOU SURE?
             </div>
             <div style={{ padding: "16px 18px" }}>
               <div style={{ fontSize: 14, fontWeight: 700 }}>{kya}</div>
@@ -92,7 +92,7 @@ export default function RowDelete({
               {saath.length > 0 && (
                 <div style={{ marginTop: 12 }}>
                   <div style={{ fontSize: 12, fontWeight: 800, color: "#b45309" }}>
-                    Iske saath ye bhi hat jayega:
+                    This will also be removed:
                   </div>
                   <ul style={{ margin: "6px 0 0", paddingLeft: 20, fontSize: 12.5, color: "#334155" }}>
                     {saath.map((s, i) => <li key={i} style={{ marginTop: 2 }}>{s}</li>)}
@@ -101,7 +101,7 @@ export default function RowDelete({
               )}
 
               <div style={{ marginTop: 12, fontSize: 12, color: "#64748b" }}>
-                Mitaya hua wapas nahi aata. Record audit me likha jayega.
+                Deleted data cannot be recovered. This will be written to the audit log.
               </div>
 
               {ruk && (
@@ -119,14 +119,14 @@ export default function RowDelete({
                                border: "1px solid #cbd5e1", borderRadius: 7,
                                background: "#fff", color: "#334155",
                                cursor: chal ? "default" : "pointer", fontFamily: "inherit" }}>
-                Rehne do
+                Cancel
               </button>
               <button type="button" disabled={chal} onClick={karo}
                       style={{ padding: "8px 18px", fontSize: 12.5, fontWeight: 800,
                                border: "none", borderRadius: 7,
                                background: chal ? "#fca5a5" : "#b91c1c", color: "#fff",
                                cursor: chal ? "default" : "pointer", fontFamily: "inherit" }}>
-                {chal ? "Mit raha…" : "Haan, mitao"}
+                {chal ? "Deleting…" : "Yes, delete"}
               </button>
             </div>
           </div>

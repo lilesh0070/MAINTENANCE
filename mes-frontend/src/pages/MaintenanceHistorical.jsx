@@ -513,7 +513,7 @@ export default function MaintenanceHistorical() {
       setViewSheet(null);
       setPmReload((k) => k + 1);
     } catch (e) {
-      setPmErr(e?.message || "Save nahi ho paya");
+      setPmErr(e?.message || "Could not save");
     } finally { setPmBusy(false); }
   };
 
@@ -576,11 +576,11 @@ export default function MaintenanceHistorical() {
       setViewDmc(null);
       setDmcReload((k) => k + 1);
       setDmcInfo(khule
-        ? `Sheet save ho gayi. ${khule} din ki verification hata di gayi — unhe dobara verify karna hoga.`
-        : "Sheet save ho gayi.");
+        ? `Sheet saved. Verification was cleared for ${khule} day(s) — they need to be verified again.`
+        : "Sheet saved.");
       setTimeout(() => setDmcInfo(""), 8000);
     } catch (e) {
-      setDmcErr(e?.message || "Save nahi ho paya");
+      setDmcErr(e?.message || "Could not save");
     } finally { setDmcBusy(false); }
   };
 
@@ -902,7 +902,7 @@ export default function MaintenanceHistorical() {
                             <RowDelete
                               chhota
                               kya={`Breakdown Slip #${r.id} — ${r.machine_no || "?"} · ${fmtD(r.bd_date || r.slip_date)}`}
-                              saath={["is slip par darj saare spare (Spare report se bhi hat jayenge)"]}
+                              saath={["All spares recorded on this slip (they will also disappear from the Spare report)"]}
                               onDelete={() => hatao.bd(r.id)} />
                           )}
                         </span>
@@ -955,8 +955,8 @@ export default function MaintenanceHistorical() {
                             <RowDelete
                               chhota
                               kya={`Auto Slip #${r.id} — ${r.machine_no || "?"} · ${fmtD(r.bd_date || r.date)}`}
-                              saath={["is slip par darj spare",
-                                      "Status tab ki iski line"]}
+                              saath={["All spares recorded on this slip",
+                                      "Its row in the Status tab"]}
                               onDelete={() => hatao.auto(r.id)} />
                           )}
                         </span>
@@ -1011,7 +1011,7 @@ export default function MaintenanceHistorical() {
                             <RowDelete
                               chhota
                               kya={`PM Check Sheet #${r.id} — ${r.machine_no || "?"} · ${r.pm_date || "?"}`}
-                              saath={["is sheet ke PM spare (usi machine+date ki koi aur sheet na bachi ho to)"]}
+                              saath={["PM spares from this sheet (only if no other sheet remains for the same machine and date)"]}
                               onDelete={() => hatao.pm(r.id)} />
                           )}
                         </span>
@@ -1066,8 +1066,8 @@ export default function MaintenanceHistorical() {
                             <RowDelete
                               chhota
                               kya={`DMC Sheet #${r.id} — ${r.machine_no || "?"} · ${r.sheet_month || "?"}`}
-                              saath={["is sheet ke saare NG point",
-                                      "un NG point par maintenance ki darj ki hui corrective action"]}
+                              saath={["All NG points on this sheet",
+                                      "Corrective actions maintenance recorded against those NG points"]}
                               onDelete={() => hatao.dmc(r.id)} />
                           )}
                         </span>
@@ -1142,7 +1142,7 @@ export default function MaintenanceHistorical() {
                         <td style={{ textAlign:"center" }}>
                           <RowDelete chhota
                             kya={`Sunday Plan Work #${r.id} — ${r.machine_no || "?"} · ${r.plan_date || "?"}`}
-                            saath={["is kaam ka poora record (kis ne kiya, kab, kaunse spare lage)"]}
+                            saath={["The full record of this work (who did it, when, and which spares were used)"]}
                             onDelete={() => hatao.sun(r.id)} />
                         </td>
                       )}
@@ -1210,7 +1210,7 @@ export default function MaintenanceHistorical() {
                         <td style={{ textAlign:"center" }}>
                           <RowDelete chhota
                             kya={`Daily Work Assign #${r.id} — ${r.machine_no || "?"} · ${r.plan_date || "?"}`}
-                            saath={["is kaam ka poora record (kis ne kiya, kab)"]}
+                            saath={["The full record of this work (who did it and when)"]}
                             onDelete={() => hatao.day(r.id)} />
                         </td>
                       )}
@@ -1273,7 +1273,7 @@ export default function MaintenanceHistorical() {
                             <RowDelete
                               chhota
                               kya={`CAPA ${r.qpr_no || "#" + r.id} — ${r.machine_no || "?"}`}
-                              saath={["poori QPR sheet ka bhara hua data"]}
+                              saath={["All data filled in on this QPR sheet"]}
                               onDelete={() => hatao.capa(r.id)} />
                           </span>
                         </td>
@@ -1352,7 +1352,7 @@ export default function MaintenanceHistorical() {
                         <td style={{ textAlign:"center" }}>
                           <RowDelete chhota
                             kya={`Log Book entry #${r.id} — ${r.machine_no || "?"} · ${String(r.bd_date || "").slice(0, 10)}`}
-                            saath={["is entry par darj spare (2026-09-08 se pehle wali entries ke spare chhod diye jaate hain — unme entry ki id likhi hi nahi thi)"]}
+                            saath={["Spares recorded on this entry (spares on entries created before 2026-09-08 are left alone — they were never linked to an entry id)"]}
                             onDelete={() => hatao.log(r.id)} />
                         </td>
                       )}
@@ -1393,7 +1393,7 @@ export default function MaintenanceHistorical() {
                           style={{ padding:"6px 14px", fontSize:12, fontWeight:800, borderRadius:6,
                                    cursor:pmBusy ? "default" : "pointer", fontFamily:"inherit",
                                    border:"none", background:pmBusy ? "#86efac" : "#16a34a", color:"#fff" }}>
-                    {pmBusy ? "Save ho raha…" : "💾 Save"}
+                    {pmBusy ? "Saving…" : "💾 Save"}
                   </button>
                   <button onClick={pmEditBand} disabled={pmBusy}
                           style={{ padding:"6px 14px", fontSize:12, fontWeight:800, borderRadius:6,
@@ -1413,8 +1413,8 @@ export default function MaintenanceHistorical() {
             {pmEdit && (
               <div style={{ background:"#eff6ff", color:"#1e40af", borderBottom:"1px solid #bfdbfe",
                             padding:"7px 16px", fontSize:12, fontWeight:600 }}>
-                Edit chaalu — cell me seedha likhein. Dastakhat aur approval waise hi rahenge;
-                audit me darj ho jayega ki admin ne sheet badli.
+                Editing — type directly into the cells. Signatures and approvals stay as they are;
+                the audit log will record that an admin edited this sheet.
               </div>
             )}
             <FormatSheet
@@ -1463,7 +1463,7 @@ export default function MaintenanceHistorical() {
                           style={{ padding:"6px 14px", fontSize:12, fontWeight:800, borderRadius:6,
                                    cursor:dmcBusy ? "default" : "pointer", fontFamily:"inherit",
                                    border:"none", background:dmcBusy ? "#86efac" : "#16a34a", color:"#fff" }}>
-                    {dmcBusy ? "Save ho raha…" : "💾 Save"}
+                    {dmcBusy ? "Saving…" : "💾 Save"}
                   </button>
                   <button onClick={dmcEditBand} disabled={dmcBusy}
                           style={{ padding:"6px 14px", fontSize:12, fontWeight:800, borderRadius:6,
@@ -1483,12 +1483,12 @@ export default function MaintenanceHistorical() {
             {dmcEdit && (
               <div style={{ background:"#f0fdfa", color:"#115e59", borderBottom:"1px solid #99f6e4",
                             padding:"7px 16px", fontSize:12, fontWeight:600 }}>
-                Edit chaalu — din wale khaane par click karein (khali → ✓ → ✗ → khali).
-                {" "}<b>Dhyan:</b> jis din ka nishaan badlega, us din ki supervisor verification
-                {" "}hata di jayegi (wo dastakhat purane data par tha) — use dobara verify karna hoga.
+                Editing — click a day cell to change its mark (blank → ✓ → ✗ → blank).
+                {" "}<b>Note:</b> for every day whose mark you change, the supervisor’s verification
+                {" "}will be cleared (that signature was given on the old data) — it must be verified again.
                 {Object.keys(dmcDraft).length > 0 && (
                   <span style={{ marginLeft:8, fontWeight:800 }}>
-                    · abhi tak {Object.keys(dmcDraft).filter((k) => (dmcDraft[k] || "") !== (dmcBase[k] || "")).length} khaane badle
+                    · {Object.keys(dmcDraft).filter((k) => (dmcDraft[k] || "") !== (dmcBase[k] || "")).length} cell(s) changed so far
                   </span>
                 )}
               </div>
