@@ -206,6 +206,10 @@ def complete_plan(pid: int, body: SundayPlanComplete, user=Depends(get_current_u
                     "zone": row[0], "line": row[1], "machine_no": row[2],
                     "machine_name": row[3],
                     "used_date": row[4].isoformat() if row[4] else None,
+                    # slip_id 2026-09-08 me juda -- bina iske ye spare kis kaam ke
+                    # hain ye pata hi nahi chalta, aur plan delete karne par wo
+                    # Spare report me anaath pade reh jaate the.
+                    "slip_id": pid,
                 }, spares)
         except Exception as e:
             print(f"[SPARE-MASTER] record failed (sunday): {e}")
@@ -230,11 +234,40 @@ def reopen_plan(pid: int, user=Depends(get_current_user)):
 
 @router.delete("/{pid}")
 def delete_plan(pid: int, admin=Depends(require_admin)):   # sirf admin delete kar sakta hai
+    """Ek plan row mitao — SIRF admin.
+
+    2026-09-08: ab Historical Data se bhi ye button dikhta hai, isliye do
+    kami poori ki gayi jo pehle chhupi hui thi:
+      • is plan par darj spare bhi saath hatte hain (pehle wo Spare report
+        me anaath pade reh jaate the);
+      • delete audit me likha jaata hai — mitaya hua wapas nahi aata, to kam
+        se kam nishan rehna chahiye.
+
+    Us tareekh se PURANE plan me spare ki id likhi hi nahi thi, isliye unke
+    spare jaan-boojh kar chhode jaate hain (`clear_usage` NULL wali rows
+    kabhi nahi chhuta) — warna kisi doosre plan ke spare bhi ud sakte the."""
     _ensure_table()
     with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("DELETE FROM maintenance_sunday_plan WHERE id=%s", (pid,))
-        if cur.rowcount == 0:
+        cur = dict_cursor(conn)
+        cur.execute("SELECT * FROM maintenance_sunday_plan WHERE id=%s", (pid,))
+        row = cur.fetchone()
+        if not row:
             raise HTTPException(404, "Plan not found")
+
+        from routers.maintenance_spare import clear_usage
+        n_spare = clear_usage(conn, pid, "Sunday Plan")
+
+        cur.execute("DELETE FROM maintenance_sunday_plan WHERE id=%s", (pid,))
+
+        try:
+            from main import write_audit
+            write_audit(conn, action="SUNDAY_PLAN_DELETE", entity_type="maintenance_sunday_plan", entity_id=pid,
+                        details=(f"plan #{pid} · {row.get('zone_name')}/{row.get('line_name')}"
+                                 f"/{row.get('machine_no')} · {row.get('plan_date')} · "
+                                 f"status={row.get('status')} · spare rows hatai={n_spare}"),
+                        user=admin)
+        except Exception as e:
+            print(f"[SUNDAY] plan-delete ka audit nahi likha: {e}")
+
         conn.commit()
-    return {"ok": True}
+    return {"ok": True, "deleted": pid, "spare_rows_removed": n_spare}

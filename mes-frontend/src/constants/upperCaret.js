@@ -41,3 +41,41 @@ export function upperCaret(e) {
   }
   return up;
 }
+
+/* maskCaret — wahi dikkat, par un khaano ke liye jinme MASK lagta hai.
+ *
+ * KYUN ALAG HELPER
+ * ----------------
+ * `upperCaret` sirf tab kaam karta hai jab value ka SIRF case badalta ho.
+ * Spare "ERP No." jaisa khaana alag hai: uska formatter (`fmtErp`) akshar
+ * GIRA bhi deta hai — pehle chaar sirf A-Z, agle chaar sirf 0-9, baaki sab
+ * hataa diye jaate hain.
+ *
+ * To lafz ke beech me kuch type karne par value ki lambai hi badal jaati
+ * hai, React poori value dobara likhta hai, aur caret aakhir me chala jaata
+ * hai — bilkul wahi shikayat.
+ *
+ * CARET KI NAYI JAGAH KAISE NIKALI
+ * --------------------------------
+ * Caret se PEHLE wale hisse ko usi formatter se guzaar dete hain, aur uski
+ * lambai hi nayi jagah hai.  Ye isliye chalta hai ki formatter baayen se
+ * daayen chalta hai aur har akshar ka faisla sirf "ab tak kitne bane" par
+ * hota hai — yaani aadhe text ka natija poore text ke natije ka shuruati
+ * hissa hi hota hai.
+ *
+ * ISTEMAL
+ *   onChange={(e) => setSpare(i, "spare_cnmm_no", maskCaret(e, fmtErp))}
+ */
+export function maskCaret(e, fmt) {
+  const el = e.target;
+  const raw = String(el.value || "");
+  const naya = fmt(raw);
+  if (naya !== raw) {
+    const tha = el.selectionStart;
+    // caret se pehle ka hissa formatter se guzaar kar naapo
+    const pos = fmt(raw.slice(0, tha == null ? raw.length : tha)).length;
+    el.value = naya;
+    try { el.setSelectionRange(pos, pos); } catch { /* is input par nahi chalta */ }
+  }
+  return naya;
+}

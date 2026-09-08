@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { tasveeronKoAndarBithao, nativeChhapo } from "../../constants/sheetTools";
 import { createRoot } from "react-dom/client";
 import { Btn, api, fmtDuration, fmtDateTime } from "./shared";
-import { upperCaret } from "../../constants/upperCaret";
+import { upperCaret, maskCaret } from "../../constants/upperCaret";
 
 // One spare row — SAME shape the Log Book uses, so spare data is consistent
 // across both features.
@@ -1060,15 +1060,22 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                                maxLength={k === "spare_cnmm_no" ? 8 : undefined}
                                placeholder={k === "spare_name" ? "Pick or type" : k === "spare_cnmm_no" ? "ABCD1234" : undefined}
                                /* SPARE NAME / MODEL bhi BADE AKSHAR me (baaki
-                                  slip jaisa).  QUANTITY number hai aur ERP
-                                  number `fmtErp` me pehle se uppercase hota
-                                  hai, isliye unhe chhoda.  Spare ka master se
-                                  milaan case dekhe bina hota hai, to naam
-                                  uppercase karne se picker nahi bigadta. */
+                                  slip jaisa).  QUANTITY number hai, use chhoda.
+                                  Spare ka master se milaan case dekhe bina hota
+                                  hai, to naam uppercase karne se picker nahi
+                                  bigadta.
+
+                                  ERP No. par `maskCaret` (upperCaret nahi):
+                                  `fmtErp` sirf bada nahi karta, akshar GIRA bhi
+                                  deta hai (pehle 4 sirf A-Z, agle 4 sirf 0-9).
+                                  Isliye lafz ke beech me type karne par lambai
+                                  badal jaati thi, React poori value dobara
+                                  likhta tha aur caret AAKHIR me chala jaata tha.
+                                  `maskCaret` caret ki nayi jagah khud ginta hai. */
                                onChange={(e) => k === "spare_name"
                                  ? onSpareName(i, upperCaret(e))
                                  : setSpare(i, k,
-                                     k === "spare_cnmm_no" ? fmtErp(e.target.value)
+                                     k === "spare_cnmm_no" ? maskCaret(e, fmtErp)
                                    : k === "spare_qty"     ? e.target.value
                                                            : upperCaret(e))} />
                       </div>

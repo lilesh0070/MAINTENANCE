@@ -11,6 +11,7 @@
  * DB-backed via /api/pm/* (pm_schedule + pm_mail_config).
  * ─────────────────────────────────────────────────────────────────── */
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { maskCaret } from "../constants/upperCaret";
 import { useAuth } from "../context/AuthContext";
 import { FormatSheet } from "./pm/FormatSheet";
 import YearlyPmTab from "./pm/YearlyPmTab";
@@ -1468,7 +1469,9 @@ export default function PMPanel() {
                       <td style={{ padding:"4px 4px" }}><input value={r.spare_model_no}
                           onChange={(e) => onSpareCell(i, ri, "spare_model_no", e.target.value)} style={inpS} /></td>
                       <td style={{ padding:"4px 4px" }}><input value={r.spare_cnmm_no} maxLength={8} placeholder="ABCD1234"
-                          onChange={(e) => onSpareCell(i, ri, "spare_cnmm_no", fmtErp(e.target.value))} style={inpS} /></td>
+                          /* `maskCaret` isliye ki `fmtErp` akshar girata bhi hai --
+                             beech me type karne par caret aakhir me chala jaata tha. */
+                          onChange={(e) => onSpareCell(i, ri, "spare_cnmm_no", maskCaret(e, fmtErp))} style={inpS} /></td>
                       <td style={{ padding:"4px 4px", width:72 }}><input value={r.spare_qty}
                           onChange={(e) => onSpareCell(i, ri, "spare_qty", e.target.value)} style={inpS} /></td>
                       <td style={{ padding:"4px 4px", width:34, textAlign:"center" }}>

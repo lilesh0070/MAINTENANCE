@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { upperCaret, maskCaret } from "../constants/upperCaret";
 import ExcelBtn from "../components/ExcelBtn";
 import { aajKaNaam } from "../constants/sheetTools";
 
@@ -194,6 +195,17 @@ export default function BreakdownLogBook() {
     "problem_observed_by_maintenance", "action_taken_on_problem",
     "spare_name", "spare_model_no", "spare_cnmm_no", "bd_attended_by",
   ]);
+  /* ⚠ `set` ke andar ka toUpperCase AKELA KAAFI NAHI HAI.
+     Lafz ke BEECH me type karne par kya hota tha:
+       1. browser DOM me chhota akshar daal deta -> "abcXdef"
+       2. yahan bada bana kar state me jaata     -> "ABCXDEF"
+       3. React dekhta ki DOM aur state alag hain, to poori value dobara
+          likh deta -- aur value dobara likhte hi caret AAKHIR me chala
+          jaata tha.
+     Isliye har UPPER wale input ka onChange `upperCaret(e)` se guzarta hai
+     (aur ERP No. `maskCaret(e, fmtErp)` se, kyunki wo akshar girata bhi
+     hai).  Yahan ka toUpperCase ab sirf ek jaal hai -- agar kabhi koi naya
+     input `upperCaret` lagana bhool jaye to value phir bhi badi rahegi. */
   const set = (k, v) => setForm((f) => ({ ...f, [k]: UPPER.has(k) ? String(v).toUpperCase() : v }));
 
   // ── spares (repeatable) ──
@@ -466,12 +478,12 @@ export default function BreakdownLogBook() {
                   <div className="lb-field full">
                     <span className="lb-lbl">Problem Observed by Maintenance</span>
                     <textarea className="lb-ta" value={form.problem_observed_by_maintenance}
-                              onChange={(e) => set("problem_observed_by_maintenance", e.target.value)} />
+                              onChange={(e) => set("problem_observed_by_maintenance", upperCaret(e))} />
                   </div>
                   <div className="lb-field full">
                     <span className="lb-lbl">Action Taken</span>
                     <textarea className="lb-ta" value={form.action_taken_on_problem}
-                              onChange={(e) => set("action_taken_on_problem", e.target.value)} />
+                              onChange={(e) => set("action_taken_on_problem", upperCaret(e))} />
                   </div>
                 </div>
 
@@ -507,16 +519,16 @@ export default function BreakdownLogBook() {
                         <div className="lb-field">
                           <span className="lb-lbl">Spare Name{form.spares.length > 1 ? ` ${i + 1}` : ""}</span>
                           <input className="lb-in" list="lb-spare-names" placeholder="Pick or type a spare"
-                                 value={sp.spare_name} onChange={(e) => onSpareName(i, e.target.value)} />
+                                 value={sp.spare_name} onChange={(e) => onSpareName(i, upperCaret(e))} />
                         </div>
                         <div className="lb-field">
                           <span className="lb-lbl">Model Number</span>
-                          <input className="lb-in" value={sp.spare_model_no} onChange={(e) => setSpare(i, "spare_model_no", e.target.value)} />
+                          <input className="lb-in" value={sp.spare_model_no} onChange={(e) => setSpare(i, "spare_model_no", upperCaret(e))} />
                         </div>
                         <div className="lb-field">
                           <span className="lb-lbl">Spare ERP Number</span>
                           <input className="lb-in" value={sp.spare_cnmm_no} maxLength={8} placeholder="ABCD1234"
-                                 onChange={(e) => setSpare(i, "spare_cnmm_no", fmtErp(e.target.value))} />
+                                 onChange={(e) => setSpare(i, "spare_cnmm_no", maskCaret(e, fmtErp))} />
                         </div>
                         <div className="lb-field">
                           <span className="lb-lbl">Quantity</span>
@@ -544,7 +556,7 @@ export default function BreakdownLogBook() {
                 <div className="lb-section lb-grid">
                   <div className="lb-field">
                     <span className="lb-lbl">Attended By</span>
-                    <input className="lb-in" value={form.bd_attended_by} onChange={(e) => set("bd_attended_by", e.target.value)} />
+                    <input className="lb-in" value={form.bd_attended_by} onChange={(e) => set("bd_attended_by", upperCaret(e))} />
                   </div>
                 </div>
               </div>
