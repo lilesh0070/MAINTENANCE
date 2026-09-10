@@ -1006,6 +1006,17 @@ export default function AndonSystem() {
                                 <span style={{ display:"inline-flex", alignItems:"center", gap:8 }}>
                                   <PlcState online={e.online} reason={e.online_reason} dot={10} glow
                                             title={e.last_seen ? `last seen ${e.last_seen}` : (e.checked ? `checked ${e.checked}` : "")} />
+                                  {/* Poller ki ASLI shikayat.  TCP probe se ye nahi dikhti —
+                                      port khula hone par bhi protocol jawab na de to probe
+                                      "ok" bol deta hai.  Pehle sirf laal batti dikhti thi. */}
+                                  {e.poll_error && (
+                                    <span title={e.poll_error}
+                                          style={{ fontSize:10.5, color:"#b91c1c", background:"#fee2e2",
+                                                   padding:"1px 6px", borderRadius:4, maxWidth:230,
+                                                   overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                                      {e.poll_error}{e.poll_error_count > 1 ? ` ×${e.poll_error_count}` : ""}
+                                    </span>
+                                  )}
                                   {e.online === false && (
                                     <button className="an-btn gh sm" disabled={rechecking === e.id}
                                             onClick={() => recheckPlc(e.id)}

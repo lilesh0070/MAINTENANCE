@@ -618,6 +618,16 @@ def _modbus_addr(dtype, dno):
     return space, start + n
 
 
+class PlcProtocolError(Exception):
+    """PLC ne JAWAB diya, par "nahi" kaha (jaise: ye address hai hi nahi).
+
+    Ye CONNECTION ki gadbad NAHI hai — socket bilkul theek hai.  Farak isliye
+    zaroori hai ki purana code kisi bhi galti par poora connection tod deta
+    tha: ek galat address har cycle me reconnect karwaata, aur UI par wahi
+    "beech beech me disconnect" dikhta — jabki taar-jodi me kuch kharabi
+    hoti hi nahi."""
+
+
 def _is_modbus(protocol):
     return str(protocol or "MC").strip().upper() == "MODBUS"
 
@@ -675,6 +685,11 @@ class _McDriver:
             return int(self.mc.batchread_bitunits(headdevice=head, readsize=1)[0])
         return int(self.mc.batchread_wordunits(headdevice=head, readsize=1)[0])
 
+    def read_many(self, pairs):
+        """MC par har address ALAG hi padha jaata hai — bilkul pehle jaisa.
+        (Batch sirf Modbus me joda gaya hai; MC ka raasta chhua nahi.)"""
+        return [self.read_one(t, n) for t, n in pairs]
+
     def write_bit(self, dtype, dno, value):
         self.mc.batchwrite_bitunits(headdevice=f"{(dtype or '').upper()}{dno}",
                                     values=[1 if value else 0])
@@ -726,15 +741,86 @@ class _ModbusDriver:
         # number me badalta hai — `MODBUS_ALLOC` se.  Raw Modbus naam
         # (HR/IR/COIL/DI) diya ho to number jyon ka tyon jaata hai.
         space, addr = _modbus_addr(dtype, dno)
+        return self._read_run(space, addr, 1, f"{dtype}{dno}")[0]
+
+    # Ek request me kitne — Modbus ki apni hadd (word 125, bit 2000).  Thoda
+    # neeche rakha hai; hamein 8 se zyada kabhi chahiye bhi nahi.
+    _RUN_MAX = {"registers": 100, "bits": 500}
+    # Beech me itne khali address aa jayen to bhi EK hi request bhejo.  Modbus
+    # ka read koi side-effect nahi karta, aur ek request bachna PLC par ek
+    # khatkhat kam hai.  (D3001/D3005/D3008 jaisa bikhra mapping bhi tab ek hi
+    # request banta hai, teen nahi.)
+    _RUN_GAP = 8
+
+    def _read_run(self, space, addr, count, tag):
         attr, fname = MODBUS_SPACES[space]
-        rr = getattr(self.cl, fname)(addr, 1, slave=self.unit)
-        if rr is None or rr.isError():          # ⚠ upar wali baat (1) — chhodna mana
-            raise IOError(f"Modbus read failed {dtype}{dno} -> {space}{addr} "
+        rr = getattr(self.cl, fname)(addr, count, slave=self.unit)
+        if rr is None:
+            raise IOError(f"Modbus: no reply for {tag} -> {space}{addr} x{count} "
+                          f"(unit {self.unit})")
+        if rr.isError():
+            # DO ALAG BAATEIN, aur dono ka ilaaj alag:
+            #   ExceptionResponse = PLC ne jawab diya aur "nahi" kaha (address
+            #     allocation me nahi, unit galat) -> connection theek hai
+            #   baaki (ModbusIOException) = jawab hi nahi aaya / socket gadbad
+            #     -> connection sach me tootna chahiye
+            if type(rr).__name__ == "ExceptionResponse":
+                raise PlcProtocolError(
+                    f"PLC refused {tag} -> {space}{addr} x{count} "
+                    f"(unit {self.unit}): {rr}")
+            raise IOError(f"Modbus read failed {tag} -> {space}{addr} x{count} "
                           f"(unit {self.unit}): {rr}")
         vals = getattr(rr, attr, None)
-        if not vals:
-            raise IOError(f"Modbus read returned nothing for {dtype}{dno} -> {space}{addr}")
-        return int(vals[0])
+        if not vals or len(vals) < count:
+            raise IOError(f"Modbus returned {len(vals or [])} of {count} for {tag}")
+        return [int(v) for v in vals[:count]]
+
+    def read_many(self, pairs):
+        """Lagataar address EK hi request me — poore cycle ke liye.
+
+        Asli PLC par naapa (FX5U, 192.168.30.213:506): D3001..D3008 ek-ek
+        karke **29 ms**, aur wahi aathon EK batch me **3.5 ms**.  Yaani PLC par
+        aath guna kam khatkhat, aur timeout ka mauka bhi utna hi kam.  Poll
+        100ms par chalta hai, isliye ye farak seedha stability me jaata hai."""
+        if not pairs:
+            return []
+        addrs = [_modbus_addr(t, n) for t, n in pairs]      # [(space, addr), ...]
+        out = [None] * len(addrs)
+        i = 0
+        order = sorted(range(len(addrs)), key=lambda k: (addrs[k][0], addrs[k][1]))
+        while i < len(order):
+            k0 = order[i]
+            space, start = addrs[k0]
+            lim = self._RUN_MAX[MODBUS_SPACES[space][0]]
+            run = [k0]
+            j = i + 1
+            # lagataar (ya ek hi) address hi ek run me — beech me gaap aaya to
+            # naya run.  Gaap bhar kar padhna bhi ho sakta tha, par usse un
+            # register ko chhuna padta jo hamare mapping me hain hi nahi.
+            while j < len(order):
+                k = order[j]
+                sp, ad = addrs[k]
+                if sp != space or ad > addrs[run[-1]][1] + self._RUN_GAP or (ad - start + 1) > lim:
+                    break
+                run.append(k); j += 1
+            count = addrs[run[-1]][1] - start + 1
+            tag = f"{pairs[k0][0]}{pairs[k0][1]}+{len(run)}"
+            try:
+                vals = self._read_run(space, start, count, tag)
+                for k in run:
+                    out[k] = vals[addrs[k][1] - start]
+            except PlcProtocolError:
+                # PLC ne poore block par "nahi" kaha — shayad beech ka koi
+                # address allocation me nahi hai.  Ek galat address ki wajah
+                # se baaki saat bhi na doobein, isliye ab ek-ek karke.
+                # (Jo sach me galat hai wahi error dega, aur wo dikh jayega.)
+                if len(run) == 1:
+                    raise
+                for k in run:
+                    sp, ad = addrs[k]
+                    out[k] = self._read_run(sp, ad, 1, f"{pairs[k][0]}{pairs[k][1]}")[0]
+            i = j
+        return out
 
     def write_bit(self, dtype, dno, value):
         raise NotImplementedError("Modbus is read-only in ANDON; "
@@ -880,7 +966,15 @@ def _ensure_conn(pool, retry, key, ip, port, series, protocol=None, unit_id=None
     # slot khali tha) ban gaya aur phir cache se chalta raha.
     # Probe rakha hai (hataya nahi) taaki sach me mari hui PLC par har retry
     # 4 second block na kare — bas timeout asli maap ke hisaab se kiya.
-    if not _reachable(ip, p, timeout=1.5):
+    # ── Modbus par ye probe JAAN-BOOJH KAR NAHI ───────────────────────────
+    # Probe ek POORA extra TCP connection kholta aur band karta hai.  MC par
+    # uska fayda tha (MC ka timer ~4s hai, to mari hui PLC par har retry 4s
+    # block karti).  Modbus ka apna timeout 1s hai, yaani probe kuch bachaata
+    # nahi — bas PLC par ek aur connection ki khatkhat jodta hai.  Aur jab
+    # socket kisi hichki par toot-ta hai, to har reconnect DO connection
+    # maangta tha (probe + asli) — FX5U ke giney-chuney Modbus connection par
+    # yahi khud apne aap ko khaata rehta hai.
+    if not _is_modbus(protocol) and not _reachable(ip, p, timeout=1.5):
         retry[key] = _time.monotonic() + _PLC_RETRY_SECS
         return None
     try:
@@ -916,6 +1010,33 @@ def _read_map_name(mc, plc_id, cur, table, name_col):
     return None
 
 
+# Poll ki nakami ka hisaab — {dev_id: (wajah, kab pehli baar, kitni baar, kab chhapa)}
+_POLL_FAIL = {}
+_POLL_LOG_EVERY = 30.0          # ek hi wajah is se zyada baar log na ho (second)
+
+
+def _poll_fail(dev_id, exc):
+    """Poll fail hone ki wajah yaad rakho + rate-limit ke saath log karo."""
+    why = f"{type(exc).__name__}: {exc}"[:200]
+    now = _time.monotonic()
+    prev = _POLL_FAIL.get(dev_id)
+    if prev and prev["why"] == why:
+        prev["count"] += 1
+        if now - prev["logged"] < _POLL_LOG_EVERY:
+            return
+        prev["logged"] = now
+        print(f"[ANDON-PLC-POLL] dev {dev_id}: {why}  ({prev['count']} baar)", flush=True)
+    else:
+        _POLL_FAIL[dev_id] = {"why": why, "count": 1, "logged": now}
+        print(f"[ANDON-PLC-POLL] dev {dev_id}: {why}", flush=True)
+
+
+def _poll_ok(dev_id):
+    """Kaamyab cycle — purani shikayat bhula do (taaki agli baar naya log aaye)."""
+    if _POLL_FAIL.pop(dev_id, None):
+        print(f"[ANDON-PLC-POLL] dev {dev_id}: wapas theek", flush=True)
+
+
 def _plc_poll_once(dev):
     """Ek PLC cycle: MAIN se bits (ANDON), SUB (agar ho) se Model/Fault.
     Return (main_ok, sub_ok).  sub_ok = None jab koi SUB PLC set nahi."""
@@ -944,7 +1065,10 @@ def _plc_poll_once(dev):
             cur.execute("""SELECT do_index, bit_type, bit_no FROM andon_plc_output_mapping
                             WHERE plc_id=%s AND COALESCE(bit_type,'')<>'' AND COALESCE(bit_no,'')<>''
                             ORDER BY do_index""", (did,))
-            bits = [(b, _read_one(mc, b["bit_type"], b["bit_no"])) for b in cur.fetchall()]
+            _rows = cur.fetchall()
+            # Ek hi call me saare address — Modbus par ye EK request banti hai
+            # (8 ki jagah 1), MC par pehle jaisa har address alag.
+            bits = list(zip(_rows, mc.read_many([(b["bit_type"], b["bit_no"]) for b in _rows])))
             # koi call ON ho to abhi ka model + fault bhi padho (read_mc = SUB ya MAIN).
             # read_mc None ho (SUB offline) to model/fault skip — call phir bhi chale.
             # ISOLATED: model/fault read fail ho (SUB glitch/register error) to bhi
@@ -986,10 +1110,24 @@ def _plc_poll_once(dev):
             if _eid:
                 try: auto_slip_on_ack(_eid)
                 except Exception as _e: print(f"[ANDON-SLIP] ack-fill dikkat (call {_eid}): {_e}")
+        _poll_ok(did)
         return True, (bool(sub_mc) if has_sub else None)
-    except Exception:
-        _plc_drop(did)                                        # MAIN+SUB reconnect
-        _PLC_RETRY[did] = _time.monotonic() + 1
+    except Exception as e:
+        # ── WAJAH AB DIKHTI HAI ──────────────────────────────────────────
+        # Pehle yahan sirf `except Exception:` tha — ek bhi lafz log me nahi
+        # jaata tha.  Isliye jab UI par "beech beech me disconnect" dikhta,
+        # to kisi ke paas dekhne ko kuch hota hi nahi tha.  Ab wajah yaad
+        # rehti hai (UI use dikhata hai) aur log me bhi jaati hai — par
+        # rate-limit ke saath, warna 10 baar prati second wahi line chhapti.
+        _poll_fail(did, e)
+        # ── SOCKET SIRF ASLI GADBAD PAR TODO ─────────────────────────────
+        # `PlcProtocolError` ka matlab hai PLC ne jawab DIYA aur "nahi" kaha
+        # (jaise address allocation me nahi).  Us par connection todna galat
+        # tha: har cycle me reconnect hota rehta aur UI me wahi jhilmilahat
+        # dikhti, jabki taar-jodi bilkul theek hoti hai.
+        if not isinstance(e, PlcProtocolError):
+            _plc_drop(did)                                    # MAIN+SUB reconnect
+            _PLC_RETRY[did] = _time.monotonic() + 1
         return False, (False if has_sub else None)
 
 
@@ -1067,6 +1205,12 @@ def _plc_poll_loop():
                 ok, sub_ok = _plc_poll_once(dev)
                 _st = {"online": ok, "sub_online": sub_ok, "checked": now,
                        "last_seen": now if ok else prev.get("last_seen")}
+                # nakami ki wajah bhi saath bhejo — UI ab "Disconnected" ke
+                # bajaye asli baat dikha sakta hai
+                _f = _POLL_FAIL.get(dev["id"])
+                if not ok and _f:
+                    _st["poll_error"] = _f["why"]
+                    _st["poll_error_count"] = _f["count"]
                 # offline hone ka pehla waqt yaad rakho — stale-call sweep grace ke liye
                 if not ok:
                     _st["offline_since"] = prev.get("offline_since") or now
@@ -2218,6 +2362,12 @@ def list_plc(user=Depends(get_current_user)):
         r["online_reason"] = r["sub_online_reason"] = None
         r["last_seen"] = st.get("last_seen")
         r["checked"]   = st.get("checked")
+        # Poller ki asli shikayat (agar ho) — TCP probe se ye pata nahi chalti,
+        # kyunki port khula hone par bhi protocol jawab na de to probe "ok"
+        # bolta hai.  Yahi wo halat hai jisme user ko sirf laal batti dikhti
+        # thi aur wajah kahin likhi hi nahi jaati thi.
+        r["poll_error"]       = st.get("poll_error")
+        r["poll_error_count"] = st.get("poll_error_count")
         # Probe DO haalaton me chalta hai:
         #   None  -> poller band hai (dev box), status hai hi nahi
         #   False -> poller keh raha hai "down", par WAJAH nahi batata.
