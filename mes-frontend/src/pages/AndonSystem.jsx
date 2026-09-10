@@ -174,6 +174,8 @@ const PLC_WHY = {
              tip: "No reply from this address. Check the cable, the firewall/VLAN, or whether the PLC is powered on." },
   dns:     { tag: "bad address",
              tip: "This address could not be resolved." },
+  modbus_no_probe: { tag: "waiting for poller",
+             tip: "This PLC speaks Modbus TCP, and this FX5U serves only ONE Modbus connection at a time. A test connection would take that single slot away from the poller, so no probe is made here — the status comes from the poller itself. If it stays like this, check the backend log for the reason." },
   mc:      { tag: "no protocol reply",
              tip: "The port is open and accepting connections, but the PLC is not answering reads. For MC, check the MC protocol settings and the series (Q / iQ-R / L). For Modbus TCP, check that the Modbus server is enabled, that the unit ID matches, and that the device assignment covers these addresses." },
 };

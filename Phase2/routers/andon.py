@@ -1127,7 +1127,15 @@ def _plc_poll_once(dev):
         # dikhti, jabki taar-jodi bilkul theek hoti hai.
         if not isinstance(e, PlcProtocolError):
             _plc_drop(did)                                    # MAIN+SUB reconnect
-            _PLC_RETRY[did] = _time.monotonic() + 1
+            # ── BAAR-BAAR FAIL HO TO THEHRO ──────────────────────────────
+            # Pehle hamesha 1 second tha.  Par ek soorat aisi hai jisme wo
+            # ulta nuksan karta hai: FX5U ek waqt me SIRF EK Modbus
+            # connection ko data deta hai (naapa hua).  Slot kisi aur ke paas
+            # ho to hamara har reconnect bhi bekaar jaata hai — aur 1-second
+            # par lagataar khatkhat karne se slot kabhi settle hi nahi hota.
+            # Ab intezaar dheere-dheere badhta hai (1s se 5s tak).
+            n = (_POLL_FAIL.get(did) or {}).get("count", 1)
+            _PLC_RETRY[did] = _time.monotonic() + min(1 + (n // 10), _PLC_RETRY_SECS)
         return False, (False if has_sub else None)
 
 
@@ -2375,10 +2383,26 @@ def list_plc(user=Depends(get_current_user)):
         # `online` usi ka rehta hai — probe sirf WAJAH bharne ke liye chalta
         # hai, faisla nahi badalta.  Sehatmand PLC (True) bilkul probe nahi
         # hota, to normal haalat me ye kuch kharch hi nahi karta.
-        if r["online"] is not True and r.get("enabled") and r.get("ip"):
-            todo.append((r, "main", r["ip"], r.get("port") or _default_port(r.get("protocol"))))
-        if r["sub_online"] is not True and (r.get("sub_ip") or "").strip():
-            todo.append((r, "sub", r["sub_ip"], r.get("sub_port") or _default_port(r.get("sub_protocol"))))
+        # ── MODBUS PAR PROBE BILKUL NAHI ─────────────────────────────────
+        # Naapa (FX5U 192.168.30.213:506): PLC ek waqt me SIRF EK Modbus
+        # connection ko data deta hai.  Doosre ka TCP handshake ho jaata hai
+        # (4 ms me) par uske read fail hote hain.  Iske DO nateeje hain, aur
+        # dono bure:
+        #   1. Probe JHOOTHI HARI BATTI deta hai — TCP juda to "ok", jabki
+        #      Modbus padha hi nahi ja sakta.
+        #   2. Probe wo EKMATRA SLOT cheen leta hai.  UI har 10s ye list
+        #      maangta hai, to poller ka connection baar-baar marta hai —
+        #      "beech beech me disconnect" ki asli shakl yahi hai.
+        # Isliye Modbus device par sach sirf poller se aata hai (`_PLC_STATUS`
+        # / `poll_error`); probe karne ka koi fayda hai hi nahi.
+        if not _is_modbus(r.get("protocol")):
+            if r["online"] is not True and r.get("enabled") and r.get("ip"):
+                todo.append((r, "main", r["ip"], r.get("port") or _default_port(r.get("protocol"))))
+        elif r["online"] is not True and not r.get("poll_error"):
+            r["online_reason"] = "modbus_no_probe"
+        if not _is_modbus(r.get("sub_protocol")):
+            if r["sub_online"] is not True and (r.get("sub_ip") or "").strip():
+                todo.append((r, "sub", r["sub_ip"], r.get("sub_port") or _default_port(r.get("sub_protocol"))))
 
     if todo:
         from concurrent.futures import ThreadPoolExecutor
@@ -2431,11 +2455,17 @@ def plc_recheck(dev_id: int, user=Depends(get_current_user)):
     #
     # Aur jahan poller CHALU hai wahan `_PLC_STATUS` me uska asli MC-level sach
     # hota hai; use ek mamooli TCP probe se overwrite karna galat hi hota.
-    if d.get("ip"):
+    # Modbus par probe MANA hai — upar wali wajah (ek hi connection slot, aur
+    # TCP-probe jhoothi hari batti deta hai).  Retry ka matlab wahan itna hi
+    # hai ki poller ko dobara koshish karne do.
+    if d.get("ip") and not _is_modbus(d.get("protocol")):
         ok, why = _probe_cached(d["ip"], d.get("port") or _default_port(d.get("protocol")),
                                 timeout=3.0, force=True)
         out["online"], out["online_reason"] = ok, why
-    if (d.get("sub_ip") or "").strip():
+    elif d.get("ip"):
+        _PLC_RETRY.pop(dev_id, None)          # backoff hatao, agla cycle turant try kare
+        out["online_reason"] = "modbus_no_probe"
+    if (d.get("sub_ip") or "").strip() and not _is_modbus(d.get("sub_protocol")):
         ok2, why2 = _probe_cached(d["sub_ip"], d.get("sub_port") or _default_port(d.get("sub_protocol")),
                                   timeout=3.0, force=True)
         out["sub_online"], out["sub_online_reason"] = ok2, why2
