@@ -553,6 +553,23 @@ MODBUS_SPACES = {
 MODBUS_DEFAULT_PORT = 502
 MC_DEFAULT_PORT     = 5007
 
+# ── Modbus ke do naap — user ke CHALTE HUE test (D:\FX5U\FX5U.PY) se ───────
+# Wo program is PLC par bharosemand chalta hai, aur uske do aankde hamare se
+# alag the.  Ab wahi le liye — apne andaze se nahi, jo cheez sach me chal rahi
+# hai usse:
+#   timeout  1.0s -> 1.5s   ek sust jawab par ab connection nahi tootta
+#   poll     0.1s -> 0.4s   (SIRF Modbus device par; MC 100ms par hi rahega)
+# FX5U ka Modbus server ladder scan ke saath hi chalta hai; 10 baar/second
+# uske liye zyada tha, aur har timeout hamare code me drop+reconnect banta tha
+# — screen par wahi "beech beech me disconnect".
+MODBUS_TIMEOUT       = 1.5
+MODBUS_POLL_INTERVAL = 0.4
+
+# Jab TCP to jud jaye par jawab na aaye — wajah lagbhag hamesha yahi hoti hai.
+_MB_BUSY_HINT = ("PLC accepted the connection but did not answer. This FX5U "
+                 "serves only ONE Modbus client at a time — close any other "
+                 "Modbus tool or monitor connected to this PLC")
+
 # ── FX5U ka MODBUS Device Allocation ────────────────────────────────────────
 # Modbus me `D`/`M`/`Y` jaisa kuch hota hi nahi — taar par sirf ek flat number
 # jaata hai.  Par FX5U ke ANDAR ek naksha baitha hota hai jo dono ko jodta hai,
@@ -728,13 +745,22 @@ class _ModbusDriver:
        likhne ki zaroorat nahi padti.
     """
 
-    def __init__(self, ip, port, unit_id=1, timeout=1.0):
+    def __init__(self, ip, port, unit_id=1, timeout=MODBUS_TIMEOUT):
         from pymodbus.client import ModbusTcpClient
         self.cl = ModbusTcpClient(str(ip), port=int(port or MODBUS_DEFAULT_PORT),
                                   timeout=timeout)
         if not self.cl.connect():
             raise ConnectionError(f"Modbus TCP connect failed {ip}:{port}")
-        self.unit = int(unit_id or 1)
+        # `or 1` NAHI — warna Unit ID 0 (jo Modbus me bilkul jaayaz hai, aur
+        # pymodbus ka apna default bhi wahi hai) chup-chaap 1 ban jaata tha.
+        self.unit = 1 if unit_id is None else int(unit_id)
+
+    def alive(self):
+        """Socket abhi bhi juda hua hai?  (FX5U.PY bhi har cycle yahi dekhta hai.)
+        pymodbus ka sync `execute()` khud bhi connect kar leta hai, par pehle
+        se dekh lena saaf hai — dead socket par ek fail cycle bach jaata hai."""
+        try:    return bool(self.cl.connected)
+        except Exception: return False
 
     def read_one(self, dtype, dno):
         # Address MC wale roop me aata hai (`D`,`3001`) aur yahin Modbus ke
@@ -756,8 +782,7 @@ class _ModbusDriver:
         attr, fname = MODBUS_SPACES[space]
         rr = getattr(self.cl, fname)(addr, count, slave=self.unit)
         if rr is None:
-            raise IOError(f"Modbus: no reply for {tag} -> {space}{addr} x{count} "
-                          f"(unit {self.unit})")
+            raise IOError(f"{_MB_BUSY_HINT} (no reply for {tag} -> {space}{addr})")
         if rr.isError():
             # DO ALAG BAATEIN, aur dono ka ilaaj alag:
             #   ExceptionResponse = PLC ne jawab diya aur "nahi" kaha (address
@@ -768,8 +793,13 @@ class _ModbusDriver:
                 raise PlcProtocolError(
                     f"PLC refused {tag} -> {space}{addr} x{count} "
                     f"(unit {self.unit}): {rr}")
-            raise IOError(f"Modbus read failed {tag} -> {space}{addr} x{count} "
-                          f"(unit {self.unit}): {rr}")
+            # Ye soorat lagbhag hamesha EK hi cheez hoti hai — naapa hua:
+            # FX5U ka TCP handshake har baar ho jaata hai, par data wo SIRF
+            # EK Modbus connection ko deta hai.  Isliye error me seedha wahi
+            # baat likhi hai, taaki dekhne wale ko turant pata chale ki
+            # kahan dekhna hai.
+            raise IOError(f"{_MB_BUSY_HINT} ({tag} -> {space}{addr} x{count}, "
+                          f"unit {self.unit})")
         vals = getattr(rr, attr, None)
         if not vals or len(vals) < count:
             raise IOError(f"Modbus returned {len(vals or [])} of {count} for {tag}")
@@ -939,7 +969,15 @@ def _ensure_conn(pool, retry, key, ip, port, series, protocol=None, unit_id=None
     if ent is not None:
         mc, old_sig = ent
         if old_sig == sig:
-            return mc
+            # Socket mar chuka ho to yahin naya banao — ek fail cycle bach
+            # jaata hai (aur mara hua socket PLC ka slot bhi ghere rehta hai).
+            if hasattr(mc, "alive") and not mc.alive():
+                try: mc.close()
+                except Exception: pass
+                pool.pop(key, None)
+                retry.pop(key, None)
+            else:
+                return mc
         # ── SETTING BADAL GAYI → purana socket bekaar hai ────────────────────
         # Pool sirf dev_id se key hota hai, isliye pehle IP/port/series badalne
         # par bhi PURANA connection zinda rehta tha aur poller chup-chaap PURANE
@@ -1188,6 +1226,9 @@ def _stale_call_sweep():
         print(f"[ANDON] stale-call sweep dikkat: {e}")
 
 
+_MB_LAST = {}          # {dev_id: monotonic} — Modbus device ka pichhla poll
+
+
 def _plc_poll_loop():
     n = 0
     while True:
@@ -1206,6 +1247,18 @@ def _plc_poll_loop():
             for dev in devs:
                 ids.add(dev["id"])
                 prev = _PLC_STATUS.get(dev["id"], {})
+                # ── HAR DEVICE KI APNI RAFTAAR ───────────────────────────
+                # Loop 100ms par ghoomta hai (MC ke liye wahi sahi — button
+                # dabate hi call chahiye).  Par Modbus wale device ko itni
+                # tez nahi thokna: FX5U ka Modbus server ladder scan ke saath
+                # chalta hai, aur user ke chalte hue test me wo 400ms par hai.
+                # Isliye Modbus device beech ke cycle CHUP-CHAAP CHHOD deta
+                # hai — status bhi nahi chhedta, warna wo jhilmilata dikhta.
+                if _is_modbus(dev.get("protocol")) and dev.get("enabled"):
+                    _t = _time.monotonic()
+                    if _t - _MB_LAST.get(dev["id"], 0.0) < MODBUS_POLL_INTERVAL:
+                        continue
+                    _MB_LAST[dev["id"]] = _t
                 if not dev.get("enabled"):
                     _PLC_STATUS[dev["id"]] = {"online": None, "sub_online": None, "checked": now, "last_seen": prev.get("last_seen")}
                     _plc_drop(dev["id"])
@@ -1227,6 +1280,8 @@ def _plc_poll_loop():
                 if k not in ids: _plc_drop(k)
             for k in list(_PLC_STATUS.keys()):
                 if k not in ids: _PLC_STATUS.pop(k, None)
+            for k in list(_MB_LAST.keys()):
+                if k not in ids: _MB_LAST.pop(k, None)
         except Exception as e:
             print(f"[ANDON-PLC-POLL] {e}")
         n += 1
