@@ -517,38 +517,247 @@ _OUT_WAKE = threading.Event()
 
 _PLC_RETRY_SECS    = 5         # offline PLC ko itni der baad dobara connect-try
 _plc_poller_started = False
-_PLC_CONN  = {}                # {dev_id: mc}  MAIN PLC (ANDON bits) persistent connection
+_PLC_CONN  = {}                # {dev_id: (driver, sig)}  MAIN PLC (ANDON bits) persistent connection
 _PLC_RETRY = {}                # {dev_id: monotonic ts — is se pehle reconnect na karo}
 # ── SUB PLC ── optional doosra PLC jisse Model/Fault register padhe jaate hain
 # (ANDON bits MAIN PLC se, Model/Fault SUB PLC se — jab do machine par alag ho).
-_SUB_CONN  = {}                # {dev_id: mc}  SUB PLC persistent connection
+_SUB_CONN  = {}                # {dev_id: (driver, sig)}  SUB PLC persistent connection
 _SUB_RETRY = {}                # {dev_id: monotonic ts}
 
-# ── PLC connect/read helpers (MC protocol via pymcprotocol).  Pehle routers.plc
-# me the; PLC Integration feature hatne par ANDON ne apne me le liye. ────────
+# ── PLC connect/read helpers.  Pehle routers.plc me the; PLC Integration
+# feature hatne par ANDON ne apne me le liye. ───────────────────────────────
+#
+# DO PROTOCOL, EK HI SHAKL.  Poore file me protocol sirf teen jagah chhua jaata
+# hai — `_connect` (connection banao), `_read_one` (padho) aur `_out_write_bit`
+# ka write.  Isliye dono raaste ek chhote driver ke peeche band kar diye gaye
+# hain: poll loop, timer, history, auto-slip, output writer, writer-lock,
+# backoff, probe — kisi ka ek line nahi badalta.
+#
+#   MC     : Mitsubishi MC-protocol / SLMP (pymcprotocol) — padhta AUR likhta hai.
+#   MODBUS : Modbus TCP (pymodbus) — SIRF PADHTA HAI (requirement).
+#
+# `protocol` khali ho to hamesha "MC" — yaani har purani row jyon ki tyon chalti
+# hai, DB me kuch badalne ki zaroorat nahi.
 BIT_DEVICES = {"X", "Y", "M", "L", "F", "V", "B", "S", "SB", "TS", "CS", "SS"}
 _PLCTYPE    = {"Q": "Q", "FX5U": "Q", "iQ-R": "iQ-R", "L": "L", "QnA": "QnA"}
+
+# Modbus ke chaar khaane.  Inhe device-type ki jagah likha jaata hai (COIL/DI =
+# bit, HR/IR = word), aur inhi naamo se UI ka dropdown banta hai.
+# ⚠ `bit_type`/`device_type` column VARCHAR(4) hai — chaaron naam usme fit hain.
+MODBUS_SPACES = {
+    "COIL": ("bits",      "read_coils"),             # 0x  read/write bit
+    "DI":   ("bits",      "read_discrete_inputs"),   # 1x  read-only  bit
+    "HR":   ("registers", "read_holding_registers"), # 4x  read/write word
+    "IR":   ("registers", "read_input_registers"),   # 3x  read-only  word
+}
+MODBUS_DEFAULT_PORT = 502
+MC_DEFAULT_PORT     = 5007
+
+# ── FX5U ka MODBUS Device Allocation ────────────────────────────────────────
+# Modbus me `D`/`M`/`Y` jaisa kuch hota hi nahi — taar par sirf ek flat number
+# jaata hai.  Par FX5U ke ANDAR ek naksha baitha hota hai jo dono ko jodta hai,
+# aur wo naksha yahan utaara gaya hai — taaki address wahi likha jaye jo MC me
+# likhte hain (`D3001`), aur badalne ka kaam code kare.
+#
+# YE NUMBER ANDAZE SE NAHI HAIN.  Plant ki FX5U ke GX Works3 ke
+# "MODBUS Device Allocation Parameter" screen se liye gaye (2026-09-10), aur
+# `D` wali jodi user ne ASLI PLC par apne alag program se jaanch kar pakki ki:
+# D3001 ki value Modbus par address 3001 par milti hai (yaani start 0).
+#
+#   MC device -> (Modbus ka khaana, wahan se shuruaat, kitne points, ginti ka aadhar)
+#
+# ⚠ "GINTI KA AADHAR" SABSE ZAROORI KHAANA HAI.  FX5 me X/Y **OCTAL** hote hain
+#    aur B **HEX** — yaani `Y20` ka asli number 20 nahi, **16** hai.  Ise
+#    nazarandaz kar dete to Y/X/B chup-chaap GALAT coil par chale jaate: na
+#    error aata, na pata chalta.  (D/M/L/F/SM saadi decimal ginti hain.)
+#
+# ⚠ Agar kisi doosri FX5U ka allocation ISSE ALAG ho, to ye table wahan galat
+#    hogi.  Us soorat ke liye raw Modbus address (HR/IR/COIL/DI) ka raasta
+#    khula rakha hai — wo is table se guzarta hi nahi.
+MODBUS_ALLOC = {
+    # device : (space, start, points, base)      points=None -> hadd nahi jaanchte
+    "X":  ("DI",   0,     1024, 8),
+    "Y":  ("COIL", 0,     1024, 8),
+    "M":  ("COIL", 8192,  7680, 10),
+    "SM": ("COIL", 20480, 2048, 10),
+    "L":  ("COIL", 22528, 7680, 10),
+    "B":  ("COIL", 30720, 256,  16),
+    "F":  ("COIL", 38912, 128,  10),
+    # D ki `points` jaan-boojh kar None hai — GX Works3 ke screen me Holding
+    # Register wala column kata hua tha, to ginti dekhi nahi gayi.  Yahan galat
+    # hadd likh dena ULTA nuksan karta (sahi address rad ho jaata); aur hadd ke
+    # bahar ka address PLC KHUD Modbus exception se rad karta hai, jise driver
+    # `isError()` par pakad kar exception bana deta hai.  Yaani chup-chaap
+    # galat value phir bhi nahi aa sakti.
+    "D":  ("HR",   0,     None, 10),
+}
+
+
+def _modbus_addr(dtype, dno):
+    """MC wala address (`D`, `3001`) -> Modbus ka (space, number).
+
+    Agar `dtype` pehle se Modbus ka apna naam hai (HR/IR/COIL/DI) to number
+    jyon ka tyon jaata hai — wo raasta is table se guzarta hi nahi."""
+    t = (dtype or "").strip().upper()
+    if t in MODBUS_SPACES:                       # raw Modbus address — seedha
+        return t, int(str(dno).strip())
+    alloc = MODBUS_ALLOC.get(t)
+    if alloc is None:
+        raise ValueError(f"Modbus address type '{dtype}' invalid (use "
+                         f"{'/'.join(MODBUS_ALLOC)} or {'/'.join(MODBUS_SPACES)})")
+    space, start, points, base = alloc
+    raw = str(dno).strip()
+    try:
+        n = int(raw, base)                       # X/Y octal, B hex, baaki decimal
+    except ValueError:
+        raise ValueError(f"{t}{raw} is not a valid {t} address "
+                         f"(base {base})") from None
+    if n < 0 or (points is not None and n >= points):
+        raise ValueError(f"{t}{raw} is outside the PLC's MODBUS allocation "
+                         f"({t}0 to {t}{points - 1})")
+    return space, start + n
+
+
+def _is_modbus(protocol):
+    return str(protocol or "MC").strip().upper() == "MODBUS"
+
+
+def _norm_proto(p):
+    """Jo bhi aaye, sirf do hi maanya: 'MODBUS' ya 'MC'.  Kuch aur aaya
+    (khali / typo / purani UI) to MC — yaani hamesha wahi safe raasta."""
+    return "MODBUS" if _is_modbus(p) else "MC"
+
+
+# Modbus/TCP sirf FX5 me CPU ke ANDAR hota hai.  Q / iQ-R / L par wo CPU ka
+# apna kaam nahi — uske liye alag Modbus module (jaise QJ71MB91) lagta hai,
+# jiska apna alag address-model hota hai.  Isliye in series par Modbus ka
+# option hai hi nahi.
+MODBUS_SERIES = {"FX5U"}
+
+
+def _series_supports_modbus(series):
+    return str(series or "Q").strip() in MODBUS_SERIES
+
+
+def _proto_for(series, protocol):
+    """EK jagah se sach: series Modbus kar hi nahi sakti to protocol MC.
+
+    UI me Protocol ka dropdown hi sirf FX5U par dikhta hai — par UI ki rok
+    asli rok nahi hoti (API seedha bhi mari ja sakti hai, aur purani UI bhi
+    ho sakti hai).  Isliye ye jaanch server par bhi hai, aur poll ke waqt bhi
+    lagti hai — taaki DB me kisi tarah 'Q + MODBUS' aa bhi jaye to poller
+    Q wale PLC par Modbus bolne ki koshish na kare."""
+    return "MODBUS" if (_is_modbus(protocol) and _series_supports_modbus(series)) else "MC"
+
+
+def _default_port(protocol):
+    """Us protocol ka aam port — Modbus 502, MC 5007."""
+    return MODBUS_DEFAULT_PORT if _is_modbus(protocol) else MC_DEFAULT_PORT
 
 
 def _is_bit(dtype):
     return (dtype or "").upper() in BIT_DEVICES
 
 
+class _McDriver:
+    """MC-protocol / SLMP — aaj wala raasta, bilkul waisa ka waisa."""
+
+    def __init__(self, ip, port, series, timer=4):
+        import pymcprotocol
+        plctype = _PLCTYPE.get((series or "Q"), "Q")
+        self.mc = pymcprotocol.Type3E(plctype=plctype)
+        self.mc.timer = timer                   # ~1s units → ~4s timeout
+        self.mc.connect(ip, int(port))
+
+    def read_one(self, dtype, dno):
+        head = f"{dtype.upper()}{dno}"
+        if _is_bit(dtype):
+            return int(self.mc.batchread_bitunits(headdevice=head, readsize=1)[0])
+        return int(self.mc.batchread_wordunits(headdevice=head, readsize=1)[0])
+
+    def write_bit(self, dtype, dno, value):
+        self.mc.batchwrite_bitunits(headdevice=f"{(dtype or '').upper()}{dno}",
+                                    values=[1 if value else 0])
+
+    def close(self):
+        self.mc.close()
+
+
+class _ModbusDriver:
+    """Modbus TCP — SIRF PADHNE ke liye.
+
+    Teen baatein jaan-boojh kar aisi hain:
+
+    1) **`isError()` ki jaanch chhodi nahi ja sakti.**  `pymcprotocol` galti par
+       exception feekta hai; `pymodbus` NAHI — wo error ka *object* lauta deta
+       hai.  Aur poll loop me faisla `val != 0` se hota hai (`_plc_poll_once`),
+       jisme wo object seedha **True** ban jaata — yaani ek JHOOTHI ANDON call
+       jo kabhi band nahi hoti.  Isliye har read par `isError()` dekh kar
+       exception uthate hain, taaki wo usi purane raaste se sambhle jaaye
+       jisse MC ki galti sambhalti hai (connection drop + backoff).
+
+    2) **timeout SAAF likha hai.**  pymodbus ka apna default 3 second hai, aur
+       poll loop EK hi thread me saare device baari-baari padhta hai (100ms
+       cycle) — ek sust PLC poore ANDON ko rok deta.  MC wala timer bhi ~4s
+       hai, par wo tabhi lagta hai jab connection pehle se ban chuka ho; yahan
+       connect+read dono isi hadd me hain.
+
+    3) **`write_bit` yahan MANA hai.**  Requirement Modbus ko sirf padhne ke
+       liye laayi hai.  Chup-chaap kuch na karne ke bajaye saaf mana karta hai,
+       taaki koi galti se output mapping Modbus par le jaaye to wo turant
+       dikhe, na ki plant me chup-chaap bit na likhe.
+
+    4) **Address MC wale roop me hi likha jaata hai** (`D3001`), Modbus ka
+       number `MODBUS_ALLOC` se banta hai.  Isi wajah se maujooda mapping
+       (jo sab `D` par hai) ko Modbus par le jaane me ek bhi address dobara
+       likhne ki zaroorat nahi padti.
+    """
+
+    def __init__(self, ip, port, unit_id=1, timeout=1.0):
+        from pymodbus.client import ModbusTcpClient
+        self.cl = ModbusTcpClient(str(ip), port=int(port or MODBUS_DEFAULT_PORT),
+                                  timeout=timeout)
+        if not self.cl.connect():
+            raise ConnectionError(f"Modbus TCP connect failed {ip}:{port}")
+        self.unit = int(unit_id or 1)
+
+    def read_one(self, dtype, dno):
+        # Address MC wale roop me aata hai (`D`,`3001`) aur yahin Modbus ke
+        # number me badalta hai — `MODBUS_ALLOC` se.  Raw Modbus naam
+        # (HR/IR/COIL/DI) diya ho to number jyon ka tyon jaata hai.
+        space, addr = _modbus_addr(dtype, dno)
+        attr, fname = MODBUS_SPACES[space]
+        rr = getattr(self.cl, fname)(addr, 1, slave=self.unit)
+        if rr is None or rr.isError():          # ⚠ upar wali baat (1) — chhodna mana
+            raise IOError(f"Modbus read failed {dtype}{dno} -> {space}{addr} "
+                          f"(unit {self.unit}): {rr}")
+        vals = getattr(rr, attr, None)
+        if not vals:
+            raise IOError(f"Modbus read returned nothing for {dtype}{dno} -> {space}{addr}")
+        return int(vals[0])
+
+    def write_bit(self, dtype, dno, value):
+        raise NotImplementedError("Modbus is read-only in ANDON; "
+                                  "outputs must use MC protocol")
+
+    def close(self):
+        self.cl.close()
+
+
 def _connect(plc, timer=4):
-    """Core connect — mc object return karta hai ya plain exception raise."""
-    import pymcprotocol
-    plctype = _PLCTYPE.get((plc.get("series") or "Q"), "Q")
-    mc = pymcprotocol.Type3E(plctype=plctype)
-    mc.timer = timer                        # ~1s units → ~4s timeout
-    mc.connect(plc["plc_ip"], int(plc["plc_port"]))
-    return mc
+    """Core connect — driver object return karta hai ya plain exception raise.
+
+    `plc` me `protocol` na ho to MC — yaani har purana call-site (output writer
+    samet) bilkul pehle jaisa chalta hai."""
+    if _is_modbus(plc.get("protocol")):
+        return _ModbusDriver(plc["plc_ip"], plc["plc_port"], plc.get("unit_id"))
+    return _McDriver(plc["plc_ip"], plc["plc_port"], plc.get("series"), timer=timer)
 
 
 def _read_one(mc, dtype, dno):
-    head = f"{dtype.upper()}{dno}"
-    if _is_bit(dtype):
-        return int(mc.batchread_bitunits(headdevice=head, readsize=1)[0])
-    return int(mc.batchread_wordunits(headdevice=head, readsize=1)[0])
+    """Ek address padho.  Call-site pehle jaise hi hain — driver tay karta hai
+    ki ye MC ka M/D/X/Y hai ya Modbus ka COIL/DI/HR/IR."""
+    return mc.read_one(dtype, dno)
 
 
 def _probe(ip, port, timeout=1.5):
@@ -626,23 +835,40 @@ def _reachable(ip, port, timeout=1.5):
 
 
 def _plc_drop(dev_id):
-    # MAIN + SUB dono connection band karo
+    # MAIN + SUB dono connection band karo.  Pool me (driver, sig) ki jodi hai.
     for _pool in (_PLC_CONN, _SUB_CONN):
-        mc = _pool.pop(dev_id, None)
-        if mc is not None:
-            try: mc.close()
+        ent = _pool.pop(dev_id, None)
+        if ent is not None:
+            try: ent[0].close()
             except Exception: pass
 
 
-def _ensure_conn(pool, retry, key, ip, port, series):
-    """Persistent MC connection (ya None) — backoff + fast reachability probe.
-    MAIN aur SUB PLC dono isi se connect hote hain (alag pool/retry dicts se)."""
-    mc = pool.get(key)
-    if mc is not None:
-        return mc
+def _ensure_conn(pool, retry, key, ip, port, series, protocol=None, unit_id=None):
+    """Persistent PLC connection (ya None) — backoff + fast reachability probe.
+    MAIN aur SUB PLC dono isi se connect hote hain (alag pool/retry dicts se).
+    `protocol` khali = MC, yaani purana bartaav bilkul waisa hi."""
+    p   = int(port or _default_port(protocol))
+    sig = (str(ip), p, _norm_proto(protocol), str(series or "Q"), int(unit_id or 1))
+    ent = pool.get(key)
+    if ent is not None:
+        mc, old_sig = ent
+        if old_sig == sig:
+            return mc
+        # ── SETTING BADAL GAYI → purana socket bekaar hai ────────────────────
+        # Pool sirf dev_id se key hota hai, isliye pehle IP/port/series badalne
+        # par bhi PURANA connection zinda rehta tha aur poller chup-chaap PURANE
+        # PLC se padhta rehta — jab tak wo PLC pahunch me hai, koi error bhi
+        # nahi aata (galti sirf tab dikhti jab read fail hota, line ~878).
+        # Ab connection ke saath uski pehchaan (sig) rakhi jaati hai; zara sa
+        # bhi farak aaya to yahin gira kar naya banta hai.  Protocol switch
+        # (MC ↔ Modbus) me ye zaroori hai — warna badalne ke baad bhi purana
+        # protocol chalta rehta.
+        try: mc.close()
+        except Exception: pass
+        pool.pop(key, None)
+        retry.pop(key, None)
     if _time.monotonic() < retry.get(key, 0):            # backoff — abhi try mat karo
         return None
-    p = int(port or 5007)
     # Probe ka timeout 1.5s — pehle 0.4s tha aur usne SUB PLC ka connection
     # KABHI banne hi nahi diya.  Wajah: ye input PLC ek hi connection dete
     # hain.  Slot khali ho to TCP connect ~15ms me ho jaata, par slot bhara ya
@@ -658,8 +884,9 @@ def _ensure_conn(pool, retry, key, ip, port, series):
         retry[key] = _time.monotonic() + _PLC_RETRY_SECS
         return None
     try:
-        mc = _connect({"series": series or "Q", "plc_ip": ip, "plc_port": p})
-        pool[key] = mc
+        mc = _connect({"series": series or "Q", "plc_ip": ip, "plc_port": p,
+                       "protocol": protocol, "unit_id": unit_id})
+        pool[key] = (mc, sig)
         retry.pop(key, None)
         return mc
     except Exception:
@@ -694,12 +921,18 @@ def _plc_poll_once(dev):
     Return (main_ok, sub_ok).  sub_ok = None jab koi SUB PLC set nahi."""
     did = dev["id"]
     has_sub = bool((dev.get("sub_ip") or "").strip())
-    mc = _ensure_conn(_PLC_CONN, _PLC_RETRY, did, dev["ip"], dev.get("port") or 5007, dev.get("series") or "Q")
+    proto     = _proto_for(dev.get("series"),     dev.get("protocol"))
+    sub_proto = _proto_for(dev.get("sub_series"), dev.get("sub_protocol"))
+    mc = _ensure_conn(_PLC_CONN, _PLC_RETRY, did, dev["ip"],
+                      dev.get("port") or _default_port(proto),
+                      dev.get("series") or "Q", proto, dev.get("unit_id"))
     if mc is None:
         return False, (False if has_sub else None)
     # Model/Fault register kis PLC se — SUB ho to usse, warna MAIN (mc) se.
-    sub_mc = _ensure_conn(_SUB_CONN, _SUB_RETRY, did, dev["sub_ip"], dev.get("sub_port") or 5007,
-                          dev.get("sub_series") or "Q") if has_sub else None
+    sub_mc = _ensure_conn(_SUB_CONN, _SUB_RETRY, did, dev["sub_ip"],
+                          dev.get("sub_port") or _default_port(sub_proto),
+                          dev.get("sub_series") or "Q", sub_proto,
+                          dev.get("sub_unit_id")) if has_sub else None
     read_mc = sub_mc if has_sub else mc
     try:
         # ek hi cycle me: bit-mapping fetch + PLC read + apply (fast cycle)
@@ -817,7 +1050,9 @@ def _plc_poll_loop():
             with get_conn() as conn:
                 cur = dict_cursor(conn)
                 cur.execute("""SELECT id, zone, line, machine_no, machine_name,
-                                      ip, port, series, sub_ip, sub_port, sub_series, enabled
+                                      ip, port, series, protocol, unit_id,
+                                      sub_ip, sub_port, sub_series, sub_protocol, sub_unit_id,
+                                      enabled
                                  FROM andon_plc_devices""")
                 devs = cur.fetchall()
             now = datetime.now().isoformat(timespec="seconds")
@@ -1133,7 +1368,7 @@ def _out_write_bit(ip, port, series, bit_type, bit_no, value):
     try:
         cur_bit = int(_read_one(mc, bit_type, bit_no))
         if cur_bit != want:                       # galat hai tabhi likho
-            mc.batchwrite_bitunits(headdevice=head, values=[want])
+            mc.write_bit(bit_type, bit_no, want)
             cur_bit = int(_read_one(mc, bit_type, bit_no))   # likhne ke baad ASLI bit
         _OUT_FAILS[key] = 0
         return bool(cur_bit)
@@ -1603,6 +1838,20 @@ def _ensure_tables():
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS sub_port INTEGER")
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS sub_series VARCHAR(20)")
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS sub_machine_no VARCHAR(60)")
+        # ── PROTOCOL ── ab do raaste hain: 'MC' (Mitsubishi MC/SLMP, padhna+likhna)
+        # aur 'MODBUS' (Modbus TCP, SIRF padhna).  DEFAULT 'MC' jaan-boojh kar hai —
+        # isse har purani row bina chhue pehle jaisi hi chalti rehti hai.
+        # unit_id sirf Modbus ke liye (slave/unit id, FX5U par aksar 1); MC ise
+        # dekhta hi nahi.  Port khali ho to protocol se tay hota hai (502 / 5007).
+        cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS protocol     VARCHAR(10) DEFAULT 'MC'")
+        cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS unit_id      INTEGER     DEFAULT 1")
+        cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS sub_protocol VARCHAR(10) DEFAULT 'MC'")
+        cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS sub_unit_id  INTEGER     DEFAULT 1")
+        # Purani row me column NULL aata hai (DEFAULT sirf nayi row par lagta hai),
+        # aur NULL ko code "MC" hi maanta hai — phir bhi ek baar bhar dete hain
+        # taaki UI me khaali dropdown na dikhe.
+        cur.execute("UPDATE andon_plc_devices SET protocol='MC' WHERE protocol IS NULL")
+        cur.execute("UPDATE andon_plc_devices SET sub_protocol='MC' WHERE sub_protocol IS NULL")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS andon_plc_output_mapping (
                 id            SERIAL PRIMARY KEY,
@@ -1904,8 +2153,10 @@ def del_department(did: int, user=Depends(get_current_user)):
 class PlcIn(BaseModel):
     name: str
     ip: str
-    port: Optional[int] = 5007          # PLC MC-protocol port
-    series: Optional[str] = "Q"         # Q / FX5U / iQ-R / L
+    port: Optional[int] = None          # khali => protocol ka aam port (502 / 5007)
+    series: Optional[str] = "Q"         # Q / FX5U / iQ-R / L  (sirf MC ke liye)
+    protocol: Optional[str] = "MC"      # MC (SLMP) ya MODBUS (Modbus TCP, read-only)
+    unit_id: Optional[int] = 1          # Modbus slave/unit id (MC ise nahi dekhta)
     zone: Optional[str] = ""
     line: Optional[str] = ""
     machine_no: Optional[str] = ""
@@ -1916,8 +2167,10 @@ class PlcIn(BaseModel):
     # optional SUB PLC — Model/Fault register isi se padhe jaate hain (ANDON MAIN se).
     # sub_ip khali => koi sub nahi (Model/Fault MAIN PLC se aayenge).
     sub_ip: Optional[str] = ""
-    sub_port: Optional[int] = 5007
+    sub_port: Optional[int] = None
     sub_series: Optional[str] = "Q"
+    sub_protocol: Optional[str] = "MC"
+    sub_unit_id: Optional[int] = 1
     sub_machine_no: Optional[str] = ""
 
 
@@ -1926,9 +2179,10 @@ def list_plc(user=Depends(get_current_user)):
     _ensure_tables()
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("""SELECT id, name, ip, port, series, zone, line, machine_no, machine_name,
-                              sub_ip, sub_port, sub_series, sub_machine_no,
-                              description, enabled, poll_path
+        cur.execute("""SELECT id, name, ip, port, series, protocol, unit_id,
+                              zone, line, machine_no, machine_name,
+                              sub_ip, sub_port, sub_series, sub_protocol, sub_unit_id,
+                              sub_machine_no, description, enabled, poll_path
                          FROM andon_plc_devices ORDER BY name""")
         rows = cur.fetchall()
     # merge live connectivity (green/red) from the background poller.  On a box
@@ -1972,9 +2226,9 @@ def list_plc(user=Depends(get_current_user)):
         # hai, faisla nahi badalta.  Sehatmand PLC (True) bilkul probe nahi
         # hota, to normal haalat me ye kuch kharch hi nahi karta.
         if r["online"] is not True and r.get("enabled") and r.get("ip"):
-            todo.append((r, "main", r["ip"], r.get("port") or 5007))
+            todo.append((r, "main", r["ip"], r.get("port") or _default_port(r.get("protocol"))))
         if r["sub_online"] is not True and (r.get("sub_ip") or "").strip():
-            todo.append((r, "sub", r["sub_ip"], r.get("sub_port") or 5007))
+            todo.append((r, "sub", r["sub_ip"], r.get("sub_port") or _default_port(r.get("sub_protocol"))))
 
     if todo:
         from concurrent.futures import ThreadPoolExecutor
@@ -2005,7 +2259,7 @@ def plc_recheck(dev_id: int, user=Depends(get_current_user)):
     _ensure_tables()
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("""SELECT id, name, ip, port, sub_ip, sub_port, enabled
+        cur.execute("""SELECT id, name, ip, port, protocol, sub_ip, sub_port, sub_protocol, enabled
                          FROM andon_plc_devices WHERE id = %s""", (dev_id,))
         d = cur.fetchone()
     if not d:
@@ -2028,10 +2282,12 @@ def plc_recheck(dev_id: int, user=Depends(get_current_user)):
     # Aur jahan poller CHALU hai wahan `_PLC_STATUS` me uska asli MC-level sach
     # hota hai; use ek mamooli TCP probe se overwrite karna galat hi hota.
     if d.get("ip"):
-        ok, why = _probe_cached(d["ip"], d.get("port") or 5007, timeout=3.0, force=True)
+        ok, why = _probe_cached(d["ip"], d.get("port") or _default_port(d.get("protocol")),
+                                timeout=3.0, force=True)
         out["online"], out["online_reason"] = ok, why
     if (d.get("sub_ip") or "").strip():
-        ok2, why2 = _probe_cached(d["sub_ip"], d.get("sub_port") or 5007, timeout=3.0, force=True)
+        ok2, why2 = _probe_cached(d["sub_ip"], d.get("sub_port") or _default_port(d.get("sub_protocol")),
+                                  timeout=3.0, force=True)
         out["sub_online"], out["sub_online_reason"] = ok2, why2
     return out
 
@@ -2079,16 +2335,21 @@ def add_plc(body: PlcIn, user=Depends(get_current_user)):
     with get_conn() as conn:
         cur = conn.cursor()
         _check_plc_unique(cur, body.ip, body.name)
+        proto     = _proto_for(body.series,     body.protocol)
+        sub_proto = _proto_for(body.sub_series, body.sub_protocol)
         cur.execute("""INSERT INTO andon_plc_devices
-                       (name, ip, port, series, zone, line, machine_no, machine_name, description, enabled, poll_path,
-                        sub_ip, sub_port, sub_series, sub_machine_no)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, %s,%s,%s,%s) RETURNING id""",
-                    (body.name.strip(), body.ip.strip(), body.port or 5007, (body.series or "Q").strip() or "Q",
+                       (name, ip, port, series, protocol, unit_id,
+                        zone, line, machine_no, machine_name, description, enabled, poll_path,
+                        sub_ip, sub_port, sub_series, sub_protocol, sub_unit_id, sub_machine_no)
+                       VALUES (%s,%s,%s,%s,%s,%s, %s,%s,%s,%s,%s,%s,%s, %s,%s,%s,%s,%s,%s) RETURNING id""",
+                    (body.name.strip(), body.ip.strip(), body.port or _default_port(proto),
+                     (body.series or "Q").strip() or "Q", proto, int(body.unit_id or 1),
                      (body.zone or "").strip() or None, (body.line or "").strip() or None,
                      (body.machine_no or "").strip() or None, (body.machine_name or "").strip() or None,
                      body.description or "", body.enabled, (body.poll_path or "/status").strip(),
-                     (body.sub_ip or "").strip() or None, int(body.sub_port or 5007),
-                     (body.sub_series or "Q").strip() or "Q", (body.sub_machine_no or "").strip() or None))
+                     (body.sub_ip or "").strip() or None, int(body.sub_port or _default_port(sub_proto)),
+                     (body.sub_series or "Q").strip() or "Q", sub_proto, int(body.sub_unit_id or 1),
+                     (body.sub_machine_no or "").strip() or None))
         new_id = cur.fetchone()[0]; conn.commit()
     return {"id": new_id}
 
@@ -2102,17 +2363,23 @@ def edit_plc(eid: int, body: PlcIn, user=Depends(get_current_user)):
         cur = conn.cursor()
         # Edit me bhi wahi rok — apne aap ko chhod kar (skip_id=eid)
         _check_plc_unique(cur, body.ip, body.name, skip_id=eid)
+        proto     = _proto_for(body.series,     body.protocol)
+        sub_proto = _proto_for(body.sub_series, body.sub_protocol)
         cur.execute("""UPDATE andon_plc_devices
-                          SET name=%s, ip=%s, port=%s, series=%s, zone=%s, line=%s, machine_no=%s, machine_name=%s,
+                          SET name=%s, ip=%s, port=%s, series=%s, protocol=%s, unit_id=%s,
+                              zone=%s, line=%s, machine_no=%s, machine_name=%s,
                               description=%s, enabled=%s, poll_path=%s,
-                              sub_ip=%s, sub_port=%s, sub_series=%s, sub_machine_no=%s, updated_at=NOW()
+                              sub_ip=%s, sub_port=%s, sub_series=%s, sub_protocol=%s, sub_unit_id=%s,
+                              sub_machine_no=%s, updated_at=NOW()
                         WHERE id=%s""",
-                    (body.name.strip(), body.ip.strip(), body.port or 5007, (body.series or "Q").strip() or "Q",
+                    (body.name.strip(), body.ip.strip(), body.port or _default_port(proto),
+                     (body.series or "Q").strip() or "Q", proto, int(body.unit_id or 1),
                      (body.zone or "").strip() or None, (body.line or "").strip() or None,
                      (body.machine_no or "").strip() or None, (body.machine_name or "").strip() or None,
                      body.description or "", body.enabled, (body.poll_path or "/status").strip(),
-                     (body.sub_ip or "").strip() or None, int(body.sub_port or 5007),
-                     (body.sub_series or "Q").strip() or "Q", (body.sub_machine_no or "").strip() or None, eid))
+                     (body.sub_ip or "").strip() or None, int(body.sub_port or _default_port(sub_proto)),
+                     (body.sub_series or "Q").strip() or "Q", sub_proto, int(body.sub_unit_id or 1),
+                     (body.sub_machine_no or "").strip() or None, eid))
         if cur.rowcount == 0:
             raise HTTPException(404, "PLC not found")
         conn.commit()

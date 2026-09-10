@@ -100,6 +100,73 @@ const FH_SEL = { padding: "6px 8px", minWidth: 118 };
      refused = PLC zinda hai par us port par kuch sun nahi raha  -> PLC ki setting
      timeout = jawab hi nahi aaya                                -> cable/firewall/power
    Isliye wajah UI par likh dete hain, warna har baar network hi shaq me aata hai. */
+/* ── DO PROTOCOL ────────────────────────────────────────────────────────────
+   MC     = Mitsubishi MC-protocol / SLMP  -> padhta AUR likhta hai (M/D/X/Y…)
+   MODBUS = Modbus TCP                     -> SIRF padhta hai (COIL/DI/HR/IR)
+
+   Modbus me M/D/X/Y hote hi nahi — uske chaar khaane hote hain aur address ek
+   flat number hota hai.  Kaunsa Modbus address kis D/M par baithega, ye faisla
+   PLC ke ANDAR hota hai (GX Works3 -> Modbus device assignment), yahan nahi.
+   Isliye address seedha Modbus wale roop me likhe jaate hain — andaza nahi. */
+const SERIES = ["Q", "FX5U", "iQ-R", "L"];      // pehle jaisi hi list
+/* Modbus/TCP sirf FX5 me ANDAR se hota hai.  Q / iQ-R / L par wo CPU ka apna
+   kaam nahi — uske liye alag Modbus module (jaise QJ71MB91) lagana padta hai.
+   Isliye Protocol ka dropdown SIRF FX5U par dikhta hai; baaki series par
+   raasta hamesha MC / SLMP hi rehta hai. */
+const MODBUS_SERIES = ["FX5U"];
+const canModbus = (s) => MODBUS_SERIES.includes(String(s || "Q"));
+const PROTOCOLS = [
+  { v: "MC",     label: "MC / SLMP",  port: 5007 },
+  { v: "MODBUS", label: "Modbus TCP", port: 502  },
+];
+const isModbus  = (p) => String(p || "MC").toUpperCase() === "MODBUS";
+const defPort   = (p) => (isModbus(p) ? 502 : 5007);
+/* Ek hi jagah se sach — series Modbus kar hi nahi sakti to protocol ka koi
+   bhi likha hua hona bekaar hai.  Har jagah (form, badge, address dropdown)
+   YAHI se poochha jaata hai, warna kahin Q + Modbus jaisa jodha dikh sakta. */
+const effProto = (series, protocol) => (canModbus(series) && isModbus(protocol) ? "MODBUS" : "MC");
+const MC_ADDR     = ["D", "R", "W", "M", "L", "X", "Y"];   // Model / Fault register
+const MC_BIT_ADDR = ["M", "Y", "X", "L", "D"];             // ANDON call ka signal
+/* Modbus par bhi address WAHI roop me likha jaata hai jo MC me — `D3001`.
+   Modbus ka asli number PLC ke apne "MODBUS Device Allocation" se banta hai
+   aur wo badalna backend karta hai.  Isliye maujooda mapping (jo sab `D` par
+   hai) ko Modbus par le jaane me EK BHI address dobara nahi likhna padta. */
+const MODBUS_DEV_ADDR = ["D", "M", "X", "Y", "L", "B", "F", "SM"];
+/* Seedha Modbus address — sirf us soorat ke liye jab kisi PLC ka allocation
+   upar wali table se alag ho.  Ye raasta translation se guzarta hi nahi. */
+const MODBUS_RAW_ADDR = ["HR", "IR", "COIL", "DI"];
+const MODBUS_ALL_ADDR = [...MODBUS_DEV_ADDR, ...MODBUS_RAW_ADDR];
+const MODBUS_ADDR_HINT = {
+  D:    "D register — mapped to a Modbus holding register",
+  M:    "M relay — mapped to a Modbus coil",
+  X:    "X input — mapped to a Modbus discrete input (octal, like the PLC)",
+  Y:    "Y output — mapped to a Modbus coil (octal, like the PLC)",
+  L:    "L latch relay — mapped to a Modbus coil",
+  B:    "B link relay — mapped to a Modbus coil (hex, like the PLC)",
+  F:    "F annunciator — mapped to a Modbus coil",
+  SM:   "SM special relay — mapped to a Modbus coil",
+  HR:   "Holding register (4x) — raw Modbus address, no mapping",
+  IR:   "Input register (3x) — raw Modbus address, no mapping",
+  COIL: "Coil (0x) — raw Modbus address, no mapping",
+  DI:   "Discrete input (1x) — raw Modbus address, no mapping",
+};
+
+/* Address ka dropdown.  MC par saadi list; Modbus par do hisse — PLC ke device
+   (jo apne aap Modbus number me badal jaate hain) aur seedha Modbus address. */
+function AddrOptions({ proto, mcList }) {
+  if (!isModbus(proto)) return mcList.map((b) => <option key={b} value={b}>{b}</option>);
+  return (
+    <>
+      <optgroup label="PLC device — same as MC">
+        {MODBUS_DEV_ADDR.map((b) => <option key={b} value={b}>{b}</option>)}
+      </optgroup>
+      <optgroup label="Raw Modbus address">
+        {MODBUS_RAW_ADDR.map((b) => <option key={b} value={b}>{b}</option>)}
+      </optgroup>
+    </>
+  );
+}
+
 const PLC_WHY = {
   refused: { tag: "port refused",
              tip: "The device replied but nothing is listening on this port. Open the MC protocol / Ethernet port setting on the PLC, or correct the port here. This is not a network fault — ping will still work." },
@@ -107,9 +174,19 @@ const PLC_WHY = {
              tip: "No reply from this address. Check the cable, the firewall/VLAN, or whether the PLC is powered on." },
   dns:     { tag: "bad address",
              tip: "This address could not be resolved." },
-  mc:      { tag: "no MC reply",
-             tip: "The port is open and accepting connections, but the PLC is not answering MC protocol reads. Check the MC protocol settings, the series (Q / iQ-R / L), and that the configured device addresses exist on this PLC." },
+  mc:      { tag: "no protocol reply",
+             tip: "The port is open and accepting connections, but the PLC is not answering reads. For MC, check the MC protocol settings and the series (Q / iQ-R / L). For Modbus TCP, check that the Modbus server is enabled, that the unit ID matches, and that the device assignment covers these addresses." },
 };
+
+/* Address ke bagal ka chhota nishaan.  Modbus wala neela, taaki list me ek
+   nazar me dikh jaye ki kaunsa device kis protocol par hai. */
+function Tag({ text, on = false }) {
+  if (!text) return null;
+  return <span style={{ marginLeft:6, fontSize:10, fontWeight:700,
+                        color: on ? "#1d4ed8" : "#64748b",
+                        background: on ? "#dbeafe" : "#f1f5f9",
+                        padding:"1px 6px", borderRadius:99 }}>{text}</span>;
+}
 
 function PlcState({ online, reason, dot = 10, glow = false, title = "" }) {
   const why  = online === false ? PLC_WHY[reason] : null;
@@ -408,9 +485,32 @@ export default function AndonSystem() {
   const [dName, setDName] = useState("");
 
   // ── PLC form (zone / line from the machine master) ──
-  const blankPlc = { name: "", ip: "", port: 5007, series: "Q", zone: "", line: "", machine_no: "", machine_name: "", enabled: true,
-                     sub_on: false, sub_ip: "", sub_port: 5007, sub_series: "Q", sub_machine_no: "" };
+  const blankPlc = { name: "", ip: "", port: 5007, series: "Q", protocol: "MC", unit_id: 1,
+                     zone: "", line: "", machine_no: "", machine_name: "", enabled: true,
+                     sub_on: false, sub_ip: "", sub_port: 5007, sub_series: "Q",
+                     sub_protocol: "MC", sub_unit_id: 1, sub_machine_no: "" };
   const [plcForm, setPlcForm] = useState(blankPlc);
+  // Protocol badla -> port bhi usi ka aam port (5007 <-> 502).  Sirf tab jab
+  // maujooda port DOOSRE protocol ka default ho -- yaani user ka apna likha
+  // hua port (jaise 503) chhua nahi jaata.
+  // Series badli -> agar nayi series Modbus kar hi nahi sakti to protocol
+  // wapas MC, aur port bhi MC ka (par sirf tab jab port Modbus ka default
+  // 502 pada ho -- user ka apna likha port kabhi nahi chhedte).
+  const onSeries = (which, v) => setPlcForm((f) => {
+    const sk = which === "sub" ? "sub_series"   : "series";
+    const pk = which === "sub" ? "sub_protocol" : "protocol";
+    const ok = which === "sub" ? "sub_port"     : "port";
+    if (canModbus(v)) return { ...f, [sk]: v };
+    return { ...f, [sk]: v, [pk]: "MC",
+             [ok]: (Number(f[ok]) === 502 || !f[ok]) ? 5007 : f[ok] };
+  });
+  const onProto = (which, v) => setPlcForm((f) => {
+    const pk = which === "sub" ? "sub_port" : "port";
+    const cur = Number(f[pk]);
+    const next = (cur === defPort(f[which === "sub" ? "sub_protocol" : "protocol"]) || !cur)
+      ? defPort(v) : cur;
+    return { ...f, [which === "sub" ? "sub_protocol" : "protocol"]: v, [pk]: next };
+  });
   const [plcEdit, setPlcEdit] = useState(null);
   // zone → line → machine cascade, all from the machine master (like every page)
   const plcZones    = useMemo(() => [...new Set(master.map((m) => m.zone_name).filter(Boolean))].sort(), [master]);
@@ -436,17 +536,31 @@ export default function AndonSystem() {
     const ip = masterIpOf(v);
     setPlcForm((f) => ({ ...f, sub_machine_no: v, sub_ip: ip || f.sub_ip }));
   };
-  const startPlcEdit = (e) => { setPlcEdit(e.id); setPlcForm({ ...blankPlc, ...e, series: e.series || "Q", zone: e.zone || "", line: e.line || "", machine_no: e.machine_no || "", machine_name: e.machine_name || "",
-      sub_on: !!e.sub_ip, sub_ip: e.sub_ip || "", sub_port: e.sub_port || 5007, sub_series: e.sub_series || "Q", sub_machine_no: e.sub_machine_no || "" }); setCfg("plc"); };
+  const startPlcEdit = (e) => { setPlcEdit(e.id); setPlcForm({ ...blankPlc, ...e, series: e.series || "Q",
+      protocol: e.protocol || "MC", unit_id: e.unit_id ?? 1,
+      zone: e.zone || "", line: e.line || "", machine_no: e.machine_no || "", machine_name: e.machine_name || "",
+      sub_on: !!e.sub_ip, sub_ip: e.sub_ip || "", sub_port: e.sub_port || defPort(e.sub_protocol), sub_series: e.sub_series || "Q",
+      sub_protocol: e.sub_protocol || "MC", sub_unit_id: e.sub_unit_id ?? 1,
+      sub_machine_no: e.sub_machine_no || "" }); setCfg("plc"); };
   const savePlc = () => wrap(async () => {
-    const body = { name: plcForm.name, ip: plcForm.ip, port: Number(plcForm.port) || 80,
-                   series: plcForm.series || "Q",
+    // Bhejne se PEHLE hi saaf kar do — series Modbus kar hi nahi sakti to
+    // protocol MC.  (Backend bhi yahi rok lagata hai; UI ki rok asli rok nahi
+    // hoti, par galat value pehli jagah se hi nahi nikalni chahiye.)
+    const proto    = effProto(plcForm.series, plcForm.protocol);
+    const subProto = effProto(plcForm.sub_series, plcForm.sub_protocol);
+    const body = { name: plcForm.name, ip: plcForm.ip,
+                   // pehle yahan `|| 80` tha (ESP wale zamane ka bacha hua) — khali
+                   // port par 80 jaana ab galat hai, protocol ka apna port chahiye.
+                   port: Number(plcForm.port) || defPort(proto),
+                   series: plcForm.series || "Q", protocol: proto,
+                   unit_id: Number(plcForm.unit_id) || 1,
                    zone: plcForm.zone || "", line: plcForm.line || "", machine_no: plcForm.machine_no || "",
                    machine_name: plcForm.machine_name || "", enabled: plcForm.enabled,
                    // Sub PLC (Model/Fault ke liye) — sirf tab jab toggle ON ho
                    sub_ip: plcForm.sub_on ? (plcForm.sub_ip || "") : "",
-                   sub_port: Number(plcForm.sub_port) || 5007,
-                   sub_series: plcForm.sub_series || "Q",
+                   sub_port: Number(plcForm.sub_port) || defPort(subProto),
+                   sub_series: plcForm.sub_series || "Q", sub_protocol: subProto,
+                   sub_unit_id: Number(plcForm.sub_unit_id) || 1,
                    sub_machine_no: plcForm.sub_on ? (plcForm.sub_machine_no || "") : "" };
     if (plcEdit) await api(`/plc-devices/${plcEdit}`, { method: "PUT", body: JSON.stringify(body) });
     else await api("/plc-devices", { method: "POST", body: JSON.stringify(body) });
@@ -468,6 +582,16 @@ export default function AndonSystem() {
 
   // ── Output mapping (default template OR a specific PLC) ──
   const [outFor, setOutFor] = useState({ type: "default", id: null, name: "Default template" });
+  // Address dropdown (ANDON bit + Model/Fault) jis device ka mapping khula hai
+  // USI ke protocol se banta hai — Modbus par M/D/X/Y dikhana hi galat hoga.
+  // "Default template" kisi ek device ka nahi hota, isliye wahan MC hi rehta
+  // hai (aur waise bhi bit address hamesha per-PLC bhare jaate hain).
+  const curProto = useMemo(() => {
+    if (outFor?.type !== "plc") return "MC";
+    const d = plcs.find((p) => p.id === outFor.id);
+    return d ? effProto(d.series, d.protocol) : "MC";
+  }, [outFor, plcs]);
+
   const [outRows, setOutRows] = useState([]);
   const [outZone, setOutZone] = useState("");
   const [outLine, setOutLine] = useState("");
@@ -667,9 +791,9 @@ export default function AndonSystem() {
           {rows.map((r, i) => (
             <tr key={i}>
               <td>
-                <select className="an-in" style={{ width: "100%", padding: "6px 8px" }} value={r.device_type || ""} onChange={(e) => setMap(which, i, "device_type", e.target.value)}>
+                <select className="an-in" style={{ width: "100%", padding: "6px 8px" }} value={r.device_type || ""} onChange={(e) => setMap(which, i, "device_type", e.target.value)} title={MODBUS_ADDR_HINT[r.device_type] || ""}>
                   <option value="">—</option>
-                  {["D", "R", "W", "M", "L", "X", "Y"].map((b) => <option key={b} value={b}>{b}</option>)}
+                  <AddrOptions proto={curProto} mcList={MC_ADDR} />
                 </select>
               </td>
               <td><input className="an-in" style={{ width: "100%", padding: "6px 8px" }} value={r.device_no || ""} onChange={(e) => setMap(which, i, "device_no", e.target.value)} placeholder="e.g. 3001" /></td>
@@ -800,11 +924,24 @@ export default function AndonSystem() {
                       </div>
                       <div><label className="an-lbl">PLC IP</label><input className="an-in" style={{ width:"100%" }} value={plcForm.ip} onChange={(e) => setPlcForm({ ...plcForm, ip: e.target.value })} placeholder="192.168.30.101" />
                         {plcForm.machine_no && <IpNote masterIp={masterIpOf(plcForm.machine_no)} value={plcForm.ip} />}</div>
-                      <div><label className="an-lbl">Port</label><input className="an-in" style={{ width:"100%" }} type="number" value={plcForm.port} onChange={(e) => setPlcForm({ ...plcForm, port: e.target.value })} placeholder="5007" /></div>
                       <div><label className="an-lbl">Series</label>
-                        <select className="an-in" style={{ width:"100%" }} value={plcForm.series || "Q"} onChange={(e) => setPlcForm({ ...plcForm, series: e.target.value })}>
-                          {["Q","FX5U","iQ-R","L"].map((s) => <option key={s} value={s}>{s}</option>)}
+                        <select className="an-in" style={{ width:"100%" }} value={plcForm.series || "Q"} onChange={(e) => onSeries("main", e.target.value)}>
+                          {SERIES.map((s) => <option key={s} value={s}>{s}</option>)}
                         </select></div>
+                      {/* Protocol ka chunav SIRF FX5U par — baaki series me Modbus/TCP
+                          CPU ke andar hota hi nahi, wahan hamesha MC / SLMP. */}
+                      {canModbus(plcForm.series) && (
+                        <div><label className="an-lbl">Protocol</label>
+                          <select className="an-in" style={{ width:"100%" }} value={plcForm.protocol || "MC"} onChange={(e) => onProto("main", e.target.value)}>
+                            {PROTOCOLS.map((p) => <option key={p.v} value={p.v}>{p.label}</option>)}
+                          </select>
+                          {isModbus(plcForm.protocol) && <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>Read only — outputs still use MC.</div>}</div>
+                      )}
+                      <div><label className="an-lbl">Port</label><input className="an-in" style={{ width:"100%" }} type="number" value={plcForm.port} onChange={(e) => setPlcForm({ ...plcForm, port: e.target.value })} placeholder={String(defPort(effProto(plcForm.series, plcForm.protocol)))} /></div>
+                      {effProto(plcForm.series, plcForm.protocol) === "MODBUS" && (
+                        <div><label className="an-lbl">Unit ID</label><input className="an-in" style={{ width:"100%" }} type="number" min="0" max="255" value={plcForm.unit_id ?? 1} onChange={(e) => setPlcForm({ ...plcForm, unit_id: e.target.value })} placeholder="1" />
+                          <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>Modbus slave ID.</div></div>
+                      )}
                       <div><label className="an-lbl">Device Name</label><input className="an-in" style={{ width:"100%" }} value={plcForm.name} onChange={(e) => setPlcForm({ ...plcForm, name: e.target.value })} placeholder="e.g. Zone A Line 1" /></div>
                     </div>
                     {/* ── SUB PLC (optional) — Model/Fault kisi doosre PLC se ── */}
@@ -822,11 +959,20 @@ export default function AndonSystem() {
                             </select></div>
                           <div><label className="an-lbl">Sub PLC IP</label><input className="an-in" style={{ width:"100%" }} value={plcForm.sub_ip} onChange={(e) => setPlcForm({ ...plcForm, sub_ip: e.target.value })} placeholder="192.168.30.108" />
                           {plcForm.sub_machine_no && <IpNote masterIp={masterIpOf(plcForm.sub_machine_no)} value={plcForm.sub_ip} />}</div>
-                          <div><label className="an-lbl">Sub Port</label><input className="an-in" style={{ width:"100%" }} type="number" value={plcForm.sub_port} onChange={(e) => setPlcForm({ ...plcForm, sub_port: e.target.value })} placeholder="5007" /></div>
                           <div><label className="an-lbl">Sub Series</label>
-                            <select className="an-in" style={{ width:"100%" }} value={plcForm.sub_series || "Q"} onChange={(e) => setPlcForm({ ...plcForm, sub_series: e.target.value })}>
-                              {["Q","FX5U","iQ-R","L"].map((s) => <option key={s} value={s}>{s}</option>)}
+                            <select className="an-in" style={{ width:"100%" }} value={plcForm.sub_series || "Q"} onChange={(e) => onSeries("sub", e.target.value)}>
+                              {SERIES.map((s) => <option key={s} value={s}>{s}</option>)}
                             </select></div>
+                          {canModbus(plcForm.sub_series) && (
+                            <div><label className="an-lbl">Sub Protocol</label>
+                              <select className="an-in" style={{ width:"100%" }} value={plcForm.sub_protocol || "MC"} onChange={(e) => onProto("sub", e.target.value)}>
+                                {PROTOCOLS.map((p) => <option key={p.v} value={p.v}>{p.label}</option>)}
+                              </select></div>
+                          )}
+                          <div><label className="an-lbl">Sub Port</label><input className="an-in" style={{ width:"100%" }} type="number" value={plcForm.sub_port} onChange={(e) => setPlcForm({ ...plcForm, sub_port: e.target.value })} placeholder={String(defPort(effProto(plcForm.sub_series, plcForm.sub_protocol)))} /></div>
+                          {effProto(plcForm.sub_series, plcForm.sub_protocol) === "MODBUS" && (
+                            <div><label className="an-lbl">Sub Unit ID</label><input className="an-in" style={{ width:"100%" }} type="number" min="0" max="255" value={plcForm.sub_unit_id ?? 1} onChange={(e) => setPlcForm({ ...plcForm, sub_unit_id: e.target.value })} placeholder="1" /></div>
+                          )}
                           <div style={{ gridColumn:"1 / -1", fontSize:11.5, color:"#94a3b8" }}>Pick the Sub Machine first, then enter its PLC IP. Model & Fault registers are read from this Sub PLC; ANDON bits still come from the main PLC.</div>
                         </div>
                       )}
@@ -850,7 +996,10 @@ export default function AndonSystem() {
                           <Fragment key={e.id}>
                           <tr>
                             <td style={{ fontWeight:600 }}>{e.name}</td>
-                            <td>{e.ip}:{e.port}{e.series && <span style={{ marginLeft:6, fontSize:10, fontWeight:700, color:"#64748b", background:"#f1f5f9", padding:"1px 6px", borderRadius:99 }}>{e.series}</span>}</td>
+                            <td>{e.ip}:{e.port}
+                              {effProto(e.series, e.protocol) === "MODBUS"
+                                ? <Tag text={`${e.series} · Modbus · unit ${e.unit_id ?? 1}`} on />
+                                : <Tag text={e.series} />}</td>
                             <td>{[e.zone, e.line, e.machine_no].filter(Boolean).join(" / ") || "—"}</td>
                             <td>
                               {!e.enabled ? <span style={{ color:"#94a3b8", fontSize:12 }}>— off —</span> : (
@@ -877,7 +1026,10 @@ export default function AndonSystem() {
                           {e.sub_ip && (
                             <tr>
                               <td style={{ color:"#64748b", fontSize:11.5, paddingTop:0, borderBottom:"1px solid #f1f5f9" }}>↳ Sub PLC</td>
-                              <td style={{ paddingTop:0 }}>{e.sub_ip}:{e.sub_port}{e.sub_series && <span style={{ marginLeft:6, fontSize:10, fontWeight:700, color:"#64748b", background:"#f1f5f9", padding:"1px 6px", borderRadius:99 }}>{e.sub_series}</span>}</td>
+                              <td style={{ paddingTop:0 }}>{e.sub_ip}:{e.sub_port}
+                                {effProto(e.sub_series, e.sub_protocol) === "MODBUS"
+                                  ? <Tag text={`${e.sub_series} · Modbus · unit ${e.sub_unit_id ?? 1}`} on />
+                                  : <Tag text={e.sub_series} />}</td>
                               <td style={{ color:"#94a3b8", fontSize:11.5, paddingTop:0 }}>Model / Fault{e.sub_machine_no ? ` · ${e.sub_machine_no}` : ""}</td>
                               <td style={{ paddingTop:0 }}>
                                 <span style={{ display:"inline-flex", alignItems:"center", gap:8 }}>
@@ -940,7 +1092,10 @@ export default function AndonSystem() {
                     <div className="an-row" style={{ marginBottom:6 }}>
                       <b style={{ fontSize:14 }}>Output Mapping</b>
                       {outFor?.name && <span style={{ fontSize:11.5, color:"#64748b", fontWeight:600 }}>· {outFor.name}</span>}
-                      <span style={{ marginLeft:"auto", fontSize:11.5, color:"#94a3b8" }}>PLC bit — 1=ON, 0=OFF. Department scheme fixed for every PLC.</span>
+                      <span style={{ marginLeft:"auto", fontSize:11.5, color:"#94a3b8" }}>
+                        PLC bit — 1=ON, 0=OFF. Department scheme fixed for every PLC.
+                        {isModbus(curProto) && " Modbus: write the address exactly as in the PLC (D3001); it is mapped automatically."}
+                      </span>
                     </div>
                     <table className="an-tbl">
                       <thead><tr><th style={{ width:200 }}>Output</th><th>Department / role</th><th style={{ width:120 }}>Device</th><th style={{ width:130 }}>Device No</th></tr></thead>
@@ -961,9 +1116,9 @@ export default function AndonSystem() {
                                 {isAck && <span style={{ fontSize:10.5, fontWeight:600, color:"#94a3b8", marginLeft:8 }}>⏱ response time</span>}
                               </td>
                               <td>
-                                <select className="an-in" style={{ width:"100%", padding:"6px 8px" }} value={r.bit_type || ""} onChange={(e) => setOut(i, "bit_type", e.target.value)}>
+                                <select className="an-in" style={{ width:"100%", padding:"6px 8px" }} value={r.bit_type || ""} onChange={(e) => setOut(i, "bit_type", e.target.value)} title={MODBUS_ADDR_HINT[r.bit_type] || ""}>
                                   <option value="">—</option>
-                                  {["M","Y","X","L","D"].map((b) => <option key={b} value={b}>{b}</option>)}
+                                  <AddrOptions proto={curProto} mcList={MC_BIT_ADDR} />
                                 </select>
                               </td>
                               <td>
@@ -1008,7 +1163,7 @@ export default function AndonSystem() {
                   <div><label className="an-lbl">Port</label><input className="an-in" style={{ width:"100%" }} type="number" value={outForm.plc_port} onChange={(e) => setOutForm({ ...outForm, plc_port: e.target.value })} placeholder="5007" /></div>
                   <div><label className="an-lbl">Series</label>
                     <select className="an-in" style={{ width:"100%" }} value={outForm.plc_series || "Q"} onChange={(e) => setOutForm({ ...outForm, plc_series: e.target.value })}>
-                      {["Q","FX5U","iQ-R","L"].map((s) => <option key={s} value={s}>{s}</option>)}
+                      {SERIES.map((s) => <option key={s} value={s}>{s}</option>)}
                     </select></div>
                 </div>
 
