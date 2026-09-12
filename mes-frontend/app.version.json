@@ -1,5 +1,5 @@
 {
-  "version": "1.4.47",
-  "notes": "History Card and Breakdown History can now be printed or saved as a PDF file, with the same rows that are on screen",
-  "released_at": "2026-09-12T15:24:16"
+  "version": "1.4.48",
+  "notes": "Print and PDF for History Card and Breakdown History, and a one-tap PDF for every sheet",
+  "released_at": "2026-09-12T15:43:08"
 }
