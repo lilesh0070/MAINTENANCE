@@ -663,6 +663,10 @@ def _plc_drop(dev_id):
             except Exception: pass
 
 
+# Jud na paane ki aakhri wajah -- `_ensure_conn` yahan likhta hai.
+_CONN_ERR = {}
+
+
 def _ensure_conn(pool, retry, key, ip, port, series, protocol=None, unit_id=None):
     p   = int(port or _default_port(protocol))
     sig = (str(ip), p, _norm_proto(protocol), str(series or "Q"), int(unit_id or 1))
@@ -692,8 +696,16 @@ def _ensure_conn(pool, retry, key, ip, port, series, protocol=None, unit_id=None
                        "protocol": protocol, "unit_id": unit_id})
         pool[key] = (mc, sig)
         retry.pop(key, None)
+        _CONN_ERR.pop((key, str(ip), p), None)
         return mc
-    except Exception:
+    except Exception as e:
+        # ⚠ Pehle yahan galti CHUP-CHAAP nigal li jaati thi aur sirf None
+        # lauta diya jaata tha.  Natija: poll fail hota tha par kahin koi
+        # wajah darj nahi hoti thi -- screen par seedha "Its own error:
+        # unknown" aata tha.  Jud na paane ki asli wajah (timeout / refused /
+        # PLC busy) yahi ek jagah pata chalti hai, isliye ab use pakadte hain.
+        _CONN_ERR[(key, str(ip), p)] = (f"connect failed ({ip}:{p}) — "
+                                        f"{type(e).__name__}: {e}")[:400]
         retry[key] = _time.monotonic() + _PLC_RETRY_SECS
         return None
 
@@ -757,6 +769,12 @@ def _plc_poll_once_locked(dev):
                       dev.get("port") or _default_port(proto),
                       dev.get("series") or "Q", proto, dev.get("unit_id"))
     if mc is None:
+        # Wajah darj karo -- warna poll chup-chaap fail hota rehta hai aur
+        # diagnostic me "unknown" ke alawa kuch nahi aata.
+        _why = (_CONN_ERR.get((did, str(dev["ip"]),
+                               int(dev.get("port") or _default_port(proto))))
+                or "could not connect (no reason recorded)")
+        _poll_fail(did, ConnectionError(_why))
         return False, (False if has_sub else None)
 
     sub_mc = _ensure_conn(_SUB_CONN, _SUB_RETRY, did, dev["sub_ip"],
@@ -1974,7 +1992,7 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
     _stale = None
     if _last_at is not None:
         try:
-            _stale = (datetime.now() - _last_at).total_seconds()
+            _stale = max(0.0, (datetime.now() - _last_at).total_seconds())
         except Exception:
             _stale = None
     out["poller"] = {
@@ -1999,8 +2017,13 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
     # bit chahe ON ho, call kabhi nahi banegi.
     _try_stale = None
     if _try_at is not None:
-        try:    _try_stale = (datetime.now() - _try_at).total_seconds()
-        except Exception: _try_stale = None
+        try:
+            # max(0, ...) -- DB ka NOW() aur is process ki ghadi me ek-aadh
+            # second ka farak ho sakta hai, aur tab "-1s ago" jaisa ajeeb
+            # aankda dikhta tha.
+            _try_stale = max(0.0, (datetime.now() - _try_at).total_seconds())
+        except Exception:
+            _try_stale = None
     out["poller"]["any_try_at"]  = _try_at.isoformat(timespec="seconds") if _try_at is not None else None
     out["poller"]["any_error"]   = _try_err
 

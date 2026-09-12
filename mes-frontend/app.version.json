@@ -1,5 +1,5 @@
 {
-  "version": "1.4.43",
-  "notes": "ANDON diagnostic now shows what the poller would do with each output, compares this PLC against the others, and flags a sub-PLC sharing the same Modbus IP",
-  "released_at": "2026-09-12T10:30:44"
+  "version": "1.4.44",
+  "notes": "ANDON: the poller now records WHY it could not connect to a PLC -- that reason was being swallowed, which is why the diagnostic could only say 'unknown'",
+  "released_at": "2026-09-12T10:40:18"
 }
