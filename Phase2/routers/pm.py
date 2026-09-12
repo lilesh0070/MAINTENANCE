@@ -200,6 +200,29 @@ class RevBump(BaseModel):
     new_points: List[PmStagedPoint] = [] # staged adds — NEW rev par commit
 
 
+class RevSet(BaseModel):
+    """Chalu revision ka NUMBER/DATE seedha theek karo — points ko chhue bina.
+
+    `RevBump` se BILKUL ALAG kaam hai:
+      • bump      — purane points archive, phir naya number = NAYA revision.
+      • stepdown  — upar wali revision hata kar pichhli wapas live.
+      • ye (set)  — kuch banta ya hatta NAHI; sirf chalu revision par laga
+                    label theek hota hai.
+
+    Zaroorat kyun: shuruat me saare points par rev **0** JAAN-BOOJHKAR daala
+    gaya tha (asli number tab haath me nahi the).  Ab har machine ka asli
+    number/date lagana hai — aur bump se ye nahi hota, wo 1 aage badha dega
+    aur ek jhootha archive bhi bana dega.  Tafseel `machine_dmc.py` ke
+    `DmcRevSet` par hai; dono taraf ka bartaav ek jaisa rakha gaya hai.
+    """
+    zone: str
+    line: str
+    machine_no: str
+    rev_no: str                           # naya number (khali nahi chalega)
+    rev_date: str                         # YYYY-MM-DD (khali nahi chalega)
+    restamp_filled: bool = False          # bhari hui sheet par bhi naya label?
+
+
 @router.get("/check-point-revs")
 def check_point_revs(zone: str = Query(""), line: str = Query(""),
                      machine_no: str = Query(...), user=Depends(get_current_user)):
@@ -345,6 +368,84 @@ def stepdown_check_point_rev(body: RevStepDown, admin=Depends(require_admin)):
     return {"ok": True, "removed_rev": cur_rev, "removed_points": gone,
             "now_current": back_rev, "restored_points": back_rows,
             "filled_sheets_on_removed_rev": filled_left}
+
+
+@router.put("/check-point-rev-set")
+def set_check_point_rev(body: RevSet, admin=Depends(require_admin)):
+    """Chalu revision ka number/date theek karo — points ko HAATH LAGAYE BINA.
+
+    DMC ke `/rev-set` ka hu-ba-hu jodidar.  Do rok wahan jaisi hi:
+      1. **Archive se takraav** — wahi number history me pehle se ho to mana.
+         Warna ek machine par do "Rev 2" ho jaate aur purani wali chup-chaap
+         dab jaati (`rev_no` se padhne wala raasta dono me farak nahi karta).
+      2. **Bhari hui sheet apne aap NAHI badalti.**  PM me wo approval chain
+         se guzar chuki hoti hai (`stage`, `chain_log`, sign) — uspar laga
+         rev us waqt ka sach hai.  Ginti hamesha lautate hain; badalna ho to
+         `restamp_filled` maangna padega.
+    """
+    _ensure_cp_rev_table()
+    key      = (body.zone, body.line, body.machine_no)
+    rev_no   = (body.rev_no or "").strip()
+    rev_date = (body.rev_date or "").strip()
+    if not rev_no:
+        raise HTTPException(400, "Rev no. is required")
+    if not rev_no.isdigit():
+        raise HTTPException(400, "Rev no. must be a whole number, like 0, 1 or 2")
+    rev_no = str(int(rev_no))          # "00" -> "0", taaki tulna ek jaisi rahe
+    try:
+        datetime.strptime(rev_date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(400, "Rev date must be a valid date (YYYY-MM-DD)")
+
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT MAX(rev_no) AS r, MAX(rev_date) AS d, COUNT(*) AS n
+                         FROM maintenance_pm_check_point
+                        WHERE zone=%s AND line=%s AND machine_no=%s""", key)
+        row = cur.fetchone() or {}
+        if not row.get("n"):
+            raise HTTPException(404, "This machine has no check points yet")
+        old_rev  = row["r"]
+        old_date = row["d"].isoformat() if isinstance(row["d"], date) else (row["d"] or "")
+
+        cur.execute("""SELECT DISTINCT rev_no FROM maintenance_pm_check_point_rev
+                        WHERE zone=%s AND line=%s AND machine_no=%s""", key)
+        taken = {_rev_int(r["rev_no"]) for r in cur.fetchall()}
+        if _rev_int(rev_no) in taken:
+            raise HTTPException(409,
+                f"Rev {rev_no} is already in this machine's revision history. "
+                f"Pick a number that is not used yet.")
+
+        cur2 = conn.cursor()
+        cur2.execute("""UPDATE maintenance_pm_check_point SET rev_no=%s, rev_date=%s
+                         WHERE zone=%s AND line=%s AND machine_no=%s""",
+                     (rev_no, rev_date) + key)
+        points = cur2.rowcount
+
+        cur.execute("""SELECT COUNT(*) AS n FROM maintenance_pm_check_sheet_filled
+                        WHERE machine_no=%s AND COALESCE(rev_no,'')=%s""",
+                    (body.machine_no, str(old_rev or "")))
+        filled_n  = int((cur.fetchone() or {}).get("n") or 0)
+        restamped = 0
+        if body.restamp_filled and filled_n:
+            cur2.execute("""UPDATE maintenance_pm_check_sheet_filled SET rev_no=%s, rev_date=%s
+                             WHERE machine_no=%s AND COALESCE(rev_no,'')=%s""",
+                         (rev_no, rev_date, body.machine_no, str(old_rev or "")))
+            restamped = cur2.rowcount
+
+        try:
+            from main import write_audit
+            write_audit(conn, action="PM_REV_SET", entity_type="pm_check_point",
+                        details=(f"{body.zone}/{body.line}/{body.machine_no}: "
+                                 f"Rev {old_rev} ({old_date}) -> Rev {rev_no} ({rev_date}), "
+                                 f"{points} point; bhari hui sheet {restamped}/{filled_n} badli"),
+                        user=admin)
+        except Exception:
+            pass
+    return {"ok": True, "old_rev": (str(old_rev) if old_rev is not None else ""),
+            "old_date": old_date, "new_rev": rev_no, "new_date": rev_date,
+            "points": points, "filled_total": filled_n,
+            "filled_restamped": restamped, "filled_left": filled_n - restamped}
 
 
 @router.put("/check-point-rev")

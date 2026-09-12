@@ -57,6 +57,13 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
   // rev bump form
   // rev bump — rev number AUTO (current+1); sirf date settable
   const [nrDate, setNrDate] = useState(() => new Date().toISOString().slice(0, 10));
+  // ── Rev no./date theek karne ke khaane ─────────────────────────
+  // Machine ya revision badalte hi inme CHALU wali value bhar deta hoon —
+  // taaki "kya laga hua hai" aur "kya lagana hai" ek hi jagah dikhe, aur
+  // sirf wahi khaana chhedna pade jo galat hai.
+  const [fixRev,    setFixRev]    = useState("");
+  const [fixDate,   setFixDate]   = useState("");
+  const [fixFilled, setFixFilled] = useState(false);
   // ── FORMAT document-control (Format No / Rev No / Rev Date) — per format ──
   const [formatDocs, setFormatDocs] = useState([]);       // [{name,label,doc_footer}]
   const [selFormat, setSelFormat]   = useState("PM CHECK SHEET FORMAT");
@@ -194,6 +201,51 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
     if (!old.length) return null;
     return old.reduce((a, b) => (parseInt(a.rev_no, 10) >= parseInt(b.rev_no, 10) ? a : b));
   };
+  // Chalu revision badle (ya machine badle) to khaane phir se bhar do.
+  useEffect(() => {
+    setFixRev(String(revs.current?.rev_no ?? ""));
+    setFixDate(String(revs.current?.rev_date ?? "").slice(0, 10));
+    setFixFilled(false);
+    // `revs` poora dep me hai (sirf uske do khaane nahi) -- eslint ka niyam
+    // yahi maangta hai, aur yahan sahi bhi hai: `revs` tabhi badalta hai jab
+    // machine badle ya save ke baad dobara load ho.  Dono soorat me khaane
+    // phir se bharna hi chahiye.  Koi polling nahi hai, isliye type karte
+    // waqt ye beech me nahi chalega.
+  }, [revs, mno]);
+
+  // Sirf LABEL theek karna — points ko haath nahi lagta, na koi revision
+  // banti/hatti hai.  DMC wale page par bilkul yahi card hai.
+  const setRevNow = async () => {
+    const cur = revs.current;
+    const rn  = String(fixRev || "").trim();
+    const rd  = String(fixDate || "").trim();
+    const curRev  = String(cur?.rev_no ?? "");
+    const curDate = String(cur?.rev_date ?? "").slice(0, 10);
+    if (!rn || !rd) { say("Enter both the revision number and the revision date", "err"); return; }
+    if (rn === curRev && rd === curDate) {
+      say("That is already the current revision — nothing to change", "err"); return;
+    }
+    if (!window.confirm([
+      "Correct this machine's revision label?", "",
+      `   Rev ${curRev} (${curDate})   →   Rev ${rn} (${rd})`, "",
+      `• ${cur?.count ?? "?"} check point(s) get the new label — none are added, changed or removed`,
+      "• No new revision is created and nothing is archived",
+      fixFilled
+        ? `• Filled check sheets on Rev ${curRev} WILL also be re-stamped`
+        : `• Filled check sheets keep Rev ${curRev} — that is the record for that day`,
+    ].join("\n"))) return;
+    setBusy(true);
+    try {
+      const r = await api(`/check-point-rev-set`, { method: "PUT", body: JSON.stringify({
+        zone, line, machine_no: mno, rev_no: rn, rev_date: rd, restamp_filled: fixFilled }) });
+      say(`Rev ${r.old_rev} → Rev ${r.new_rev} ✓ — ${r.points} check point(s) re-stamped` +
+          (r.filled_restamped ? `, ${r.filled_restamped} filled sheet(s) updated` : "") +
+          (r.filled_left ? ` · ${r.filled_left} filled sheet(s) still on Rev ${r.old_rev}` : ""));
+      loadRevs(); loadPoints();
+    } catch (e) { say(String(e.message || e), "err"); }
+    finally { setBusy(false); }
+  };
+
   const stepDownRev = async () => {
     const p = prevRev();
     if (!p) return;
@@ -377,6 +429,65 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
             Admin only. One step at a time — press again to go back one more.
             The oldest revision is never removed.
           </span>
+        </div>
+      )}
+
+      {/* ── Rev no./date SEEDHA theek karo — SIRF ADMIN ──────────────────
+          Upar wale do khaane revision ko AAGE (bump) ya PEECHHE (stepdown)
+          le jaate hain.  Ye teesra uske liye hai jab revision khud sahi ho
+          par uspar laga LABEL galat ho — jaise shuruat me har machine par
+          JAAN-BOOJHKAR Rev 0 daal diya gaya tha, kyunki asli number tab
+          haath me nahi the.  Bump se ye kaam nahi hota: wo number 1 aage
+          badha dega aur ek jhootha archive bhi bana dega.
+          Yahan points ko haath nahi lagta — sirf label badalta hai.
+          Bilkul yahi card Machine DMC wale page par bhi hai. */}
+      {isAdmin && mno && isCurrent && (
+        <div style={{ ...card, marginTop: 10, borderLeft: "4px solid #7c3aed", background: "#faf5ff" }}>
+          <div style={{ fontWeight: 800, fontSize: 13, color: "#5b21b6", marginBottom: 3 }}>
+            Correct the revision number / date
+          </div>
+          <div style={{ fontSize: 11.5, color: "#6b21a8", opacity: .9, lineHeight: 1.5, marginBottom: 11 }}>
+            Use this when the points are right but the label is wrong. It only
+            re-stamps this machine's {revs.current?.count ?? "—"} check point(s) —
+            nothing is added, archived or removed.
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div>
+              <div style={label}>CURRENT</div>
+              <div style={{ ...sel, minWidth: 150, background: "#f1f5f9", color: "#475569",
+                            display: "flex", alignItems: "center" }}>
+                Rev {revs.current?.rev_no ?? "—"} ({String(revs.current?.rev_date ?? "—").slice(0, 10)})
+              </div>
+            </div>
+            <div style={{ alignSelf: "center", fontSize: 18, color: "#a78bfa", fontWeight: 800,
+                          paddingBottom: 6 }}>→</div>
+            <div><div style={label}>NEW REV NO</div>
+              <input value={fixRev} onChange={(e) => setFixRev(e.target.value)}
+                     placeholder="e.g. 2" inputMode="numeric"
+                     style={{ ...sel, minWidth: 100 }} /></div>
+            <div><div style={label}>NEW REV DATE</div>
+              <input type="date" value={fixDate} onChange={(e) => setFixDate(e.target.value)}
+                     style={{ ...sel, minWidth: 150 }} /></div>
+            <button onClick={setRevNow} disabled={busy}
+                    style={{ padding: "9px 18px", borderRadius: 8, border: "none",
+                             background: "#7c3aed", color: "#fff", fontWeight: 800,
+                             fontSize: 13, cursor: busy ? "not-allowed" : "pointer" }}>
+              {busy ? "…" : "Update revision"}</button>
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 11,
+                          fontSize: 11.5, color: "#6b21a8", fontWeight: 700, cursor: "pointer" }}>
+            <input type="checkbox" checked={fixFilled}
+                   onChange={(e) => setFixFilled(e.target.checked)} />
+            Also re-stamp filled check sheets that carry the old revision
+            <span style={{ fontWeight: 500, opacity: .8 }}>
+              — leave this off unless the old label was wrong on those sheets too;
+              a filled sheet is the record of the day it was filled.
+            </span>
+          </label>
+          <div style={{ fontSize: 11, color: "#7c3aed", opacity: .8, marginTop: 7, lineHeight: 1.5 }}>
+            Admin only. A number already used in this machine's revision history
+            is refused — two revisions cannot share one number.
+          </div>
         </div>
       )}
 
