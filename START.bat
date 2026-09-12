@@ -32,6 +32,13 @@ if not exist "%~dp0Phase2\.env" (
     exit /b 1
 )
 
+REM Requirements badalne par `pip install` dobara chalana bhool jaana bahut
+REM aasan hai, aur ye galti CHUP-CHAAP nikalti hai: backend chal jaata hai, bas
+REM wo EK feature marta hai jo us library par tika ho.  2026-09-12 ko yahi hua
+REM - `pymodbus` server par tha hi nahi, aur nateeja UI par "FX5U Disconnected"
+REM ban kar dikha.  Rokte nahi hain, bas naam saaf likh dete hain.
+"%~dp0Phase2\.venv\Scripts\python.exe" "%~dp0Phase2\tools\check_deps.py"
+
 REM --- launch BACKEND in its own window ---
 echo Starting backend (uvicorn :8892)...
 start "MAINT-BACKEND :8892" /D "%~dp0Phase2" cmd /k ".venv\Scripts\python.exe -u -m uvicorn main:app --host 0.0.0.0 --port 8892"

@@ -30,6 +30,18 @@ if ! grep -qE '^DB_PASS=.+' Phase2/.env; then
   echo "  [WARN] Phase2/.env me DB_PASS khali hai — DB connect nahi hoga."
 fi
 
+# Requirements badalne par `pip install` dobara chalana bhool jaana bahut aasan
+# hai, aur ye galti CHUP-CHAAP nikalti hai: backend poori tarah chal jaata hai,
+# bas wo EK feature marta hai jo us library par tika ho.  2026-09-12 ko theek
+# yahi hua -- `pymodbus` server par install hi nahi tha, aur nateeja seedha UI
+# par "ANDON: FX5U Disconnected" ban kar dikha.  Ab wo baat SHURU ME hi dikh
+# jaati hai, kisi ke laal hone se pehle.
+#
+# ⚠ ROKTE NAHI HAIN (`|| true`): ek missing library ke liye poora MES band kar
+#   dena usse bura hai jo dikkat us library ki kami se hoti hai.  Aur `set -e`
+#   chalu hai, isliye bina `|| true` ke ye script yahin mar jaati.
+Phase2/.venv/bin/python Phase2/tools/check_deps.py || true
+
 mkdir -p logs .run
 
 echo "Starting backend (uvicorn :8892)..."
