@@ -151,17 +151,40 @@ const MODBUS_ADDR_HINT = {
   DI:   "Discrete input (1x) — raw Modbus address, no mapping",
 };
 
+/* OUTPUT ke liye alag list — yahan sirf wo khaane chalte hain jinme Modbus
+   master LIKH sakta hai.  `X` (jo discrete input par baithta hai), `DI` aur
+   `IR` sirf PADHNE ke hain; Modbus me unhe likhne ka koi function hi nahi.
+   List me rakhte to user aisi setting bana leta jo kabhi kaam na karti aur
+   PLC "illegal function" lauta deti — wajah samajh nahi aati. */
+const MODBUS_OUT_DEV_ADDR = ["D", "M", "Y", "L", "B", "F", "SM"];
+const MODBUS_OUT_RAW_ADDR = ["COIL", "HR"];
+/* MC par output bit ki saadi list (pehle form me seedhi likhi hui thi). */
+const OUT_MC_BITS = ["M", "Y", "L", "B", "F", "V", "S"];
+const outBitOk = (proto, t) => (isModbus(proto)
+  ? [...MODBUS_OUT_DEV_ADDR, ...MODBUS_OUT_RAW_ADDR].includes(String(t || ""))
+  : OUT_MC_BITS.includes(String(t || "")));
+
+/* Khali Call → Output form.  Pehle yahi cheez TEEN jagah haath se likhi hui
+   thi (state, save ke baad, aur Cancel par) — naya khaana jodte waqt kisi ek
+   me chhoot jaana bahut aasan tha. */
+const blankOut = { department:"", plc_ip:"", plc_port:5007, plc_series:"Q",
+                   protocol:"MC", unit_id:1, bit_type:"M", bit_no:"",
+                   bit2_type:"M", bit2_no:"", enabled:true };
+
 /* Address ka dropdown.  MC par saadi list; Modbus par do hisse — PLC ke device
-   (jo apne aap Modbus number me badal jaate hain) aur seedha Modbus address. */
-function AddrOptions({ proto, mcList }) {
+   (jo apne aap Modbus number me badal jaate hain) aur seedha Modbus address.
+   `write` lagane par sirf likhe ja sakne wale khaane dikhte hain. */
+function AddrOptions({ proto, mcList, write = false }) {
   if (!isModbus(proto)) return mcList.map((b) => <option key={b} value={b}>{b}</option>);
+  const dev = write ? MODBUS_OUT_DEV_ADDR : MODBUS_DEV_ADDR;
+  const raw = write ? MODBUS_OUT_RAW_ADDR : MODBUS_RAW_ADDR;
   return (
     <>
       <optgroup label="PLC device — same as MC">
-        {MODBUS_DEV_ADDR.map((b) => <option key={b} value={b}>{b}</option>)}
+        {dev.map((b) => <option key={b} value={b}>{b}</option>)}
       </optgroup>
       <optgroup label="Raw Modbus address">
-        {MODBUS_RAW_ADDR.map((b) => <option key={b} value={b}>{b}</option>)}
+        {raw.map((b) => <option key={b} value={b}>{b}</option>)}
       </optgroup>
     </>
   );
@@ -279,7 +302,7 @@ export default function AndonSystem() {
   const [depts, setDepts]     = useState([]);
   const [plcs, setPlcs]       = useState([]);
   const [outs, setOuts]       = useState([]);       // Call → PLC output mappings (list + live bit status)
-  const [outForm, setOutForm] = useState({ department:"", plc_ip:"", plc_port:5007, plc_series:"Q", bit_type:"M", bit_no:"", bit2_type:"M", bit2_no:"", enabled:true });
+  const [outForm, setOutForm] = useState(blankOut);
   const [outEdit, setOutEdit] = useState(null);
   const [events, setEvents]   = useState([]);       // live OPEN calls (the board)
   const [totals, setTotals]   = useState([]);        // aaj ka per-department total loss
@@ -569,16 +592,45 @@ export default function AndonSystem() {
     setPlcForm(blankPlc); setPlcEdit(null);
   }, plcEdit ? "PLC updated" : "PLC added");
 
+  // ── Call → Output PLC: series / protocol ka aapas ka bartaav ──
+  // Bilkul wahi niyam jo upar PLC form me hai (`onSeries` / `onProto`), aur
+  // wahi ek-jagah-sach wale helper (canModbus / defPort / effProto).
+  // Iske alawa yahan ek baat aur: protocol badalne par bit ka TYPE bhi bekaar
+  // ho sakta hai (jaise `V` Modbus me hai hi nahi, aur `X` par likha nahi ja
+  // sakta) — us soorat me use wapas `M` par le aate hain, jo dono taraf
+  // chalta hai.  Warna save par server 400 deta aur user ko lagta ki form
+  // khud hi kharab hai.
+  const snapOutBits = (f, proto) => ({
+    ...f,
+    bit_type:  outBitOk(proto, f.bit_type)  ? f.bit_type  : "M",
+    bit2_type: outBitOk(proto, f.bit2_type) ? f.bit2_type : "M",
+  });
+  const onOutSeries = (v) => setOutForm((f) => (
+    canModbus(v)
+      ? { ...f, plc_series: v }
+      : snapOutBits({ ...f, plc_series: v, protocol: "MC",
+                      plc_port: (Number(f.plc_port) === 502 || !f.plc_port) ? 5007 : f.plc_port },
+                    "MC")));
+  const onOutProto = (v) => setOutForm((f) => {
+    const cur  = Number(f.plc_port);
+    const next = (cur === defPort(f.protocol) || !cur) ? defPort(v) : cur;
+    return snapOutBits({ ...f, protocol: v, plc_port: next },
+                       effProto(f.plc_series, v));
+  });
+
   // ── Call → Output PLC bit mapping (save) ──
   const saveOut = () => wrap(async () => {
+    const proto = effProto(outForm.plc_series, outForm.protocol);
     const body = { department: outForm.department, plc_ip: (outForm.plc_ip || "").trim(),
-                   plc_port: Number(outForm.plc_port) || 5007, plc_series: outForm.plc_series || "Q",
+                   plc_port: Number(outForm.plc_port) || defPort(proto),
+                   plc_series: outForm.plc_series || "Q",
+                   protocol: proto, unit_id: Number(outForm.unit_id) || 1,
                    bit_type: outForm.bit_type || "M", bit_no: String(outForm.bit_no).trim(),
                    bit2_type: outForm.bit2_type || "M", bit2_no: String(outForm.bit2_no || "").trim(),
                    enabled: outForm.enabled };
     if (outEdit) await api(`/call-outputs/${outEdit}`, { method: "PUT", body: JSON.stringify(body) });
     else await api("/call-outputs", { method: "POST", body: JSON.stringify(body) });
-    setOutForm({ department:"", plc_ip:"", plc_port:5007, plc_series:"Q", bit_type:"M", bit_no:"", bit2_type:"M", bit2_no:"", enabled:true });
+    setOutForm(blankOut);
     setOutEdit(null);
   }, outEdit ? "Mapping updated" : "Mapping added");
 
@@ -950,7 +1002,10 @@ export default function AndonSystem() {
                           <select className="an-in" style={{ width:"100%" }} value={plcForm.protocol || "MC"} onChange={(e) => onProto("main", e.target.value)}>
                             {PROTOCOLS.map((p) => <option key={p.v} value={p.v}>{p.label}</option>)}
                           </select>
-                          {isModbus(plcForm.protocol) && <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>Read only — outputs still use MC.</div>}</div>
+                          {/* Pehle yahan likha tha "outputs still use MC" — wo ab
+                              SACH NAHI raha: Call → Output bhi Modbus bolta hai.
+                              Purana text padh kar user ulta raasta chunta. */}
+                          {isModbus(plcForm.protocol) && <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>Used for reading this PLC. Output bits are set up in the Call → Output tab.</div>}</div>
                       )}
                       <div><label className="an-lbl">Port</label><input className="an-in" style={{ width:"100%" }} type="number" value={plcForm.port} onChange={(e) => setPlcForm({ ...plcForm, port: e.target.value })} placeholder={String(defPort(effProto(plcForm.series, plcForm.protocol)))} /></div>
                       {effProto(plcForm.series, plcForm.protocol) === "MODBUS" && (
@@ -1205,11 +1260,25 @@ export default function AndonSystem() {
                     </select>
                   </div>
                   <div><label className="an-lbl">Output PLC IP</label><input className="an-in" style={{ width:"100%" }} value={outForm.plc_ip} onChange={(e) => setOutForm({ ...outForm, plc_ip: e.target.value })} placeholder="192.168.30.120" /></div>
-                  <div><label className="an-lbl">Port</label><input className="an-in" style={{ width:"100%" }} type="number" value={outForm.plc_port} onChange={(e) => setOutForm({ ...outForm, plc_port: e.target.value })} placeholder="5007" /></div>
                   <div><label className="an-lbl">Series</label>
-                    <select className="an-in" style={{ width:"100%" }} value={outForm.plc_series || "Q"} onChange={(e) => setOutForm({ ...outForm, plc_series: e.target.value })}>
+                    <select className="an-in" style={{ width:"100%" }} value={outForm.plc_series || "Q"} onChange={(e) => onOutSeries(e.target.value)}>
                       {SERIES.map((s) => <option key={s} value={s}>{s}</option>)}
                     </select></div>
+                  {/* Protocol sirf wahan poochha jaata hai jahan uska matlab hai —
+                      Modbus/TCP FX5 ke CPU ke andar hota hai, Q / iQ-R / L me
+                      nahi.  Wahan hamesha MC / SLMP hi rehta hai. */}
+                  {canModbus(outForm.plc_series) && (
+                    <div><label className="an-lbl">Protocol</label>
+                      <select className="an-in" style={{ width:"100%" }} value={outForm.protocol || "MC"} onChange={(e) => onOutProto(e.target.value)}>
+                        {PROTOCOLS.map((p) => <option key={p.v} value={p.v}>{p.label}</option>)}
+                      </select>
+                      {isModbus(outForm.protocol) && <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>Writes to coils / holding registers.</div>}</div>
+                  )}
+                  <div><label className="an-lbl">Port</label><input className="an-in" style={{ width:"100%" }} type="number" value={outForm.plc_port} onChange={(e) => setOutForm({ ...outForm, plc_port: e.target.value })} placeholder={String(defPort(effProto(outForm.plc_series, outForm.protocol)))} /></div>
+                  {effProto(outForm.plc_series, outForm.protocol) === "MODBUS" && (
+                    <div><label className="an-lbl">Unit ID</label><input className="an-in" style={{ width:"100%" }} type="number" min="0" max="255" value={outForm.unit_id ?? 1} onChange={(e) => setOutForm({ ...outForm, unit_id: e.target.value })} placeholder="1" />
+                      <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>Modbus slave ID.</div></div>
+                  )}
                 </div>
 
                 {/* ── BITS ─────────────────────────────────────────────────
@@ -1227,7 +1296,7 @@ export default function AndonSystem() {
                   {/* labels — ek hi baar */}
                   <div className="an-row an-bitrow" style={{ marginBottom:3, flexWrap:"nowrap" }}>
                     <div style={{ flex:"0 0 22px" }} />
-                    <div style={{ flex:"0 0 78px" }}><label className="an-lbl">Type</label></div>
+                    <div style={{ flex:"0 0 92px" }}><label className="an-lbl">Type</label></div>
                     <div style={{ flex:"0 0 130px" }}><label className="an-lbl">Bit no</label></div>
                     <div style={{ flex:"1 1 auto", minWidth:0 }}><label className="an-lbl">Off trigger</label></div>
                   </div>
@@ -1241,10 +1310,11 @@ export default function AndonSystem() {
                   ].filter((b) => b.show).map((b) => (
                     <div key={b.n} className="an-row an-bitrow" style={{ alignItems:"center", marginBottom:6, flexWrap:"nowrap" }}>
                       <div style={{ flex:"0 0 22px", fontSize:14, fontWeight:800, color:"#94a3b8" }}>{b.n}</div>
-                      <div style={{ flex:"0 0 78px" }}>
+                      <div style={{ flex:"0 0 92px" }}>
                         <select className="an-in" style={{ width:"100%" }} value={outForm[b.t] || "M"}
                                 onChange={(e) => setOutForm({ ...outForm, [b.t]: e.target.value })}>
-                          {["M","Y","L","B","F","V","S"].map((x) => <option key={x} value={x}>{x}</option>)}
+                          <AddrOptions proto={effProto(outForm.plc_series, outForm.protocol)}
+                                       mcList={OUT_MC_BITS} write />
                         </select>
                       </div>
                       <div style={{ flex:"0 0 130px" }}>
@@ -1276,7 +1346,7 @@ export default function AndonSystem() {
                     <input type="checkbox" checked={outForm.enabled} onChange={(e) => setOutForm({ ...outForm, enabled: e.target.checked })} /> Enabled (write this bit)
                   </label>
                   <div style={{ marginLeft:"auto" }} />
-                  {outEdit && <button className="an-btn gh" onClick={() => { setOutEdit(null); setOutForm({ department:"", plc_ip:"", plc_port:5007, plc_series:"Q", bit_type:"M", bit_no:"", bit2_type:"M", bit2_no:"", enabled:true }); }}>Cancel</button>}
+                  {outEdit && <button className="an-btn gh" onClick={() => { setOutEdit(null); setOutForm(blankOut); }}>Cancel</button>}
                   <button className="an-btn" disabled={!outForm.department || !outForm.plc_ip.trim() || !String(outForm.bit_no).trim()} onClick={saveOut}>{outEdit ? "Save" : "+ Add mapping"}</button>
                 </div>
               </div>
@@ -1304,7 +1374,15 @@ export default function AndonSystem() {
                     {outs.map((o) => (
                       <tr key={o.id}>
                         <td style={{ fontWeight:700 }}>{o.department}</td>
-                        <td style={{ fontFamily:"monospace" }}>{o.plc_ip}:{o.plc_port}<span style={{ marginLeft:6, fontSize:10, fontWeight:700, color:"#64748b", background:"#f1f5f9", padding:"1px 6px", borderRadius:99 }}>{o.plc_series}</span></td>
+                        <td style={{ fontFamily:"monospace" }}>
+                          {o.plc_ip}:{o.plc_port}
+                          <Tag text={o.plc_series} />
+                          {/* Protocol ka nishaan — pehle ye kahin dikhta hi nahi tha,
+                              isliye "FX5U par MC chal raha hai" wali galti list me
+                              se pakadna namumkin tha. */}
+                          <Tag text={o.protocol === "MODBUS" ? "Modbus" : "MC"}
+                               on={o.protocol === "MODBUS"} />
+                        </td>
                         {/* Dono bit numbered lines me — har row ke chaar khaane
                             (Bit / Off trigger / Program bit / PLC bit) ek jaisi
                             do lines dikhate hain, isliye 1 aur 2 aapas me sidhe
@@ -1334,15 +1412,42 @@ export default function AndonSystem() {
                             <span style={{ width:10, height:10, borderRadius:"50%", flex:"0 0 auto",
                                            background: o.reachable === true ? "#16a34a" : o.reachable === false ? "#dc2626" : "#cbd5e1",
                                            boxShadow: o.reachable === true ? "0 0 0 3px rgba(22,163,74,.2)" : o.reachable === false ? "0 0 0 3px rgba(220,38,38,.2)" : "none" }} />
-                            {o.reachable === true ? "Connected" : o.reachable === false ? "Disconnected" : "Checking…"}
+                            {/* Modbus par hum khud tatolte NAHI — FX5U ek waqt me ek hi
+                                Modbus client jhelti hai, aur har 10 second me test
+                                connection kholna theek writer ka slot cheen leta.
+                                Wahan haal writer ke apne nishaan se aata hai, isliye
+                                "Checking…" ki jagah saaf likha jaata hai ki kis cheez
+                                ka intezaar hai. */}
+                            {o.reachable === true ? "Connected"
+                              : o.reachable === false ? "Disconnected"
+                              : o.probe_skipped ? "Waiting for the writer" : "Checking…"}
                           </span>
-                          {o.reachable === false && (
+                          {(o.reachable === false || o.probe_skipped) && (
                             <button className="an-btn gh sm" style={{ marginLeft:8 }}
                                     disabled={outRechecking === o.id}
                                     onClick={() => recheckOut(o.id)}
                                     title="Try reconnecting to this PLC now">
                               {outRechecking === o.id ? "Checking…" : "↻ Retry"}
                             </button>
+                          )}
+                          {/* "Disconnected, par KYUN" — ye do lines hi wo cheez hain
+                              jo pehle kahin nahi thin.  `hint` setting ki galti batata
+                              hai (jaise MC par port 502), aur `error` writer ki apni
+                              aakhri nakaami, jo DB se aati hai — isliye wo backend bhi
+                              dikha sakta hai jiske paas writer ka taala nahi. */}
+                          {o.hint && (
+                            <div style={{ fontSize:10.5, fontWeight:600, lineHeight:1.45,
+                                          color:"#92400e", background:"#fffbeb",
+                                          border:"1px solid #fde68a", borderRadius:6,
+                                          padding:"4px 7px", marginTop:5, maxWidth:300,
+                                          whiteSpace:"normal" }}>{o.hint}</div>
+                          )}
+                          {o.error && (
+                            <div style={{ fontSize:10.5, fontWeight:600, lineHeight:1.45,
+                                          color:"#991b1b", background:"#fef2f2",
+                                          border:"1px solid #fecaca", borderRadius:6,
+                                          padding:"4px 7px", marginTop:5, maxWidth:300,
+                                          whiteSpace:"normal" }}>{o.error}</div>
                           )}
                         </td>
                         {/* PROGRAM BIT = software ne kya tay kiya (khuli calls se).  Ye hamesha
@@ -1387,7 +1492,7 @@ export default function AndonSystem() {
                         </td>
                         <td><span className="an-chip" style={{ padding:"2px 9px", background: o.enabled ? "#dcfce7" : "#fee2e2", color: o.enabled ? "#16a34a" : "#dc2626" }}>{o.enabled ? "Enabled" : "Disabled"}</span></td>
                         <td style={{ whiteSpace:"nowrap" }}>
-                          <button className="an-btn gh sm" onClick={() => { setOutEdit(o.id); setOutForm({ department:o.department, plc_ip:o.plc_ip, plc_port:o.plc_port, plc_series:o.plc_series, bit_type:o.bit_type, bit_no:o.bit_no, bit2_type:o.bit2_type || "M", bit2_no:o.bit2_no || "", enabled:o.enabled }); }}>Edit</button>{" "}
+                          <button className="an-btn gh sm" onClick={() => { setOutEdit(o.id); setOutForm({ department:o.department, plc_ip:o.plc_ip, plc_port:o.plc_port, plc_series:o.plc_series, protocol:o.protocol || "MC", unit_id:o.unit_id ?? 1, bit_type:o.bit_type, bit_no:o.bit_no, bit2_type:o.bit2_type || "M", bit2_no:o.bit2_no || "", enabled:o.enabled }); }}>Edit</button>{" "}
                           <button className="an-x" onClick={() => wrap(() => api(`/call-outputs/${o.id}`, { method:"DELETE" }), "Mapping removed")}>×</button>
                         </td>
                       </tr>

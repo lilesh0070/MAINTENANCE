@@ -597,8 +597,55 @@ class _ModbusDriver:
             i = j
         return out
 
+    # Modbus par kis khaane me LIKHA ja sakta hai.
+    #
+    # ⚠ DI (1x) aur IR (3x) master ke liye SIRF PADHNE ke hain — Modbus me
+    # unhe likhne ka function hi nahi hota.  Yaani `X` (jo DI par baithta
+    # hai) par output dena mumkin hi nahi.  Ye baat yahin saaf mana kar deni
+    # chahiye, warna PLC "illegal function" lauta degi aur screen par sirf
+    # ek gol-mol error aayega jiski wajah samajh nahi aayegi.
+    _WRITE_FN = {"COIL": ("write_coil", bool), "HR": ("write_register", int)}
+
     def write_bit(self, dtype, dno, value):
-        raise NotImplementedError("Modbus is read-only in ANDON; outputs must use MC protocol")
+        space, addr = _modbus_addr(dtype, dno)
+        ent = self._WRITE_FN.get(space)
+        if ent is None:
+            raise PlcProtocolError(
+                f"{dtype}{dno} maps to Modbus {space}, which a Modbus master cannot "
+                f"write to — it is read-only. Use a coil device (M / Y / L / B / F / SM) "
+                f"or a D register for an output bit.")
+        fname, cast = ent
+        func = getattr(self.cl, fname)
+        val  = cast(1 if value else 0)
+        tag  = f"{(dtype or '').upper()}{dno}"
+        # pymodbus 3.6 aur 3.8 ke signature alag hain — padhne wale raaste
+        # (`_read_run`) jaisa hi utaar-chadhaav yahan bhi rakha hai.
+        try:
+            try:
+                rr = func(address=addr, value=val, slave=self.unit)
+            except TypeError:
+                try:
+                    rr = func(address=addr, value=val)
+                except TypeError:
+                    rr = func(addr, val)
+        except OSError as e:
+            try: self.cl.close()
+            except Exception: pass
+            raise IOError(f"{_MB_BUSY_HINT} — Socket closed ({e}, write {tag})") from None
+
+        # ⚠ pymodbus galti par EXCEPTION NAHI deta, error ka OBJECT lauta deta
+        # hai.  Bina jaanche aage badhe to "likh diya" maan liya jaata aur bit
+        # kabhi lagta hi nahi — poore ANDON me sabse chup-chaap wali galti.
+        if rr is None:
+            raise IOError(f"{_MB_BUSY_HINT} (no reply for write {tag})")
+        if rr.isError():
+            if type(rr).__name__ == "ExceptionResponse":
+                raise PlcProtocolError(
+                    f"PLC refused the write at {tag} ({space} {addr}): {rr}. Check that "
+                    f"this address is inside the PLC's Modbus device assignment and that "
+                    f"it is not write-protected.")
+            raise IOError(f"{_MB_BUSY_HINT} (Unit {self.unit}, write {tag})")
+        return True
 
     def close(self):
         self.cl.close()
@@ -1059,11 +1106,19 @@ def _ensure_output():
                 enabled     BOOLEAN DEFAULT TRUE,
                 created_at  TIMESTAMP DEFAULT NOW()
             )""")
+        # ⚠ `protocol` ka default JAAN-BOOJH KAR 'MC' hai.  Ye column aane se
+        # pehle har output MC hi bolta tha, to purani row ka bartaav bilkul
+        # wahi rehna chahiye — nayi setting khud user badle.  Yahan andaza
+        # laga kar (jaise "port 502 hai to Modbus kar do") chupchaap badal
+        # dena chalte hue plant me bit ka bartaav badal deta.
         for col, typ in (("last_bit", "BOOLEAN"), ("last_want", "BOOLEAN"),
                          ("last_online", "BOOLEAN"), ("last_at", "TIMESTAMP"),
                          ("last_writer", "TEXT"), ("reconnect_req", "TIMESTAMP"),
                          ("bit2_type", "TEXT"), ("bit2_no", "TEXT"),
-                         ("last_bit2", "BOOLEAN"), ("last_want2", "BOOLEAN")):
+                         ("last_bit2", "BOOLEAN"), ("last_want2", "BOOLEAN"),
+                         ("protocol", "TEXT DEFAULT 'MC'"),
+                         ("unit_id", "INTEGER DEFAULT 1"),
+                         ("last_error", "TEXT")):
             cur.execute(f"ALTER TABLE andon_call_output ADD COLUMN IF NOT EXISTS {col} {typ}")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS andon_output_lock (
@@ -1107,29 +1162,72 @@ _OUT_MAX_FAILS = 3
 _OUT_RECONN_SEEN = {}
 
 
-def _out_drop(ip, port):
-    key = (ip, int(port or 5007))
-    mc = _OUT_CONN.pop(key, None)
-    if mc is not None:
-        try: mc.close()
-        except Exception: pass
-    _OUT_RETRY.pop(key, None)
-    _OUT_FAILS.pop(key, None)
+# Output PLC se jud na paane / us par likh na paane ki AAKHRI wajah.
+#
+# KYUN: input wale raaste par theek yahi ek cheez thi jisne "Disconnected,
+# par kyun?" ka jawab diya tha (`_CONN_ERR`, v1.4.44).  Output par wo wajah
+# kahin darj hi nahi hoti thi — screen sirf laal gola dikhati thi.  Yahan
+# pakad kar `andon_call_output.last_error` me likh dete hain, taaki jis
+# backend ke paas writer ka taala nahi hai wo bhi wajah dikha sake.
+_OUT_ERR = {}
 
 
-def _out_write_bit(ip, port, series, bit_type, bit_no, value):
-    key = (ip, int(port or 5007))
+def _out_key(ip, port, series=None, protocol=None, unit_id=None):
+    """Connection pool ki chaabi — protocol aur unit bhi ISI me.
+
+    ⚠ Sirf (ip, port) kaafi NAHI hai.  Ek hi PLC ka protocol MC se MODBUS
+    kar dene par purana (MC wala) socket pool me pada rehta tha aur wahi
+    dobara uthaya jaata — yaani setting badalne ke baad bhi wahi purani
+    nakaami.  Chaabi me protocol/unit rakhne se badlav apne aap naya
+    connection banwa deta hai.
+    """
+    proto = _proto_for(series, protocol)
+    return (str(ip), int(port or _default_port(proto)), proto, int(unit_id or 1))
+
+
+def _out_drop(ip, port=None):
+    """Is PLC ke SAARE connection girao — protocol/unit chahe jo bhi ho.
+
+    Chaabi me ab protocol bhi hai, isliye ek hi (ip, port) par ek se zyada
+    entry ho sakti hain (jaise protocol badalne ke theek baad).  "Retry"
+    dabane par saari girni chahiye, warna purani wali chupi rehti hai.
+    """
+    ip = str(ip)
+    pt = int(port) if port else None
+    for key in set(list(_OUT_CONN.keys()) + list(_OUT_RETRY.keys())
+                   + list(_OUT_FAILS.keys()) + list(_OUT_ERR.keys())):
+        if key[0] != ip or (pt is not None and key[1] != pt):
+            continue
+        mc = _OUT_CONN.pop(key, None)
+        if mc is not None:
+            try: mc.close()
+            except Exception: pass
+        _OUT_RETRY.pop(key, None)
+        _OUT_FAILS.pop(key, None)
+        _OUT_ERR.pop(key, None)
+
+
+def _out_write_bit(ip, port, series, bit_type, bit_no, value, protocol=None, unit_id=None):
+    key  = _out_key(ip, port, series, protocol, unit_id)
     head = f"{(bit_type or '').upper()}{bit_no}"
     mc = _OUT_CONN.get(key)
     if mc is None:
         if _time.monotonic() < _OUT_RETRY.get(key, 0):
             return None
         try:
-            mc = _connect({"series": series or "Q", "plc_ip": ip, "plc_port": key[1]})
+            mc = _connect({"series": series or "Q", "plc_ip": ip, "plc_port": key[1],
+                           "protocol": key[2], "unit_id": key[3]})
             _OUT_CONN[key] = mc
             _OUT_RETRY.pop(key, None)
             _OUT_FAILS[key] = 0
-        except Exception:
+            _OUT_ERR.pop(key, None)
+        except Exception as e:
+            # ⚠ Pehle yahan `except Exception:` tha — galti CHUP-CHAAP nigal
+            # li jaati thi.  Isi wajah se FX5U par "Disconnected" to dikhta
+            # tha par uski wajah (galat protocol / port band / PLC busy)
+            # kahin nahi.  Ab pakad kar DB tak pahunchate hain.
+            _OUT_ERR[key] = (f"connect failed ({key[0]}:{key[1]}, {key[2]}) — "
+                             f"{type(e).__name__}: {e}")[:400]
             _OUT_RETRY[key] = _time.monotonic() + _PLC_RETRY_SECS
             return None
 
@@ -1140,8 +1238,10 @@ def _out_write_bit(ip, port, series, bit_type, bit_no, value):
             mc.write_bit(bit_type, bit_no, want)
             cur_bit = int(_read_one(mc, bit_type, bit_no))
         _OUT_FAILS[key] = 0
+        _OUT_ERR.pop(key, None)
         return bool(cur_bit)
     except Exception as e:
+        _OUT_ERR[key] = f"{head} — {type(e).__name__}: {e}"[:400]
         n = _OUT_FAILS.get(key, 0) + 1
         _OUT_FAILS[key] = n
         if n < _OUT_MAX_FAILS:
@@ -1151,16 +1251,18 @@ def _out_write_bit(ip, port, series, bit_type, bit_no, value):
         _OUT_CONN.pop(key, None)
         _OUT_FAILS[key] = 0
         _OUT_RETRY[key] = _time.monotonic() + 1
-        print(f"[ANDON-OUT] {ip}:{key[1]} {head} — {n} baar lagataar fail, connection reset ({e})", flush=True)
+        print(f"[ANDON-OUT] {key[0]}:{key[1]} ({key[2]}) {head} — {n} baar lagataar fail, "
+              f"connection reset ({e})", flush=True)
         return None
 
 
-def _out_read_bit(ip, port, series, bit_type, bit_no):
+def _out_read_bit(ip, port, series, bit_type, bit_no, protocol=None, unit_id=None):
     try:
-        p = int(port or 5007)
-        if not _reachable(ip, p, timeout=0.4):
+        key = _out_key(ip, port, series, protocol, unit_id)
+        if not _reachable(ip, key[1], timeout=0.4):
             return None
-        mc = _connect({"series": series or "Q", "plc_ip": ip, "plc_port": p})
+        mc = _connect({"series": series or "Q", "plc_ip": ip, "plc_port": key[1],
+                       "protocol": key[2], "unit_id": key[3]})
         try:
             return bool(_read_one(mc, bit_type, bit_no))
         finally:
@@ -1185,8 +1287,8 @@ def _andon_output_write_once():
         return
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("""SELECT id, department, plc_ip, plc_port, plc_series, bit_type, bit_no,
-                              bit2_type, bit2_no, reconnect_req
+        cur.execute("""SELECT id, department, plc_ip, plc_port, plc_series, protocol, unit_id,
+                              bit_type, bit_no, bit2_type, bit2_no, reconnect_req
                          FROM andon_call_output WHERE enabled=TRUE""")
         maps = cur.fetchall()
         cur.execute("""SELECT COALESCE(dep.name, e.display_name) AS dept,
@@ -1196,10 +1298,39 @@ def _andon_output_write_once():
                          LEFT JOIN andon_departments dep ON dep.id = e.department_id
                         WHERE e.state='OPEN' GROUP BY 1""")
         live = {_dept_key(r["dept"]): r for r in cur.fetchall()}
-    enabled_ids = set()
+    enabled_ids = {m["id"] for m in maps}
+
+    # ── Pool ki safai — LIKHNE SE PEHLE ──────────────────────────────────
+    # ⚠ Chaabi me ab protocol/port/unit bhi hain, yaani setting badalte hi
+    # NAYI chaabi ban jaati hai aur PURANI connection pool me padi reh jaati.
+    # FX5U par wahi purani connection uska EKMATRA slot pakde rehti hai, to
+    # nayi jud hi nahi paati — protocol theek karne ke BAAD bhi screen par
+    # "Disconnected" hi dikhta rehta.  (Theek yahi galti "Read now" me ho
+    # chuki hai, v1.4.40.)
+    #
+    # Safai LIKHNE SE PEHLE isliye: baad me karte to purani connection us
+    # cycle ka slot khaa jaati aur naya connection ek cycle der se judta.
+    live_keys = {_out_key(m["plc_ip"], m["plc_port"], m["plc_series"],
+                          m.get("protocol"), m.get("unit_id")) for m in maps}
+    # Jo mapping hat gayi par uski bit abhi bujhani baaki hai, uska
+    # connection bhi is cycle me chahiye — warna bit ON hi reh jayegi.
+    for _oid, _st in _OUT_STATE.items():
+        if _oid not in enabled_ids and _st.get("ip") and (_st.get("on") or _st.get("on2")):
+            live_keys.add(_out_key(_st.get("ip"), _st.get("port"), _st.get("series"),
+                                   _st.get("protocol"), _st.get("unit_id")))
+    for k in [k for k in _OUT_CONN if k not in live_keys]:
+        mc = _OUT_CONN.pop(k, None)
+        if mc is not None:
+            try: mc.close()
+            except Exception: pass
+        _OUT_RETRY.pop(k, None)
+        _OUT_FAILS.pop(k, None)
+        _OUT_ERR.pop(k, None)
+        print(f"[ANDON-OUT] {k[0]}:{k[1]} ({k[2]}) — ab kisi mapping ki nahi, "
+              f"connection band kiya", flush=True)
+
     updates = []
     for m in maps:
-        enabled_ids.add(m["id"])
         req = m.get("reconnect_req")
         if req is not None and _OUT_RECONN_SEEN.get(m["id"]) != req:
             _OUT_RECONN_SEEN[m["id"]] = req
@@ -1207,26 +1338,36 @@ def _andon_output_write_once():
             print(f"[ANDON-OUT] Retry — {m['plc_ip']}:{m['plc_port']} connection reset", flush=True)
         want = _want_bit(m["department"], live)
         prev = _OUT_STATE.get(m["id"], {})
+        # Chaabi EK BAAR nikal kar rakh lete hain — neeche "connection abhi
+        # zinda hai kya" wali jaanch aur galti dhoondhna, dono isi par hain.
+        # Pehle yahan `(ip, port)` haath se banaya jaata tha aur MC ka 5007
+        # hardcode tha, jisse Modbus wali row kabhi milti hi nahi thi.
+        okey = _out_key(m["plc_ip"], m["plc_port"], m["plc_series"],
+                        m.get("protocol"), m.get("unit_id"))
         actual = _out_write_bit(m["plc_ip"], m["plc_port"], m["plc_series"],
-                                m["bit_type"], m["bit_no"], want)
-        if actual is None and (m["plc_ip"], int(m["plc_port"] or 5007)) in _OUT_CONN:
+                                m["bit_type"], m["bit_no"], want,
+                                m.get("protocol"), m.get("unit_id"))
+        if actual is None and okey in _OUT_CONN:
             actual = prev.get("on")
 
         want2 = actual2 = None
         if (m.get("bit2_no") or "").strip() and _dept_off_on_ack(m["department"]):
             want2 = _want_bit(m["department"], live, on_close=True)
             actual2 = _out_write_bit(m["plc_ip"], m["plc_port"], m["plc_series"],
-                                     m["bit2_type"] or "M", m["bit2_no"], want2)
-            if actual2 is None and (m["plc_ip"], int(m["plc_port"] or 5007)) in _OUT_CONN:
+                                     m["bit2_type"] or "M", m["bit2_no"], want2,
+                                     m.get("protocol"), m.get("unit_id"))
+            if actual2 is None and okey in _OUT_CONN:
                 actual2 = prev.get("on2")
 
         _OUT_STATE[m["id"]] = {"ip": m["plc_ip"], "port": m["plc_port"], "series": m["plc_series"],
+                               "protocol": m.get("protocol"), "unit_id": m.get("unit_id"),
                                "bit_type": m["bit_type"], "bit_no": m["bit_no"],
                                "bit2_type": m.get("bit2_type"), "bit2_no": m.get("bit2_no"),
                                "want": want, "on": actual, "online": actual is not None,
                                "want2": want2, "on2": actual2,
                                "checked": datetime.now().isoformat(timespec="seconds")}
-        updates.append((actual, want, actual is not None, actual2, want2, m["id"]))
+        updates.append((actual, want, actual is not None, actual2, want2,
+                        None if actual is not None else _OUT_ERR.get(okey), m["id"]))
 
     for oid in list(_OUT_STATE.keys()):
         if oid in enabled_ids:
@@ -1234,24 +1375,26 @@ def _andon_output_write_once():
         st = _OUT_STATE[oid]
         if st.get("on"):
             _out_write_bit(st.get("ip"), st.get("port"), st.get("series"),
-                          st.get("bit_type"), st.get("bit_no"), False)
+                          st.get("bit_type"), st.get("bit_no"), False,
+                          st.get("protocol"), st.get("unit_id"))
         if st.get("on2") and (st.get("bit2_no") or "").strip():
             _out_write_bit(st.get("ip"), st.get("port"), st.get("series"),
-                          st.get("bit2_type") or "M", st.get("bit2_no"), False)
+                          st.get("bit2_type") or "M", st.get("bit2_no"), False,
+                          st.get("protocol"), st.get("unit_id"))
         _OUT_STATE.pop(oid, None)
 
     if updates:
         try:
             with get_conn() as conn:
                 cur = conn.cursor()
-                for last_bit, last_want, last_online, last_bit2, last_want2, mid in updates:
+                for last_bit, last_want, last_online, last_bit2, last_want2, last_err, mid in updates:
                     cur.execute("""UPDATE andon_call_output
                                       SET last_bit=%s, last_want=%s, last_online=%s,
-                                          last_bit2=%s, last_want2=%s,
+                                          last_bit2=%s, last_want2=%s, last_error=%s,
                                           last_at=NOW(), last_writer=%s
                                     WHERE id=%s""",
                                 (last_bit, last_want, last_online,
-                                 last_bit2, last_want2, _WRITER_ID, mid))
+                                 last_bit2, last_want2, last_err, _WRITER_ID, mid))
                 conn.commit()
         except Exception as e:
             print(f"[ANDON-OUT] persist error: {e}")
@@ -1270,13 +1413,47 @@ def _andon_output_loop():
 class CallOutputIn(BaseModel):
     department: str
     plc_ip: str
-    plc_port: Optional[int] = 5007
+    # Port ab protocol se tay hota hai (MC 5007 / Modbus 502), isliye default
+    # None — `PlcIn` me bhi theek yahi tareeqa hai.
+    plc_port: Optional[int] = None
     plc_series: Optional[str] = "Q"
+    protocol: Optional[str] = "MC"
+    unit_id: Optional[int] = 1
     bit_type: str
     bit_no: str
     bit2_type: Optional[str] = "M"
     bit2_no: Optional[str] = ""
     enabled: bool = True
+
+
+def _out_check_bit(proto, bit_type, bit_no, label):
+    """Pata SAVE ke waqt hi jaanch lo — chalte hue nahi.
+
+    KYUN: galat pata bhar dene par writer har cycle me fail karta rehta hai
+    aur screen par sirf "Disconnected" dikhta hai — wajah kahin nahi.  Yahan
+    mana kar dene se wahi baat user ko USI waqt milti hai jab wo use theek
+    kar sakta hai.  (Input wale raaste par `_modbus_addr` ki hadd-jaanch ne
+    theek yahi kaam kiya tha.)
+    """
+    t = (bit_type or "").strip().upper()
+    n = str(bit_no or "").strip()
+    if not n:
+        return t or "M", ""
+    if proto == "MODBUS":
+        try:
+            space, _addr = _modbus_addr(t, n)
+        except ValueError as e:
+            raise HTTPException(400, f"{label}: {e}")
+        if space not in _ModbusDriver._WRITE_FN:
+            raise HTTPException(400,
+                f"{label}: {t}{n} maps to Modbus {space}, which a Modbus master cannot "
+                f"write to — it is read-only. Use a coil device (M / Y / L / B / F / SM) "
+                f"or a D register for an output bit.")
+    elif not _is_bit(t):
+        raise HTTPException(400,
+            f"{label}: '{t}' is not a bit device on MC protocol. Use one of "
+            f"{', '.join(sorted(BIT_DEVICES))}.")
+    return t, n
 
 
 @router.get("/call-outputs")
@@ -1285,9 +1462,10 @@ def list_call_outputs(user=Depends(get_current_user)):
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("""SELECT id, department, plc_ip, plc_port, plc_series,
+                              protocol, unit_id,
                               bit_type, bit_no, bit2_type, bit2_no,
                               enabled, created_at,
-                              last_bit, last_bit2, last_online, last_writer,
+                              last_bit, last_bit2, last_online, last_writer, last_error,
                               EXTRACT(EPOCH FROM (NOW() - last_at)) AS last_age
                          FROM andon_call_output ORDER BY id""")
         rows = cur.fetchall()
@@ -1300,8 +1478,24 @@ def list_call_outputs(user=Depends(get_current_user)):
         live = {_dept_key(r["dept"]): r for r in cur.fetchall()}
         cur.execute("SELECT holder, EXTRACT(EPOCH FROM (NOW()-heartbeat)) AS age FROM andon_output_lock WHERE id=1")
         _lk = cur.fetchone() or {}
+        # Wahi PLC input taraf bhi Modbus par ho to dono (poller aur writer)
+        # ek hi slot ke liye ladenge -- neeche is par saaf chetawni jaati hai.
+        cur.execute("""SELECT ip, name, series, protocol FROM andon_plc_devices
+                        WHERE enabled AND COALESCE(ip,'') <> ''""")
+        _devs = cur.fetchall()
     _wlive = _lk.get("age") is not None and _lk["age"] <= 12
+    _mb_ips = {str(d["ip"]).strip(): d["name"] for d in _devs
+               if _proto_for(d.get("series"), d.get("protocol")) == "MODBUS"}
     for r in rows:
+        # Protocol wahi dikhate hain jo SACH ME chalega: series Modbus kar hi
+        # na sakti ho to `_proto_for` use MC par kheench leta hai.  Maanga hua
+        # alag se bhejte hain, taaki farak UI par saaf dikhe.
+        eff  = _proto_for(r.get("plc_series"), r.get("protocol"))
+        port = int(r.get("plc_port") or _default_port(eff))
+        r["protocol_asked"] = _norm_proto(r.get("protocol"))
+        r["protocol"] = eff
+        r["plc_port"] = port
+        r["unit_id"]  = int(r.get("unit_id") or 1)
         r["off_on_ack"] = _dept_off_on_ack(r["department"])
         r["should_be_on"] = _want_bit(r["department"], live)
         r["bit2_allowed"] = bool(r["off_on_ack"])
@@ -1320,9 +1514,60 @@ def list_call_outputs(user=Depends(get_current_user)):
             r["bit_on"], r["online"] = None, None
             r["bit2_on"] = None
         reach = True if r["bit_on"] is not None else r["online"]
+        # ⚠ MODBUS par yahan TATOLTE NAHI HAIN.
+        #
+        # Ye page har 10 second me list dobara maangta hai.  FX5U ek waqt me
+        # SIRF EK Modbus client jhelti hai, to har baar ek test-connection
+        # kholna theek us waqt uska slot cheenta hai jab writer dobara judne
+        # ki koshish kar raha hota — yaani jab dikkat ho, tab hum khud use
+        # aur bigaad dete.  Modbus par haal writer ke apne nishaan se aata
+        # hai (`last_online` / `last_error`), tatol kar nahi.  (Input wale
+        # raaste par bhi yahi soch hai — "modbus_no_probe".)
+        probe_skipped = False
         if reach is None and r.get("plc_ip") and r["enabled"]:
-            reach = _reachable(r["plc_ip"], r.get("plc_port") or 5007, timeout=0.4)
+            if eff == "MODBUS":
+                probe_skipped = True
+            else:
+                reach = _reachable(r["plc_ip"], port, timeout=0.4)
         r["reachable"] = reach
+        r["probe_skipped"] = probe_skipped
+        # "Disconnected, par KYUN" — writer ne jo aakhri wajah DB me likhi,
+        # wahi yahan se screen tak jaati hai.  Sab theek chal raha ho to
+        # purani wajah dikhana galat-fehmi paida karta hai, isliye chhipa
+        # dete hain.
+        _err = r.pop("last_error", None)
+        r["error"] = _err if (reach is not True and r["enabled"]) else None
+        # Chup-chaap galtiyan jo yahin ek nazar me pakad leni chahiye.
+        hint = None
+        # Sabse bhaari wali pehle: wahi PLC input taraf bhi Modbus par hai.
+        # Tab poller aur writer ek doosre se connection cheente rahenge aur
+        # dono kabhi-kabhi hi chalenge -- aisi dikkat pakadne me din lagte
+        # hain, isliye setting me hi bata dena behtar hai.
+        _clash = _mb_ips.get(str(r.get("plc_ip") or "").strip()) if eff == "MODBUS" else None
+        if _clash:
+            hint = (f"This PLC is also polled as an input device (\"{_clash}\") over Modbus. "
+                    f"An FX5U serves only ONE Modbus client at a time, so the poller and the "
+                    f"output writer would keep taking the connection from each other. Use a "
+                    f"different PLC for the output bits, or put one side on MC / SLMP.")
+        elif r["protocol_asked"] == "MODBUS" and eff != "MODBUS":
+            hint = (f"Protocol is set to Modbus TCP, but the series is "
+                    f"'{r.get('plc_series')}'. Modbus runs only on FX5U, so MC protocol "
+                    f"is being used instead. Set the series to exactly FX5U.")
+        # ⚠ Port wali salah SIRF TAB jab cheez sach me chal na rahi ho.
+        #
+        # Port ka number kisi protocol ki jaageer nahi hai: 2026-09-12 ko naap
+        # kar dekha gaya ki 192.168.32.125 par MC/SLMP port 502 par bilkul
+        # theek chal raha hai (writer har ~1s me M1000/M1001 padh raha tha,
+        # ek bhi galti nahi).  Chalti hui setting par "ise Modbus kar lo"
+        # likhna user ko kaam karti cheez todne ki taraf le jaata.
+        elif reach is not True and eff == "MODBUS" and port == MC_DEFAULT_PORT:
+            hint = (f"Protocol is Modbus TCP but the port is {MC_DEFAULT_PORT}, which is "
+                    f"normally the MC port. Modbus TCP usually uses {MODBUS_DEFAULT_PORT}.")
+        elif reach is not True and eff == "MC" and port == MODBUS_DEFAULT_PORT:
+            hint = (f"Protocol is MC / SLMP but the port is {MODBUS_DEFAULT_PORT}, which is "
+                    f"normally the Modbus TCP port. If this PLC actually speaks Modbus, set "
+                    f"the series to FX5U and the protocol to Modbus TCP.")
+        r["hint"] = hint
         r.pop("last_bit", None); r.pop("last_bit2", None); r.pop("last_online", None)
         if isinstance(r.get("created_at"), datetime):
             r["created_at"] = r["created_at"].isoformat()
@@ -1338,15 +1583,22 @@ def add_call_output(body: CallOutputIn, user=Depends(get_current_user)):
     bn   = str(body.bit_no or "").strip()
     if not (dept and ip and bt and bn):
         raise HTTPException(400, "department, plc_ip, bit_type, bit_no required")
+    # Series Modbus kar hi nahi sakti to protocol wapas MC — ye rok SERVER par
+    # bhi lagti hai, sirf UI par nahi, warna DB me "Q + MODBUS" jaisa jodha
+    # ghus sakta hai jise writer kabhi nibha nahi payega.
+    series = (body.plc_series or "Q").strip() or "Q"
+    proto  = _proto_for(series, body.protocol)
+    bt, bn   = _out_check_bit(proto, bt, bn, "Bit 1")
+    b2t, b2n = _out_check_bit(proto, body.bit2_type or "M", body.bit2_no, "Bit 2")
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""INSERT INTO andon_call_output
-                         (department, plc_ip, plc_port, plc_series, bit_type, bit_no,
-                          bit2_type, bit2_no, enabled)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-                    (dept, ip, body.plc_port or 5007, body.plc_series or "Q", bt, bn,
-                     (body.bit2_type or "M").strip().upper(),
-                     str(body.bit2_no or "").strip(), bool(body.enabled)))
+                         (department, plc_ip, plc_port, plc_series, protocol, unit_id,
+                          bit_type, bit_no, bit2_type, bit2_no, enabled)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                    (dept, ip, body.plc_port or _default_port(proto), series,
+                     proto, int(body.unit_id or 1), bt, bn,
+                     b2t, b2n, bool(body.enabled)))
         new_id = cur.fetchone()[0]; conn.commit()
     return {"id": new_id}
 
@@ -1356,22 +1608,32 @@ def edit_call_output(oid: int, body: CallOutputIn, user=Depends(get_current_user
     _ensure_output()
     with get_conn() as conn:
         cur = conn.cursor()
-        new_b2 = str(body.bit2_no or "").strip()
-        cur.execute("SELECT bit2_type, bit2_no, plc_ip, plc_port, plc_series FROM andon_call_output WHERE id=%s", (oid,))
+        series = (body.plc_series or "Q").strip() or "Q"
+        proto  = _proto_for(series, body.protocol)
+        bt, bn   = _out_check_bit(proto, body.bit_type, body.bit_no, "Bit 1")
+        b2t, new_b2 = _out_check_bit(proto, body.bit2_type or "M", body.bit2_no, "Bit 2")
+        # ⚠ Purani bit PURANE protocol par hi bujhegi.  Ye row protocol wale
+        # column se pehle ki ho sakti hai (tab sab MC tha), isliye jo DB me
+        # likha hai wahi bhejte hain — naya protocol yahan bilkul nahi.
+        cur.execute("""SELECT bit2_type, bit2_no, plc_ip, plc_port, plc_series,
+                              protocol, unit_id
+                         FROM andon_call_output WHERE id=%s""", (oid,))
         _old = cur.fetchone()
         if _old and (_old[1] or "").strip() and (_old[1] or "").strip() != new_b2:
             try:
-                _out_write_bit(_old[2], _old[3], _old[4], _old[0] or "M", _old[1], False)
+                _out_write_bit(_old[2], _old[3], _old[4], _old[0] or "M", _old[1], False,
+                               _old[5], _old[6])
             except Exception as _e:
                 print(f"[ANDON-OUT] bit2 reset error: {_e}")
         cur.execute("""UPDATE andon_call_output
                           SET department=%s, plc_ip=%s, plc_port=%s, plc_series=%s,
+                              protocol=%s, unit_id=%s,
                               bit_type=%s, bit_no=%s, bit2_type=%s, bit2_no=%s, enabled=%s
                         WHERE id=%s""",
                     ((body.department or "").strip(), (body.plc_ip or "").strip(),
-                     body.plc_port or 5007, body.plc_series or "Q",
-                     (body.bit_type or "").strip().upper(), str(body.bit_no or "").strip(),
-                     (body.bit2_type or "M").strip().upper(), new_b2,
+                     body.plc_port or _default_port(proto), series,
+                     proto, int(body.unit_id or 1),
+                     bt, bn, b2t, new_b2,
                      bool(body.enabled), oid))
         if cur.rowcount == 0:
             raise HTTPException(404, "mapping not found")
@@ -1394,7 +1656,8 @@ def call_output_recheck(oid: int, user=Depends(get_current_user)):
     _ensure_output()
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("""SELECT id, department, plc_ip, plc_port, enabled
+        cur.execute("""SELECT id, department, plc_ip, plc_port, plc_series,
+                              protocol, unit_id, enabled
                          FROM andon_call_output WHERE id = %s""", (oid,))
         m = cur.fetchone()
         if not m:
@@ -1402,11 +1665,16 @@ def call_output_recheck(oid: int, user=Depends(get_current_user)):
         cur.execute("UPDATE andon_call_output SET reconnect_req = NOW() WHERE id=%s", (oid,))
         conn.commit()
 
-    if _have_lock:
-        _out_drop(m["plc_ip"], m["plc_port"])
+    # Port ab protocol se tay hota hai — pehle yahan MC ka 5007 hardcode tha,
+    # to Modbus wali row hamesha galat port par tatoli jaati thi.
+    proto = _proto_for(m.get("plc_series"), m.get("protocol"))
+    port  = int(m.get("plc_port") or _default_port(proto))
 
-    ok, why = _probe_cached(m["plc_ip"], m["plc_port"] or 5007, timeout=3.0, force=True)
-    return {"id": oid, "ok": ok, "reason": why}
+    if _have_lock:
+        _out_drop(m["plc_ip"], port)
+
+    ok, why = _probe_cached(m["plc_ip"], port, timeout=3.0, force=True)
+    return {"id": oid, "ok": ok, "reason": why, "protocol": proto, "port": port}
 
 
 def _ensure_tables():

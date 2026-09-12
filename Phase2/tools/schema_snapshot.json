@@ -1,5 +1,5 @@
 {
- "columns": 702,
+ "columns": 713,
  "db": "maintenance_db",
  "schema": {
   "andon_call_output": {
@@ -69,6 +69,12 @@
     "pos": 18,
     "type": "boolean"
    },
+   "last_error": {
+    "default": null,
+    "nullable": true,
+    "pos": 22,
+    "type": "text"
+   },
    "last_online": {
     "default": null,
     "nullable": true,
@@ -111,11 +117,23 @@
     "pos": 5,
     "type": "text"
    },
+   "protocol": {
+    "default": "'MC'::text",
+    "nullable": true,
+    "pos": 20,
+    "type": "text"
+   },
    "reconnect_req": {
     "default": null,
     "nullable": true,
     "pos": 15,
     "type": "timestamp without time zone"
+   },
+   "unit_id": {
+    "default": "1",
+    "nullable": true,
+    "pos": 21,
+    "type": "integer"
    }
   },
   "andon_departments": {
@@ -399,6 +417,30 @@
     "pos": 3,
     "type": "character varying"
    },
+   "last_poll_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 25,
+    "type": "timestamp without time zone"
+   },
+   "last_poll_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 26,
+    "type": "character varying"
+   },
+   "last_poll_error": {
+    "default": null,
+    "nullable": true,
+    "pos": 28,
+    "type": "text"
+   },
+   "last_try_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 27,
+    "type": "timestamp without time zone"
+   },
    "line": {
     "default": null,
     "nullable": true,
@@ -441,6 +483,12 @@
     "pos": 4,
     "type": "integer"
    },
+   "protocol": {
+    "default": "'MC'::character varying",
+    "nullable": true,
+    "pos": 21,
+    "type": "character varying"
+   },
    "series": {
     "default": "'Q'::character varying",
     "nullable": true,
@@ -465,11 +513,29 @@
     "pos": 18,
     "type": "integer"
    },
+   "sub_protocol": {
+    "default": "'MC'::character varying",
+    "nullable": true,
+    "pos": 23,
+    "type": "character varying"
+   },
    "sub_series": {
     "default": null,
     "nullable": true,
     "pos": 19,
     "type": "character varying"
+   },
+   "sub_unit_id": {
+    "default": "1",
+    "nullable": true,
+    "pos": 24,
+    "type": "integer"
+   },
+   "unit_id": {
+    "default": "1",
+    "nullable": true,
+    "pos": 22,
+    "type": "integer"
    },
    "updated_at": {
     "default": "now()",
@@ -4320,5 +4386,5 @@
   }
  },
  "tables": 52,
- "taken_at": "2026-08-31T14:59:43"
+ "taken_at": "2026-09-12T11:37:49"
 }
