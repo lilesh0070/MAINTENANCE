@@ -1,5 +1,5 @@
 {
-  "version": "1.4.41",
-  "notes": "ANDON diagnostic now shows whether ANY server is polling this PLC -- a bit can read ON and still never raise a call if no backend has the poller switched on",
-  "released_at": "2026-09-12T10:07:06"
+  "version": "1.4.42",
+  "notes": "ANDON diagnostic now tells apart 'no poller is running anywhere' from 'a poller is running but its reads keep failing', and shows the poller's own error",
+  "released_at": "2026-09-12T10:16:41"
 }

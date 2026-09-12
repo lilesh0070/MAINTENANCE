@@ -899,13 +899,23 @@ def _plc_poll_loop():
                 # DB me nishaan -- taaki doosre backend bhi dekh sakein ki is
                 # PLC ko koi poll kar raha hai ya nahi (upar wali tippani).
                 # Har baar likhna bekaar hai (0.4s par), isliye ~10 sec me ek.
-                if ok and (_time.monotonic() - _POLL_STAMP.get(dev["id"], 0.0)) > 10.0:
+                if (_time.monotonic() - _POLL_STAMP.get(dev["id"], 0.0)) > 10.0:
                     _POLL_STAMP[dev["id"]] = _time.monotonic()
+                    _why = (_POLL_FAIL.get(dev["id"]) or {}).get("why")
                     try:
                         with get_conn() as _c2:
                             _cur2 = _c2.cursor()
-                            _cur2.execute("UPDATE andon_plc_devices SET last_poll_at=NOW(), "
-                                          "last_poll_by=%s WHERE id=%s", (_WRITER_ID, dev["id"]))
+                            if ok:
+                                _cur2.execute("UPDATE andon_plc_devices SET last_poll_at=NOW(), "
+                                              "last_try_at=NOW(), last_poll_by=%s, "
+                                              "last_poll_error=NULL WHERE id=%s",
+                                              (_WRITER_ID, dev["id"]))
+                            else:
+                                # Koshish ka nishaan alag -- isse pata chalta hai ki
+                                # poller ZINDA hai, bas jud nahi paa raha.
+                                _cur2.execute("UPDATE andon_plc_devices SET last_try_at=NOW(), "
+                                              "last_poll_by=%s, last_poll_error=%s WHERE id=%s",
+                                              (_WRITER_ID, (_why or "unknown")[:400], dev["id"]))
                             _c2.commit()
                     except Exception as _e:
                         print(f"[ANDON-PLC-POLL] nishaan nahi likha (dev {dev['id']}): {_e}")
@@ -1466,6 +1476,11 @@ def _ensure_tables():
         # kahin dikhti hi nahi thi.  DB dono ko saaf dikh jaata hai.
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS last_poll_at TIMESTAMP")
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS last_poll_by VARCHAR(120)")
+        # Naakaam koshish bhi likhte hain -- warna "poller chal hi nahi raha"
+        # aur "poller chal raha hai par jud nahi paa raha" ek jaise dikhte hain,
+        # jabki dono ka ilaaj bilkul alag hai.
+        cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS last_try_at TIMESTAMP")
+        cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS last_poll_error TEXT")
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS sub_port INTEGER")
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS sub_series VARCHAR(20)")
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS sub_machine_no VARCHAR(60)")
@@ -1876,7 +1891,7 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("""SELECT id, name, ip, port, series, protocol, unit_id, enabled,
-                              last_poll_at, last_poll_by
+                              last_poll_at, last_poll_by, last_try_at, last_poll_error
                          FROM andon_plc_devices WHERE id=%s""", (eid,))
         d = cur.fetchone()
         if not d:
@@ -1942,6 +1957,7 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
     _poll_off = os.getenv("ANDON_POLL_ENABLED", "1").strip().lower() in ("0", "false", "no", "off")
     # KISI BHI server ne is PLC ko poll kiya hai ya nahi -- DB se.
     _last_at, _last_by = d.get("last_poll_at"), d.get("last_poll_by")
+    _try_at, _try_err  = d.get("last_try_at"), d.get("last_poll_error")
     # Kitni der pehle KISI server ne poll kiya (DB ka nishaan).
     _stale = None
     if _last_at is not None:
@@ -1967,8 +1983,25 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
     # Poller har ~10 sec me DB me nishaan chhodta hai.  Nishaan hai hi nahi,
     # ya bahut purana hai, to matlab kahin koi poll nahi kar raha -- aur tab
     # bit chahe ON ho, call kabhi nahi banegi.
-    _koi_nahi = _last_at is None or (_stale is not None and _stale > 120)
-    if _koi_nahi:
+    _try_stale = None
+    if _try_at is not None:
+        try:    _try_stale = (datetime.now() - _try_at).total_seconds()
+        except Exception: _try_stale = None
+    out["poller"]["any_try_at"]  = _try_at.isoformat(timespec="seconds") if _try_at is not None else None
+    out["poller"]["any_error"]   = _try_err
+
+    _koi_nahi  = _last_at is None or (_stale is not None and _stale > 120)
+    # Poller ZINDA hai (haal hi me koshish ki) par safal nahi ho raha --
+    # ye "koi poll hi nahi kar raha" se BILKUL alag baat hai.
+    _koshish   = _try_stale is not None and _try_stale <= 120
+    if _koi_nahi and _koshish:
+        out["error"] = (
+            f"A poller IS running ({_last_by or 'unknown server'}) and tried "
+            f"{int(_try_stale)}s ago, but its read keeps failing, so no call is raised. "
+            f"Its own error: {_try_err or 'unknown'}. "
+            f"Read now can still succeed here because the poller backs off for a few seconds "
+            f"between tries, leaving the PLC's single Modbus slot free in between.")
+    elif _koi_nahi:
         out["error"] = (
             ("No server has ever polled this PLC." if _last_at is None else
              f"No server has polled this PLC for {int(_stale // 60)} minute(s) "
@@ -1976,8 +2009,9 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
             + " While nothing is polling, the bit can read ON here and still never raise a"
               " call — reading and raising calls are two different things."
               " Exactly one backend must have ANDON_POLL_ENABLED=1 in its Phase2/.env"
-              " (normally the production server); if every backend has it set to 0, nobody"
-              " raises calls. Set it on the production server and restart it.")
+              " (that is also the default when there is no .env file), and that backend must"
+              " be running. Check the production server's backend log for a line starting"
+              " with [ANDON-PLC-POLL].")
     elif _poll_off:
         out["error"] = (
             "This backend does not poll PLCs (ANDON_POLL_ENABLED=0) — only the production "

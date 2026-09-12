@@ -2058,6 +2058,13 @@ export default function AndonSystem() {
                       : <span style={{ color:"#b91c1c", fontWeight:700 }}>
                           no server has ever polled this PLC
                         </span>}
+                    {/* Koshish ka nishaan alag hai — isse pata chalta hai ki
+                        poller ZINDA hai, bas jud/padh nahi paa raha. */}
+                    {readOut.poller.any_error && (
+                      <div style={{ color:"#b91c1c", fontWeight:700, marginTop:2 }}>
+                        last try {readOut.poller.any_try_at} failed: {readOut.poller.any_error}
+                      </div>
+                    )}
                   </div>
                   {readOut.poller.error && (
                     <div style={{ color:"#b91c1c", fontWeight:700, marginTop:3 }}>
