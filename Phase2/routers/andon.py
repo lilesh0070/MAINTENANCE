@@ -1865,6 +1865,22 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
                         WHERE plc_id IS NULL AND COALESCE(bit_type,'') <> ''
                               AND COALESCE(bit_no,'') <> ''""")
         n_default = cur.fetchone()["n"]
+        # Kaunsa output CALL hai aur kaunsa sirf ACK -- yahi wo baat hai jo
+        # "bit ON dikh raha hai par call nahi aati" ki asli wajah nikalti hai.
+        ack_map = _ack_map(cur, eid)
+        cur.execute("""SELECT do_index, department_id, display_name
+                         FROM andon_plc_output_mapping WHERE plc_id IS NULL""")
+        dept_of = {r["do_index"]: r["department_id"] for r in cur.fetchall()}
+        cur.execute("""SELECT do_index, department_id FROM andon_plc_output_mapping
+                        WHERE plc_id=%s""", (eid,))
+        for r in cur.fetchall():
+            if r["department_id"] is not None:
+                dept_of[r["do_index"]] = r["department_id"]
+        cur.execute("SELECT id, name FROM andon_departments")
+        dept_name = {r["id"]: r["name"] for r in cur.fetchall()}
+        cur.execute("""SELECT do_index, id FROM andon_system
+                        WHERE plc_id=%s AND state='OPEN'""", (eid,))
+        open_of = {r["do_index"]: r["id"] for r in cur.fetchall()}
 
     proto = _proto_for(d.get("series"), d.get("protocol"))
     port  = int(d.get("port") or _default_port(proto))
@@ -1905,10 +1921,17 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
     # Pehle pata nikaalo — galat/out-of-range address yahin pakda jayega,
     # PLC se baat karne se pehle.
     for r in usable:
-        item = {"do_index": r["do_index"],
-                "name": r["display_name"] or f"OUT{r['do_index']}",
+        di = r["do_index"]
+        item = {"do_index": di,
+                "name": r["display_name"] or f"OUT{di}",
                 "bit_type": r["bit_type"], "bit_no": r["bit_no"],
-                "addr": None, "value": None, "on": None, "error": None}
+                "addr": None, "value": None, "on": None, "error": None,
+                # ⚠ Ye teen khaane hi asli jawab dete hain jab bit ON ho par
+                # call na aaye:
+                "department": dept_name.get(dept_of.get(di)),
+                "role": ("ack" if di in ack_map else "call"),
+                "ack_of": ack_map.get(di),
+                "open_call": open_of.get(di)}
         if proto == "MODBUS":
             try:
                 sp, ad = _modbus_addr(r["bit_type"], r["bit_no"])
@@ -1941,6 +1964,18 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
                 i["on"] = bool(v)
         except Exception as e:
             out["error"] = f"{type(e).__name__}: {e}"
+
+    # Sabse aam jaal: bit ON hai, par us output ka DEPARTMENT khali hai --
+    # tab wo CALL nahi, pichhle output ka ACKNOWLEDGE bit ban jaata hai, aur
+    # call kabhi banti hi nahi (`_apply_state` chup-chaap laut jaata hai).
+    on_ack = [i for i in out["rows"] if i.get("on") and i.get("role") == "ack"]
+    if on_ack and not out["hint"]:
+        ek = on_ack[0]
+        out["hint"] = (
+            f"{ek['name']} (OUT{ek['do_index']}) is ON, but it has no department, so it is "
+            f"being treated as the ACKNOWLEDGE bit for OUT{ek['ack_of']} — not as a call. "
+            f"That is why no call is raised. Give this output a department in the Outputs "
+            f"table to make it a call bit.")
     return out
 
 

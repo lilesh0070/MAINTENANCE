@@ -1957,12 +1957,13 @@ export default function AndonSystem() {
                    dabbe me side se khisakne dete hain, page ko nahi. */
                 <div style={{ overflowX:"auto" }}>
                 <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12.5,
-                                minWidth:420 }}>
+                                minWidth:560 }}>
                   <thead>
                     <tr style={{ textAlign:"left", color:"#64748b", fontSize:11 }}>
                       <th style={{ padding:"6px 8px" }}>Output</th>
                       <th style={{ padding:"6px 8px" }}>Device</th>
                       <th style={{ padding:"6px 8px" }}>Address read</th>
+                      <th style={{ padding:"6px 8px" }}>Department</th>
                       <th style={{ padding:"6px 8px", textAlign:"center" }}>Value</th>
                     </tr>
                   </thead>
@@ -1978,6 +1979,22 @@ export default function AndonSystem() {
                         </td>
                         <td style={{ padding:"7px 8px", fontFamily:"monospace", color:"#475569" }}>
                           {r.addr || "—"}
+                        </td>
+                        {/* Department khali ho to ye output CALL nahi rehta — pichhle
+                            output ka ACKNOWLEDGE bit ban jaata hai, aur uska bit ON
+                            karne par call kabhi banti hi nahi. */}
+                        <td style={{ padding:"7px 8px" }}>
+                          {r.department
+                            ? r.department
+                            : <span style={{ color:"#b45309" }}>— none —</span>}
+                          {r.role === "ack" && (
+                            <div style={{ fontSize:10.5, fontWeight:700, color:"#b45309" }}>
+                              acknowledge bit for OUT{r.ack_of}
+                            </div>
+                          )}
+                          {r.open_call && (
+                            <div style={{ fontSize:10.5, color:"#15803d" }}>call #{r.open_call} already open</div>
+                          )}
                         </td>
                         <td style={{ padding:"7px 8px", textAlign:"center" }}>
                           {r.error
@@ -2004,6 +2021,9 @@ export default function AndonSystem() {
                 A bit shows <b>ON</b> only while the PLC is actually holding that output on.
                 If you raise a call on the machine and the value here stays <b>off</b>, the
                 address is pointing somewhere else — compare it with the PLC’s own device list.
+                {" "}If the value is <b>ON</b> but no call appears, check the <b>Department</b>
+                {" "}column: an output with no department is treated as the acknowledge bit for
+                {" "}the output above it, so it can never raise a call.
               </div>
             </div>
           </div>

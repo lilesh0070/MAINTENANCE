@@ -1,5 +1,5 @@
 {
-  "version": "1.4.36",
-  "notes": "ANDON: live 'Read now' diagnostic (shows the address actually read and its value), a warning when a PLC has no bits mapped, and Modbus address range checking",
-  "released_at": "2026-09-12T08:45:54"
+  "version": "1.4.37",
+  "notes": "ANDON diagnostic now also shows each output's department and whether it is a call bit or an acknowledge bit -- an output with no department can never raise a call",
+  "released_at": "2026-09-12T09:03:06"
 }
