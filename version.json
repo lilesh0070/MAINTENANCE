@@ -1,0 +1,5 @@
+{
+  "version": "1.4.49",
+  "notes": "Settings now has a Reconnect button — use it if pages stop loading after the network changes between Ethernet and Wi-Fi",
+  "released_at": "2026-09-12T15:59:11"
+}
