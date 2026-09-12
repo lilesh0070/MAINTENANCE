@@ -1,5 +1,5 @@
 {
-  "version": "1.4.39",
-  "notes": "ANDON diagnostic now says when a backend is configured not to poll, so a failed read there is expected rather than a fault",
-  "released_at": "2026-09-12T09:26:34"
+  "version": "1.4.40",
+  "notes": "Fix: the ANDON Read now diagnostic was holding the PLC's only Modbus connection on backends that do not poll, which blocked the production server's poller",
+  "released_at": "2026-09-12T09:57:11"
 }

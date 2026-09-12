@@ -1996,15 +1996,38 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
         out["error"] = "Every mapped address is invalid — see the rows below."
         return out
 
+    # ⚠ CONNECTION YAHAN PAKAD KAR NAHI RAKHNA (asli galti, 2026-09-12).
+    #
+    # Pehle ye connection `_PLC_CONN` pool me daal kar chhod diya jaata tha.
+    # Jis backend ka poller BAND hai (laptop/dev), wahan use koi kabhi band
+    # karta hi nahi -- aur FX5U ek waqt me sirf EK Modbus client jhelti hai.
+    # Natija: ek baar "Read now" dabate hi wo backend PLC ka ekmatra slot
+    # HAMESHA ke liye pakad leta tha, aur PRODUCTION server ka poller andar
+    # ghus hi nahi paata -- yaani diagnostic khud ANDON band kar deta tha.
+    #
+    # Ab do alag bartaav:
+    #   poller yahan CHALTA hai -> uska hi connection (pool se), band mat karo
+    #   poller yahan BAND hai   -> apna alag kholo aur padhte hi BAND kar do
+    apna = None
     with _plc_lock(eid):
-        # Poller ne haar kar intezaar shuru kar diya ho to use hata do —
-        # user ne KHUD button dabaya hai, use abhi jawab chahiye.
-        _PLC_RETRY.pop(eid, None)
-        mc = _ensure_conn(_PLC_CONN, _PLC_RETRY, eid, d["ip"], port,
-                          d.get("series") or "Q", proto, d.get("unit_id"))
+        if not _poll_off:
+            _PLC_RETRY.pop(eid, None)   # user ne khud dabaya hai, abhi jawab chahiye
+            mc = _ensure_conn(_PLC_CONN, _PLC_RETRY, eid, d["ip"], port,
+                              d.get("series") or "Q", proto, d.get("unit_id"))
+        else:
+            try:
+                mc = apna = _connect({"series": d.get("series") or "Q",
+                                      "plc_ip": d["ip"], "plc_port": port,
+                                      "protocol": proto, "unit_id": d.get("unit_id")})
+            except Exception as e:
+                mc = None
+                _e = f"{type(e).__name__}: {e}"
+                out["error"] = ((out["error"] + "\n\n" + _e)
+                                if out["error"] else _e)
         if mc is None:
-            out["error"] = ("Could not connect to the PLC right now. Check the IP, the port, "
-                            "and that the PLC's Modbus/MC server is switched on.")
+            if not out["error"]:
+                out["error"] = ("Could not connect to the PLC right now. Check the IP, "
+                                "the port, and that the PLC’s Modbus/MC server is on.")
             return out
         try:
             vals = mc.read_many([(i["bit_type"], i["bit_no"]) for i in thik])
@@ -2020,6 +2043,12 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
             _msg = f"{type(e).__name__}: {e}"
             out["error"] = ((out["error"] + "\n\n" + _msg)
                             if out["error"] else _msg)
+        finally:
+            # Apna khola hua connection HAMESHA band -- warna PLC ka ekmatra
+            # Modbus slot isi ke paas atka reh jayega (upar wali tippani).
+            if apna is not None:
+                try: apna.close()
+                except Exception: pass
 
     # Sabse aam jaal: bit ON hai, par us output ka DEPARTMENT khali hai --
     # tab wo CALL nahi, pichhle output ka ACKNOWLEDGE bit ban jaata hai, aur
