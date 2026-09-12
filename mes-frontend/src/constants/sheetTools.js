@@ -717,7 +717,20 @@ export async function excelNikalo({ naam = "export", headers = [], rows = [], sh
       }
       return { wch: Math.min(60, Math.max(9, w + 2)) };
     });
-    if (headers.length) ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+    // ⚠ YAHAN "header ko upar chipka do" (freeze pane) KA CODE THA — HATA
+    // DIYA (2026-09-12).  Wo line `ws["!freeze"] = {xSplit:0, ySplit:1}`
+    // thi aur DEKHNE ME theek lagti thi, par kuch karti hi nahi thi.
+    //
+    // Device par bani asli file kholkar pakda: `xl/worksheets/sheet1.xml`
+    // me `<pane>` hai hi nahi, bas `<sheetView workbookViewId="0"/>`.  Phir
+    // isi library (xlsx 0.18.5) par teeno roop alag-alag aazmaye —
+    // `{xSplit,ySplit}`, `"A2"`, aur `{ySplit:1}` — teeno par `<pane>`
+    // nadaarad.  Freeze pane SheetJS ke COMMUNITY build me hai hi nahi
+    // (wo Pro ka hissa hai).
+    //
+    // Isliye line hata di: jo cheez kuch karti nahi, uska rehna sirf agle
+    // aadmi ko dhokha deta hai ("header to pin kiya hua hai na?").  Sach me
+    // chahiye ho to library badalni padegi (jaise exceljs).
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, String(sheet).slice(0, 31));
