@@ -1891,6 +1891,7 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("""SELECT id, name, ip, port, series, protocol, unit_id, enabled,
+                              sub_ip, sub_port, sub_series, sub_protocol,
                               last_poll_at, last_poll_by, last_try_at, last_poll_error
                          FROM andon_plc_devices WHERE id=%s""", (eid,))
         d = cur.fetchone()
@@ -1918,6 +1919,17 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
         for r in cur.fetchall():
             if r["department_id"] is not None:
                 dept_of[r["do_index"]] = r["department_id"]
+        # Baaki PLC ka haal bhi -- "sirf isi line par dikkat hai" wale
+        # sawaal ka jawab tulna se hi milta hai.  Agar baaki sab taaza poll ho
+        # rahi hain aur ye nahi, to dikkat is device ki apni hai, poller ki nahi.
+        cur.execute("""SELECT COUNT(*) AS kul,
+                              COUNT(*) FILTER (
+                                  WHERE last_poll_at IS NOT NULL
+                                    AND last_poll_at > NOW() - INTERVAL '2 minutes') AS taaza
+                         FROM andon_plc_devices
+                        WHERE enabled AND id <> %s""", (eid,))
+        _o = cur.fetchone()
+        baaki_kul, baaki_taaza = _o["kul"], _o["taaza"]
         cur.execute("SELECT id, name FROM andon_departments")
         dept_name = {r["id"]: r["name"] for r in cur.fetchall()}
         cur.execute("""SELECT do_index, id FROM andon_system
@@ -1977,6 +1989,8 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
         "any_last_at":  _last_at.isoformat(timespec="seconds") if _last_at is not None else None,
         "any_last_by":  _last_by,
         "any_stale_s":  int(_stale) if _stale is not None else None,
+        "others_total": baaki_kul,
+        "others_fresh": baaki_taaza,
     }
 
     # ⚠ SABSE ZAROORI JAANCH: is PLC ko KOI BHI server poll kar raha hai?
@@ -1989,6 +2003,12 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
         except Exception: _try_stale = None
     out["poller"]["any_try_at"]  = _try_at.isoformat(timespec="seconds") if _try_at is not None else None
     out["poller"]["any_error"]   = _try_err
+
+    # Baaki PLC theek chal rahi hain par YE nahi -> dikkat is device ki apni.
+    if baaki_taaza and (_last_at is None or (_stale is not None and _stale > 120)):
+        out["hint"] = (f"{baaki_taaza} of {baaki_kul} other PLC(s) are being polled normally, "
+                       f"but this one is not — so the poller itself is fine and the problem is "
+                       f"specific to this PLC. Its own last error is shown below, if any.")
 
     _koi_nahi  = _last_at is None or (_stale is not None and _stale > 120)
     # Poller ZINDA hai (haal hi me koshish ki) par safal nahi ho raha --
@@ -2034,7 +2054,22 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
                         "may have been started before this PLC was added — restart the backend.")
 
     # Do chup-chaap galtiyan jo yahin pakad leni chahiye.
-    if out["protocol_asked"] == "MODBUS" and proto != "MODBUS":
+    # ⚠ EK FX5U PAR DO MODBUS CONNECTION -- ye ek hi device ko maarta hai.
+    # Poller main PLC ke liye ek connection kholta hai aur sub-PLC ke liye
+    # doosra.  Dono ka IP ek hi ho aur protocol Modbus ho, to FX5U doosre ko
+    # jawab nahi degi (wo ek waqt me sirf EK client jhelti hai) aur poll har
+    # chakkar fail hoga -- jabki MC wali baaki PLC par ye hadd hai hi nahi,
+    # isliye wahan sab theek chalta hai.
+    _sub = (d.get("sub_ip") or "").strip()
+    if _sub and proto == "MODBUS" and _sub == (d.get("ip") or "").strip():
+        out["hint"] = (
+            "The sub-PLC IP is the same as the main IP, and this is a Modbus PLC. The poller "
+            "opens one connection for the main PLC and another for the sub-PLC, but this FX5U "
+            "answers only ONE Modbus client at a time — so the second one fails and the whole "
+            "poll of this PLC fails every cycle. Other lines are unaffected because MC protocol "
+            "allows several connections. Clear the sub-PLC IP unless it really is a different "
+            "device.")
+    elif out["protocol_asked"] == "MODBUS" and proto != "MODBUS":
         out["hint"] = (f"Protocol is set to MODBUS, but the series is '{d.get('series')}'. "
                        f"Modbus runs only on FX5U, so MC protocol is being used instead. "
                        f"Set the series to exactly FX5U.")
@@ -2139,6 +2174,31 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
             if apna is not None:
                 try: apna.close()
                 except Exception: pass
+
+    # ⚠ POLLER KA FAISLA -- bina kuch likhe.
+    #
+    # Yahi wo sawaal hai jo baar-baar poochha jaata hai: "value ON hai, phir
+    # call kyun nahi banti".  Upar ki table sirf VALUE dikhati thi; poller
+    # uske baad `_apply_state` me jo faisla leta hai, wo kahin dikhta nahi
+    # tha.  Yahan wahi tarka dohra kar har output ke saamne likh dete hain --
+    # taaki ek nazar me pata chale ki ruk kahan raha hai.
+    for i in out["rows"]:
+        di, on = i["do_index"], i.get("on")
+        if i.get("error"):
+            i["would"] = "address is invalid — the poller skips it"
+        elif di in ack_map:
+            i["would"] = (f"treated as the acknowledge bit for OUT{ack_map[di]} — "
+                          f"it can never open a call")
+        elif on is None:
+            i["would"] = "not read"
+        elif open_of.get(di):
+            i["would"] = f"a call is already open (#{open_of[di]}) — no new call until it closes"
+        elif on:
+            i["would"] = ("would OPEN a call"
+                          + (f" for {i['department']}" if i.get("department") else
+                             " — but it has no department"))
+        else:
+            i["would"] = "off — nothing to do"
 
     # Sabse aam jaal: bit ON hai, par us output ka DEPARTMENT khali hai --
     # tab wo CALL nahi, pichhle output ka ACKNOWLEDGE bit ban jaata hai, aur

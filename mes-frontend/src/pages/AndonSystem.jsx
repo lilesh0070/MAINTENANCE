@@ -1968,7 +1968,7 @@ export default function AndonSystem() {
                    dabbe me side se khisakne dete hain, page ko nahi. */
                 <div style={{ overflowX:"auto" }}>
                 <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12.5,
-                                minWidth:560 }}>
+                                minWidth:760 }}>
                   <thead>
                     <tr style={{ textAlign:"left", color:"#64748b", fontSize:11 }}>
                       <th style={{ padding:"6px 8px" }}>Output</th>
@@ -1976,6 +1976,7 @@ export default function AndonSystem() {
                       <th style={{ padding:"6px 8px" }}>Address read</th>
                       <th style={{ padding:"6px 8px" }}>Department</th>
                       <th style={{ padding:"6px 8px", textAlign:"center" }}>Value</th>
+                      <th style={{ padding:"6px 8px" }}>What the poller does</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2016,6 +2017,14 @@ export default function AndonSystem() {
                                                color: r.on ? "#15803d" : "#94a3b8" }}>
                                   {r.on ? "ON" : "off"} ({r.value})
                                 </span>}
+                        </td>
+                        {/* Value dikhna kaafi nahi tha — poller uske baad jo
+                            faisla leta hai, wahi batata hai ki ruk kahan raha hai. */}
+                        <td style={{ padding:"7px 8px", fontSize:11.5,
+                                     color: (r.would || "").startsWith("would OPEN") ? "#15803d"
+                                          : (r.would || "").startsWith("off") ? "#94a3b8" : "#b45309",
+                                     fontWeight: (r.would || "").startsWith("off") ? 500 : 700 }}>
+                          {r.would || "—"}
                         </td>
                       </tr>
                     ))}
@@ -2060,6 +2069,12 @@ export default function AndonSystem() {
                         </span>}
                     {/* Koshish ka nishaan alag hai — isse pata chalta hai ki
                         poller ZINDA hai, bas jud/padh nahi paa raha. */}
+                    {readOut.poller.others_total > 0 && (
+                      <div style={{ marginTop:2 }}>
+                        Other PLCs: <b>{readOut.poller.others_fresh}</b> of{" "}
+                        {readOut.poller.others_total} polled in the last 2 minutes
+                      </div>
+                    )}
                     {readOut.poller.any_error && (
                       <div style={{ color:"#b91c1c", fontWeight:700, marginTop:2 }}>
                         last try {readOut.poller.any_try_at} failed: {readOut.poller.any_error}
