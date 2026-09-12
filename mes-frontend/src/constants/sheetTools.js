@@ -169,7 +169,8 @@ function printDoc(chhapneWala, naam, khada, css) {
   ].join("\n");
 }
 
-export async function chhapoNode(node, { naam = "Sheet", khada = false, css = "" } = {}) {
+export async function chhapoNode(node, { naam = "Sheet", khada = false, css = "",
+                                         kamSeKam = 0.4 } = {}) {
   if (!node) return;
   const chhapneWala = await tasveeronKoAndarBithao(node);
   const doc = printDoc(chhapneWala, naam, khada, css);
@@ -191,11 +192,11 @@ export async function chhapoNode(node, { naam = "Sheet", khada = false, css = ""
     // Isliye ab naap yahan pehle hi kar lete hain aur scale HTML ke andar
     // hi chipka kar bhejte hain, taaki Java ki WebView ko kuch naapna hi na
     // pade.  (Website ka raasta jyon ka tyon hai.)
-    const tayyar = await appKeLiyeSimtao(doc, khada);
-    P.chhapo({ html: tayyar, naam }).catch(() => browserPrint(doc, khada));
+    const tayyar = await appKeLiyeSimtao(doc, khada, kamSeKam);
+    P.chhapo({ html: tayyar, naam }).catch(() => browserPrint(doc, khada, kamSeKam));
     return;
   }
-  browserPrint(doc, khada);
+  browserPrint(doc, khada, kamSeKam);
 }
 
 /* Content ki ASLI chaudai naapo.
@@ -247,7 +248,7 @@ function asliChaudai(fit) {
  *                    tasveer ko panne ki chaudai par bithakar).  Isliye
  *                    yahan sheet ko uski poori chaudai de dete hain.
  */
-function kaagazParBithao(doc, khada, kaam, { simtao = true } = {}) {
+function kaagazParBithao(doc, khada, kaam, { simtao = true, kamSeKam = 0.4 } = {}) {
   // Kaagaz ki naap (96dpi par A4, dono taraf ke 6mm margin ghata kar).
   const chaudaiMm = (khada ? 210 : 297) - 12;
   const lambaiMm  = (khada ? 297 : 210) - 12;
@@ -300,7 +301,7 @@ function kaagazParBithao(doc, khada, kaam, { simtao = true } = {}) {
               // ek line kat jaye aur baaki sheet padhne layak rahe.  0.4
               // par 11px ka akshar ~3pt ka bachta hai -- usse neeche waise
               // bhi bekaar hai.
-              const sc = Math.max(0.4, px / chaudai);
+              const sc = Math.max(kamSeKam, px / chaudai);
               fit.style.transform = "scale(" + sc + ")";
               // Simatne ke baad neeche ki khali jagah hata do, warna ek
               // khali panna aur nikal aata hai.
@@ -332,14 +333,14 @@ function kaagazParBithao(doc, khada, kaam, { simtao = true } = {}) {
 }
 
 /* Website wala raasta — chhupa hua iframe, phir uska apna print. */
-function browserPrint(doc, khada) {
+function browserPrint(doc, khada, kamSeKam = 0.4) {
   kaagazParBithao(doc, khada, (w, _ctx, hatao) => {
     w?.focus();
     w?.print();
     // Print ka parda async hai — frame turant hata dene par kuch browser
     // khali panna chhapte hain.  Isliye thoda ruk kar hatate hain.
     setTimeout(hatao, 1500);
-  }).catch(() => {
+  }, { kamSeKam }).catch(() => {
     /* print na ho paye to bhi chup — pehle bhi yahi bartaav tha */
   });
 }
@@ -354,7 +355,7 @@ function browserPrint(doc, khada) {
  *
  * Naap na ho paye to doc jyon ka tyon lauta dete hain -- bina scale ke
  * print hona, bilkul print na hone se behtar hai. */
-async function appKeLiyeSimtao(doc, khada) {
+async function appKeLiyeSimtao(doc, khada, kamSeKam = 0.4) {
   try {
     const naap = await kaagazParBithao(doc, khada, (w, ctx, hatao) => {
       const r = { px: ctx.px, chaudai: ctx.chaudai,
@@ -367,7 +368,7 @@ async function appKeLiyeSimtao(doc, khada) {
 
     // Wahi hadd jo website par hai -- 0.4 se neeche simatne par kuch padha
     // hi nahi jaata (wajah `kaagazParBithao` me likhi hai).
-    const s = Math.max(0.4, naap.px / naap.chaudai);
+    const s = Math.max(kamSeKam, naap.px / naap.chaudai);
     const W = Math.ceil(naap.chaudai);
     // Height bhi deni padti hai: `transform` sirf DIKHNE ka aakar badalta
     // hai, jagah utni hi ghiri rehti hai -- bina iske ek khali panna aur
@@ -605,6 +606,58 @@ export async function pdfNikalo(node, { naam = "sheet", khada = false, css = "" 
     return { theek: false, kyun: e?.message || "The PDF was created but could not be saved" };
   }
 }
+
+/* Table wale REPORT page (History Card, BD History…) ki print-CSS.
+ *
+ * Sheet wale page (DMC / PM format) pehle se KAAGAZ KE NAAP ke bane hote
+ * hain — unme kuch theek karne ko hota hi nahi.  Report page alag hain, aur
+ * unme teen cheezein kaagaz par galat aati hain:
+ *
+ *   1. Table ek SCROLL WALE DABBE me kaid hoti hai — bina khole sirf wahi
+ *      hissa chhapta hai jo screen par dikh raha tha.
+ *   2. Cell `white-space: nowrap` hote hain (screen par theek, kyunki
+ *      scroll hai).  Kaagaz par wahi table ko hazaron px chauda kar deta
+ *      hai, aur phir poori sheet itni simat jaati hai ki padhi hi nahi
+ *      jaati.  Lipatne dena (wrap) yahan behtar hai.
+ *   3. Header sirf PEHLE panne par aata hai — teen panne ki report me
+ *      doosre panne par pata hi nahi chalta kaunsa column kya hai.
+ *
+ * `pre` = us page ka class prefix — History Card ka "hc", BD History ka
+ * "bh".  Ek hi jagah likhne se dono report ek jaisi chhapti hain.
+ */
+export const tableReportCss = (pre) => `
+  .${pre}-card, .${pre}-scroll, .${pre}-card > div {
+    overflow: visible !important; max-height: none !important;
+  }
+  .${pre}-card {
+    border: none !important; box-shadow: none !important; border-radius: 0 !important;
+  }
+  /* Screen par lamba text max-width + ellipsis se kaat diya jaata hai.
+     Kaagaz par "..." bekaar hai -- wahan poora text chahiye, lipta hua.
+     (Yahan backtick mat likhna -- ye poori CSS ek template literal hai.)
+
+     ⚠ word-break: break-word YAHAN MAT LAGANA.  Ek baar laga kar naapa
+     tha aur natija bahut bura tha: History Card me ~25 column hain, to har
+     column ko bahut kam jagah milti hai, aur break-word ne har LAFZ KO
+     BEECH SE CHEER diya -- PDF me "breakdown" ek-ek akshar karke khada
+     nikla ("b r e a k d o w n").  Saada white-space: normal se lafz
+     saabut rehta hai aur column utni chaudai le leta hai jitni us lafz ko
+     chahiye; jo table phir bhi chaudi rahe use scale khud simata deta hai.
+
+     min-width isliye ki khaali/chhote column 2-3 px ke na reh jaayein. */
+  .${pre}-table td, .${pre}-table th {
+    white-space: normal !important;
+    max-width: none !important; overflow: visible !important;
+    text-overflow: clip !important;
+    min-width: 34px;
+  }
+  /* Print me browser background chup-chaap gira deta hai — header ki patti
+     aur zebra qatarein gayab ho jaati hain.  Ye unhe rehne deta hai. */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  /* Har panne par column ke naam dohra do, aur kisi qatar ko beech se mat kaato. */
+  .${pre}-table thead { display: table-header-group; }
+  .${pre}-table tr { break-inside: avoid; page-break-inside: avoid; }
+`;
 
 /* ══════════════════════════════════════════════════════════════════════
    EXCEL

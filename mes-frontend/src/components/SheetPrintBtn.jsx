@@ -27,18 +27,50 @@
 import { useState } from "react";
 import { chhapoNode, pdfNikalo } from "../constants/sheetTools";
 
-export default function SheetPrintBtn({ boxRef, naam = "Sheet", khada = false, css = "" }) {
+// `style` isliye: sheet wale page par ye apni alag line me baithta hai, par
+// table wale report (History Card / BD History) me Excel ke button ke bagal
+// me toolbar ke andar jaata hai -- wahan margin/justify alag chahiye.
+// `khali` -- report page (History Card / BD History) apne filter ke baad
+// khali bhi ho sakta hai.  ExcelBtn aise me file banata hi nahi aur saaf
+// bata deta hai; print/PDF ko bhi wahi karna chahiye, warna user ko ek
+// khali kaagaz milta hai aur wo samajhta hai ki data gum ho gaya.
+export default function SheetPrintBtn({ boxRef, naam = "Sheet", khada = false, css = "",
+                                        style = {}, khali = false,
+                                        kamSeKam = 0.4 }) {
+  // `kamSeKam` -- simatne ki sabse neechli hadd.
+  //
+  // Sheet (DMC / PM format) par 0.4 sahi hai: wahan content kaagaz ke naap
+  // ka hi hota hai, aur agar ek bhi cell me bina space wala lamba lafz aa
+  // jaye to sheet hazaron px chaudi ho jaati hai -- us soorat me utna
+  // simatne se behtar hai ki wo line kat jaye.
+  //
+  // Table wale REPORT par ye ulta pad jaata hai.  BD History ki table SACH
+  // ME 3809px chaudi hai (28 asli column), aur kaagaz 1077px ka.  Usme 0.4
+  // ki hadd ka matlab tha: table daayen se KAT kar chhapti thi, bina kisi
+  // shikayat ke.  Aisa report page 0.25 bhejta hai -- chhota par POORA.
+  // (PDF me ye dikkat hai hi nahi: wahan jsPDF poori tasveer ko panne ki
+  // chaudai par bitha deta hai, koi hadd nahi.)
   const [chal, setChal] = useState("");        // "" | "print" | "pdf"
   const [ruk, setRuk]   = useState("");
   const [thik, setThik] = useState("");
 
   const bolo = (set, msg, ms = 5000) => { set(msg); setTimeout(() => set(""), ms); };
 
+  // Dono button ke shuru me ek hi jaanch -- do jagah likhne par ek me
+  // chhoot jaane ka dar rehta.
+  const kuchHaiNahi = () => {
+    const nahi = typeof khali === "function" ? khali() : khali;
+    if (nahi) bolo(setRuk, "Nothing to print — try changing the filters", 4000);
+    return nahi;
+  };
+
   const chhapo = async () => {
     if (chal) return;                          // do baar dabane se do print job
-    setChal("print"); setRuk(""); setThik("");
+    setRuk(""); setThik("");
+    if (kuchHaiNahi()) return;
+    setChal("print");
     try {
-      await chhapoNode(boxRef?.current, { naam, khada, css });
+      await chhapoNode(boxRef?.current, { naam, khada, css, kamSeKam });
     } catch (e) {
       bolo(setRuk, e?.message || "Could not print", 4000);
     } finally {
@@ -48,7 +80,9 @@ export default function SheetPrintBtn({ boxRef, naam = "Sheet", khada = false, c
 
   const pdf = async () => {
     if (chal) return;
-    setChal("pdf"); setRuk(""); setThik("");
+    setRuk(""); setThik("");
+    if (kuchHaiNahi()) return;
+    setChal("pdf");
     try {
       const r = await pdfNikalo(boxRef?.current, { naam, khada, css });
       // `pdfNikalo` phekta nahi, jawab me batata hai ki kya hua — isliye
@@ -80,7 +114,7 @@ export default function SheetPrintBtn({ boxRef, naam = "Sheet", khada = false, c
        (REV NO / REV DATE) baitha hai aur button uske upar chadh jaata. */
     <div className="tb-print-btn"
          style={{ display: "flex", justifyContent: "flex-end", alignItems: "center",
-                  gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+                  gap: 8, flexWrap: "wrap", marginBottom: 6, ...style }}>
       {thik && (
         <span style={{ fontSize: 11.5, fontWeight: 800, color: "#15803d" }}>
           &#10003; {thik}

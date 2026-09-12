@@ -13,6 +13,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { onlyProdZones } from "../constants/zones";
+import SheetPrintBtn from "../components/SheetPrintBtn";
+import { aajKaNaam, tableReportCss } from "../constants/sheetTools";
 
 const api = {
   async get(path, token) {
@@ -165,6 +167,8 @@ export default function BDHistory() {
   // data (so the whole year isn't dumped at once).  The user can still pick
   // "All Months" or any other month manually afterwards.
   const autoMonth = useRef(false);
+  // Print/PDF ke liye card ka pata.
+  const cardRef = useRef(null);
   const onFy = (v) => { setFFy(v); setFMonth(""); autoMonth.current = !!v; };
   useEffect(() => {
     if (!autoMonth.current || !fFy || rows.length === 0) return;
@@ -310,10 +314,22 @@ export default function BDHistory() {
             </div>
           </div>
 
-          <div className="bh-card">
+          <div className="bh-card" ref={cardRef}>
             <div className="bh-card-head">
               <span>Breakdown History</span>
-              <span className="bh-count">{filtered.length} {filtered.length === 1 ? "entry" : "entries"}</span>
+              <span style={{ display:"flex", alignItems:"center", gap:12 }}>
+                <span className="bh-count">{filtered.length} {filtered.length === 1 ? "entry" : "entries"}</span>
+                {/* Print/PDF me WAHI qatarein jaati hain jo abhi saamne hain
+                    (filter + search lagne ke baad).  Card ka heading aur ginti
+                    bhi kaagaz par aati hai.  Landscape -- table chaudi hai. */}
+                <SheetPrintBtn
+                  boxRef={cardRef}
+                  naam={`Breakdown-History_${aajKaNaam()}`}
+                  css={tableReportCss("bh")}
+                  khali={filtered.length === 0}
+                  kamSeKam={0.25}
+                  style={{ marginBottom: 0 }} />
+              </span>
             </div>
             <div style={{ overflowX:"auto" }}>
               {loading ? (

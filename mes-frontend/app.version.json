@@ -1,5 +1,5 @@
 {
-  "version": "1.4.46",
-  "notes": "Sheets can now be saved as a PDF file in one tap, on the website and in the app; printing from the app no longer cuts off wide sheets",
-  "released_at": "2026-09-12T14:47:52"
+  "version": "1.4.47",
+  "notes": "History Card and Breakdown History can now be printed or saved as a PDF file, with the same rows that are on screen",
+  "released_at": "2026-09-12T15:24:16"
 }

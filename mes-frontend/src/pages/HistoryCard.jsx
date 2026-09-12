@@ -14,7 +14,8 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { onlyProdZones } from "../constants/zones";
 import ExcelBtn from "../components/ExcelBtn";
-import { aajKaNaam } from "../constants/sheetTools";
+import SheetPrintBtn from "../components/SheetPrintBtn";
+import { aajKaNaam, tableReportCss } from "../constants/sheetTools";
 
 const api = {
   async get(path, token) {
@@ -123,6 +124,9 @@ export default function HistoryCard() {
   // every filter across the app; zone tabs come from it too).
   const [master, setMaster] = useState([]);
   const booted = useRef(false);   // default the FY to the current one, once
+  // Print/PDF ke liye card ka pata -- toolbar aur search isme aate hain
+  // par print-CSS unhe chhupa deti hai (`tb-noprint`).
+  const cardRef = useRef(null);
   useEffect(() => {
     if (!token) return;
     api.get("/api/maintenance-kpi/financial-years", token)
@@ -356,26 +360,40 @@ export default function HistoryCard() {
             </div>
           </div>
 
-          <div className="hc-card">
+          <div className="hc-card" ref={cardRef}>
             <div className="hc-card-head">
               <span className="hc-card-title">History Card — {zone || "—"}</span>
               <div className="hc-tools">
-                <input className="hc-search" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} />
+                <input className="hc-search tb-noprint" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} />
                 <span className="hc-count">{rows.length} {rows.length === 1 ? "entry" : "entries"}</span>
                 {/* Excel me wahi qatarein jaati hain jo abhi SAAMNE dikh rahi hain --
                     zone tab, saare filter aur search lagne ke baad wali.  Poora data
                     JAAN-BOOJH KAR nahi bhejte: user jo chhaant kar dekh raha hai,
                     wahi file me milna chahiye.  Cell bhi wahi `cell()` banata hai jo
                     table banata hai, isliye Excel aur screen kabhi alag nahi honge. */}
-                <ExcelBtn banao={() => ({
-                  naam: `History-Card_${(zone || "All").replace(/[^\w-]+/g, "-")}_${aajKaNaam()}`,
-                  sheet: zone || "History Card",
-                  headers: COLS.map((c) => c.label),
-                  rows: rows.map((e, i) => COLS.map((c) => {
-                    const v = cell(e, c, i);
-                    return v === "—" || v == null ? "" : v;   // Excel me "—" ki jagah khali
-                  })),
-                })} />
+                <span className="tb-noprint">
+                  <ExcelBtn banao={() => ({
+                    naam: `History-Card_${(zone || "All").replace(/[^\w-]+/g, "-")}_${aajKaNaam()}`,
+                    sheet: zone || "History Card",
+                    headers: COLS.map((c) => c.label),
+                    rows: rows.map((e, i) => COLS.map((c) => {
+                      const v = cell(e, c, i);
+                      return v === "—" || v == null ? "" : v;   // Excel me "—" ki jagah khali
+                    })),
+                  })} />
+                </span>
+                {/* Print/PDF me bhi WAHI qatarein jaati hain jo abhi saamne hain --
+                    Excel ka hi niyam.  `cardRef` poore card par hai, to heading
+                    ("History Card — ZONE") aur ginti bhi kaagaz par aati hai; search
+                    aur button `tb-noprint` se chhup jaate hain.
+                    Landscape isliye ki ye table chaudi hoti hai. */}
+                <SheetPrintBtn
+                  boxRef={cardRef}
+                  naam={`History-Card_${(zone || "All").replace(/[^\w-]+/g, "-")}_${aajKaNaam()}`}
+                  css={tableReportCss("hc")}
+                  khali={rows.length === 0}
+                  kamSeKam={0.25}
+                  style={{ marginBottom: 0 }} />
               </div>
             </div>
             <div className="hc-scroll">
