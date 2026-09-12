@@ -1948,7 +1948,10 @@ export default function AndonSystem() {
               {readOut.error && (
                 <div style={{ background:"#fef2f2", border:"1px solid #fecaca", color:"#991b1b",
                               borderRadius:8, padding:"10px 12px", fontSize:12.5,
-                              fontWeight:600, lineHeight:1.5, marginBottom:10 }}>
+                              fontWeight:600, lineHeight:1.5, marginBottom:10,
+                              /* do sandesh ek saath aa sakte hain (asli wajah +
+                                 read ki galti) -- dono alag dikhne chahiye */
+                              whiteSpace:"pre-line" }}>
                   {readOut.error}
                 </div>
               )}
@@ -2033,9 +2036,16 @@ export default function AndonSystem() {
                               border:"1px solid #e2e8f0", borderRadius:8,
                               fontSize:11.5, color:"#475569", lineHeight:1.6 }}>
                   <b>Poller</b> — the part that actually raises calls:{" "}
-                  {readOut.poller.last_checked
-                    ? <>last checked <b>{readOut.poller.last_checked}</b></>
-                    : <span style={{ color:"#b91c1c", fontWeight:700 }}>has never checked this PLC</span>}
+                  {/* Ye backend khud poll karta bhi hai ya nahi — bina iske
+                      "never checked" padh kar galat nateeje par pahunch jaate
+                      hain, jabki usse yahan poll karna hi nahi tha. */}
+                  {readOut.poller.enabled_here === false
+                    ? <span style={{ color:"#b45309", fontWeight:700 }}>
+                        this backend does not poll — only the production server raises calls
+                      </span>
+                    : readOut.poller.last_checked
+                      ? <>last checked <b>{readOut.poller.last_checked}</b></>
+                      : <span style={{ color:"#b91c1c", fontWeight:700 }}>has never checked this PLC</span>}
                   {readOut.poller.error && (
                     <div style={{ color:"#b91c1c", fontWeight:700, marginTop:3 }}>
                       failing: {readOut.poller.error}

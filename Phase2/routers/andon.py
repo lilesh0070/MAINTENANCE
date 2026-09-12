@@ -1905,14 +1905,31 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
     #   2. Poll har chakkar me kisi galti se ruk raha hai.
     _st = _PLC_STATUS.get(eid) or {}
     _pf = _POLL_FAIL.get(eid) or {}
+    # ⚠ YE BACKEND KHUD POLL KARTA BHI HAI YA NAHI.
+    # `.env` me `ANDON_POLL_ENABLED=0` ho to iska poller SHURU HI NAHI hota --
+    # aur ye jaan-boojh kar hota hai: FX5U ek waqt me sirf EK Modbus client
+    # jhelti hai, isliye sirf production server poll karta hai; baaki backend
+    # (laptop/dev) wahi DB padhte hain.
+    # Bina is baat ke diagnostic jhooth bolta tha -- "poller ne is PLC ko
+    # kabhi chhua hi nahi" -- jabki usse yahan chhuna hi nahi tha.
+    _poll_off = os.getenv("ANDON_POLL_ENABLED", "1").strip().lower() in ("0", "false", "no", "off")
     out["poller"] = {
+        "enabled_here": not _poll_off,
         "last_checked": _st.get("checked"),
         "online":       _st.get("online"),
         "error":        _pf.get("why"),
         "error_count":  _pf.get("count"),
         "no_bits":      bool(_POLL_NOBITS.get(eid)),
     }
-    if not out["enabled"]:
+    if _poll_off:
+        out["error"] = (
+            "This backend does not poll PLCs (ANDON_POLL_ENABLED=0) — only the production "
+            "server raises ANDON calls, because the FX5U serves just one Modbus client at a "
+            "time. So nothing here can raise a call, and a failed read below usually means "
+            "the production server's poller is holding the PLC's only Modbus slot — which is "
+            "normal. To check the poller itself, open the site served by the production "
+            "server and press Read now there.")
+    elif not out["enabled"]:
         out["error"] = (
             "This PLC is switched OFF in the PLC list, so the poller skips it completely — "
             "no call can ever be raised from it, and any call it had is auto-closed. "
@@ -1995,7 +2012,14 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
                 i["value"] = v
                 i["on"] = bool(v)
         except Exception as e:
-            out["error"] = f"{type(e).__name__}: {e}"
+            # ⚠ Pehle wala sandesh MAT mitao.
+            # "Ye backend poll nahi karta" / "PLC band hai" jaisi baat read ki
+            # galti se zyada zaroori hai -- wahi asli wajah batati hai.  Pehle
+            # ye sandesh overwrite ho jaata tha aur sirf read ki galti dikhti
+            # thi, jo ulta galat taraf le jaati hai.
+            _msg = f"{type(e).__name__}: {e}"
+            out["error"] = ((out["error"] + "\n\n" + _msg)
+                            if out["error"] else _msg)
 
     # Sabse aam jaal: bit ON hai, par us output ka DEPARTMENT khali hai --
     # tab wo CALL nahi, pichhle output ka ACKNOWLEDGE bit ban jaata hai, aur

@@ -1,5 +1,5 @@
 {
-  "version": "1.4.38",
-  "notes": "ANDON diagnostic now also shows whether the PLC is switched off and how the poller itself is doing -- the poller skips a disabled PLC entirely, while Read now still shows live values",
-  "released_at": "2026-09-12T09:09:39"
+  "version": "1.4.39",
+  "notes": "ANDON diagnostic now says when a backend is configured not to poll, so a failed read there is expected rather than a fault",
+  "released_at": "2026-09-12T09:26:34"
 }
