@@ -2046,6 +2046,19 @@ export default function AndonSystem() {
                     : readOut.poller.last_checked
                       ? <>last checked <b>{readOut.poller.last_checked}</b></>
                       : <span style={{ color:"#b91c1c", fontWeight:700 }}>has never checked this PLC</span>}
+                  {/* Ye line KISI BHI server ke baare me hai (DB ke nishaan se) —
+                      upar wali sirf isi backend ki baat karti hai. */}
+                  <div style={{ marginTop:3 }}>
+                    Any server:{" "}
+                    {readOut.poller.any_last_at
+                      ? <>last poll <b>{readOut.poller.any_last_at}</b>
+                          {readOut.poller.any_last_by ? ` by ${readOut.poller.any_last_by}` : ""}
+                          {readOut.poller.any_stale_s > 120
+                            ? <span style={{ color:"#b91c1c", fontWeight:700 }}> — stale</span> : ""}</>
+                      : <span style={{ color:"#b91c1c", fontWeight:700 }}>
+                          no server has ever polled this PLC
+                        </span>}
+                  </div>
                   {readOut.poller.error && (
                     <div style={{ color:"#b91c1c", fontWeight:700, marginTop:3 }}>
                       failing: {readOut.poller.error}
