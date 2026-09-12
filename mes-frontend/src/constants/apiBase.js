@@ -33,10 +33,21 @@
 // Wahi server, do raaste.  Kram maayne nahi rakhta — sab ek saath tatolte hain
 // aur jo pehle jawab de wahi chun liya jaata hai, isliye ek pata aur jodne se
 // koi der nahi hoti.
+// Naam saath me isliye rakha hai ki Settings me "Ethernet" / "Wi-Fi" dikhana
+// hai, aur pata + naam do alag jagah rakhne par ek din wo aapas me na milte.
 const SERVERS = [
-  "http://192.168.30.15:8892",     // plant server — Ethernet
-  "http://192.168.100.24:8892",    // plant server — WiFi
+  { url: "http://192.168.30.15:8892",  naam: "Ethernet" },   // plant server
+  { url: "http://192.168.100.24:8892", naam: "Wi-Fi" },      // plant server
 ];
+
+/** Kis raaste par jude hain, aam bhasha me.  Settings isi se likhta hai. */
+export const serverKaNaam = (base) =>
+  (SERVERS.find((s) => s.url === base) || {}).naam || base || "—";
+
+/** Aakhri tatolne me koi server mila tha ya nahi.  Settings ko ye batana
+ *  zaroori hai: "jud gaye" aur "koi nahi mila" do alag baatein hain, aur
+ *  dono par user ko alag kaam karna hota hai. */
+export const serverMilaKya = () => serverMila;
 
 const PROBE_MS = 2500;
 // Har API request ki hadd -- par DO alag, kyunki dono haalat bahut alag hain:
@@ -153,7 +164,7 @@ if (typeof document !== "undefined" && NATIVE) {
 /** Website par "" (kuch nahi jodo), APK par abhi jo raasta chal raha hai. */
 export let API_BASE =
   (import.meta.env && import.meta.env.VITE_API_BASE) ||
-  (NATIVE ? SERVERS[0] : "");
+  (NATIVE ? SERVERS[0].url : "");
 
 /** `/api/...` ko poora pata bana do — sirf jab zaroorat ho. */
 export function withBase(url) {
@@ -251,7 +262,7 @@ async function pickServer() {
   // poora race chalta hai, yaani network badle to bhi app khud sambhal leti hai.
   let yaad = null;
   try { yaad = localStorage.getItem(PICKED_KEY); } catch { /* ignore */ }
-  if (yaad && SERVERS.includes(yaad)) {
+  if (yaad && SERVERS.some((s) => s.url === yaad)) {
     try {
       API_BASE = await tryOne(yaad);
       serverMila = true;
@@ -260,12 +271,12 @@ async function pickServer() {
   }
 
   try {
-    const winner = await Promise.any(SERVERS.map(tryOne));
+    const winner = await Promise.any(SERVERS.map((s) => tryOne(s.url)));
     API_BASE = winner;
     serverMila = true;            // ab lambi hadd theek hai (bhaari report chal sake)
     try { localStorage.setItem(PICKED_KEY, winner); } catch { /* ignore */ }
   } catch {
-    API_BASE = SERVERS[0];        // koi nahi mila — pehla hi rakho, error saaf aayega
+    API_BASE = SERVERS[0].url;    // koi nahi mila — pehla hi rakho, error saaf aayega
     serverMila = false;           // ab jaldi fail karo, 15s rukna bekaar hai
     try { localStorage.removeItem(PICKED_KEY); } catch { /* ignore */ }
   }

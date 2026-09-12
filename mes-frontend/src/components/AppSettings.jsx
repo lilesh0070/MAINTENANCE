@@ -18,7 +18,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import qrcode from "qrcode-generator";
 import { useAuth } from "../context/AuthContext";
-import { isNativeApp } from "../constants/apiBase";
+import { isNativeApp, reprobeServer, serverKaNaam, serverMilaKya,
+         API_BASE as PEHLA_BASE } from "../constants/apiBase";
 
 const MY_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0";
 
@@ -167,6 +168,46 @@ export default function AppSettings() {
   const [dl, setDl]       = useState(null);   // null = utar nahi rahi; 0-100 = kitni utri
   const [dlErr, setDlErr] = useState("");
 
+  /* ── Connection (Ethernet <-> Wi-Fi) ──────────────────────────────────
+   * Plant me app ka server DO raaston par milta hai.  App khulte waqt jo
+   * raasta chalu hota hai wahi yaad rakh liya jaata hai -- par agar beech
+   * me network badal jaye (Wi-Fi gir gaya, Ethernet chalu ho gaya), to app
+   * purane pate par hi bat karti rehti hai aur har page "server nahi mila"
+   * dikhane lagta hai.
+   *
+   * `reprobeServer()` pehle se maujood tha par use KOI BULATA HI NAHI THA.
+   * Ab ye button use bulata hai: dono raaste dobara tatolta hai, jo mile
+   * wahi chun leta hai, aur phir page ek baar reload karta hai taaki jo
+   * screen khali reh gayi thi wo apna data dobara maang le.
+   *
+   * ⚠ APNE AAP KUCH NAHI HOTA -- user ne saaf kaha tha "auto refresh na
+   * dalna".  Na koi polling, na background me dobara jodne ki koshish.
+   * Sirf jab ye button daba. */
+  const [netBase, setNetBase] = useState(PEHLA_BASE);
+  const [netBusy, setNetBusy] = useState(false);
+  const [netMsg,  setNetMsg]  = useState("");
+
+  const dobaraJodo = async () => {
+    if (netBusy) return;
+    setNetBusy(true); setNetMsg("");
+    try {
+      const base = await reprobeServer();
+      setNetBase(base);
+      if (serverMilaKya()) {
+        // Reload isliye ki sirf base badalne se wo screen theek nahi hoti
+        // jo pehle hi khali load ho chuki hai.
+        setNetMsg("Connected over " + serverKaNaam(base) + " — reloading…");
+        setTimeout(() => { try { window.location.reload(); } catch { /* ignore */ } }, 800);
+      } else {
+        setNetMsg("No server found. Check the LAN cable or Wi-Fi, then try again.");
+      }
+    } catch (e) {
+      setNetMsg((e && e.message) || "Could not reconnect");
+    } finally {
+      setNetBusy(false);
+    }
+  };
+
   const check = useCallback(async (chupchap) => {
     if (!chupchap) { setBusy(true); setErr(""); }
     try {
@@ -276,6 +317,38 @@ export default function AppSettings() {
             <div style={row}>
               <span style={lbl}>Role</span>
               <b style={{ textTransform: "capitalize" }}>{user?.role || "—"}</b>
+            </div>
+
+            {/* ── Connection ────────────────────────────────────────────
+                Network badal jaye (Wi-Fi gira / Ethernet chalu hua) to app
+                purane pate par hi bat karti rehti hai.  Ye button dono
+                raaste dobara tatolta hai.  APNE AAP kuch nahi hota. */}
+            <div style={row}>
+              <span style={lbl}>Connected over</span>
+              <b>{serverKaNaam(netBase)}</b>
+            </div>
+            <div style={{ margin: "8px 0 12px" }}>
+              <button onClick={dobaraJodo} disabled={netBusy}
+                      style={{ width: "100%", padding: "10px 0", borderRadius: 10,
+                               border: "1px solid #1d4ed8",
+                               background: netBusy ? "#93c5fd" : "#2563eb",
+                               color: "#fff", fontWeight: 800, fontSize: 13.5,
+                               cursor: netBusy ? "default" : "pointer" }}>
+                {netBusy ? "Checking both connections…" : "↻ Reconnect to the server"}
+              </button>
+              {netMsg && (
+                <div style={{ fontSize: 11.5, fontWeight: 700, lineHeight: 1.5,
+                              marginTop: 7, padding: "6px 9px", borderRadius: 8,
+                              ...(netMsg.startsWith("Connected")
+                                  ? { background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#15803d" }
+                                  : { background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c" }) }}>
+                  {netMsg}
+                </div>
+              )}
+              <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6, lineHeight: 1.5 }}>
+                Use this if pages stop loading after the network changes. It
+                checks the Ethernet and Wi-Fi addresses again and reloads the app.
+              </div>
             </div>
 
             {/* version */}

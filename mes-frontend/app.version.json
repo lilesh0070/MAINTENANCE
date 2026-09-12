@@ -1,5 +1,5 @@
 {
-  "version": "1.4.48",
-  "notes": "Print and PDF for History Card and Breakdown History, and a one-tap PDF for every sheet",
-  "released_at": "2026-09-12T15:43:08"
+  "version": "1.4.49",
+  "notes": "Settings now has a Reconnect button — use it if pages stop loading after the network changes between Ethernet and Wi-Fi",
+  "released_at": "2026-09-12T15:58:02"
 }
