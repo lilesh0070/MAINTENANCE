@@ -1,5 +1,5 @@
 {
-  "version": "1.4.37",
-  "notes": "ANDON diagnostic now also shows each output's department and whether it is a call bit or an acknowledge bit -- an output with no department can never raise a call",
-  "released_at": "2026-09-12T09:03:06"
+  "version": "1.4.38",
+  "notes": "ANDON diagnostic now also shows whether the PLC is switched off and how the poller itself is doing -- the poller skips a disabled PLC entirely, while Read now still shows live values",
+  "released_at": "2026-09-12T09:09:39"
 }

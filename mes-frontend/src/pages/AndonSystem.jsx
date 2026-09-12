@@ -1925,6 +1925,14 @@ export default function AndonSystem() {
                 </div>
                 {readOut.ip && (
                   <div style={{ fontSize:11.5, color:"#64748b", marginTop:2 }}>
+                    {/* PLC band ho to sabse pehle yahi dikhna chahiye — poller
+                        aisi PLC ko chhod deta hai, chahe value kuch bhi ho. */}
+                    {readOut.enabled === false && (
+                      <span style={{ background:"#fee2e2", color:"#b91c1c", fontWeight:800,
+                                     padding:"1px 6px", borderRadius:4, marginRight:6 }}>
+                        PLC is OFF
+                      </span>
+                    )}
                     {readOut.ip}:{readOut.port} · {readOut.series || "?"} ·
                     {" "}protocol <b>{readOut.protocol_used}</b>
                     {readOut.protocol_asked !== readOut.protocol_used
@@ -2015,6 +2023,31 @@ export default function AndonSystem() {
 
               {!readOut.error && !(readOut.rows || []).length && (
                 <div style={{ color:"#94a3b8", fontSize:12.5 }}>Nothing to show.</div>
+              )}
+
+              {/* "Read now" seedha padhta hai; POLLER alag dhaage me chalta hai.
+                  Dono ka haal alag ho sakta hai — isliye poller ka apna haal
+                  yahan alag se dikhate hain. */}
+              {readOut.poller && (
+                <div style={{ marginTop:12, padding:"8px 10px", background:"#f8fafc",
+                              border:"1px solid #e2e8f0", borderRadius:8,
+                              fontSize:11.5, color:"#475569", lineHeight:1.6 }}>
+                  <b>Poller</b> — the part that actually raises calls:{" "}
+                  {readOut.poller.last_checked
+                    ? <>last checked <b>{readOut.poller.last_checked}</b></>
+                    : <span style={{ color:"#b91c1c", fontWeight:700 }}>has never checked this PLC</span>}
+                  {readOut.poller.error && (
+                    <div style={{ color:"#b91c1c", fontWeight:700, marginTop:3 }}>
+                      failing: {readOut.poller.error}
+                      {readOut.poller.error_count > 1 ? ` ×${readOut.poller.error_count}` : ""}
+                    </div>
+                  )}
+                  {readOut.poller.no_bits && (
+                    <div style={{ color:"#b45309", fontWeight:700, marginTop:3 }}>
+                      the poller sees no bit addresses on this PLC
+                    </div>
+                  )}
+                </div>
               )}
 
               <div style={{ marginTop:12, fontSize:11.5, color:"#64748b", lineHeight:1.6 }}>

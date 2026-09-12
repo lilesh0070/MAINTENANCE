@@ -1894,6 +1894,38 @@ def plc_read_now(eid: int, user=Depends(get_current_user)):
         "rows": [], "error": None, "hint": None,
     }
 
+    # ⚠ POLLER KA APNA HAAL — ye sabse zaroori hai.
+    # `Read now` seedha PLC se padhta hai; poller ALAG dhaage me chalta hai
+    # aur uske apne niyam hain.  Isliye "value ON dikh rahi hai" ka matlab ye
+    # NAHI ki poller ne bhi wahi dekha.  Do soorat aisi hain jinme value ON
+    # hoti hai par call kabhi nahi banti:
+    #   1. PLC list me ye device BAND (enabled = false) hai -- poll loop use
+    #      chhod deta hai, aur `_stale_call_sweep` uski khuli call bhi band
+    #      kar deta hai ("ghost call auto-closed").
+    #   2. Poll har chakkar me kisi galti se ruk raha hai.
+    _st = _PLC_STATUS.get(eid) or {}
+    _pf = _POLL_FAIL.get(eid) or {}
+    out["poller"] = {
+        "last_checked": _st.get("checked"),
+        "online":       _st.get("online"),
+        "error":        _pf.get("why"),
+        "error_count":  _pf.get("count"),
+        "no_bits":      bool(_POLL_NOBITS.get(eid)),
+    }
+    if not out["enabled"]:
+        out["error"] = (
+            "This PLC is switched OFF in the PLC list, so the poller skips it completely — "
+            "no call can ever be raised from it, and any call it had is auto-closed. "
+            "Read now ignores that switch, which is why you still see live values here. "
+            "Switch the PLC on to start raising calls.")
+    elif _pf.get("why"):
+        out["error"] = (f"The poller is failing on this PLC every cycle: {_pf.get('why')} "
+                        f"({_pf.get('count')} times). Read now uses its own read, which is why "
+                        f"values appear here while no call is raised.")
+    elif not _st.get("checked"):
+        out["error"] = ("The poller has not touched this PLC yet. If this persists, the backend "
+                        "may have been started before this PLC was added — restart the backend.")
+
     # Do chup-chaap galtiyan jo yahin pakad leni chahiye.
     if out["protocol_asked"] == "MODBUS" and proto != "MODBUS":
         out["hint"] = (f"Protocol is set to MODBUS, but the series is '{d.get('series')}'. "
