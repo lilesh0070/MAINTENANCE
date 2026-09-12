@@ -176,7 +176,23 @@ export async function chhapoNode(node, { naam = "Sheet", khada = false, css = ""
 
   const P = nativePul();
   if (P?.chhapo) {
-    P.chhapo({ html: doc, naam }).catch(() => browserPrint(doc, khada));
+    // ⚠ APP ME SHEET KO PEHLE SE SIMTA KAR BHEJNA PADTA HAI.
+    // Website par simatne ka kaam `browserPrint` karta hai -- wo apne chhupe
+    // iframe me sheet naapta hai aur zaroorat ho to `transform: scale()`
+    // laga deta hai.  Par APP me hum `browserPrint` tak pahunchte hi nahi:
+    // HTML seedha Java ke `chhapo()` ko jaata hai, jo apni ALAG WebView
+    // banata hai -- aur wahan hamara naapne wala code chalta hi nahi.
+    //
+    // Natija (emulator par 2026-09-12 ko khud dekha): 31-column wali DMC
+    // sheet print me DIN ~20 PAR KAT rahi thi, bina kisi shikayat ke.  DOM
+    // me naap kar pushti ki -- `width` kabhi set hi nahi hui thi aur
+    // `transform` "none" tha.
+    //
+    // Isliye ab naap yahan pehle hi kar lete hain aur scale HTML ke andar
+    // hi chipka kar bhejte hain, taaki Java ki WebView ko kuch naapna hi na
+    // pade.  (Website ka raasta jyon ka tyon hai.)
+    const tayyar = await appKeLiyeSimtao(doc, khada);
+    P.chhapo({ html: tayyar, naam }).catch(() => browserPrint(doc, khada));
     return;
   }
   browserPrint(doc, khada);
@@ -211,8 +227,27 @@ function asliChaudai(fit) {
   return sabseDoor;
 }
 
-/* Website wala raasta — chhupa hua iframe. */
-function browserPrint(doc, khada) {
+/* Chhupe hue iframe me sheet ko KAAGAZ KI NAAP par bitha do, aur tayyar
+ * hone par `kaam(win, ctx, hatao)` bula do.
+ *
+ * PRINT AUR PDF DONO YAHI ISTEMAL KARTE HAIN.  Pehle ye saari naap-tol
+ * sirf print ke paas thi.  PDF ke liye alag likhte to wo print se ALAG
+ * dikhti -- aur wahi sabse buri soorat hoti: screen par ek cheez, kaagaz
+ * par doosri, aur file me teesri.
+ *
+ * `ctx` me milta hai: { px, pxH, fit, chaudai } -- kaagaz ki naap, sheet ka
+ * root, aur uski ASLI chaudai (overflow sameth).
+ *
+ * `simtao`:
+ *   true  (print) -- content chauda ho to `transform: scale()` se simata
+ *                    diya jaata hai, taaki kaagaz par kate nahi.
+ *   false (PDF)   -- transform LAGAYA HI NAHI jaata.  Do wajah: html2canvas
+ *                    CSS transform ko theek se nahi utaarta, aur PDF me
+ *                    simatne ka kaam jsPDF khud behtar karta hai (poori
+ *                    tasveer ko panne ki chaudai par bithakar).  Isliye
+ *                    yahan sheet ko uski poori chaudai de dete hain.
+ */
+function kaagazParBithao(doc, khada, kaam, { simtao = true } = {}) {
   // Kaagaz ki naap (96dpi par A4, dono taraf ke 6mm margin ghata kar).
   const chaudaiMm = (khada ? 210 : 297) - 12;
   const lambaiMm  = (khada ? 297 : 210) - 12;
@@ -233,104 +268,342 @@ function browserPrint(doc, khada) {
   });
   document.body.appendChild(f);
   const d = f.contentDocument || f.contentWindow?.document;
-  if (!d) { f.remove(); return; }
+  if (!d) { f.remove(); return Promise.reject(new Error("Could not open the print frame")); }
   d.open(); d.write(doc); d.close();
 
-  const chalao = () => {
-    try {
-      const w = f.contentWindow;
-      const id = w?.document;
-      const fit = id?.querySelector(".tb-print-fit");
-      if (fit) {
-        // Content ko kaagaz ki chaudai do — jo `width:100%` par bane hain
-        // wo isse theek baith jaate hain.  Jo phir bhi bahar nikalte hain
-        // (DMC ke 31 din wale column) unhe neeche scale se simata jaata hai.
-        fit.style.width = px + "px";
-        const chaudai = asliChaudai(fit);
-        // Sirf CHHOTA karo, bada kabhi nahi — bada karne par sheet
-        // dhundhli aur phaili hui nikalti hai.
-        if (chaudai > px + 1) {
-          // ⚠ SIMATNE KI HADD.
-          // Ek bhi cell me bina space wala lamba lafz (koi lamba remark, ya
-          // galti se chipka hua text) sheet ko hazaron px chauda kar deta
-          // hai.  Naap kar dekha: aise ek line par scale 0.075 tak aa gaya
-          // -- yaani poori sheet 13 guna chhoti, jisme kuch padha hi nahi
-          // ja sakta.  Utna simatne se BEHTAR hai ki wo ek line kat jaye
-          // aur baaki sheet padhne layak rahe.  0.4 par 11px ka akshar
-          // ~3pt ka bachta hai -- usse neeche waise bhi bekaar hai.
-          const s = Math.max(0.4, px / chaudai);
-          fit.style.transform = "scale(" + s + ")";
-          // Simatne ke baad neeche ki khali jagah hata do, warna ek
-          // khali panna aur nikal aata hai.
-          fit.style.height = fit.getBoundingClientRect().height * s + "px";
-        }
-      }
-      w?.focus();
-      w?.print();
-    } catch {
-      /* print na ho paye to bhi neeche iframe hatana zaroori hai */
-    }
-    setTimeout(() => { if (f.parentNode) f.remove(); }, 1500);
-  };
+  const hatao = () => { if (f.parentNode) f.remove(); };
 
-  // Tasveerein utarne ka intezaar, par 1.2s se zyada nahi — logo na bhi
-  // aaye to sheet chhap jaani chahiye.
-  const iw = f.contentWindow;
-  if (iw?.document?.readyState === "complete") {
-    setTimeout(chalao, 120);
-  } else {
-    let gaya = false;
-    const ek = () => { if (!gaya) { gaya = true; chalao(); } };
-    iw?.addEventListener?.("load", ek);
-    setTimeout(ek, 1200);
+  return new Promise((res, rej) => {
+    const chalao = async () => {
+      try {
+        const w = f.contentWindow;
+        const fit = w?.document?.querySelector(".tb-print-fit");
+        const ctx = { px, pxH, fit, chaudai: px };
+        if (fit) {
+          // Content ko kaagaz ki chaudai do — jo `width:100%` par bane hain
+          // wo isse theek baith jaate hain.  Jo phir bhi bahar nikalte hain
+          // (DMC ke 31 din wale column) unka hisaab neeche hota hai.
+          fit.style.width = px + "px";
+          const chaudai = asliChaudai(fit);
+          ctx.chaudai = chaudai;
+          if (chaudai > px + 1) {
+            if (simtao) {
+              // Sirf CHHOTA karo, bada kabhi nahi — bada karne par sheet
+              // dhundhli aur phaili hui nikalti hai.
+              //
+              // ⚠ SIMATNE KI HADD.
+              // Ek bhi cell me bina space wala lamba lafz (koi lamba remark,
+              // ya galti se chipka hua text) sheet ko hazaron px chauda kar
+              // deta hai.  Naap kar dekha: aise ek line par scale 0.075 tak
+              // aa gaya -- yaani poori sheet 13 guna chhoti, jisme kuch
+              // padha hi nahi ja sakta.  Utna simatne se BEHTAR hai ki wo
+              // ek line kat jaye aur baaki sheet padhne layak rahe.  0.4
+              // par 11px ka akshar ~3pt ka bachta hai -- usse neeche waise
+              // bhi bekaar hai.
+              const sc = Math.max(0.4, px / chaudai);
+              fit.style.transform = "scale(" + sc + ")";
+              // Simatne ke baad neeche ki khali jagah hata do, warna ek
+              // khali panna aur nikal aata hai.
+              fit.style.height = fit.getBoundingClientRect().height * sc + "px";
+            } else {
+              // PDF: poori chaudai do, simatna jsPDF par chhod do.
+              fit.style.width = Math.ceil(chaudai) + "px";
+            }
+          }
+        }
+        res(await kaam(w, ctx, hatao));
+      } catch (e) {
+        rej(e);
+      }
+    };
+
+    // Tasveerein utarne ka intezaar, par 1.2s se zyada nahi — logo na bhi
+    // aaye to sheet chhap jaani chahiye.
+    const iw = f.contentWindow;
+    if (iw?.document?.readyState === "complete") {
+      setTimeout(chalao, 120);
+    } else {
+      let gaya = false;
+      const ek = () => { if (!gaya) { gaya = true; chalao(); } };
+      iw?.addEventListener?.("load", ek);
+      setTimeout(ek, 1200);
+    }
+  });
+}
+
+/* Website wala raasta — chhupa hua iframe, phir uska apna print. */
+function browserPrint(doc, khada) {
+  kaagazParBithao(doc, khada, (w, _ctx, hatao) => {
+    w?.focus();
+    w?.print();
+    // Print ka parda async hai — frame turant hata dene par kuch browser
+    // khali panna chhapte hain.  Isliye thoda ruk kar hatate hain.
+    setTimeout(hatao, 1500);
+  }).catch(() => {
+    /* print na ho paye to bhi chup — pehle bhi yahi bartaav tha */
+  });
+}
+
+/* APP ke liye: sheet ko naap kar SCALE HTML ke andar hi chipka do.
+ *
+ * Website par ye kaam `browserPrint` chalte waqt karta hai.  App me wo
+ * raasta aata hi nahi -- HTML Java ki apni WebView me jaata hai -- isliye
+ * yahan wahi naap pehle se kar ke bhej dete hain.  Naap ka code wahi ek
+ * hai (`kaagazParBithao` + `asliChaudai`), to dono jagah nateeja ek jaisa
+ * rehta hai.
+ *
+ * Naap na ho paye to doc jyon ka tyon lauta dete hain -- bina scale ke
+ * print hona, bilkul print na hone se behtar hai. */
+async function appKeLiyeSimtao(doc, khada) {
+  try {
+    const naap = await kaagazParBithao(doc, khada, (w, ctx, hatao) => {
+      const r = { px: ctx.px, chaudai: ctx.chaudai,
+                  h: ctx.fit ? ctx.fit.getBoundingClientRect().height : 0 };
+      hatao();
+      return r;
+    }, { simtao: false });                 // sirf naapna hai, simatna nahi
+
+    if (!naap || !naap.chaudai || naap.chaudai <= naap.px + 1) return doc;
+
+    // Wahi hadd jo website par hai -- 0.4 se neeche simatne par kuch padha
+    // hi nahi jaata (wajah `kaagazParBithao` me likhi hai).
+    const s = Math.max(0.4, naap.px / naap.chaudai);
+    const W = Math.ceil(naap.chaudai);
+    // Height bhi deni padti hai: `transform` sirf DIKHNE ka aakar badalta
+    // hai, jagah utni hi ghiri rehti hai -- bina iske ek khali panna aur
+    // nikal aata hai.
+    const H = Math.ceil(naap.h * s);
+    const extra =
+      "<style>.tb-print-fit{width:" + W + "px !important;" +
+      (H ? "height:" + H + "px !important;" : "") +
+      "transform:scale(" + s.toFixed(4) + ") !important;" +
+      "transform-origin:top left !important;}</style>";
+    return doc.replace("</head>", extra + "</head>");
+  } catch {
+    return doc;
   }
 }
 
-/* Ek DOM node ko PDF bana kar de do.
+/* ── PDF ────────────────────────────────────────────────────────────────
  *
- * APP: Android me `PdfDocument` se ASLI PDF banti hai aur seedha Downloads
- * me girti hai -- ek tap, koi parda nahi.
+ * ITIHAAS, TAAKI YE PAHIYA TEESRI BAAR NA BANE
+ * --------------------------------------------
+ * Pehle Android me `PdfDocument` par WebView ko `draw()` karke PDF banayi
+ * thi.  Emulator par naap kar dekha to wo BHAROSEMAND NAHI nikli — ek hi
+ * content par kabhi poora panna, kabhi BILKUL KHALI.  Paanch cheezein
+ * pakdi gayi thin: bina-attach View par `postDelayed` chalta hi nahi ·
+ * pehli `draw()` par Chromium ne paint hi nahi kiya hota · hardware
+ * accelerated WebView software bitmap par kuch nahi likhti · PdfDocument
+ * ke canvas par WebView `translate` nazarandaaz kar deta hai (saare panne
+ * ek jaise) · badi naap par software layer khali de deta hai.  Isliye wo
+ * code 2026-09-08 ko HATA DIYA GAYA (v1.4.34).
  *
- * WEBSITE: browser bina library ke chup-chaap PDF nahi bana sakta.  jsPDF +
- * html2canvas ~1 MB ke hote hain aur us tareeqe me table TASVEER ban jaati
- * hai -- dhundhli, aur usme se text copy bhi nahi hota.  48-hafte wali
- * schedule ke liye wo saaf ghaata hai (aur plant ka network offline hai, to
- * library saath hi rakhni padti).  Isliye website par print ka parda kholte
- * hain, jahan har browser me "Save as PDF" maujood hota hai.
+ * ⚠ IS NAYE RAASTE ME WO PAANCHON DIKKATEN HAIN HI NAHI, aur wajah saaf
+ * hai: yahan native WebView kuch draw karta hi nahi.  Poori tasveer
+ * html2canvas se JAVASCRIPT ke andar banti hai (usi chhupe iframe me jise
+ * print bhi istemal karta hai), aur Java ko sirf tayyar PDF ke bytes
+ * diye jaate hain.  Yaani Android ki rendering ka koi jaal beech me aata
+ * hi nahi.
  *
- * Jawab me batate hain kaunsa raasta chala, taaki UI sahi baat likh sake --
- * "ho gaya" bolna jab kuch hua hi na ho, sabse bura hai.
+ * KEEMAT KYA HAI (saaf-saaf, taaki baad me hairani na ho)
+ * ------------------------------------------------------
+ * Sheet PDF me TASVEER ban kar jaati hai, vector text nahi.  Matlab: PDF
+ * me se text copy/search nahi hoga, aur bahut zoom karne par akshar thode
+ * naram lagenge.  Iske badle jo milta hai wo user ne maanga tha — EK TAP
+ * me asli file, bina kisi parde ke, site aur app dono par ek jaisi.
+ * (Print ka button apni jagah hai hi — jise vector text wali PDF chahiye
+ * wo print se "Save as PDF" kar sakta hai.)
  *
- * Lautata hai: { native: true, kahan, panne } ya { native: false } */
-/* Ek DOM node ko PDF me utaaro.
+ * 2× par utaarte hain (≈192dpi) — naap kar dekha ki 31-column wali DMC
+ * sheet bhi is par padhne layak rehti hai, aur file kaabu me rehti hai.
  *
- * ⚠ YAHAN APNA PDF BANANE WALA CODE THA -- HATA DIYA GAYA (2026-09-08).
+ * ⚠ APP PEECHHE CHALI JAYE TO BANANA RUK JAATA HAI (aur ye theek hai).
+ * File banne ke baad Android khud PDF viewer khol deta hai, yaani app
+ * background me chali jaati hai.  Wahan WebView ka rendering Android rok
+ * deta hai, to html2canvas beech me hi thehar jaata hai aur button
+ * "Making…" par khada rehta hai.  Emulator par naap kar dekha: user ke app
+ * par WAPAS aate hi kaam wahin se poora ho jaata hai aur file Downloads me
+ * gir jaati hai.  Isliye yahan koi timeout JAAN-BOOJHKAR nahi rakha —
+ * timeout us soorat me "fail ho gaya" likh deta, aur thodi der baad file
+ * bhi aa jaati.  Do ulti baatein ek saath kehna, chup rehne se bura hai. */
+
+let pdfWaada = null;
+
+/* jsPDF + html2canvas ek saath ~1 MB ke hain.  Inhe SIRF tab utaarte hain
+ * jab PDF ka button dabta hai — `import()` se Vite inka alag tukda banata
+ * hai, to aam page inka bojh uthata hi nahi.
  *
- * Android me `PdfDocument` par WebView ko `draw()` karke PDF banayi ja
- * sakti hai, aur wo maine banayi bhi thi.  Emulator par baar-baar naap kar
- * dekha to wo BHAROSEMAND NAHI nikli -- ek hi content par kabhi poora panna
- * aata, kabhi BILKUL KHALI.  Jo cheezein pakdi gayin:
- *   • bina-attach WebView par `postDelayed` ka runnable kabhi chalta hi nahi
- *   • pehli `draw()` par Chromium ne abhi paint kiya hi nahi hota
- *   • hardware-accelerated WebView software bitmap par kuch nahi likhti
- *   • PdfDocument ke canvas par WebView `translate` ko nazarandaaz kar deta
- *     hai -- saare panne byte-to-byte ek jaise aa jaate hain
- *   • badi naap par software layer chup-chaap khali de deta hai
- * Har ek ka hal nikla, par natija phir bhi naap-dar-naap badalta raha.
- * Aisi cheez plant me nahi bheji ja sakti: "PDF bani" kehkar khali kaagaz
- * dena, kuch na dene se bura hai.
+ * ⚠ CDN SE NAHI AATE.  Plant ka network bahar nahi jaata, isliye ye dono
+ * app ke build me hi chale jaate hain (xlsx wali local copy jaisa hi
+ * usool).  `import()` sirf "kab utaarein" tay karta hai, "kahan se" nahi. */
+function pdfLagao() {
+  if (!pdfWaada) {
+    pdfWaada = Promise.all([import("jspdf"), import("html2canvas")])
+      .then(([j, h]) => ({
+        jsPDF: j.jsPDF || j.default?.jsPDF || j.default,
+        html2canvas: h.default || h,
+      }))
+      .catch((e) => { pdfWaada = null; throw e; });
+  }
+  return pdfWaada;
+}
+
+/* Blob ko base64 me badlo — Java ke pul ko bytes isi roop me jaate hain. */
+const blobBase64 = (blob) => new Promise((res, rej) => {
+  const fr = new FileReader();
+  // `result` "data:application/pdf;base64,XXXX" hota hai; Java ko sirf
+  // XXXX chahiye, isliye pehla comma tak kaat dete hain.
+  fr.onload  = () => res(String(fr.result).split(",")[1] || "");
+  fr.onerror = () => rej(new Error("Could not read the PDF"));
+  fr.readAsDataURL(blob);
+});
+
+/* Ek lambi canvas ko A4 ke panno par bitha kar PDF banao.
  *
- * ISLIYE AB DONO JAGAH EK HI RAASTA -- PRINT.
- * App me Android ka apna print parda khulta hai aur website par browser ka;
- * dono me "Save as PDF" maujood hota hai, aur wo PDF Android/browser ke
- * apne (aazmaye hue) code se banti hai -- text bhi vector rehta hai.
- * User ko ek tap zyada lagta hai, par jo file milti hai wo sahi milti hai.
+ * TAREEQA: tasveer EK BAAR PDF me daali jaati hai, aur har panne par use
+ * utna UPAR khiska diya jaata hai jitna wo panna neeche hai.  Panne ke
+ * bahar ka hissa PDF reader khud kaat deta hai (MediaBox se bahar ka
+ * content wo render nahi karta).
  *
- * Lautata hai { native } -- UI isi se tay karta hai ki kya likhna hai. */
+ * ⚠ PEHLE MAINE HAR PANNE KI ALAG PNG BANAYI THI -- aur wahi sabse bada
+ * ghaata tha.  120-row wali DMC sheet par naapa:
+ *
+ *      har panne ki alag PNG   13.3 s   905 KB
+ *      EK PNG, panne khiska kar 4.2 s  1035 KB   <- yahi chuna
+ *
+ * PNG banana (encode) pixel ke hisaab se mehnga hai, aur alag-alag panne
+ * banane par wahi mehnat 4 baar hoti thi.  Ek hi baar banane se 3 guna tez
+ * ho gaya; file thodi badi hai par 1 MB abhi bhi theek hai.  Poori sheet ka
+ * waqt 31 s se ghat kar ~9 s aa gaya.
+ *
+ * ⚠ PNG + `compress: true` -- ye bhi naap kar chuna gaya (31-column DMC):
+ *
+ *      PNG bina compress   14,494 KB   <- jsPDF RAW pixel bhar deta hai
+ *      JPEG q92               816 KB
+ *      PNG + compress:true    314 KB   <- yahi chuna
+ *
+ * Ek jaal jisme main gira tha: `canvas.toDataURL('image/png')` ki naap
+ * dekhkar PNG chun liya tha (462 KB).  Par wo PNG *file* ka aakar hai --
+ * jsPDF us PNG ko KHOL kar apni stream me daalta hai, aur bina `compress`
+ * ke wo stream UNCOMPRESSED jaati hai; PDF 16.7 MB ki bani.  Sabak: naap
+ * PDF ki karo, tasveer ki nahi.
+ *
+ * PNG isliye jeetta hai ki sheet 84% SAFED aur 11% KAALA hoti hai (pixel
+ * gin kar dekha) -- bade flat hisse aur teekhe kinare.  Deflate ise dabata
+ * hai; JPEG ka DCT ulta har akshar ke kinare par bits kharch karta hai aur
+ * dhundhla bhi kar deta hai.  Yahan file chhoti BHI hai aur text saaf BHI. */
+function canvasSePdf(jsPDF, canvas, khada) {
+  // ⚠ `compress: true` LAZMI HAI -- upar ke aankde dekhein.  Iske bina
+  // jsPDF PNG ko kholkar RAW pixel bhar deta hai aur sheet 14 MB ki ho
+  // jaati hai.
+  const pdf = new jsPDF({ orientation: khada ? "portrait" : "landscape",
+                          unit: "mm", format: "a4", compress: true });
+  const M  = 6;
+  const pw = (khada ? 210 : 297) - 2 * M;      // panne par usable chaudai (mm)
+  const ph = (khada ? 297 : 210) - 2 * M;      // ...aur lambai
+
+  // Tasveer ki poori chaudai panne ki chaudai par baithti hai; usi anupaat
+  // se uski poori lambai mm me nikal aati hai.
+  const pooriMm = (canvas.height / canvas.width) * pw;
+  const panne   = Math.max(1, Math.ceil((pooriMm - 0.5) / ph));   // 0.5mm ki dhil, warna
+                                                                  // seedhi-saadi sheet par
+                                                                  // ek khali panna aa jaata
+  const url   = canvas.toDataURL("image/png");
+  // Naam dene se jsPDF tasveer ko EK BAAR store karta hai aur har panne par
+  // usi ka hawala deta hai -- bina iske wo har baar dobara hisaab lagata.
+  const alias = "tb-sheet";
+
+  for (let i = 0; i < panne; i += 1) {
+    if (i) pdf.addPage();
+    pdf.addImage(url, "PNG", M, M - i * ph, pw, pooriMm, alias, "FAST");
+  }
+  return { blob: pdf.output("blob"), panne };
+}
+
+/* Ek DOM node ko PDF bana kar SEEDHA de do — ek tap, koi parda nahi.
+ *
+ *   APP     — bytes `SheetTools.faylSejo` ko jaate hain, wahan se asli
+ *             Downloads folder me file girti hai.
+ *   WEBSITE — blob ka seedha download.
+ *
+ * Lautata hai { theek, native, kahan, panne } ya { theek:false, kyun } —
+ * UI isi se tay karta hai ki kya likhna hai.  "Ho gaya" bolna jab kuch
+ * hua hi na ho, sabse bura hai. */
 export async function pdfNikalo(node, { naam = "sheet", khada = false, css = "" } = {}) {
-  if (!node) return { native: false };
-  await chhapoNode(node, { naam, khada, css });
-  return { native: !!nativePul()?.chhapo };
+  if (!node) return { theek: false, kyun: "There is nothing to save" };
+
+  let jsPDF, html2canvas;
+  try {
+    ({ jsPDF, html2canvas } = await pdfLagao());
+  } catch {
+    return { theek: false, kyun: "The PDF library could not be loaded — reload the page and try again" };
+  }
+
+  const chhapneWala = await tasveeronKoAndarBithao(node);
+  const doc = printDoc(chhapneWala, naam, khada, css);
+
+  let out;
+  try {
+    out = await kaagazParBithao(doc, khada, async (w, ctx, hatao) => {
+      try {
+        const fit = ctx.fit || w.document.body;
+        const naapH = Math.ceil(fit.getBoundingClientRect().height);
+        const naapW = Math.ceil(Math.max(ctx.px, ctx.chaudai));
+
+        // ⚠ BAHUT LAMBI SHEET PAR SCALE KHUD KAM KAR DETE HAIN.
+        // Browser ka canvas ek hadd ke baad CHUP-CHAAP khali lauta deta hai
+        // (Chrome me kul pixel ki seema hai, aur koi error nahi aata) — aur
+        // khali PDF dena hi wo cheez thi jiski wajah se pichhla raasta hata
+        // tha.  Saath hi PNG banane ka waqt bhi pixel ke saath hi badhta
+        // hai.  Isliye pixel ki apni hadd rakh kar scale ghata dete hain:
+        // 180dpi se 135dpi par girna, khali kaagaz dene se behtar hai.
+        const PX_HADD = 24e6;
+        let sc = 2;
+        while (sc > 1 && naapW * naapH * sc * sc > PX_HADD) sc -= 0.25;
+
+        const canvas = await html2canvas(fit, {
+          backgroundColor: "#ffffff",
+          scale: sc,                // 2 = ~180dpi (naap kar chuna); lambi sheet par khud ghatta hai
+          useCORS: true,
+          logging: false,
+          // Naap SAAF-SAAF dete hain.  Chhupe iframe me html2canvas ka apna
+          // andaza kabhi-kabhi 0 aa jaata hai, aur tab PDF khali banti hai.
+          width: naapW,
+          height: naapH,
+          windowWidth: naapW,
+          windowHeight: naapH,
+          scrollX: 0,
+          scrollY: 0,
+        });
+        if (!canvas.width || !canvas.height) throw new Error("The sheet could not be captured");
+        return canvasSePdf(jsPDF, canvas, khada);
+      } finally {
+        hatao();
+      }
+    }, { simtao: false });
+  } catch (e) {
+    return { theek: false, kyun: e?.message || "Could not create the PDF" };
+  }
+
+  const file = naam + ".pdf";
+  try {
+    const P = nativePul();
+    if (P?.faylSejo) {
+      const b64 = await blobBase64(out.blob);
+      const r = await P.faylSejo({ base64: b64, naam: file, mime: "application/pdf" });
+      return { theek: true, native: true, kahan: r?.kahan || "Downloads", panne: out.panne };
+    }
+    const url = URL.createObjectURL(out.blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = file;
+    document.body.appendChild(a); a.click(); a.remove();
+    // Turant revoke karne par kuch browser download shuru hone se pehle hi
+    // link tod dete hain.
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    return { theek: true, native: false, panne: out.panne };
+  } catch (e) {
+    return { theek: false, kyun: e?.message || "The PDF was created but could not be saved" };
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════════════

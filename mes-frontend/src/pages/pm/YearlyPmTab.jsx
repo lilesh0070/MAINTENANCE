@@ -28,11 +28,15 @@ export default function YearlyPmTab({ ypm, ypmFy, setYpmFy, ypmYears, api }) {
           if (pdfBusy) return;
           setPdfBusy(true); setPdfMsg("");
           try {
-            await pdfNikalo(boxRef.current, { naam: naamDo(), css: PRINT_CSS });
-            // Dono jagah print ka parda khulta hai (app me Android ka, site par
-            // browser ka) aur PDF wahin "Save as PDF" se banti hai.  "Ho gaya"
-            // kehna jhooth hoga -- file abhi bani hi nahi.
-            setPdfMsg("Choose “Save as PDF” in the print window");
+            // Ab file SACH ME banti hai -- app me Downloads me girti hai, site
+            // par seedha download hoti hai.  Isliye sandesh bhi wahi likhte hain
+            // jo asli me hua; pehle yahan "Save as PDF chunein" likha tha,
+            // kyunki tab sirf print ka parda khulta tha.
+            const r = await pdfNikalo(boxRef.current, { naam: naamDo(), css: PRINT_CSS });
+            if (!r?.theek) throw new Error(r?.kyun || "Could not create the PDF");
+            const panne = r.panne ? ` (${r.panne} page${r.panne > 1 ? "s" : ""})` : "";
+            setPdfMsg(r.native ? `✓ Saved to ${r.kahan}${panne}`
+                               : `✓ Downloaded${panne}`);
             setTimeout(() => setPdfMsg(""), 6000);
           } catch (e) {
             setPdfMsg(e?.message || "Could not create the PDF");
@@ -80,13 +84,13 @@ export default function YearlyPmTab({ ypm, ypmFy, setYpmFy, ypmYears, api }) {
                                  cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
                   🖨 Print
                 </button>
-                <button type="button" onClick={pdfDo} disabled={pdfBusy} title="For a PDF — choose &quot;Save as PDF&quot; in the print window"
+                <button type="button" onClick={pdfDo} disabled={pdfBusy} title="Download the schedule as a PDF file"
                         style={{ padding:"7px 14px", fontSize:12.5, fontWeight:800, borderRadius:7,
                                  border:"1px solid #1d4ed8",
                                  background: pdfBusy ? "#93c5fd" : "#2563eb", color:"#fff",
                                  cursor: pdfBusy ? "default" : "pointer", fontFamily:"inherit",
                                  whiteSpace:"nowrap" }}>
-                  {pdfBusy ? "Opening…" : "⤓ PDF"}
+                  {pdfBusy ? "Making…" : "⤓ PDF"}
                 </button>
                 {pdfMsg && (
                   <span style={{ fontSize:11.5, fontWeight:700,

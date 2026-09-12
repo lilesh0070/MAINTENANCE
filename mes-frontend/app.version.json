@@ -1,5 +1,5 @@
 {
-  "version": "1.4.45",
-  "notes": "ANDON Call to Output mapping now speaks Modbus TCP as well as MC / SLMP, and shows why a PLC is disconnected",
-  "released_at": "2026-09-12T11:43:53"
+  "version": "1.4.46",
+  "notes": "Sheets can now be saved as a PDF file in one tap, on the website and in the app; printing from the app no longer cuts off wide sheets",
+  "released_at": "2026-09-12T14:47:52"
 }
