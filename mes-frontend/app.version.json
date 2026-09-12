@@ -1,5 +1,5 @@
 {
-  "version": "1.4.44",
-  "notes": "ANDON: the poller now records WHY it could not connect to a PLC -- that reason was being swallowed, which is why the diagnostic could only say 'unknown'",
-  "released_at": "2026-09-12T10:40:18"
+  "version": "1.4.45",
+  "notes": "ANDON Call to Output mapping now speaks Modbus TCP as well as MC / SLMP, and shows why a PLC is disconnected",
+  "released_at": "2026-09-12T11:43:53"
 }
