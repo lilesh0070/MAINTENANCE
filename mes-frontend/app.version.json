@@ -1,5 +1,5 @@
 {
-  "version": "1.4.35",
-  "notes": "All on-screen text is now in proper English (QR caption, download messages, delete confirmation, print/Excel messages)",
-  "released_at": "2026-09-08T15:20:00"
+  "version": "1.4.36",
+  "notes": "ANDON: live 'Read now' diagnostic (shows the address actually read and its value), a warning when a PLC has no bits mapped, and Modbus address range checking",
+  "released_at": "2026-09-12T08:45:54"
 }

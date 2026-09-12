@@ -56,49 +56,22 @@ router = APIRouter(prefix="/api/andon", tags=["andon"])
 
 _ensured = False
 
-# Seeded once so a fresh install is usable immediately.  Fixed plant scheme:
-#   DO1 Maintenance · DO2 Maintenance ACC · DO3 Toolroom · DO4 Tool ACC ·
-#   DO5 Quality · DO6 Material · DO7 Model Setup · DO8 Other Loss
-#   — same wiring for every PLC.
 _DEFAULT_DEPTS = ["Maintenance", "Toolroom", "Quality", "Material", "Other Loss", "Model Setup"]
-# Each real department maps to ONE output; DO2 / DO4 are acknowledgement pulses
-# (no department of their own) that only measure response time on DO1 / DO3.
-# 2026-08-10 — DO8 "Model Setup" jodi: kaam DO6/DO7 jaisa (plain toggle, ON→OFF
-# se duration/loss; koi ACK/response nahi).
 _DEFAULT_OUTPUTS = [
     (1, "Maintenance",     "Maintenance", "Critical"),
-    (2, "Maintenance ACC", None,          "Critical"),   # ACK of DO1 → response time
+    (2, "Maintenance ACC", None,          "Critical"),
     (3, "Toolroom",        "Toolroom",    "High"),
-    (4, "Tool ACC",        None,          "High"),        # ACK of DO3 → response time
+    (4, "Tool ACC",        None,          "High"),
     (5, "Quality",         "Quality",     "Normal"),
     (6, "Material",        "Material",    "Normal"),
     (7, "Model Setup",     "Model Setup", "Normal"),
     (8, "Other Loss",      "Other Loss",  "Normal"),
 ]
 
-# DO2 / DO4 acknowledge DO1 / DO3: their ON edge stamps the parent call's
-# response time (call-ON → ACK-ON) and nothing else — no duration of their own.
-#
-# Ye sirf FALLBACK hai — asli jodi ab `_ack_map()` mapping se NIKALTI hai.
-# Pehle yahi hardcoded dict aakhri sach tha, aur wo khatarnak tha: agar koi UI
-# se DO ka kram badal deta (jaise Quality ko DO2 par le aata) to DO2 ka ON
-# chupchaap DO1 ki call par response-time chipka deta — galat call, aur kisi
-# ko pata bhi na chalta.
 _ACK_OF = {2: 1, 4: 3}
 
 
 def _ack_map(cur, plc_id):
-    """Is PLC ke liye {ack_do: parent_do} — MAPPING se nikala, maana nahi.
-
-    Niyam wahi hai jo form me dikhta hai: jis DO ka koi DEPARTMENT nahi hai wo
-    call nahi, ACK hai — aur wo apne se theek pehle wale asli call ka ACK hai.
-    (DO1 Maintenance → DO2 Maintenance ACC, DO3 Toolroom → DO4 Tool ACC.)
-
-    Effective mapping wahi tareeke se banti hai jo `_resolve_output` use karta
-    hai: per-PLC row pehle, uska khaali khaana shared default se bhara jaata hai.
-    Kuch nikal hi na paye (mapping hi na ho) to `_ACK_OF` par gir jaate hain,
-    taaki purana behaviour kabhi na tootey.
-    """
     eff = {}
     try:
         cur.execute("""SELECT do_index, department_id, display_name
@@ -117,54 +90,32 @@ def _ack_map(cur, plc_id):
         print(f"[ANDON] ack-map padhne me dikkat (fallback use kar rahe): {e}")
         return dict(_ACK_OF)
 
-    # Mapping mili hi nahi (koi row nahi) -> tabhi fallback.  Pehle yahan
-    # `return out or _ACK_OF` tha, aur wo GALAT tha: agar har DO ka apna
-    # department ho (yaani ACK hai hi nahi) to `out` khali {} hota, jo falsy
-    # hai — aur code chupchaap {2:1, 4:3} laga deta, yaani DO2/DO4 ko ACK maan
-    # leta jabki wo asli call hain.  Ab "ACK nahi hai" aur "mapping nahi mili"
-    # do alag baatein hain.
     if not eff:
         return dict(_ACK_OF)
 
     out, last_call = {}, None
     for do in sorted(eff):
         if eff[do].get("dept") is not None:
-            last_call = do                      # ye asli call hai
+            last_call = do
         elif last_call is not None:
-            out[do] = last_call                 # bina department = upar wale call ka ACK
+            out[do] = last_call
     return out
 
 
-# ── PLC connectivity status ──────────────────────────────────────────
-# Live green/red per device, maintained by the PLC poller (_plc_poll_loop):
-# a successful connect+read marks it online, a failed one offline.  Cached
-# here so the list endpoint reads it instantly (no per-request network probe).
-_PLC_STATUS = {}          # {plc_id: {"online": bool|None, "last_seen": iso|None, "checked": iso}}
+_PLC_STATUS = {}
 
 
 def _shift_for_time(dt):
-    """Plant ka shift rule (user ne diya):
-         A  =  subah 07:00  se  shaam 06:00 PM se pehle tak
-         B  =  shaam 06:00 PM  se  agli subah 07:00 tak
-    User ne A ko 07:00–17:30 aur B ko 18:00–06:30 bataya tha. Beech me do chhote
-    gaps reh jaate the (17:30–18:00 aur 06:30–07:00) — unhe nazdeeki shift me
-    daal diya hai taaki koi bhi time bina shift ke na rahe."""
     if dt is None:
         return None
     return "A" if 7 <= dt.hour < 18 else "B"
 
 
 def _hhmm(dt):
-    """Slip ke time columns VARCHAR(5) hain -> 'HH:MM'."""
     return dt.strftime("%H:%M") if dt else None
 
 
 def _mins_between(a, b):
-    """a se b tak ke poore MINUTE (HH:MM level par, seconds gira kar).
-
-    Slip par time HH:MM me chhapta hai, isliye minute bhi wahin se ginte hain —
-    warna slip khud se ulta padta hai (jaise 09:08 → 09:09 dikhe par 0 min).
-    Poore date+time par ghatate hain, to raat 12 baje paar karne par bhi sahi."""
     if not a or not b:
         return None
     d = int((b.replace(second=0, microsecond=0)
@@ -172,13 +123,7 @@ def _mins_between(a, b):
     return max(d, 0)
 
 
-# Slip kis department ke call ki banti hai, aur kis TABLE me jaati hai.
-#   Maintenance call -> maintenance_auto_breakdown_slip  (main dashboard isi ko dekhta)
-#   Toolroom    call -> toolroom_auto_breakdown_slip     (dashboard pe kabhi nahi)
-# Baaki departments (Quality / Material / Other Loss / Model Setup) ki slip
-# nahi banti — unke liye None.
 def _related_to_for(tbl):
-    """Table se radio ki value — toolroom table ki slip = 'tool_room'."""
     from routers.breakdown_slips import TOOLROOM_SLIP_TABLE
     return "tool_room" if tbl == TOOLROOM_SLIP_TABLE else "maintenance"
 
@@ -194,14 +139,10 @@ def _slip_table_for(dept):
     return None
 
 
-# ── AUTO slip ka threshold (default 2 min) ───────────────────────────────
-# Slip tabhi banti hai jab maintenance call itne minute se ZYADA khuli rahe.
-# Config har call par DB se padhna mehnga hai, isliye 10 sec cache rakhte hain.
 _THRESH_CACHE = {"min": None, "at": 0.0}
 
 
 def _slip_threshold_min():
-    """maintenance_slip_config se threshold (minute).  Na mile to 2."""
     now = _time.time()
     if _THRESH_CACHE["min"] is not None and (now - _THRESH_CACHE["at"]) < 10:
         return _THRESH_CACHE["min"]
@@ -221,9 +162,6 @@ def _slip_threshold_min():
 
 
 def _open_long_enough(started, upto):
-    """Call `started` se `upto` tak kam se kam threshold minute khuli rahi?
-    upto = abhi ka waqt (chalu call) ya ended_at (band call).  started/upto me
-    se koi None ho to False (bina time ke slip ka faisla nahi kar sakte)."""
     if not started or not upto:
         return False
     return (upto - started).total_seconds() >= _slip_threshold_min() * 60
@@ -231,16 +169,10 @@ def _open_long_enough(started, upto):
 
 def _slip_fields(zone, line, started, received, ended, dur_seconds=None, model=None,
                  related_to="maintenance"):
-    """Call ke waqt se slip ke khaane banao.
-
-    machine_no / machine_name JAAN-BUJH KE khali — PLC signal poori LINE par aata hai,
-    kisi ek machine par nahi, to kaunsi machine kharab hui ye ANDON nahi jaanta.
-    Maintenance Fill Slip me us line ki machines me se khud chunta hai.
-    """
     resp_min = _mins_between(started, received)
     down_min = _mins_between(started, ended)
     if down_min is None and dur_seconds is not None:
-        down_min = int(round(dur_seconds / 60.0))          # fallback
+        down_min = int(round(dur_seconds / 60.0))
     return {
         "zone": zone, "line": line,
         "machine_no": None, "machine_name": None,
@@ -254,26 +186,13 @@ def _slip_fields(zone, line, started, received, ended, dur_seconds=None, model=N
         "mc_down_time_minutes":  down_min,
         "response_time_minutes": resp_min,
         "frequency": 1,
-        "model_no": model or None,          # Assign→Model se abhi ka model (PLC value match)
-        # ANDON ne kis department ko bulaya, wahi tick hota hai — Maintenance call
-        # par 'maintenance', Toolroom call par 'tool_room'.  Form me ye LOCK rehta
-        # hai (production/maintenance ise badal nahi sakte).
+        "model_no": model or None,
         "problem_related_to": related_to,
     }
 
 
 def _slip_insert(conn, event_id, flat, power_cut=False, table=None):
-    """Slip daalo aur use call se JOD do (`andon_event_id`).
-
-    `ON CONFLICT DO NOTHING` + unique index = ek call ki EK hi slip.  PLC event
-    dobara bheje, ACK do baar dabe, ya ack aur close ki race ho — duplicate slip
-    kabhi nahi banegi.  Return: nayi slip ka id, ya None (pehle se thi).
-
-    `table` = maintenance ya tool room ki AUTO table (dept se tay hoti hai)."""
     from routers.breakdown_slips import _COLS, _blank_to_none
-    # `table` ZAROORI hai.  Pehle yahan chup-chaap AUTO_SLIP_TABLE fallback tha —
-    # koi call-site bhoolta to TOOL ROOM ki slip maintenance table me gir jaati
-    # (aur main dashboard par dikh jaati).  Ab saaf error.
     if not table:
         raise ValueError("_slip_insert: `table` zaroori hai (maintenance ya toolroom)")
     tbl = table
@@ -288,31 +207,16 @@ def _slip_insert(conn, event_id, flat, power_cut=False, table=None):
     row = cur.fetchone()
     if row:
         from routers.breakdown_slips import sync_status
-        sync_status(cur, tbl, row[0])       # breakdown_status me line ban jaaye
+        sync_status(cur, tbl, row[0])
     return row[0] if row else None
 
 
 def auto_slip_on_ack(event_id):
-    """ACK aate hi — yani RESPONSE TIME milte hi — slip bana do.
-
-    Pehle slip call BAND hone par banti thi.  Ab acknowledge hote hi ban jaati
-    hai, isliye:
-      • maintenance ko slip turant dikh jaati hai (call chalu rehte hue bhi)
-      • beech me bijli chali jaye to bhi slip bach jaati hai
-    OK-time / down-time baad me `auto_slip_on_close()` bhar deta hai.
-
-    Best-effort: koi dikkat aaye to sirf log — ANDON ka data kabhi nahi rukta.
-    """
     try:
         from routers.breakdown_slips import _ensure_table
         _ensure_table()
         with get_conn() as conn:
             cur = dict_cursor(conn)
-            # Threshold gate SQL me hi — `long_enough` = call threshold se
-            # zyada khuli rahi?  Ye check DB ki NOW() se hota hai (na ki app
-            # ki local clock se), kyunki started_at bhi DB ki clock se bani
-            # thi — dono ek hi ghadi, to app aur DB server ki clock me farak
-            # ho to bhi hisaab sahi rehta hai.
             cur.execute("""
                 SELECT e.id, e.zone, e.line, e.started_at, e.acknowledged_at,
                        COALESCE(dep.name, e.display_name) AS dept,
@@ -324,21 +228,12 @@ def auto_slip_on_ack(event_id):
             _tbl = _slip_table_for(e["dept"]) if e else None
             if not _tbl:
                 return
-            # Call abhi tak threshold se KAM khuli hai to slip nahi banate.
-            # Jaise-jaise call khuli rahegi, poller ka sweep use threshold paar
-            # karte hi bana dega (ya close par, agar tab tak duration paar kar
-            # chuki ho).  ACK ka waqt andon_system me save ho chuka hai — slip
-            # baad me bhi bane to wahi asli response time uthati hai.
             if not e["long_enough"]:
                 return
             flat = _slip_fields(e["zone"], e["line"],
                                 e["started_at"], e["acknowledged_at"], None,
                                 related_to=_related_to_for(_tbl))
             new_id = _slip_insert(conn, event_id, flat, table=_tbl)
-            # Slip pehle se ho sakti hai — sweep ne ACK aane se PEHLE bana di ho
-            # (tab response khali thi).  Us haal me ab RESPONSE bhar dete hain.
-            # Sirf tab jab abhi khali ho — maintenance ki apni edit ya baad ki
-            # koi value overwrite na ho.
             if not new_id:
                 cur2 = conn.cursor()
                 cur2.execute(f"""
@@ -360,15 +255,6 @@ def auto_slip_on_ack(event_id):
 
 
 def auto_slip_on_close(event_id, history_id, power_cut=False):
-    """Call band hone par USI slip me OK-time / end-date / down-time bhar do.
-
-    Slip na mile to bana do — aisa tab hota hai jab acknowledge aaya hi na ho
-    (jaise bijli chali gayi aur call atka hua band hua).  Isse koi breakdown
-    bina slip ke nahi rehta.
-
-    `power_cut=True` par slip par nishaan lag jaata hai: call button se band
-    nahi hua tha, isliye uska OK-time bharose ke laayak nahi.
-    """
     try:
         from routers.breakdown_slips import _ensure_table
         _ensure_table()
@@ -392,14 +278,7 @@ def auto_slip_on_close(event_id, history_id, power_cut=False):
                                 h["duration_seconds"],
                                 related_to=_related_to_for(_tbl))
 
-            # Pehle jodi hui slip ko poora karo.  Sirf CLOSE wale khaane
-            # chhedte hain — start/received/response jo ACK par bhare the wo
-            # waise ke waise rehte hain.  Aur agar maintenance ne slip already
-            # bhar di ho to bhi ye khaane safe hain (wo alag columns hain).
             cur2 = conn.cursor()
-            # Close par OK/down bharo, AUR (safety-net) agar ACK event kisi wajah se
-            # chhoot gaya ho to received/response bhi bhar do — par SIRF tab jab abhi
-            # khali ho (COALESCE), taaki ACK/maintenance ki value na miti.
             cur2.execute(f"""
                 UPDATE {_tbl}
                    SET bd_ok_time            = %s,
@@ -417,16 +296,11 @@ def auto_slip_on_close(event_id, history_id, power_cut=False):
                 cur.execute(f"SELECT id FROM {_tbl} WHERE andon_event_id = %s", (event_id,))
                 _r = cur.fetchone()
                 if _r:
-                    sync_status(cur2, _tbl, _r["id"])   # state=RESOLVED + downtime
+                    sync_status(cur2, _tbl, _r["id"])
                 print(f"[ANDON-SLIP] call {event_id} band -> slip poori hui "
                       f"(ok {flat['bd_ok_time']}, down {flat['mc_down_time_minutes']} min"
                       f"{', POWER CUT' if power_cut else ''})")
                 return
-            # Slip thi hi nahi.  Ab banate hain SIRF tab jab poori breakdown
-            # threshold se lambi thi — chhoti breakdown (threshold se kam) ki
-            # koi slip nahi banti.  (Threshold se lambi thi par slip nahi bani
-            # thi, aisa tab hota hai jab ACK aaya hi na ho — jaise bijli chali
-            # gayi — ya call sweep se pehle hi band ho gayi.)
             if not _open_long_enough(started, ended):
                 return
             new_id = _slip_insert(conn, event_id, flat, power_cut=power_cut, table=_tbl)
@@ -438,15 +312,6 @@ def auto_slip_on_close(event_id, history_id, power_cut=False):
 
 
 def _slip_threshold_sweep():
-    """Har khuli MAINTENANCE call jo threshold paar kar chuki hai par jiski abhi
-    tak slip nahi bani — uski slip AB bana do.  Isse slip 2-min mark par LIVE
-    dikh jaati hai (poller har baar ye chala kar dekhta hai).
-
-    Times asli hi rehte hain: bd_start = call ka started_at, response = ACK ka
-    acknowledged_at (agar aa chuka ho, warna khali — baad me ACK par bhar jaata
-    hai).  Sirf slip BANANE ka faisla threshold se hota hai, time se nahi.
-
-    Best-effort: koi dikkat aaye to sirf log, ANDON kabhi nahi rukta."""
     try:
         thr = _slip_threshold_min()
         from routers.breakdown_slips import _ensure_table, AUTO_SLIP_TABLE, TOOLROOM_SLIP_TABLE
@@ -454,11 +319,8 @@ def _slip_threshold_sweep():
         made, heal = 0, []
         with get_conn() as conn:
             cur = dict_cursor(conn)
-            # Maintenance aur Toolroom — dono ke OPEN call ki slip banti hai, par
-            # apni-apni table me (dept se tay).  Baaki departments ki nahi.
             for _dept, _tbl in (("maintenance", AUTO_SLIP_TABLE),
                                 ("toolroom",    TOOLROOM_SLIP_TABLE)):
-                # OPEN call, threshold paar, aur jiski slip abhi nahi hai
                 cur.execute(f"""
                     SELECT e.id, e.zone, e.line, e.started_at, e.acknowledged_at, e.model
                       FROM andon_system e
@@ -478,16 +340,12 @@ def _slip_threshold_sweep():
                                         related_to=_related_to_for(_tbl))
                     if _slip_insert(conn, e["id"], flat, table=_tbl):
                         made += 1
-                # SELF-HEAL: koi OPEN call jiski slip to hai par RESPONSE abhi khali, aur
-                # ACK aa chuka — us call ki list.  ACK event kisi wajah se chhoot bhi jaye
-                # (poll ke beech chhota pulse, poller restart), to ye har second pakad lega.
                 cur.execute(f"""
                     SELECT e.id FROM andon_system e
                       JOIN {_tbl} s ON s.andon_event_id = e.id
                      WHERE e.state = 'OPEN' AND e.acknowledged_at IS NOT NULL
                        AND s.bd_received_time IS NULL""")
                 heal += [r["id"] for r in cur.fetchall()]
-        # response back-fill wahi ek jagah wali sahi logic se (idempotent, sirf NULL par)
         for _eid in heal:
             try: auto_slip_on_ack(_eid)
             except Exception as _e: print(f"[ANDON-SLIP] self-heal dikkat (call {_eid}): {_e}")
@@ -499,100 +357,62 @@ def _slip_threshold_sweep():
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# PLC MODE — ANDON ab ESP ki jagah Mitsubishi PLC se signal leta hai.
-# Har ~200ms har enabled PLC ka mapped bit padho: 1 → call ON (timer start),
-# 0 → OFF (stop).  Call/timer/history ka poora logic wahi `_apply_state` hai —
-# SEQUENCE bilkul same.  PLC connect+read ka code niche isi file me hai (pehle
-# routers.plc me tha; PLC Integration feature hatne par yahan aa gaya).
+# PLC PROTOCOL DRIVER & ALLOCATION ENGINE
 # ═══════════════════════════════════════════════════════════════════════
-_PLC_POLL_INTERVAL = 0.1       # 100 ms — near real-time (press karte hi call)
-# Output writer ko BEECH ME jagane ka ghanti.  Warna wo har 1 second par hi
-# jaagta tha, to response (ACK) aane ke baad bit 0 se 1 second tak kabhi bhi
-# OFF hota — screen par saaf deri dikhti thi.  Input poller 100ms par chalta
-# hai, yaani ACK to turant pakda jaata tha; sust hissa yahi 1-second ka
-# intezaar tha.  Ab call khulte/ACK hote/band hote hi ghanti bajti hai aur
-# writer usi pal chal padta hai.  Steady state me kuch nahi badla — koi
-# extra PLC traffic nahi, sirf bekaar ka intezaar hat gaya.
+_PLC_POLL_INTERVAL = 0.1
 _OUT_WAKE = threading.Event()
 
-_PLC_RETRY_SECS    = 5         # offline PLC ko itni der baad dobara connect-try
+_PLC_RETRY_SECS    = 5
 _plc_poller_started = False
-_PLC_CONN  = {}                # {dev_id: (driver, sig)}  MAIN PLC (ANDON bits) persistent connection
-_PLC_RETRY = {}                # {dev_id: monotonic ts — is se pehle reconnect na karo}
-# ── SUB PLC ── optional doosra PLC jisse Model/Fault register padhe jaate hain
-# (ANDON bits MAIN PLC se, Model/Fault SUB PLC se — jab do machine par alag ho).
-_SUB_CONN  = {}                # {dev_id: (driver, sig)}  SUB PLC persistent connection
-_SUB_RETRY = {}                # {dev_id: monotonic ts}
+_PLC_CONN  = {}
+_PLC_RETRY = {}
+_SUB_CONN  = {}
+_SUB_RETRY = {}
 
-# ── PLC connect/read helpers.  Pehle routers.plc me the; PLC Integration
-# feature hatne par ANDON ne apne me le liye. ───────────────────────────────
+# Har PLC ka apna taala.
 #
-# DO PROTOCOL, EK HI SHAKL.  Poore file me protocol sirf teen jagah chhua jaata
-# hai — `_connect` (connection banao), `_read_one` (padho) aur `_out_write_bit`
-# ka write.  Isliye dono raaste ek chhote driver ke peeche band kar diye gaye
-# hain: poll loop, timer, history, auto-slip, output writer, writer-lock,
-# backoff, probe — kisi ka ek line nahi badalta.
-#
-#   MC     : Mitsubishi MC-protocol / SLMP (pymcprotocol) — padhta AUR likhta hai.
-#   MODBUS : Modbus TCP (pymodbus) — SIRF PADHTA HAI (requirement).
-#
-# `protocol` khali ho to hamesha "MC" — yaani har purani row jyon ki tyon chalti
-# hai, DB me kuch badalne ki zaroorat nahi.
+# ⚠ KYUN ZAROORI HAI: FX5U ek waqt me SIRF EK Modbus client jhelti hai, aur
+# ek hi client ke do read aapas me gutth jaayein to jawab mila-jula aata hai.
+# Poller apne thread me chalta hai; "Read now" wala diagnostic request ke
+# thread me.  Dono ek hi connection istemal karte hain (naya kholna PLC ki
+# ek-client wali hadd todta), isliye beech me taala lazmi hai.
+_PLC_LOCKS = {}
+_PLC_LOCKS_GUARD = threading.Lock()
+
+
+def _plc_lock(dev_id):
+    with _PLC_LOCKS_GUARD:
+        lk = _PLC_LOCKS.get(dev_id)
+        if lk is None:
+            lk = _PLC_LOCKS[dev_id] = threading.Lock()
+        return lk
+
+
+# Jis PLC par ek bhi bit-address bhara hi nahi hai.  Aisi PLC ka poll SAFAL
+# hota hai (ek dummy read chalti hai) -- yaani wo "online" dikhti hai -- par
+# alarm kabhi ban hi nahi sakta.  Pehle ye baat kahin dikhti hi nahi thi.
+_POLL_NOBITS = {}
+
 BIT_DEVICES = {"X", "Y", "M", "L", "F", "V", "B", "S", "SB", "TS", "CS", "SS"}
 _PLCTYPE    = {"Q": "Q", "FX5U": "Q", "iQ-R": "iQ-R", "L": "L", "QnA": "QnA"}
 
-# Modbus ke chaar khaane.  Inhe device-type ki jagah likha jaata hai (COIL/DI =
-# bit, HR/IR = word), aur inhi naamo se UI ka dropdown banta hai.
-# ⚠ `bit_type`/`device_type` column VARCHAR(4) hai — chaaron naam usme fit hain.
 MODBUS_SPACES = {
-    "COIL": ("bits",      "read_coils"),             # 0x  read/write bit
-    "DI":   ("bits",      "read_discrete_inputs"),   # 1x  read-only  bit
-    "HR":   ("registers", "read_holding_registers"), # 4x  read/write word
-    "IR":   ("registers", "read_input_registers"),   # 3x  read-only  word
+    "COIL": ("bits",      "read_coils"),
+    "DI":   ("bits",      "read_discrete_inputs"),
+    "HR":   ("registers", "read_holding_registers"),
+    "IR":   ("registers", "read_input_registers"),
 }
 MODBUS_DEFAULT_PORT = 502
 MC_DEFAULT_PORT     = 5007
 
-# ── Modbus ke do naap — user ke CHALTE HUE test (D:\FX5U\FX5U.PY) se ───────
-# Wo program is PLC par bharosemand chalta hai, aur uske do aankde hamare se
-# alag the.  Ab wahi le liye — apne andaze se nahi, jo cheez sach me chal rahi
-# hai usse:
-#   timeout  1.0s -> 1.5s   ek sust jawab par ab connection nahi tootta
-#   poll     0.1s -> 0.4s   (SIRF Modbus device par; MC 100ms par hi rahega)
-# FX5U ka Modbus server ladder scan ke saath hi chalta hai; 10 baar/second
-# uske liye zyada tha, aur har timeout hamare code me drop+reconnect banta tha
-# — screen par wahi "beech beech me disconnect".
 MODBUS_TIMEOUT       = 1.5
 MODBUS_POLL_INTERVAL = 0.4
 
-# Jab TCP to jud jaye par jawab na aaye — wajah lagbhag hamesha yahi hoti hai.
 _MB_BUSY_HINT = ("PLC accepted the connection but did not answer. This FX5U "
                  "serves only ONE Modbus client at a time — close any other "
                  "Modbus tool or monitor connected to this PLC")
 
-# ── FX5U ka MODBUS Device Allocation ────────────────────────────────────────
-# Modbus me `D`/`M`/`Y` jaisa kuch hota hi nahi — taar par sirf ek flat number
-# jaata hai.  Par FX5U ke ANDAR ek naksha baitha hota hai jo dono ko jodta hai,
-# aur wo naksha yahan utaara gaya hai — taaki address wahi likha jaye jo MC me
-# likhte hain (`D3001`), aur badalne ka kaam code kare.
-#
-# YE NUMBER ANDAZE SE NAHI HAIN.  Plant ki FX5U ke GX Works3 ke
-# "MODBUS Device Allocation Parameter" screen se liye gaye (2026-09-10), aur
-# `D` wali jodi user ne ASLI PLC par apne alag program se jaanch kar pakki ki:
-# D3001 ki value Modbus par address 3001 par milti hai (yaani start 0).
-#
-#   MC device -> (Modbus ka khaana, wahan se shuruaat, kitne points, ginti ka aadhar)
-#
-# ⚠ "GINTI KA AADHAR" SABSE ZAROORI KHAANA HAI.  FX5 me X/Y **OCTAL** hote hain
-#    aur B **HEX** — yaani `Y20` ka asli number 20 nahi, **16** hai.  Ise
-#    nazarandaz kar dete to Y/X/B chup-chaap GALAT coil par chale jaate: na
-#    error aata, na pata chalta.  (D/M/L/F/SM saadi decimal ginti hain.)
-#
-# ⚠ Agar kisi doosri FX5U ka allocation ISSE ALAG ho, to ye table wahan galat
-#    hogi.  Us soorat ke liye raw Modbus address (HR/IR/COIL/DI) ka raasta
-#    khula rakha hai — wo is table se guzarta hi nahi.
 MODBUS_ALLOC = {
-    # device : (space, start, points, base)      points=None -> hadd nahi jaanchte
     "X":  ("DI",   0,     1024, 8),
     "Y":  ("COIL", 0,     1024, 8),
     "M":  ("COIL", 8192,  7680, 10),
@@ -600,49 +420,42 @@ MODBUS_ALLOC = {
     "L":  ("COIL", 22528, 7680, 10),
     "B":  ("COIL", 30720, 256,  16),
     "F":  ("COIL", 38912, 128,  10),
-    # D ki `points` jaan-boojh kar None hai — GX Works3 ke screen me Holding
-    # Register wala column kata hua tha, to ginti dekhi nahi gayi.  Yahan galat
-    # hadd likh dena ULTA nuksan karta (sahi address rad ho jaata); aur hadd ke
-    # bahar ka address PLC KHUD Modbus exception se rad karta hai, jise driver
-    # `isError()` par pakad kar exception bana deta hai.  Yaani chup-chaap
-    # galat value phir bhi nahi aa sakti.
     "D":  ("HR",   0,     None, 10),
 }
 
 
 def _modbus_addr(dtype, dno):
-    """MC wala address (`D`, `3001`) -> Modbus ka (space, number).
-
-    Agar `dtype` pehle se Modbus ka apna naam hai (HR/IR/COIL/DI) to number
-    jyon ka tyon jaata hai — wo raasta is table se guzarta hi nahi."""
     t = (dtype or "").strip().upper()
-    if t in MODBUS_SPACES:                       # raw Modbus address — seedha
+    if t in MODBUS_SPACES:
         return t, int(str(dno).strip())
+    
+    # 1-to-1 exact mapping
+    if t == "D":
+        return "HR", int(str(dno).strip())
+
     alloc = MODBUS_ALLOC.get(t)
     if alloc is None:
-        raise ValueError(f"Modbus address type '{dtype}' invalid (use "
-                         f"{'/'.join(MODBUS_ALLOC)} or {'/'.join(MODBUS_SPACES)})")
+        raise ValueError(f"Modbus address type '{dtype}' invalid")
     space, start, points, base = alloc
     raw = str(dno).strip()
     try:
-        n = int(raw, base)                       # X/Y octal, B hex, baaki decimal
+        n = int(raw, base)
     except ValueError:
-        raise ValueError(f"{t}{raw} is not a valid {t} address "
-                         f"(base {base})") from None
-    if n < 0 or (points is not None and n >= points):
-        raise ValueError(f"{t}{raw} is outside the PLC's MODBUS allocation "
-                         f"({t}0 to {t}{points - 1})")
+        raise ValueError(f"{t}{raw} is not a valid {t} address (base {base})") from None
+    # ⚠ HADD KI JAANCH -- 2026-09-12 me jodi.
+    # Pehle `points` likha to tha par kabhi PADHA hi nahi jaata tha.  Natija:
+    # `M99999` chup-chaap coil 108191 ban jaata tha -- ek aisa pata jo FX5U ki
+    # device-allocation me hai hi nahi.  PLC us par ya to mana karti ya 0
+    # lauta deti, aur user ko lagta "address to bhar diya hai, alarm kyun
+    # nahi aata".  Ab shuru me hi saaf mana kar dete hain.
+    if points is not None and not (0 <= n < points):
+        top = format(points - 1, "o" if base == 8 else "X" if base == 16 else "d")
+        raise ValueError(f"{t}{raw} is out of range — this PLC maps {t}0 to {t}{top} only")
     return space, start + n
 
 
 class PlcProtocolError(Exception):
-    """PLC ne JAWAB diya, par "nahi" kaha (jaise: ye address hai hi nahi).
-
-    Ye CONNECTION ki gadbad NAHI hai — socket bilkul theek hai.  Farak isliye
-    zaroori hai ki purana code kisi bhi galti par poora connection tod deta
-    tha: ek galat address har cycle me reconnect karwaata, aur UI par wahi
-    "beech beech me disconnect" dikhta — jabki taar-jodi me kuch kharabi
-    hoti hi nahi."""
+    pass
 
 
 def _is_modbus(protocol):
@@ -650,15 +463,9 @@ def _is_modbus(protocol):
 
 
 def _norm_proto(p):
-    """Jo bhi aaye, sirf do hi maanya: 'MODBUS' ya 'MC'.  Kuch aur aaya
-    (khali / typo / purani UI) to MC — yaani hamesha wahi safe raasta."""
     return "MODBUS" if _is_modbus(p) else "MC"
 
 
-# Modbus/TCP sirf FX5 me CPU ke ANDAR hota hai.  Q / iQ-R / L par wo CPU ka
-# apna kaam nahi — uske liye alag Modbus module (jaise QJ71MB91) lagta hai,
-# jiska apna alag address-model hota hai.  Isliye in series par Modbus ka
-# option hai hi nahi.
 MODBUS_SERIES = {"FX5U"}
 
 
@@ -667,18 +474,10 @@ def _series_supports_modbus(series):
 
 
 def _proto_for(series, protocol):
-    """EK jagah se sach: series Modbus kar hi nahi sakti to protocol MC.
-
-    UI me Protocol ka dropdown hi sirf FX5U par dikhta hai — par UI ki rok
-    asli rok nahi hoti (API seedha bhi mari ja sakti hai, aur purani UI bhi
-    ho sakti hai).  Isliye ye jaanch server par bhi hai, aur poll ke waqt bhi
-    lagti hai — taaki DB me kisi tarah 'Q + MODBUS' aa bhi jaye to poller
-    Q wale PLC par Modbus bolne ki koshish na kare."""
     return "MODBUS" if (_is_modbus(protocol) and _series_supports_modbus(series)) else "MC"
 
 
 def _default_port(protocol):
-    """Us protocol ka aam port — Modbus 502, MC 5007."""
     return MODBUS_DEFAULT_PORT if _is_modbus(protocol) else MC_DEFAULT_PORT
 
 
@@ -687,13 +486,11 @@ def _is_bit(dtype):
 
 
 class _McDriver:
-    """MC-protocol / SLMP — aaj wala raasta, bilkul waisa ka waisa."""
-
     def __init__(self, ip, port, series, timer=4):
         import pymcprotocol
         plctype = _PLCTYPE.get((series or "Q"), "Q")
         self.mc = pymcprotocol.Type3E(plctype=plctype)
-        self.mc.timer = timer                   # ~1s units → ~4s timeout
+        self.mc.timer = timer
         self.mc.connect(ip, int(port))
 
     def read_one(self, dtype, dno):
@@ -703,8 +500,6 @@ class _McDriver:
         return int(self.mc.batchread_wordunits(headdevice=head, readsize=1)[0])
 
     def read_many(self, pairs):
-        """MC par har address ALAG hi padha jaata hai — bilkul pehle jaisa.
-        (Batch sirf Modbus me joda gaya hai; MC ka raasta chhua nahi.)"""
         return [self.read_one(t, n) for t, n in pairs]
 
     def write_bit(self, dtype, dno, value):
@@ -716,105 +511,58 @@ class _McDriver:
 
 
 class _ModbusDriver:
-    """Modbus TCP — SIRF PADHNE ke liye.
-
-    Teen baatein jaan-boojh kar aisi hain:
-
-    1) **`isError()` ki jaanch chhodi nahi ja sakti.**  `pymcprotocol` galti par
-       exception feekta hai; `pymodbus` NAHI — wo error ka *object* lauta deta
-       hai.  Aur poll loop me faisla `val != 0` se hota hai (`_plc_poll_once`),
-       jisme wo object seedha **True** ban jaata — yaani ek JHOOTHI ANDON call
-       jo kabhi band nahi hoti.  Isliye har read par `isError()` dekh kar
-       exception uthate hain, taaki wo usi purane raaste se sambhle jaaye
-       jisse MC ki galti sambhalti hai (connection drop + backoff).
-
-    2) **timeout SAAF likha hai.**  pymodbus ka apna default 3 second hai, aur
-       poll loop EK hi thread me saare device baari-baari padhta hai (100ms
-       cycle) — ek sust PLC poore ANDON ko rok deta.  MC wala timer bhi ~4s
-       hai, par wo tabhi lagta hai jab connection pehle se ban chuka ho; yahan
-       connect+read dono isi hadd me hain.
-
-    3) **`write_bit` yahan MANA hai.**  Requirement Modbus ko sirf padhne ke
-       liye laayi hai.  Chup-chaap kuch na karne ke bajaye saaf mana karta hai,
-       taaki koi galti se output mapping Modbus par le jaaye to wo turant
-       dikhe, na ki plant me chup-chaap bit na likhe.
-
-    4) **Address MC wale roop me hi likha jaata hai** (`D3001`), Modbus ka
-       number `MODBUS_ALLOC` se banta hai.  Isi wajah se maujooda mapping
-       (jo sab `D` par hai) ko Modbus par le jaane me ek bhi address dobara
-       likhne ki zaroorat nahi padti.
-    """
-
     def __init__(self, ip, port, unit_id=1, timeout=MODBUS_TIMEOUT):
         from pymodbus.client import ModbusTcpClient
         self.cl = ModbusTcpClient(str(ip), port=int(port or MODBUS_DEFAULT_PORT),
                                   timeout=timeout)
         if not self.cl.connect():
             raise ConnectionError(f"Modbus TCP connect failed {ip}:{port}")
-        # `or 1` NAHI — warna Unit ID 0 (jo Modbus me bilkul jaayaz hai, aur
-        # pymodbus ka apna default bhi wahi hai) chup-chaap 1 ban jaata tha.
         self.unit = 1 if unit_id is None else int(unit_id)
 
     def alive(self):
-        """Socket abhi bhi juda hua hai?  (FX5U.PY bhi har cycle yahi dekhta hai.)
-        pymodbus ka sync `execute()` khud bhi connect kar leta hai, par pehle
-        se dekh lena saaf hai — dead socket par ek fail cycle bach jaata hai."""
         try:    return bool(self.cl.connected)
         except Exception: return False
 
     def read_one(self, dtype, dno):
-        # Address MC wale roop me aata hai (`D`,`3001`) aur yahin Modbus ke
-        # number me badalta hai — `MODBUS_ALLOC` se.  Raw Modbus naam
-        # (HR/IR/COIL/DI) diya ho to number jyon ka tyon jaata hai.
         space, addr = _modbus_addr(dtype, dno)
         return self._read_run(space, addr, 1, f"{dtype}{dno}")[0]
 
-    # Ek request me kitne — Modbus ki apni hadd (word 125, bit 2000).  Thoda
-    # neeche rakha hai; hamein 8 se zyada kabhi chahiye bhi nahi.
     _RUN_MAX = {"registers": 100, "bits": 500}
-    # Beech me itne khali address aa jayen to bhi EK hi request bhejo.  Modbus
-    # ka read koi side-effect nahi karta, aur ek request bachna PLC par ek
-    # khatkhat kam hai.  (D3001/D3005/D3008 jaisa bikhra mapping bhi tab ek hi
-    # request banta hai, teen nahi.)
     _RUN_GAP = 8
 
     def _read_run(self, space, addr, count, tag):
         attr, fname = MODBUS_SPACES[space]
-        rr = getattr(self.cl, fname)(addr, count, slave=self.unit)
+        func = getattr(self.cl, fname)
+        try:
+            # Pymodbus 3.8+ compatibility fix: address=addr, count=count
+            try:
+                rr = func(address=addr, count=count, slave=self.unit)
+            except TypeError:
+                try:
+                    rr = func(address=addr, count=count)
+                except TypeError:
+                    rr = func(addr, count)
+        except OSError as e:
+            try: self.cl.close()
+            except Exception: pass
+            raise IOError(f"{_MB_BUSY_HINT} — Socket closed ({e}, {tag})") from None
+
         if rr is None:
-            raise IOError(f"{_MB_BUSY_HINT} (no reply for {tag} -> {space}{addr})")
+            raise IOError(f"{_MB_BUSY_HINT} (no reply for {tag})")
         if rr.isError():
-            # DO ALAG BAATEIN, aur dono ka ilaaj alag:
-            #   ExceptionResponse = PLC ne jawab diya aur "nahi" kaha (address
-            #     allocation me nahi, unit galat) -> connection theek hai
-            #   baaki (ModbusIOException) = jawab hi nahi aaya / socket gadbad
-            #     -> connection sach me tootna chahiye
             if type(rr).__name__ == "ExceptionResponse":
-                raise PlcProtocolError(
-                    f"PLC refused {tag} -> {space}{addr} x{count} "
-                    f"(unit {self.unit}): {rr}")
-            # Ye soorat lagbhag hamesha EK hi cheez hoti hai — naapa hua:
-            # FX5U ka TCP handshake har baar ho jaata hai, par data wo SIRF
-            # EK Modbus connection ko deta hai.  Isliye error me seedha wahi
-            # baat likhi hai, taaki dekhne wale ko turant pata chale ki
-            # kahan dekhna hai.
-            raise IOError(f"{_MB_BUSY_HINT} ({tag} -> {space}{addr} x{count}, "
-                          f"unit {self.unit})")
+                raise PlcProtocolError(f"PLC Refused: {rr}")
+            raise IOError(f"{_MB_BUSY_HINT} (Unit {self.unit}, Tag {tag})")
+
         vals = getattr(rr, attr, None)
         if not vals or len(vals) < count:
-            raise IOError(f"Modbus returned {len(vals or [])} of {count} for {tag}")
+            raise IOError(f"Modbus returned incomplete bytes for {tag}")
         return [int(v) for v in vals[:count]]
 
     def read_many(self, pairs):
-        """Lagataar address EK hi request me — poore cycle ke liye.
-
-        Asli PLC par naapa (FX5U, 192.168.30.213:506): D3001..D3008 ek-ek
-        karke **29 ms**, aur wahi aathon EK batch me **3.5 ms**.  Yaani PLC par
-        aath guna kam khatkhat, aur timeout ka mauka bhi utna hi kam.  Poll
-        100ms par chalta hai, isliye ye farak seedha stability me jaata hai."""
         if not pairs:
             return []
-        addrs = [_modbus_addr(t, n) for t, n in pairs]      # [(space, addr), ...]
+        addrs = [_modbus_addr(t, n) for t, n in pairs]
         out = [None] * len(addrs)
         i = 0
         order = sorted(range(len(addrs)), key=lambda k: (addrs[k][0], addrs[k][1]))
@@ -824,15 +572,13 @@ class _ModbusDriver:
             lim = self._RUN_MAX[MODBUS_SPACES[space][0]]
             run = [k0]
             j = i + 1
-            # lagataar (ya ek hi) address hi ek run me — beech me gaap aaya to
-            # naya run.  Gaap bhar kar padhna bhi ho sakta tha, par usse un
-            # register ko chhuna padta jo hamare mapping me hain hi nahi.
             while j < len(order):
                 k = order[j]
                 sp, ad = addrs[k]
                 if sp != space or ad > addrs[run[-1]][1] + self._RUN_GAP or (ad - start + 1) > lim:
                     break
-                run.append(k); j += 1
+                run.append(k)
+                j += 1
             count = addrs[run[-1]][1] - start + 1
             tag = f"{pairs[k0][0]}{pairs[k0][1]}+{len(run)}"
             try:
@@ -840,10 +586,6 @@ class _ModbusDriver:
                 for k in run:
                     out[k] = vals[addrs[k][1] - start]
             except PlcProtocolError:
-                # PLC ne poore block par "nahi" kaha — shayad beech ka koi
-                # address allocation me nahi hai.  Ek galat address ki wajah
-                # se baaki saat bhi na doobein, isliye ab ek-ek karke.
-                # (Jo sach me galat hai wahi error dega, aur wo dikh jayega.)
                 if len(run) == 1:
                     raise
                 for k in run:
@@ -853,49 +595,23 @@ class _ModbusDriver:
         return out
 
     def write_bit(self, dtype, dno, value):
-        raise NotImplementedError("Modbus is read-only in ANDON; "
-                                  "outputs must use MC protocol")
+        raise NotImplementedError("Modbus is read-only in ANDON; outputs must use MC protocol")
 
     def close(self):
         self.cl.close()
 
 
 def _connect(plc, timer=4):
-    """Core connect — driver object return karta hai ya plain exception raise.
-
-    `plc` me `protocol` na ho to MC — yaani har purana call-site (output writer
-    samet) bilkul pehle jaisa chalta hai."""
     if _is_modbus(plc.get("protocol")):
         return _ModbusDriver(plc["plc_ip"], plc["plc_port"], plc.get("unit_id"))
     return _McDriver(plc["plc_ip"], plc["plc_port"], plc.get("series"), timer=timer)
 
 
 def _read_one(mc, dtype, dno):
-    """Ek address padho.  Call-site pehle jaise hi hain — driver tay karta hai
-    ki ye MC ka M/D/X/Y hai ya Modbus ka COIL/DI/HR/IR."""
     return mc.read_one(dtype, dno)
 
 
 def _probe(ip, port, timeout=1.5):
-    """TCP probe jo sirf haan/na nahi, WAJAH bhi lauta de.
-
-    Sirf "Disconnected" dikhane se maintenance wale ghanton phaste hain: ping
-    chal rahi hoti hai, PLC ki light jal rahi hoti hai, phir bhi UI red.  Do
-    bilkul alag kharabiyan hain aur dono ka ilaaj alag hai —
-
-      refused : host zinda hai, uske TCP stack ne RST bheja = us PORT par kuch
-                sun hi nahi raha.  Matlab PLC ka MC-protocol/Ethernet open
-                setting us port par configure nahi hai (ya port galat likha
-                hai).  NETWORK ki dikkat nahi hai — PLC ki setting ki hai.
-      timeout : koi jawab hi nahi — cable/firewall/VLAN ya PLC band.
-      dns     : hostname resolve nahi hua.
-
-    (Ek chauthi haalat list endpoint banata hai — "mc": TCP to jud gaya par
-     poller ka MC read fail hua, yaani port khula hai aur PLC protocol ka
-     jawab nahi de raha.)
-
-    Lautata hai (ok: bool, reason: str).
-    """
     try:
         s = socket.create_connection((ip, int(port)), timeout=timeout)
         s.close()
@@ -907,7 +623,6 @@ def _probe(ip, port, timeout=1.5):
     except socket.gaierror:
         return False, "dns"
     except OSError as e:
-        # Windows WSAETIMEDOUT (10060) socket.timeout ke bajaye OSError aata hai
         if getattr(e, "winerror", None) == 10061 or getattr(e, "errno", None) == 111:
             return False, "refused"
         if getattr(e, "winerror", None) == 10060 or getattr(e, "errno", None) == 110:
@@ -917,23 +632,11 @@ def _probe(ip, port, timeout=1.5):
         return False, "error"
 
 
-# Probe ka nateeja thodi der ke liye yaad rakho.
-#
-# UI har 10 second me PLC list maangta hai, aur poller band hone par har
-# un-healthy address dobara probe hota tha — yaani lagataar, jab tak page
-# khula hai, har PLC par 6 connect/minute.  PLC koi web server nahi hota:
-# Mitsubishi Q me MC ke connection giney-chuney hote hain, aur itni khatkhat
-# se uska connection table bhar sakta hai (phir wo NAYE connection REFUSE
-# karne lagta hai — wahi "port refused").
-#
-# Ab nateeja _PROBE_TTL second tak yaad rehta hai, to 10s wali list PLC ko
-# chhuti hi nahi.  Taaza jaanch chahiye to /recheck (Retry button) chalao.
-_PROBE_CACHE = {}          # (ip, port) -> (kab, ok, wajah)
-_PROBE_TTL   = 60.0        # second
+_PROBE_CACHE = {}
+_PROBE_TTL   = 60.0
 
 
 def _probe_cached(ip, port, timeout=3.0, force=False):
-    """`_probe` ka cache-wala roop.  force=True par seedha naya probe."""
     key = (str(ip), int(port))
     now = _time.time()
     if not force:
@@ -946,12 +649,10 @@ def _probe_cached(ip, port, timeout=3.0, force=False):
 
 
 def _reachable(ip, port, timeout=1.5):
-    """Fast TCP probe — PLC ka port pahunch me hai ya nahi (connected indicator)."""
     return _probe(ip, port, timeout)[0]
 
 
 def _plc_drop(dev_id):
-    # MAIN + SUB dono connection band karo.  Pool me (driver, sig) ki jodi hai.
     for _pool in (_PLC_CONN, _SUB_CONN):
         ent = _pool.pop(dev_id, None)
         if ent is not None:
@@ -960,17 +661,12 @@ def _plc_drop(dev_id):
 
 
 def _ensure_conn(pool, retry, key, ip, port, series, protocol=None, unit_id=None):
-    """Persistent PLC connection (ya None) — backoff + fast reachability probe.
-    MAIN aur SUB PLC dono isi se connect hote hain (alag pool/retry dicts se).
-    `protocol` khali = MC, yaani purana bartaav bilkul waisa hi."""
     p   = int(port or _default_port(protocol))
     sig = (str(ip), p, _norm_proto(protocol), str(series or "Q"), int(unit_id or 1))
     ent = pool.get(key)
     if ent is not None:
         mc, old_sig = ent
         if old_sig == sig:
-            # Socket mar chuka ho to yahin naya banao — ek fail cycle bach
-            # jaata hai (aur mara hua socket PLC ka slot bhi ghere rehta hai).
             if hasattr(mc, "alive") and not mc.alive():
                 try: mc.close()
                 except Exception: pass
@@ -978,40 +674,13 @@ def _ensure_conn(pool, retry, key, ip, port, series, protocol=None, unit_id=None
                 retry.pop(key, None)
             else:
                 return mc
-        # ── SETTING BADAL GAYI → purana socket bekaar hai ────────────────────
-        # Pool sirf dev_id se key hota hai, isliye pehle IP/port/series badalne
-        # par bhi PURANA connection zinda rehta tha aur poller chup-chaap PURANE
-        # PLC se padhta rehta — jab tak wo PLC pahunch me hai, koi error bhi
-        # nahi aata (galti sirf tab dikhti jab read fail hota, line ~878).
-        # Ab connection ke saath uski pehchaan (sig) rakhi jaati hai; zara sa
-        # bhi farak aaya to yahin gira kar naya banta hai.  Protocol switch
-        # (MC ↔ Modbus) me ye zaroori hai — warna badalne ke baad bhi purana
-        # protocol chalta rehta.
         try: mc.close()
         except Exception: pass
         pool.pop(key, None)
         retry.pop(key, None)
-    if _time.monotonic() < retry.get(key, 0):            # backoff — abhi try mat karo
+    if _time.monotonic() < retry.get(key, 0):
         return None
-    # Probe ka timeout 1.5s — pehle 0.4s tha aur usne SUB PLC ka connection
-    # KABHI banne hi nahi diya.  Wajah: ye input PLC ek hi connection dete
-    # hain.  Slot khali ho to TCP connect ~15ms me ho jaata, par slot bhara ya
-    # abhi-abhi chhoda gaya ho to PLC ~520ms leta hai (naap kar dekha: YHB SUB
-    # 533/518/520ms, MAIN bhi 519-526ms).  0.4s par wo hamesha fail hota, phir
-    # 5s backoff, phir wahi — sub kabhi jud hi nahi paata aur model/fault
-    # chup-chaap khali reh jaate.
-    # MAIN isliye chalta tha kyunki uska connection ek baar (startup par, jab
-    # slot khali tha) ban gaya aur phir cache se chalta raha.
-    # Probe rakha hai (hataya nahi) taaki sach me mari hui PLC par har retry
-    # 4 second block na kare — bas timeout asli maap ke hisaab se kiya.
-    # ── Modbus par ye probe JAAN-BOOJH KAR NAHI ───────────────────────────
-    # Probe ek POORA extra TCP connection kholta aur band karta hai.  MC par
-    # uska fayda tha (MC ka timer ~4s hai, to mari hui PLC par har retry 4s
-    # block karti).  Modbus ka apna timeout 1s hai, yaani probe kuch bachaata
-    # nahi — bas PLC par ek aur connection ki khatkhat jodta hai.  Aur jab
-    # socket kisi hichki par toot-ta hai, to har reconnect DO connection
-    # maangta tha (probe + asli) — FX5U ke giney-chuney Modbus connection par
-    # yahi khud apne aap ko khaata rehta hai.
+
     if not _is_modbus(protocol) and not _reachable(ip, p, timeout=1.5):
         retry[key] = _time.monotonic() + _PLC_RETRY_SECS
         return None
@@ -1027,8 +696,6 @@ def _ensure_conn(pool, retry, key, ip, port, series, protocol=None, unit_id=None
 
 
 def _read_map_name(mc, plc_id, cur, table, name_col):
-    """Kisi map-table (model/fault) ke register(s) ko live padho; jis row ki value
-    match kare uska naam.  Match na ho / map khali ho to None.  (Assign → Model/Fault.)"""
     cur.execute(f"""SELECT device_type, device_no, value, {name_col} AS nm
                      FROM {table}
                     WHERE plc_id=%s AND COALESCE(device_type,'')<>''
@@ -1048,13 +715,11 @@ def _read_map_name(mc, plc_id, cur, table, name_col):
     return None
 
 
-# Poll ki nakami ka hisaab — {dev_id: (wajah, kab pehli baar, kitni baar, kab chhapa)}
 _POLL_FAIL = {}
-_POLL_LOG_EVERY = 30.0          # ek hi wajah is se zyada baar log na ho (second)
+_POLL_LOG_EVERY = 30.0
 
 
 def _poll_fail(dev_id, exc):
-    """Poll fail hone ki wajah yaad rakho + rate-limit ke saath log karo."""
     why = f"{type(exc).__name__}: {exc}"[:200]
     now = _time.monotonic()
     prev = _POLL_FAIL.get(dev_id)
@@ -1070,14 +735,17 @@ def _poll_fail(dev_id, exc):
 
 
 def _poll_ok(dev_id):
-    """Kaamyab cycle — purani shikayat bhula do (taaki agli baar naya log aaye)."""
     if _POLL_FAIL.pop(dev_id, None):
         print(f"[ANDON-PLC-POLL] dev {dev_id}: wapas theek", flush=True)
 
 
 def _plc_poll_once(dev):
-    """Ek PLC cycle: MAIN se bits (ANDON), SUB (agar ho) se Model/Fault.
-    Return (main_ok, sub_ok).  sub_ok = None jab koi SUB PLC set nahi."""
+    """Taala lagao, phir asli poll.  Taale ki wajah `_plc_lock` par likhi hai."""
+    with _plc_lock(dev["id"]):
+        return _plc_poll_once_locked(dev)
+
+
+def _plc_poll_once_locked(dev):
     did = dev["id"]
     has_sub = bool((dev.get("sub_ip") or "").strip())
     proto     = _proto_for(dev.get("series"),     dev.get("protocol"))
@@ -1087,31 +755,36 @@ def _plc_poll_once(dev):
                       dev.get("series") or "Q", proto, dev.get("unit_id"))
     if mc is None:
         return False, (False if has_sub else None)
-    # Model/Fault register kis PLC se — SUB ho to usse, warna MAIN (mc) se.
+
     sub_mc = _ensure_conn(_SUB_CONN, _SUB_RETRY, did, dev["sub_ip"],
                           dev.get("sub_port") or _default_port(sub_proto),
                           dev.get("sub_series") or "Q", sub_proto,
                           dev.get("sub_unit_id")) if has_sub else None
     read_mc = sub_mc if has_sub else mc
     try:
-        # ek hi cycle me: bit-mapping fetch + PLC read + apply (fast cycle)
         closed = []
         acked  = []
-        bit_changed = False        # call khuli / ACK hui / band hui?
+        bit_changed = False
         with get_conn() as conn:
             cur = dict_cursor(conn)
             cur.execute("""SELECT do_index, bit_type, bit_no FROM andon_plc_output_mapping
                             WHERE plc_id=%s AND COALESCE(bit_type,'')<>'' AND COALESCE(bit_no,'')<>''
                             ORDER BY do_index""", (did,))
             _rows = cur.fetchall()
-            # Ek hi call me saare address — Modbus par ye EK request banti hai
-            # (8 ki jagah 1), MC par pehle jaisa har address alag.
-            bits = list(zip(_rows, mc.read_many([(b["bit_type"], b["bit_no"]) for b in _rows])))
-            # koi call ON ho to abhi ka model + fault bhi padho (read_mc = SUB ya MAIN).
-            # read_mc None ho (SUB offline) to model/fault skip — call phir bhi chale.
-            # ISOLATED: model/fault read fail ho (SUB glitch/register error) to bhi
-            # neeche ka open/close loop KABHI block na ho — warna ek bit ON rehte hue
-            # doosri bit 0 hoti to read-error uski close ko rok deta = GHOST timer.
+
+            # Ek bhi bit-address bhara hai ya nahi -- ye yaad rakhna zaroori
+            # hai, warna aisi PLC "online" dikhti rehti hai aur koi nahi
+            # samajh paata ki alarm kyun nahi aata.
+            _POLL_NOBITS[did] = not _rows
+            if not _rows:
+                if _is_modbus(proto):
+                    _ = mc.read_one("HR", 3001)
+                else:
+                    _ = mc.read_one("M", 0)
+                bits = []
+            else:
+                bits = list(zip(_rows, mc.read_many([(b["bit_type"], b["bit_no"]) for b in _rows])))
+
             any_on = any(v != 0 for _, v in bits)
             model = fault = None
             if any_on and read_mc:
@@ -1119,31 +792,25 @@ def _plc_poll_once(dev):
                     model = _read_map_name(read_mc, did, cur, "andon_model_map", "model_name")
                     fault = _read_map_name(read_mc, did, cur, "andon_fault_map", "fault_name")
                 except Exception:
-                    model = fault = None                 # enrichment optional
+                    model = fault = None
             for b, val in bits:
-                res = _apply_state(cur, dev, b["do_index"], val != 0, model=model, fault=fault)  # 1→ON, 0→OFF
-                if res and res.get("action") == "closed":            # call band -> slip poori karni hai
+                res = _apply_state(cur, dev, b["do_index"], val != 0, model=model, fault=fault)
+                if res and res.get("action") == "closed":
                     closed.append((res.get("event_id"), res.get("history_id")))
-                elif res and res.get("action") == "acknowledged":    # ACK aayi -> slip me RESPONSE bharo
+                elif res and res.get("action") == "acknowledged":
                     acked.append(res.get("event_id"))
                 if res and res.get("action") in ("opened", "acknowledged", "closed"):
-                    bit_changed = True      # output bit ka faisla badal gaya
+                    bit_changed = True
             conn.commit()
-        # commit ke BAAD ghanti bajao — pehle bajate to writer abhi tak
-        # bina-commit wali purani haalat padhta aur kuch farak na padta.
+
         if bit_changed:
             _OUT_WAKE.set()
-        # commit ke BAAD (andon_history ab doosri connection ko dikhega) — har band
-        # hui MAINTENANCE call ki slip me bd_ok_time / end-date / down-time bhar do.
-        # (auto_slip_on_close pehle kahin call hi nahi hota tha -> OK-time khali reh
-        #  jaata tha; ab close par ye chalega.)
+
         for _eid, _hid in closed:
             if _eid and _hid:
                 try: auto_slip_on_close(_eid, _hid)
                 except Exception as _e: print(f"[ANDON-SLIP] close-fill dikkat (call {_eid}): {_e}")
-        # commit ke BAAD — ACK ho chuki calls ki slip me RESPONSE TIME back-fill.
-        # (auto_slip_on_ack pehle kahin call hi nahi hota tha -> jab slip ACK se
-        #  PEHLE ban jaati, response_time_minutes hamesha khali reh jaata tha.)
+
         for _eid in acked:
             if _eid:
                 try: auto_slip_on_ack(_eid)
@@ -1151,43 +818,15 @@ def _plc_poll_once(dev):
         _poll_ok(did)
         return True, (bool(sub_mc) if has_sub else None)
     except Exception as e:
-        # ── WAJAH AB DIKHTI HAI ──────────────────────────────────────────
-        # Pehle yahan sirf `except Exception:` tha — ek bhi lafz log me nahi
-        # jaata tha.  Isliye jab UI par "beech beech me disconnect" dikhta,
-        # to kisi ke paas dekhne ko kuch hota hi nahi tha.  Ab wajah yaad
-        # rehti hai (UI use dikhata hai) aur log me bhi jaati hai — par
-        # rate-limit ke saath, warna 10 baar prati second wahi line chhapti.
         _poll_fail(did, e)
-        # ── SOCKET SIRF ASLI GADBAD PAR TODO ─────────────────────────────
-        # `PlcProtocolError` ka matlab hai PLC ne jawab DIYA aur "nahi" kaha
-        # (jaise address allocation me nahi).  Us par connection todna galat
-        # tha: har cycle me reconnect hota rehta aur UI me wahi jhilmilahat
-        # dikhti, jabki taar-jodi bilkul theek hoti hai.
         if not isinstance(e, PlcProtocolError):
-            _plc_drop(did)                                    # MAIN+SUB reconnect
-            # ── BAAR-BAAR FAIL HO TO THEHRO ──────────────────────────────
-            # Pehle hamesha 1 second tha.  Par ek soorat aisi hai jisme wo
-            # ulta nuksan karta hai: FX5U ek waqt me SIRF EK Modbus
-            # connection ko data deta hai (naapa hua).  Slot kisi aur ke paas
-            # ho to hamara har reconnect bhi bekaar jaata hai — aur 1-second
-            # par lagataar khatkhat karne se slot kabhi settle hi nahi hota.
-            # Ab intezaar dheere-dheere badhta hai (1s se 5s tak).
+            _plc_drop(did)
             n = (_POLL_FAIL.get(did) or {}).get("count", 1)
             _PLC_RETRY[did] = _time.monotonic() + min(1 + (n // 10), _PLC_RETRY_SECS)
         return False, (False if has_sub else None)
 
 
 def _stale_call_sweep():
-    """Force-close an OPEN call ONLY when the PLC can NEVER read its bit=0 again:
-      • PLC delete ho gaya (ab kabhi poll nahi hoga),
-      • PLC disabled kar diya (Enabled off).
-    PLC sirf OFFLINE (connection toota) ho to yahan band NAHI karte — call ka
-    timer chalta rehta hai; jab PLC wapas aata hai to normal poll uska bit padhta
-    hai: 0 → close, 1 → continue (kabhi 0 se restart nahi).  (Pehle yahan 180s
-    grace ke baad offline call band kar dete the — us se genuine lambe outage me
-    call galti se band ho jaati thi; requirement ye hai ki timer chale.)
-    Deleted/disabled case me OPEN row normal path se kabhi close nahi hoti, isliye
-    yahan zabardasti band karte hain — history + duration + slip OK-time ke saath."""
     try:
         closed = []
         with get_conn() as conn:
@@ -1203,10 +842,6 @@ def _stale_call_sweep():
                     reason = "PLC deleted"
                 elif not dv.get("enabled"):
                     reason = "PLC disabled"
-                # PLC sirf OFFLINE (connection toota) ho to call band NAHI karte —
-                # timer chalta rehta hai; reconnect par normal poll bit padhta hai
-                # (0 → close, 1 → continue).  Isse lambe outage me galat close aur
-                # 0-se-restart dono nahi hote (yahi asli requirement hai).
                 if not reason:
                     continue
                 cur.execute("SELECT do_index FROM andon_system WHERE plc_id=%s AND state='OPEN'", (pid,))
@@ -1216,7 +851,7 @@ def _stale_call_sweep():
                         closed.append((res.get("event_id"), res.get("history_id"), reason))
             conn.commit()
         if closed:
-            _OUT_WAKE.set()            # ghost call band hui -> bit turant OFF
+            _OUT_WAKE.set()
         for eid, hid, reason in closed:
             print(f"[ANDON] ghost call {eid} auto-closed ({reason}) -> timer band")
             if eid and hid:
@@ -1226,14 +861,14 @@ def _stale_call_sweep():
         print(f"[ANDON] stale-call sweep dikkat: {e}")
 
 
-_MB_LAST = {}          # {dev_id: monotonic} — Modbus device ka pichhla poll
+_MB_LAST = {}
 
 
 def _plc_poll_loop():
     n = 0
     while True:
         try:
-            _ensure_tables()          # schema (series/bit columns) ready — boot ordering fix
+            _ensure_tables()
             with get_conn() as conn:
                 cur = dict_cursor(conn)
                 cur.execute("""SELECT id, zone, line, machine_no, machine_name,
@@ -1247,13 +882,7 @@ def _plc_poll_loop():
             for dev in devs:
                 ids.add(dev["id"])
                 prev = _PLC_STATUS.get(dev["id"], {})
-                # ── HAR DEVICE KI APNI RAFTAAR ───────────────────────────
-                # Loop 100ms par ghoomta hai (MC ke liye wahi sahi — button
-                # dabate hi call chahiye).  Par Modbus wale device ko itni
-                # tez nahi thokna: FX5U ka Modbus server ladder scan ke saath
-                # chalta hai, aur user ke chalte hue test me wo 400ms par hai.
-                # Isliye Modbus device beech ke cycle CHUP-CHAAP CHHOD deta
-                # hai — status bhi nahi chhedta, warna wo jhilmilata dikhta.
+
                 if _is_modbus(dev.get("protocol")) and dev.get("enabled"):
                     _t = _time.monotonic()
                     if _t - _MB_LAST.get(dev["id"], 0.0) < MODBUS_POLL_INTERVAL:
@@ -1266,35 +895,36 @@ def _plc_poll_loop():
                 ok, sub_ok = _plc_poll_once(dev)
                 _st = {"online": ok, "sub_online": sub_ok, "checked": now,
                        "last_seen": now if ok else prev.get("last_seen")}
-                # nakami ki wajah bhi saath bhejo — UI ab "Disconnected" ke
-                # bajaye asli baat dikha sakta hai
+
+                if ok and _POLL_NOBITS.get(dev["id"]):
+                    # PLC juda hua hai par usme ek bhi bit-address nahi --
+                    # UI ise chetavni ke roop me dikhata hai.
+                    _st["no_bits"] = True
                 _f = _POLL_FAIL.get(dev["id"])
                 if not ok and _f:
                     _st["poll_error"] = _f["why"]
                     _st["poll_error_count"] = _f["count"]
-                # offline hone ka pehla waqt yaad rakho — stale-call sweep grace ke liye
                 if not ok:
                     _st["offline_since"] = prev.get("offline_since") or now
                 _PLC_STATUS[dev["id"]] = _st
-            for k in list(_PLC_CONN.keys()):        # deleted PLC → connection band
+            for k in list(_PLC_CONN.keys()):
                 if k not in ids: _plc_drop(k)
             for k in list(_PLC_STATUS.keys()):
                 if k not in ids: _PLC_STATUS.pop(k, None)
             for k in list(_MB_LAST.keys()):
                 if k not in ids: _MB_LAST.pop(k, None)
+            for k in list(_POLL_NOBITS.keys()):
+                if k not in ids: _POLL_NOBITS.pop(k, None)
         except Exception as e:
             print(f"[ANDON-PLC-POLL] {e}")
         n += 1
-        if n % 60 == 0:                             # ~6s: ghost open call (offline/disabled/deleted PLC) band karo
-            try: _stale_call_sweep()                 # slip sweep ab ALAG dedicated thread me (poll-blocking se free)
+        if n % 60 == 0:
+            try: _stale_call_sweep()
             except Exception as e: print(f"[ANDON] stale-sweep {e}")
         _time.sleep(_PLC_POLL_INTERVAL)
 
 
 def _slip_sweep_loop():
-    """DEDICATED thread — har 1s me threshold-sweep, taaki auto-slip threshold PAAR
-    karte hi (~1s me) ban jaaye.  Poll loop ke andar chalane se offline PLC ki
-    connection-attempt cadence isko slow kar deti thi (slip 3-4s late banti thi)."""
     while True:
         try:
             _slip_threshold_sweep()
@@ -1322,18 +952,6 @@ def _start_output_writer():
 
 
 def start_workers():
-    """ANDON background workers — two INDEPENDENT gates:
-
-      • ANDON_POLL_ENABLED (default 1) — the INPUT poller (reads PLC bits →
-        andon_system).  A dev box that shares the production DB + plant network
-        would otherwise fight production for the PLC's MC connection (read-fail
-        looks like bit-0 → call closes → reopens = flap) and deadlock on
-        andon_system, so dev sets this 0.
-      • ANDON_OUTPUT_ENABLED (default = same as the poller) — the OUTPUT writer
-        (Call → Output: reads andon_system → writes output-PLC bits).  It NEVER
-        polls the input PLCs, so it can run safely even where the input poller is
-        off — e.g. on a dev box to test/prove Call → Output without the flap.
-    """
     def _off(name, default):
         return os.getenv(name, default).strip().lower() in ("0", "false", "no", "off")
     poll_off = _off("ANDON_POLL_ENABLED", "1")
@@ -1350,36 +968,21 @@ def start_workers():
 
 
 # ════════════════════════════════════════════════════════════════════
-#  CALL → PLC OUTPUT  (SEPARATE config)
-#  Mirror each department's LIVE andon call onto a bit of an OUTPUT PLC:
-#  bit ON while the call is active, OFF when it ends.  Maintenance / Tool
-#  Room turn OFF as soon as the call is ACKNOWLEDGED (response received);
-#  every other department stays ON until the call actually ends.
-#  This WRITES to a PLC, so it runs ONLY where the poller runs
-#  (start_workers → ANDON_POLL_ENABLED); a dev box never writes.
+#  CALL → PLC OUTPUT
 # ════════════════════════════════════════════════════════════════════
-_OUT_CONN   = {}     # {(ip,port): mc}   persistent WRITE connections (separate pool)
-_OUT_RETRY  = {}     # {(ip,port): monotonic ts}
-_OUT_STATE  = {}     # {mapping_id: {ip,port,series,bit_type,bit_no,on,online,checked}}
-# departments that have an ACK output (DO2/DO4) → bit off on RESPONSE, not on end.
+_OUT_CONN   = {}
+_OUT_RETRY  = {}
+_OUT_STATE  = {}
 _ACK_DEPTS  = {"maintenance", "toolroom"}
 
 
 def _dept_key(name):
-    """Department ka naam milane ke liye — space/underscore/hyphen hata kar
-    chhote akshar.  "Tool Room", "Toolroom", "TOOL_ROOM" — teeno ek hi cheez
-    hain.  Pehle seedha lower+strip par match hota tha, to Call->Output me
-    "Tool Room" likha ho aur ANDON me department "Toolroom" ho to milte hi
-    nahi the — us department ka bit kabhi ON hi na hota, aur wajah dikhti bhi
-    nahi.  Ab naam ka style koi bhi ho, jodi sahi banegi."""
     return re.sub(r"[\s_\-]+", "", str(name or "").strip().lower())
 _OUT_ENSURED = False
-# ── writer SINGLETON lock ── sirf EK backend output PLC likhe (single-conn PLC pe
-# do writer ladenge = dono fail).  Poller-wale (production) ki priority 1 — wo dev
-# (0) se lock chheen leta; holder mar jaaye (stale >15s) to koi aur auto le leta.
+
 _WRITER_ID   = f"{socket.gethostname()}:{os.getpid()}"
 _WRITER_PRIO = 0 if os.getenv("ANDON_POLL_ENABLED", "1").strip().lower() in ("0", "false", "no", "off") else 1
-_have_lock   = None   # pichhla lock-state (transition log ke liye)
+_have_lock   = None
 
 
 def _dept_off_on_ack(dept):
@@ -1387,30 +990,9 @@ def _dept_off_on_ack(dept):
 
 
 def _want_bit(dept, live, on_close=False):
-    """Ek output mapping ka bit ON hona chahiye ya nahi.
-
-    `live` = {department_key: {"total": n, "unacked": n}} — sirf abhi khuli
-    hui calls.  Do baatein isi ek jagah tay hoti hain, isliye yeh alag function
-    hai (test bhi isi ko karta hai, code ki nakal ko nahi):
-
-    1. DEPARTMENT ALAG-ALAG — `live` department se key hoti hai, to Maintenance
-       ka mapping sirf Maintenance ki ginti dekhta hai.  Quality ki call chalu
-       ho to Maintenance ka bit chhua tak nahi jaata.  Har department ka apna.
-
-    2. EK SE ZYADA CALL — ginti > 0 par ON.  Do machine se call aayi to ginti 2,
-       bit pehle se ON tha, ON hi rahega — koi jhatka, koi dobara-likhna nahi.
-       Ek band hui to ginti 1, ab bhi ON.  Bit tabhi OFF jab AAKHRI call nipte.
-
-    Maintenance/Toolroom ke liye "nipatna" = response aa gaya (unacked),
-    baaki sabke liye = call band ho gayi (total).
-    """
     row = live.get(_dept_key(dept))
     if not row:
         return False
-    # on_close=True (bit2) -> hamesha `total`, yaani bit tabhi girega jab us
-    # department ki AAKHRI call BAND ho jaye — response aane se nahi.  Isse
-    # Maintenance/Toolroom ke liye do alag nishaniyan ban jaati hain:
-    #   bit1 = "koi pahuncha ya nahi"   bit2 = "kaam khatam hua ya nahi"
     field = "total" if on_close else ("unacked" if _dept_off_on_ack(dept) else "total")
     return int(row.get(field) or 0) > 0
 
@@ -1433,26 +1015,12 @@ def _ensure_output():
                 enabled     BOOLEAN DEFAULT TRUE,
                 created_at  TIMESTAMP DEFAULT NOW()
             )""")
-        # live state the WRITER persists → koi bhi backend (dev/prod) ka GET asli
-        # bit dikha sake (writer-only in-memory state par nahi).
-        # reconnect_req = UI ke "Retry" ka nishan.  Writer ka socket WRITER ke
-        # process me hota hai (production), aur API request koi doosra backend
-        # (dev) bhi serve kar sakta hai — to seedha socket todna mumkin nahi.
-        # Isliye button DB me nishan lagata hai, aur writer agle cycle me use
-        # dekh kar apna connection giraata hai.  (Wahi tareeqa jo writer lock ka.)
-        # bit2 = DOOSRA (marzi ka) bit.  Pehla bit Maintenance/Toolroom ke liye
-        # RESPONSE aate hi off ho jaata hai; kai baar chahiye ki ek nishani tab
-        # tak jalti rahe jab tak breakdown POORA BAND na ho.  Wahi kaam bit2
-        # karta hai — ON call aane par, OFF tabhi jab us department ki aakhri
-        # call band ho.  Khali chhod dein to bit2 kuch karta hi nahi.
         for col, typ in (("last_bit", "BOOLEAN"), ("last_want", "BOOLEAN"),
                          ("last_online", "BOOLEAN"), ("last_at", "TIMESTAMP"),
                          ("last_writer", "TEXT"), ("reconnect_req", "TIMESTAMP"),
                          ("bit2_type", "TEXT"), ("bit2_no", "TEXT"),
                          ("last_bit2", "BOOLEAN"), ("last_want2", "BOOLEAN")):
             cur.execute(f"ALTER TABLE andon_call_output ADD COLUMN IF NOT EXISTS {col} {typ}")
-        # singleton writer lock — sirf EK backend likhe (single-conn PLC pe do
-        # writer = dono fail).  Ek hi row (id=1); holder + prio + heartbeat.
         cur.execute("""
             CREATE TABLE IF NOT EXISTS andon_output_lock (
                 id         INTEGER PRIMARY KEY DEFAULT 1,
@@ -1466,10 +1034,6 @@ def _ensure_output():
 
 
 def _acquire_writer_lock():
-    """DB singleton — output-writer lock claim/refresh karta.  True agar YE backend
-    holder hai (→ yahi likhega).  Higher-priority backend (production poller, prio 1)
-    lower ko (dev, prio 0) preempt karta; holder mar jaaye (heartbeat >15s puraana)
-    to koi aur le leta.  DB error pe False (safe — na likho)."""
     try:
         with get_conn() as conn:
             cur = conn.cursor()
@@ -1486,25 +1050,6 @@ def _acquire_writer_lock():
                                                 AND heartbeat < NOW() - INTERVAL '60 seconds'))""",
                         (_WRITER_ID, _WRITER_PRIO, _WRITER_ID,
                          socket.gethostname(), _WRITER_PRIO, _WRITER_PRIO, _WRITER_PRIO))
-            # holder=%s   → main hi hoon, sirf heartbeat refresh
-            # same-host   → apni hi machine ka purana/mara instance (restart) →
-            #               turant le lo; ek host pe kabhi 2 backend nahi chalte
-            # prio <  mera→ mujhse chhota (dev) baitha hai → turant preempt
-            # prio == mera→ barabar wala mar gaya (10s chup) → failover
-            # prio >  mera→ MUJHSE BADA (production) baitha hai → 60s chup rahe
-            #               tabhi loonga.
-            #
-            # Ye aakhri line hi asli bug ka ilaaj hai.  Pehle yahan sabke liye
-            # ek hi 10-second ka niyam tha.  Ek MC operation ka timeout ~4s hai,
-            # aur purana writer har cycle write+read (2 operation) karta tha —
-            # PLC ek pal ko busy hua to production ka loop 10s se zyada atak
-            # jaata.  Bas itne me DEV (prio 0) lock utha leta, apna socket
-            # kholta; production laut kar dekhta lock gaya, apne connection
-            # BAND karta, phir prio se wapas chheen kar DOBARA connect karta.
-            # Yahi "baar-baar connect/disconnect" tha — aur sabse zyada tab,
-            # jab bit ON hota hai, kyunki asli write usi waqt jaata hai.
-            # Ab chhota backend bade se tabhi leta hai jab wo sach me mar gaya
-            # ho (poore 60 second chup), zara sa slow hone par nahi.
             got = cur.rowcount == 1
             conn.commit()
             return got
@@ -1513,16 +1058,12 @@ def _acquire_writer_lock():
         return False
 
 
-# Ek PLC par lagataar kitni baar fail hua — ek hichki par connection nahi todte.
-_OUT_FAILS = {}          # {(ip,port): consecutive failures}
-_OUT_MAX_FAILS = 3       # itni baar LAGATAAR fail ho tabhi socket todo
-_OUT_RECONN_SEEN = {}    # {mapping_id: reconnect_req} — Retry do baar na chale
-
+_OUT_FAILS = {}
+_OUT_MAX_FAILS = 3
+_OUT_RECONN_SEEN = {}
 
 
 def _out_drop(ip, port):
-    """Ek output PLC ka connection band karo + backoff/fail-ginti saaf.
-    Agla cycle bilkul naya connect banayega, bina intezaar ke."""
     key = (ip, int(port or 5007))
     mc = _OUT_CONN.pop(key, None)
     if mc is not None:
@@ -1533,29 +1074,6 @@ def _out_drop(ip, port):
 
 
 def _out_write_bit(ip, port, series, bit_type, bit_no, value):
-    """Output PLC ka EK bit us haalat me le aao jo chahiye, aur ASLI bit lauta do
-    (True/False), ya None agar connect/read/write nahi hua.
-
-    Teen baatein jaan-boojh kar aisi hain:
-
-    1) **Zaroorat ho tabhi LIKHO.**  Pehle bit PADHTE hain; wo pehle se sahi hai
-       to kuch likhte hi nahi.  Purana code har cycle (har 1 second) write+read
-       dono karta tha — yaani 2 MC operation prati second, hamesha.  Utni
-       khatkhat me kabhi na kabhi ek operation atak hi jaata tha.  Ab thehri
-       haalat me sirf 1 read, aur likhna sirf jab bit galat ho.
-       (Maintain wala behaviour bana rehta hai: koi PLC par bit haath se badal
-       de to read me farak dikhega aur hum turant sahi kar denge.)
-
-    2) **Ek hichki par connection NAHI todte.**  Purana code kisi bhi exception
-       par socket band karke naya banata tha — isliye "baar-baar connect /
-       disconnect" dikhta tha, khaaskar bit ON hote waqt (tab asli write jaata
-       hai aur wahi sabse dher operation hota hai).  Ab lagataar
-       `_OUT_MAX_FAILS` baar fail hone par hi socket todte hain; usse pehle
-       agle cycle me usi connection par dobara koshish hoti hai.
-
-    3) **Connect se pehle TCP probe nahi.**  Wo ek extra connect+close tha.
-       Seedha MC connect karte hain; na ho to backoff.
-    """
     key = (ip, int(port or 5007))
     head = f"{(bit_type or '').upper()}{bit_no}"
     mc = _OUT_CONN.get(key)
@@ -1574,33 +1092,26 @@ def _out_write_bit(ip, port, series, bit_type, bit_no, value):
     want = 1 if value else 0
     try:
         cur_bit = int(_read_one(mc, bit_type, bit_no))
-        if cur_bit != want:                       # galat hai tabhi likho
+        if cur_bit != want:
             mc.write_bit(bit_type, bit_no, want)
-            cur_bit = int(_read_one(mc, bit_type, bit_no))   # likhne ke baad ASLI bit
+            cur_bit = int(_read_one(mc, bit_type, bit_no))
         _OUT_FAILS[key] = 0
         return bool(cur_bit)
     except Exception as e:
         n = _OUT_FAILS.get(key, 0) + 1
         _OUT_FAILS[key] = n
         if n < _OUT_MAX_FAILS:
-            # ek-do hichki — connection rehne do, agle cycle me phir try karenge
             return None
         try: mc.close()
         except Exception: pass
         _OUT_CONN.pop(key, None)
         _OUT_FAILS[key] = 0
         _OUT_RETRY[key] = _time.monotonic() + 1
-        print(f"[ANDON-OUT] {ip}:{key[1]} {head} — {n} baar lagataar fail, "
-              f"connection dobara banayenge ({str(e)[:60]})", flush=True)
+        print(f"[ANDON-OUT] {ip}:{key[1]} {head} — {n} baar lagataar fail, connection reset ({e})", flush=True)
         return None
 
 
 def _out_read_bit(ip, port, series, bit_type, bit_no):
-    """Read a bit's ACTUAL value from an output PLC via a SHORT-LIVED MC
-    connection (connect + read + close — writer ke persistent pool se alag, to
-    thread-race nahi).  True/False, ya None agar reach/read fail.  Non-destructive.
-    'Bit now' isi se aata hai — asli PLC value, writer ke bharose nahi (kuch PLC
-    write ACK kar dete hain par bit actually likhte nahi)."""
     try:
         p = int(port or 5007)
         if not _reachable(ip, p, timeout=0.4):
@@ -1616,20 +1127,14 @@ def _out_read_bit(ip, port, series, bit_type, bit_no):
 
 
 def _andon_output_write_once():
-    """One cycle — sirf LOCK-HOLDER backend body chalata: har enabled mapping →
-    bit decide (department call active?) → write + read-back → DB me persist.
-    Disabled/deleted mapping jo ON tha → OFF.  Lock na ho to skip (+ conn chhodo)."""
     _ensure_output()
     global _have_lock
     got = _acquire_writer_lock()
     if got != _have_lock:
         print(f"[ANDON-OUT] writer lock "
-              f"{'ACQUIRED — ye backend ab likhega' if got else 'RELEASED — koi aur backend likhega'} "
-              f"({_WRITER_ID}, prio={_WRITER_PRIO})", flush=True)
+              f"{'ACQUIRED' if got else 'RELEASED'} ({_WRITER_ID}, prio={_WRITER_PRIO})", flush=True)
         _have_lock = got
     if not got:
-        # lock kisi aur ke paas → single-conn PLC chhod do (naya writer connect kar
-        # sake) aur is cycle kuch na likho.
         for k in list(_OUT_CONN.keys()):
             try: _OUT_CONN.pop(k).close()
             except Exception: pass
@@ -1648,53 +1153,21 @@ def _andon_output_write_once():
                         WHERE e.state='OPEN' GROUP BY 1""")
         live = {_dept_key(r["dept"]): r for r in cur.fetchall()}
     enabled_ids = set()
-    updates = []   # (last_bit, last_want, last_online, id) → DB me persist
+    updates = []
     for m in maps:
         enabled_ids.add(m["id"])
-        # HAR MAPPING SIRF APNE DEPARTMENT KI CALL DEKHTA HAI.
-        # Maintenance wale PLC ka bit sirf Maintenance ki call par ON hoga,
-        # Toolroom wale ka sirf Toolroom par — `live` department se key hoti
-        # hai, isliye ek department ki call doosre ka bit kabhi nahi chhedti.
-        #
-        # AUR: `unacked`/`total` GINTI hai, sirf haan/na nahi.  Isliye ek call
-        # chalu ho aur usi department ki doosri machine se aur call aa jaye to
-        # ginti badhti hai, bit ON hi rehta hai — koi jhatka nahi.  Bit tabhi
-        # OFF hota hai jab us department ki AAKHRI call bhi nipat jaye.
-        # RETRY dabaya gaya tha? -> is PLC ka connection giraa do, backoff bhi
-        # saaf, taaki abhi is cycle me naya connect ho (intezaar nahi).
         req = m.get("reconnect_req")
         if req is not None and _OUT_RECONN_SEEN.get(m["id"]) != req:
             _OUT_RECONN_SEEN[m["id"]] = req
             _out_drop(m["plc_ip"], m["plc_port"])
-            print(f"[ANDON-OUT] Retry — {m['plc_ip']}:{m['plc_port']} ka connection "
-                  f"giraya, naya banayenge", flush=True)
+            print(f"[ANDON-OUT] Retry — {m['plc_ip']}:{m['plc_port']} connection reset", flush=True)
         want = _want_bit(m["department"], live)
         prev = _OUT_STATE.get(m["id"], {})
         actual = _out_write_bit(m["plc_ip"], m["plc_port"], m["plc_series"],
-                                m["bit_type"], m["bit_no"], want)   # read-back: True/False/None
-        # HICHKI KO "DISCONNECTED" MAT DIKHAO.
-        # Naya _out_write_bit ek-do fail par connection todta nahi (3 lagataar par
-        # todta hai), par us cycle lautata None hi hai.  Us None ko seedha DB me
-        # daal dete to UI har hichki par "Disconnected" + PLC bit "—" bhadka deti,
-        # jabki connection bilkul zinda hai — screen par wahi jhilmilahat dikhti
-        # jiski shikayat thi.  Isliye: connection abhi bhi paas hai to pichhla
-        # sach rehne do; sirf ASLI teardown (connection chala gaya) par hi None.
+                                m["bit_type"], m["bit_no"], want)
         if actual is None and (m["plc_ip"], int(m["plc_port"] or 5007)) in _OUT_CONN:
             actual = prev.get("on")
-        if want != prev.get("want"):
-            print(f"[ANDON-OUT] {m['department']} {m['bit_type']}{m['bit_no']} "
-                  f"-> {'ON' if want else 'OFF'} (readback={actual})", flush=True)
-        # ── DOOSRA BIT (marzi ka) ──────────────────────────────────────
-        # ON call aane par, OFF tabhi jab breakdown BAND ho (response se nahi).
-        # bit2_no khali ho to kuch karte hi nahi — purani mappings waisi hi
-        # chalti rehti hain.  Isi connection par likhte hain, isliye koi naya
-        # socket nahi khulta.
-        # Doosra bit SIRF Maintenance / Tool Room ke liye hai — unhi ka bit1
-        # RESPONSE par girta hai, isliye "kaam khatam hua ya nahi" wali alag
-        # nishani chahiye hoti hai.  Quality / Material / Model Setup / Other
-        # Loss ka bit1 pehle se call BAND hone par hi girta hai, to unke liye
-        # bit2 wahi cheez dobara karega — bekaar, aur ek aur bit bina wajah
-        # PLC par likha jaata.  Isliye yahan rok di.
+
         want2 = actual2 = None
         if (m.get("bit2_no") or "").strip() and _dept_off_on_ack(m["department"]):
             want2 = _want_bit(m["department"], live, on_close=True)
@@ -1702,9 +1175,6 @@ def _andon_output_write_once():
                                      m["bit2_type"] or "M", m["bit2_no"], want2)
             if actual2 is None and (m["plc_ip"], int(m["plc_port"] or 5007)) in _OUT_CONN:
                 actual2 = prev.get("on2")
-            if want2 != prev.get("want2"):
-                print(f"[ANDON-OUT] {m['department']} {m['bit2_type'] or 'M'}{m['bit2_no']} "
-                      f"(close-pe-off) -> {'ON' if want2 else 'OFF'} (readback={actual2})", flush=True)
 
         _OUT_STATE[m["id"]] = {"ip": m["plc_ip"], "port": m["plc_port"], "series": m["plc_series"],
                                "bit_type": m["bit_type"], "bit_no": m["bit_no"],
@@ -1713,7 +1183,7 @@ def _andon_output_write_once():
                                "want2": want2, "on2": actual2,
                                "checked": datetime.now().isoformat(timespec="seconds")}
         updates.append((actual, want, actual is not None, actual2, want2, m["id"]))
-    # a mapping that was ON but is no longer enabled/present → force its bit OFF once
+
     for oid in list(_OUT_STATE.keys()):
         if oid in enabled_ids:
             continue
@@ -1721,13 +1191,11 @@ def _andon_output_write_once():
         if st.get("on"):
             _out_write_bit(st.get("ip"), st.get("port"), st.get("series"),
                           st.get("bit_type"), st.get("bit_no"), False)
-        # bit2 bhi — warna mapping hatane par wo PLC par ON hi ATKA reh jaata
-        # aur tower jalti rehti, bina kisi call ke.
         if st.get("on2") and (st.get("bit2_no") or "").strip():
             _out_write_bit(st.get("ip"), st.get("port"), st.get("series"),
                           st.get("bit2_type") or "M", st.get("bit2_no"), False)
         _OUT_STATE.pop(oid, None)
-    # writer ke asli bits DB me likho → koi bhi backend ka GET sach dikhaye
+
     if updates:
         try:
             with get_conn() as conn:
@@ -1746,24 +1214,13 @@ def _andon_output_write_once():
 
 
 def _andon_output_loop():
-    """DEDICATED thread — ANDON calls ko output PLC ke bits par utaarta hai.
-
-    Jaagta hai DO me se jo pehle ho: ghanti (`_OUT_WAKE`) baje — yaani koi call
-    khuli / ACK hui / band hui — ya 1 second ka pehra poora ho.  Ghanti isliye
-    hai ki ACK ke baad bit turant OFF ho; sirf 1-second ke chakkar par chhodte
-    to bit 0 se 1 second tak kabhi bhi OFF hota aur saaf deri dikhti.
-    1-second wala pehra phir bhi rakha hai — safety net, taaki koi ghanti
-    kisi wajah se choot bhi jaye to bit zyada der galat na rahe.
-
-    Sirf _start_plc_poller se chalu hota hai (yaani jab polling on ho)."""
     while True:
-        _OUT_WAKE.clear()          # kaam se PEHLE saaf — kaam ke DAURAN aayi
-                                   # ghanti kho na jaye (turant dobara chalega)
+        _OUT_WAKE.clear()
         try:
             _andon_output_write_once()
         except Exception as e:
             print(f"[ANDON-OUT] {e}")
-        _OUT_WAKE.wait(timeout=1.0)   # ghanti baji to turant, warna 1s ka pehra
+        _OUT_WAKE.wait(timeout=1.0)
 
 
 class CallOutputIn(BaseModel):
@@ -1773,7 +1230,6 @@ class CallOutputIn(BaseModel):
     plc_series: Optional[str] = "Q"
     bit_type: str
     bit_no: str
-    # Doosra bit — marzi ka.  Khali chhoda to kuch nahi hota.
     bit2_type: Optional[str] = "M"
     bit2_no: Optional[str] = ""
     enabled: bool = True
@@ -1791,7 +1247,6 @@ def list_call_outputs(user=Depends(get_current_user)):
                               EXTRACT(EPOCH FROM (NOW() - last_at)) AS last_age
                          FROM andon_call_output ORDER BY id""")
         rows = cur.fetchall()
-        # live open calls per department (unacked vs total) → DESIRED bit state
         cur.execute("""SELECT COALESCE(dep.name, e.display_name) AS dept,
                               COUNT(*) FILTER (WHERE e.acknowledged_at IS NULL) AS unacked,
                               COUNT(*) AS total
@@ -1799,38 +1254,27 @@ def list_call_outputs(user=Depends(get_current_user)):
                          LEFT JOIN andon_departments dep ON dep.id = e.department_id
                         WHERE e.state='OPEN' GROUP BY 1""")
         live = {_dept_key(r["dept"]): r for r in cur.fetchall()}
-        # writer lock ka heartbeat = koi backend abhi likh raha hai ya nahi (sach signal)
         cur.execute("SELECT holder, EXTRACT(EPOCH FROM (NOW()-heartbeat)) AS age FROM andon_output_lock WHERE id=1")
         _lk = cur.fetchone() or {}
     _wlive = _lk.get("age") is not None and _lk["age"] <= 12
     for r in rows:
-        r["off_on_ack"] = _dept_off_on_ack(r["department"])   # response pe off?
-        # should_be_on = call ki live state se INTENDED bit (call ON → chahiye ON;
-        # off_on_ack dept sirf jab tak UN-acknowledged).  Ye writer se independent.
-        # UI wahi _want_bit poochta hai jo writer chalata hai — do jagah do
-        # hisaab hote to screen "should be on" dikhati aur bit ON hota hi nahi.
+        r["off_on_ack"] = _dept_off_on_ack(r["department"])
         r["should_be_on"] = _want_bit(r["department"], live)
-        # bit2 ka apna faisla — call BAND hone par hi girta hai
-        # bit2 sirf Maintenance/Tool Room par — writer ki shart se milta-julta
         r["bit2_allowed"] = bool(r["off_on_ack"])
         r["should_be_on2"] = (_want_bit(r["department"], live, on_close=True)
                               if ((r.get("bit2_no") or "").strip() and r["off_on_ack"])
                               else None)
-        # bit_on / online = ASLI bit — jise ACTIVE writer ne likha + read-back karke DB
-        # me persist kiya.  Har backend (dev/prod) YAHI padhta, to "Bit now" har jagah
-        # SACH.  Koi active writer nahi (last_at >20s puraana) → pata nahi ("—").
         age = r.pop("last_age", None)
         fresh = age is not None and age <= 12
         r.pop("last_writer", None)
-        r["writer"] = _lk.get("holder") if _wlive else None       # lock zinda = writer chalu
+        r["writer"] = _lk.get("holder") if _wlive else None
         r["writer_age"] = round(_lk["age"], 1) if _lk.get("age") is not None else None
         if r["enabled"] and fresh:
             r["bit_on"], r["online"] = r.get("last_bit"), r.get("last_online")
             r["bit2_on"] = r.get("last_bit2")
         else:
-            r["bit_on"], r["online"] = None, None    # disabled ya koi writer nahi
+            r["bit_on"], r["online"] = None, None
             r["bit2_on"] = None
-        # Connection: bit pata chala → reachable; warna (writer band) quick TCP probe.
         reach = True if r["bit_on"] is not None else r["online"]
         if reach is None and r.get("plc_ip") and r["enabled"]:
             reach = _reachable(r["plc_ip"], r.get("plc_port") or 5007, timeout=0.4)
@@ -1868,10 +1312,6 @@ def edit_call_output(oid: int, body: CallOutputIn, user=Depends(get_current_user
     _ensure_output()
     with get_conn() as conn:
         cur = conn.cursor()
-        # NOTE: bit2 khali kar dene par writer ka cleanup use PLC par OFF nahi
-        # karta (wo sirf poori mapping hatne par chalta hai).  Isliye yahin
-        # pehle purana bit2 OFF kar dete hain — warna wo PLC par ON hi atka
-        # reh jaata aur tower bina call ke jalti rehti.
         new_b2 = str(body.bit2_no or "").strip()
         cur.execute("SELECT bit2_type, bit2_no, plc_ip, plc_port, plc_series FROM andon_call_output WHERE id=%s", (oid,))
         _old = cur.fetchone()
@@ -1879,7 +1319,7 @@ def edit_call_output(oid: int, body: CallOutputIn, user=Depends(get_current_user
             try:
                 _out_write_bit(_old[2], _old[3], _old[4], _old[0] or "M", _old[1], False)
             except Exception as _e:
-                print(f"[ANDON-OUT] purana bit2 off nahi hua: {_e}")
+                print(f"[ANDON-OUT] bit2 reset error: {_e}")
         cur.execute("""UPDATE andon_call_output
                           SET department=%s, plc_ip=%s, plc_port=%s, plc_series=%s,
                               bit_type=%s, bit_no=%s, bit2_type=%s, bit2_no=%s, enabled=%s
@@ -1892,7 +1332,6 @@ def edit_call_output(oid: int, body: CallOutputIn, user=Depends(get_current_user
         if cur.rowcount == 0:
             raise HTTPException(404, "mapping not found")
         conn.commit()
-    # let the writer re-evaluate + turn off the old bit if this got disabled
     return {"ok": True}
 
 
@@ -1908,23 +1347,6 @@ def del_call_output(oid: int, user=Depends(get_current_user)):
 
 @router.post("/call-outputs/{oid}/recheck")
 def call_output_recheck(oid: int, user=Depends(get_current_user)):
-    """Output PLC ko ABHI dobara jodne ki koshish karo — UI ka "Retry" button.
-
-    Do kaam karta hai:
-
-    1. **Taaza TCP probe** (cache andekha), taaki user ko turant jawab mile ki
-       port khula hai ya nahi, aur na ho to WAJAH kya hai.
-    2. **Writer ka connection giraane ka nishan** DB me lagata hai
-       (`reconnect_req = NOW()`).  Writer ka socket writer ke apne process me
-       hota hai — aur ye request koi doosra backend bhi serve kar sakta hai —
-       isliye seedha socket todna mumkin nahi.  Writer agle cycle (~1s) me
-       nishan dekhta hai, purana connection giraata hai aur naya banata hai.
-       Agar likhne wala YEHI process hua to hum turant bhi giraa dete hain.
-
-    NOTE: `last_bit`/`last_online`/`reachable` me kuch NAHI likhte — wo sirf
-    writer ka sach hai.  (Pehle input-PLC wale Retry me yahi galti hui thi:
-    status likh diya tha, aur list "Connected" par chipak kar reh gayi.)
-    """
     _ensure_output()
     with get_conn() as conn:
         cur = dict_cursor(conn)
@@ -1936,12 +1358,10 @@ def call_output_recheck(oid: int, user=Depends(get_current_user)):
         cur.execute("UPDATE andon_call_output SET reconnect_req = NOW() WHERE id=%s", (oid,))
         conn.commit()
 
-    if _have_lock:                      # likhne wala yehi backend → turant giraa do
+    if _have_lock:
         _out_drop(m["plc_ip"], m["plc_port"])
 
     ok, why = _probe_cached(m["plc_ip"], m["plc_port"] or 5007, timeout=3.0, force=True)
-    # `reason` ka tarjuma UI karti hai (PLC_WHY) — wahi pattern jo input-PLC
-    # wale Retry me hai, taaki wajah ek hi jagah likhi rahe.
     return {"id": oid, "ok": ok, "reason": why}
 
 
@@ -1951,9 +1371,6 @@ def _ensure_tables():
         return
     with get_conn() as conn:
         cur = conn.cursor()
-        # AUTO breakdown slip ka THRESHOLD — slip tabhi banti hai jab maintenance
-        # call itne minute se zyada khuli rahe (chhoti breakdown ki slip nahi).
-        # Admin isse ANDON page se badal sakta hai; default 2 minute.
         cur.execute("""
             CREATE TABLE IF NOT EXISTS maintenance_slip_config (
                 scope               TEXT PRIMARY KEY DEFAULT 'GLOBAL',
@@ -1963,7 +1380,6 @@ def _ensure_tables():
         cur.execute("""
             INSERT INTO maintenance_slip_config (scope) VALUES ('GLOBAL')
             ON CONFLICT (scope) DO NOTHING""")
-        # "Pending Breakdown" dashboard ke 2 target — yahi (Slip Threshold) page se set.
         cur.execute("ALTER TABLE maintenance_slip_config ADD COLUMN IF NOT EXISTS target_breakdowns INTEGER NOT NULL DEFAULT 10")
         cur.execute("ALTER TABLE maintenance_slip_config ADD COLUMN IF NOT EXISTS target_pending    INTEGER NOT NULL DEFAULT 0")
         cur.execute("""
@@ -1973,12 +1389,7 @@ def _ensure_tables():
                 color      VARCHAR(20)  DEFAULT '#2563eb',
                 created_at TIMESTAMP DEFAULT NOW()
             )""")
-        # ── MIGRATION: ESP → PLC naming (DATA BACHA KE) — RACE-SAFE ──────
-        # Purani install par device/output table + FK column ka naam 'esp' tha,
-        # ab 'plc'.  Old hai aur naya nahi → RENAME (data intact); phir neeche
-        # ka CREATE IF NOT EXISTS no-op.  Do worker (main.py + poll thread) ek
-        # saath boot par migration chala sakte — TOCTOU race me ek RENAME fail
-        # ho sakta, isliye try/except me: doosra pehle kar chuka to skip.
+
         try:
             for _old, _new in (("andon_esp_devices", "andon_plc_devices"),
                                ("andon_esp_output_mapping", "andon_plc_output_mapping")):
@@ -1995,33 +1406,26 @@ def _ensure_tables():
             cur.execute("ALTER INDEX IF EXISTS andon_esp_name_uq RENAME TO andon_plc_name_uq")
             conn.commit()
         except Exception as _me:
-            conn.rollback()      # doosra worker pehle kar chuka — data safe hai
-            print(f"[ANDON] esp->plc migration skip (shayad already done): {_me}")
+            conn.rollback()
+            print(f"[ANDON] esp->plc migration skip: {_me}")
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS andon_plc_devices (
                 id          SERIAL PRIMARY KEY,
                 name        VARCHAR(160) NOT NULL,
                 ip          VARCHAR(60)  NOT NULL,
                 port        INTEGER      DEFAULT 80,
-                zone         VARCHAR(120),          -- from maintenance_machines master
-                line         VARCHAR(120),          -- from maintenance_machines master
-                machine_no   VARCHAR(60),           -- from maintenance_machines master
-                machine_name VARCHAR(160),          -- auto-filled from machine_no
+                zone         VARCHAR(120),
+                line         VARCHAR(120),
+                machine_no   VARCHAR(60),
+                machine_name VARCHAR(160),
                 description  TEXT,
                 enabled      BOOLEAN DEFAULT TRUE,
                 poll_path    VARCHAR(120) DEFAULT '/status',
                 created_at   TIMESTAMP DEFAULT NOW(),
                 updated_at   TIMESTAMP DEFAULT NOW()
             )""")
-        # ── EK IP / EK NAAM = EK HI PLC ────────────────────────────────────
-        # Aane wala signal device par IP se (phir naam se) bithaya jaata hai.
-        # Do device ek hi IP par hon to koi bhi ek utha liya jaata hai — dono
-        # board ka data ek hi line par chadh jaata aur kisi ko pata bhi na
-        # chalta.  Ye DB-level rule aakhri suraksha hai: API/UI se bache to
-        # yahan se nahi bachega.
-        # Case/space ka farq na bane isliye LOWER(TRIM(...)) par index hai.
-        # Purane data me duplicate ho to index banega nahi — us soorat me
-        # backend chalta rahe (bas ek warning), warna app hi na khule.
+
         for _ix, _expr in (("andon_plc_ip_uq",   "LOWER(TRIM(ip))"),
                            ("andon_plc_name_uq", "LOWER(TRIM(name))")):
             try:
@@ -2029,40 +1433,27 @@ def _ensure_tables():
                                   ON andon_plc_devices (({_expr}))""")
             except Exception as _e:
                 conn.rollback()
-                print(f"[ANDON] {_ix} nahi ban paya (shayad purana duplicate data hai): {_e}")
-        # earlier builds used zone_id/line_id FKs — move to plain master text fields
+
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS zone VARCHAR(120)")
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS line VARCHAR(120)")
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS machine_no VARCHAR(60)")
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS machine_name VARCHAR(160)")
-        # ── PLC mode ── device ab ESP nahi, Mitsubishi PLC hai: `series` (MC-protocol
-        # plctype — Q/FX5U/iQ-R/L), IP=PLC IP, port=PLC MC port (default 5007).
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS series VARCHAR(20) DEFAULT 'Q'")
-        # ── SUB PLC (optional) ── ANDON bits MAIN PLC se, par Model/Fault register
-        # kisi DOOSRE PLC se aa sakte hain (jaise ANDON machine-5 par, Model/Fault
-        # machine-8 se).  sub_ip set ho to Model/Fault usi PLC se padhe jaate hain.
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS sub_ip VARCHAR(60)")
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS sub_port INTEGER")
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS sub_series VARCHAR(20)")
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS sub_machine_no VARCHAR(60)")
-        # ── PROTOCOL ── ab do raaste hain: 'MC' (Mitsubishi MC/SLMP, padhna+likhna)
-        # aur 'MODBUS' (Modbus TCP, SIRF padhna).  DEFAULT 'MC' jaan-boojh kar hai —
-        # isse har purani row bina chhue pehle jaisi hi chalti rehti hai.
-        # unit_id sirf Modbus ke liye (slave/unit id, FX5U par aksar 1); MC ise
-        # dekhta hi nahi.  Port khali ho to protocol se tay hota hai (502 / 5007).
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS protocol     VARCHAR(10) DEFAULT 'MC'")
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS unit_id      INTEGER     DEFAULT 1")
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS sub_protocol VARCHAR(10) DEFAULT 'MC'")
         cur.execute("ALTER TABLE andon_plc_devices ADD COLUMN IF NOT EXISTS sub_unit_id  INTEGER     DEFAULT 1")
-        # Purani row me column NULL aata hai (DEFAULT sirf nayi row par lagta hai),
-        # aur NULL ko code "MC" hi maanta hai — phir bhi ek baar bhar dete hain
-        # taaki UI me khaali dropdown na dikhe.
+
         cur.execute("UPDATE andon_plc_devices SET protocol='MC' WHERE protocol IS NULL")
         cur.execute("UPDATE andon_plc_devices SET sub_protocol='MC' WHERE sub_protocol IS NULL")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS andon_plc_output_mapping (
                 id            SERIAL PRIMARY KEY,
-                plc_id        INTEGER REFERENCES andon_plc_devices(id) ON DELETE CASCADE,  -- NULL = default
+                plc_id        INTEGER REFERENCES andon_plc_devices(id) ON DELETE CASCADE,
                 do_index      INTEGER NOT NULL CHECK (do_index BETWEEN 1 AND 8),
                 display_name  VARCHAR(160),
                 department_id INTEGER REFERENCES andon_departments(id) ON DELETE SET NULL,
@@ -2072,15 +1463,9 @@ def _ensure_tables():
             )""")
         cur.execute("""CREATE UNIQUE INDEX IF NOT EXISTS andon_output_default_uq
                        ON andon_plc_output_mapping (do_index) WHERE plc_id IS NULL""")
-        # ── PLC bit mapping ── har output (do_index) ka PLC bit address:
-        # bit_type = M/Y/X/L/D… , bit_no = number.  PLC poll is bit ko padhta hai
-        # (1 → call ON/timer start, 0 → OFF/stop).  Per-PLC row me set hota hai.
         cur.execute("ALTER TABLE andon_plc_output_mapping ADD COLUMN IF NOT EXISTS bit_type VARCHAR(4)")
         cur.execute("ALTER TABLE andon_plc_output_mapping ADD COLUMN IF NOT EXISTS bit_no   VARCHAR(20)")
-        # ── ASSIGN: per-machine Model & Fault maps ──────────────────────────
-        # ANDON "Assign" page se: kisi PLC device/register ki VALUE ko model-naam
-        # ya fault-naam se map karo.  device_type=D/M/L…, device_no=address,
-        # value=register me jo aaye, model_name/fault_name=us par naam.  Per-PLC.
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS andon_model_map (
                 id          SERIAL PRIMARY KEY,
@@ -2101,12 +1486,7 @@ def _ensure_tables():
                 fault_name  TEXT,
                 created_at  TIMESTAMP DEFAULT NOW()
             )""")
-        # ── MIGRATION: andon_events → andon_system ──────────────────────
-        # Live-calls table ka naam andon_events tha; ab andon_system hai.
-        # Purani install par use RENAME karo (data bacha rahe) — warna neeche
-        # ka CREATE IF NOT EXISTS ek naya KHALI andon_system bana deta aur
-        # purane chalu calls andon_events me phase reh jaate.
-        # Idempotent: dono me se jo bhi haalat ho, sahi natija deta hai.
+
         cur.execute("""
             DO $$
             BEGIN
@@ -2133,7 +1513,6 @@ def _ensure_tables():
                 state         VARCHAR(12) DEFAULT 'OPEN',
                 created_at    TIMESTAMP DEFAULT NOW()
             )""")
-        # call OPEN hote waqt PLC par jo model chal raha tha (model-map se) — slip ke model_no me jaata hai
         cur.execute("ALTER TABLE andon_system ADD COLUMN IF NOT EXISTS model VARCHAR(120)")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS andon_history (
@@ -2151,16 +1530,14 @@ def _ensure_tables():
                 response_seconds INTEGER,
                 created_at       TIMESTAMP DEFAULT NOW()
             )""")
-        # earlier builds stored zone_id/line_id (int FKs); the push model records
-        # the zone/line NAME instead — add the text columns on old tables.
+
         for _t in ("andon_system", "andon_history"):
             cur.execute(f"ALTER TABLE {_t} ADD COLUMN IF NOT EXISTS zone VARCHAR(120)")
             cur.execute(f"ALTER TABLE {_t} ADD COLUMN IF NOT EXISTS line VARCHAR(120)")
-            cur.execute(f"ALTER TABLE {_t} ADD COLUMN IF NOT EXISTS machine_no VARCHAR(60)")  # device se
-            cur.execute(f"ALTER TABLE {_t} ADD COLUMN IF NOT EXISTS model VARCHAR(120)")      # call-open pe capture -> slip model_no
-            cur.execute(f"ALTER TABLE {_t} ADD COLUMN IF NOT EXISTS fault VARCHAR(160)")      # Fault History ke liye
+            cur.execute(f"ALTER TABLE {_t} ADD COLUMN IF NOT EXISTS machine_no VARCHAR(60)")
+            cur.execute(f"ALTER TABLE {_t} ADD COLUMN IF NOT EXISTS model VARCHAR(120)")
+            cur.execute(f"ALTER TABLE {_t} ADD COLUMN IF NOT EXISTS fault VARCHAR(160)")
 
-        # ── seed defaults ──
         cur.execute("SELECT COUNT(*) FROM andon_departments")
         if (cur.fetchone()[0] or 0) == 0:
             for d in _DEFAULT_DEPTS:
@@ -2177,14 +1554,10 @@ def _ensure_tables():
                                VALUES (NULL,%s,%s,%s,%s,TRUE) ON CONFLICT DO NOTHING""",
                             (do_i, disp, dept_id, prio))
 
-        # ── one-time upgrade: adopt the fixed DO1..DO7 plant scheme.  Runs once
-        # (guarded by 'Other Loss').  Config-only clean rebuild — departments +
-        # the default template + any per-PLC overrides — so EVERY PLC uses the
-        # single universal scheme the plant standardised on.
         cur.execute("""SELECT COUNT(*) FROM andon_plc_output_mapping
                          WHERE plc_id IS NULL AND display_name='Other Loss'""")
         if (cur.fetchone()[0] or 0) == 0:
-            cur.execute("DELETE FROM andon_plc_output_mapping")   # default + per-PLC overrides
+            cur.execute("DELETE FROM andon_plc_output_mapping")
             cur.execute("DELETE FROM andon_departments")
             dept_id = {}
             for d in ("Maintenance", "Toolroom", "Quality", "Material", "Other Loss"):
@@ -2196,16 +1569,10 @@ def _ensure_tables():
                                VALUES (NULL,%s,%s,%s,%s,TRUE)""",
                             (do_i, disp, dept_id.get(dept), prio))
 
-        # DO6 department is 'Material' (was briefly labelled 'Store').
-        # Idempotent self-heal (renames dept + the DO6 label if still 'Store').
         cur.execute("""UPDATE andon_departments SET name='Material' WHERE name='Store'
                         AND NOT EXISTS (SELECT 1 FROM andon_departments WHERE name='Material')""")
         cur.execute("UPDATE andon_plc_output_mapping SET display_name='Material' WHERE display_name='Store'")
 
-        # 2026-08-10 — DO8 "Model Setup" ensure.  Purane installs me DO1-7 the,
-        # DO8 nahi tha (seeding sirf khaali table par chalti hai).  Idempotent:
-        # department + default DO8 mapping jodo agar nahi hain.  Kaam DO6/DO7
-        # jaisa (plain toggle, department call).
         cur.execute("INSERT INTO andon_departments (name, color) VALUES ('Model Setup', '#db2777') ON CONFLICT DO NOTHING")
         cur.execute("UPDATE andon_departments SET color='#db2777' WHERE name='Model Setup' AND (color IS NULL OR color='#2563eb')")
         cur.execute("SELECT id FROM andon_departments WHERE name='Model Setup'")
@@ -2218,16 +1585,14 @@ def _ensure_tables():
                            VALUES (NULL, 8, 'Model Setup', %s, 'Normal', TRUE)""", (_ms_id,))
         conn.commit()
     _ensured = True
-    start_workers()          # PLC bit-poller
+    start_workers()
 
 
 # ════════════════════════════════════════════════════════════════════
-#  MASTERS — zone / line come straight from maintenance_machines
+#  MASTERS
 # ════════════════════════════════════════════════════════════════════
 @router.get("/masters")
 def masters(user=Depends(get_current_user)):
-    """Distinct zone → lines from the machine master (maintenance_machines), so the PLC
-    picker matches every other page in the app."""
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("""SELECT DISTINCT zone_name, line_name FROM maintenance_machines
@@ -2243,18 +1608,16 @@ def masters(user=Depends(get_current_user)):
 
 
 # ════════════════════════════════════════════════════════════════════
-#  SLIP THRESHOLD  (AUTO breakdown slip tabhi bane jab call itni der khuli rahe)
+#  SLIP CONFIG
 # ════════════════════════════════════════════════════════════════════
 class SlipThresholdIn(BaseModel):
     slip_threshold_min: int
-    # "Pending Breakdown" dashboard ke 2 target (None => purana rakho)
     target_breakdowns: Optional[int] = None
     target_pending:    Optional[int] = None
 
 
 @router.get("/slip-config")
 def get_slip_config(user=Depends(get_current_user)):
-    """Abhi ka AUTO-slip threshold (minute) + dashboard ke 2 target.  Default 2/10/0."""
     _ensure_tables()
     with get_conn() as conn:
         cur = dict_cursor(conn)
@@ -2269,9 +1632,6 @@ def get_slip_config(user=Depends(get_current_user)):
 
 @router.put("/slip-config")
 def set_slip_config(body: SlipThresholdIn, admin=Depends(require_admin)):
-    """Admin: AUTO-slip threshold (1..60 min) + Pending Breakdown ke 2 target
-    (Total Breakdowns / Pending Closures).  Turant lag jaata hai — threshold ka
-    cache 10 sec me refresh, target har KPI fetch par seedha DB se padha jaata hai."""
     _ensure_tables()
     mins = max(1, min(60, int(body.slip_threshold_min)))
     tb = None if body.target_breakdowns is None else max(0, int(body.target_breakdowns))
@@ -2290,7 +1650,7 @@ def set_slip_config(body: SlipThresholdIn, admin=Depends(require_admin)):
         """, (mins, tb, tp, tb, tp))
         row = cur.fetchone()
         conn.commit()
-    _THRESH_CACHE["min"] = mins        # cache turant update
+    _THRESH_CACHE["min"] = mins
     _THRESH_CACHE["at"]  = _time.time()
     return {"slip_threshold_min": int(row["slip_threshold_min"]),
             "target_breakdowns":  int(row["target_breakdowns"]),
@@ -2298,7 +1658,7 @@ def set_slip_config(body: SlipThresholdIn, admin=Depends(require_admin)):
 
 
 # ════════════════════════════════════════════════════════════════════
-#  DEPARTMENTS  (editable list — outputs & time-calc key off these)
+#  DEPARTMENTS
 # ════════════════════════════════════════════════════════════════════
 class DeptIn(BaseModel):
     name: str
@@ -2355,15 +1715,15 @@ def del_department(did: int, user=Depends(get_current_user)):
 
 
 # ════════════════════════════════════════════════════════════════════
-#  PLC DEVICES  (name · ip · port · zone · line — zone/line from master)
+#  PLC DEVICES
 # ════════════════════════════════════════════════════════════════════
 class PlcIn(BaseModel):
     name: str
     ip: str
-    port: Optional[int] = None          # khali => protocol ka aam port (502 / 5007)
-    series: Optional[str] = "Q"         # Q / FX5U / iQ-R / L  (sirf MC ke liye)
-    protocol: Optional[str] = "MC"      # MC (SLMP) ya MODBUS (Modbus TCP, read-only)
-    unit_id: Optional[int] = 1          # Modbus slave/unit id (MC ise nahi dekhta)
+    port: Optional[int] = None
+    series: Optional[str] = "Q"
+    protocol: Optional[str] = "MC"
+    unit_id: Optional[int] = 1
     zone: Optional[str] = ""
     line: Optional[str] = ""
     machine_no: Optional[str] = ""
@@ -2371,8 +1731,6 @@ class PlcIn(BaseModel):
     description: Optional[str] = ""
     enabled: bool = True
     poll_path: Optional[str] = "/status"
-    # optional SUB PLC — Model/Fault register isi se padhe jaate hain (ANDON MAIN se).
-    # sub_ip khali => koi sub nahi (Model/Fault MAIN PLC se aayenge).
     sub_ip: Optional[str] = ""
     sub_port: Optional[int] = None
     sub_series: Optional[str] = "Q"
@@ -2392,32 +1750,8 @@ def list_plc(user=Depends(get_current_user)):
                               sub_machine_no, description, enabled, poll_path
                          FROM andon_plc_devices ORDER BY name""")
         rows = cur.fetchall()
-    # merge live connectivity (green/red) from the background poller.  On a box
-    # whose poller is OFF (ANDON_POLL_ENABLED=0 — e.g. a dev machine), _PLC_STATUS
-    # is empty so `online` stays None and the UI is stuck on "Checking…".  Fall
-    # back to a quick TCP reachability probe so the Config page still shows
-    # connected/disconnected.  A raw connect+close is NOT an MC poll — it never
-    # reads bits / opens-closes calls, so it cannot cause the call flap.
-    # Jinka status poller se nahi mila unhe khud probe karna hoga.  Do baatein:
-    #
-    #  1) TIMEOUT 0.4s se badha kar 3.0s.  Do alag wajahein, dono naapi hui:
-    #     (a) sehatmand PLC steady state me 12-25 ms me judta hai, par PEHLI
-    #         (cold) connection ARP resolve ke saath 530 ms tak gayi thi —
-    #         0.4s us sehatmand PLC ko bhi "Disconnected" dikha deta tha.
-    #     (b) isse BADI baat: jis PLC ka port band hai, uska RST (refused)
-    #         is network par ~2050 ms me aata hai.  Isse chhote timeout par
-    #         probe pehle hi TIMEOUT maan leta hai aur hum "no response"
-    #         likh dete — jabki asli wajah "port refused" hai.  Dono ka ilaaj
-    #         ULTA hai (cable/firewall dekho vs PLC ki port setting kholo),
-    #         to galat wajah aadmi ko galat taraf daudati hai.
-    #     Isliye 3.0s se kam MAT karna.  Sust nahi padta: connect kamyab hote
-    #     hi turant lautta hai (~25 ms) — poora timeout sirf KHARAB wale par
-    #     lagta hai, aur wo bhi parallel me.  UI 10s par refresh hota hai,
-    #     to 3s aaram se samaa jaata hai.
-    #  2) Probe ab SAATH-SAATH (parallel) chalte hain, isliye der se sab ka
-    #     jod nahi lagta — chahe 2 PLC hon ya 40, page ek probe jitna hi
-    #     rukta hai.  Pehle ye ek-ek karke chalte the.
-    todo = []                                    # (row, "main"/"sub", ip, port)
+
+    todo = []
     for r in rows:
         st = _PLC_STATUS.get(r["id"], {})
         r["online"]     = st.get("online")
@@ -2425,39 +1759,14 @@ def list_plc(user=Depends(get_current_user)):
         r["online_reason"] = r["sub_online_reason"] = None
         r["last_seen"] = st.get("last_seen")
         r["checked"]   = st.get("checked")
-        # Poller ki asli shikayat (agar ho) — TCP probe se ye pata nahi chalti,
-        # kyunki port khula hone par bhi protocol jawab na de to probe "ok"
-        # bolta hai.  Yahi wo halat hai jisme user ko sirf laal batti dikhti
-        # thi aur wajah kahin likhi hi nahi jaati thi.
         r["poll_error"]       = st.get("poll_error")
         r["poll_error_count"] = st.get("poll_error_count")
-        # Probe DO haalaton me chalta hai:
-        #   None  -> poller band hai (dev box), status hai hi nahi
-        #   False -> poller keh raha hai "down", par WAJAH nahi batata.
-        # Production par poller asli MC-protocol read karta hai, isliye wahan
-        # `online` usi ka rehta hai — probe sirf WAJAH bharne ke liye chalta
-        # hai, faisla nahi badalta.  Sehatmand PLC (True) bilkul probe nahi
-        # hota, to normal haalat me ye kuch kharch hi nahi karta.
-        # ── MODBUS PAR PROBE BILKUL NAHI ─────────────────────────────────
-        # Naapa (FX5U 192.168.30.213:506): PLC ek waqt me SIRF EK Modbus
-        # connection ko data deta hai.  Doosre ka TCP handshake ho jaata hai
-        # (4 ms me) par uske read fail hote hain.  Iske DO nateeje hain, aur
-        # dono bure:
-        #   1. Probe JHOOTHI HARI BATTI deta hai — TCP juda to "ok", jabki
-        #      Modbus padha hi nahi ja sakta.
-        #   2. Probe wo EKMATRA SLOT cheen leta hai.  UI har 10s ye list
-        #      maangta hai, to poller ka connection baar-baar marta hai —
-        #      "beech beech me disconnect" ki asli shakl yahi hai.
-        # Isliye Modbus device par sach sirf poller se aata hai (`_PLC_STATUS`
-        # / `poll_error`); probe karne ka koi fayda hai hi nahi.
-        if not _is_modbus(r.get("protocol")):
-            if r["online"] is not True and r.get("enabled") and r.get("ip"):
-                todo.append((r, "main", r["ip"], r.get("port") or _default_port(r.get("protocol"))))
-        elif r["online"] is not True and not r.get("poll_error"):
-            r["online_reason"] = "modbus_no_probe"
-        if not _is_modbus(r.get("sub_protocol")):
-            if r["sub_online"] is not True and (r.get("sub_ip") or "").strip():
-                todo.append((r, "sub", r["sub_ip"], r.get("sub_port") or _default_port(r.get("sub_protocol"))))
+
+        if r["online"] is not True and r.get("enabled") and r.get("ip"):
+            todo.append((r, "main", r["ip"], r.get("port") or _default_port(r.get("protocol"))))
+
+        if r["sub_online"] is not True and (r.get("sub_ip") or "").strip():
+            todo.append((r, "sub", r["sub_ip"], r.get("sub_port") or _default_port(r.get("sub_protocol"))))
 
     if todo:
         from concurrent.futures import ThreadPoolExecutor
@@ -2465,26 +1774,22 @@ def list_plc(user=Depends(get_current_user)):
             for (r, which, _ip, _pt), (ok, why) in zip(
                     todo, ex.map(lambda t: _probe_cached(t[2], t[3], timeout=3.0), todo)):
                 key   = "online" if which == "main" else "sub_online"
-                known = r[key]                       # poller ka faisla (agar hai)
+                known = r[key]
                 if known is None:
                     r[key], r[key + "_reason"] = ok, why
                 else:
-                    # poller ne "down" kaha hai — us par bharosa, probe sirf wajah deta hai.
-                    # TCP jud gaya phir bhi poller down keh raha => port khula hai
-                    # par PLC MC-protocol ka jawab nahi de raha (alag hi kharabi).
                     r[key + "_reason"] = "mc" if ok else why
+
+    for r in rows:
+        if r.get("enabled") and r["online"] is None:
+            r["online"] = False
+            r["online_reason"] = r.get("poll_error") or "timeout"
+
     return rows
 
 
 @router.post("/plc-devices/{dev_id}/recheck")
 def plc_recheck(dev_id: int, user=Depends(get_current_user)):
-    """Us PLC (aur uske sub) ko ABHI dobara jaancho — cache ko andekha karke.
-
-    UI ka "Retry" button yahi maarta hai.  List wala probe cache se chalta hai
-    (taaki PLC ko har 10 second na thakthakayein), isliye jab user khud kehta
-    hai "abhi dekho" tab yahan se taaza probe hota hai.  Cache bhi is naye
-    nateeje se bhar jaata hai, to list turant wahi dikhane lagti hai.
-    """
     _ensure_tables()
     with get_conn() as conn:
         cur = dict_cursor(conn)
@@ -2496,54 +1801,156 @@ def plc_recheck(dev_id: int, user=Depends(get_current_user)):
 
     out = {"id": dev_id, "online": None, "online_reason": None,
            "sub_online": None, "sub_online_reason": None}
-    # NOTE: `_PLC_STATUS` me kuch NAHI likhte — ye jaan-boojh kar hai.
-    #
-    # Pehle yahan likha jaata tha, aur usse ULTA nuksan hua: list sabse pehle
-    # `_PLC_STATUS` padhti hai aur `True` dekh kar probe hi nahi karti.  To ek
-    # baar ka kamyab Retry hamesha ke liye "Connected" chipka deta tha — PLC
-    # baad me gir jaye tab bhi UI green hi dikhata (jhoothi green light).
-    #
-    # Zaroorat bhi nahi thi: `force=True` wala probe `_PROBE_CACHE` bhar deta
-    # hai (TTL ke saath), aur poller band hone par list wahi cache padhti hai —
-    # to Retry ka nateeja apne aap list me aa jaata hai, aur TTL khatm hote hi
-    # taaza bhi ho jaata hai.
-    #
-    # Aur jahan poller CHALU hai wahan `_PLC_STATUS` me uska asli MC-level sach
-    # hota hai; use ek mamooli TCP probe se overwrite karna galat hi hota.
-    # Modbus par probe MANA hai — upar wali wajah (ek hi connection slot, aur
-    # TCP-probe jhoothi hari batti deta hai).  Retry ka matlab wahan itna hi
-    # hai ki poller ko dobara koshish karne do.
-    if d.get("ip") and not _is_modbus(d.get("protocol")):
+
+    if d.get("ip"):
         ok, why = _probe_cached(d["ip"], d.get("port") or _default_port(d.get("protocol")),
                                 timeout=3.0, force=True)
         out["online"], out["online_reason"] = ok, why
-    elif d.get("ip"):
-        _PLC_RETRY.pop(dev_id, None)          # backoff hatao, agla cycle turant try kare
-        out["online_reason"] = "modbus_no_probe"
-    if (d.get("sub_ip") or "").strip() and not _is_modbus(d.get("sub_protocol")):
+        _PLC_RETRY.pop(dev_id, None)
+
+    if (d.get("sub_ip") or "").strip():
         ok2, why2 = _probe_cached(d["sub_ip"], d.get("sub_port") or _default_port(d.get("sub_protocol")),
                                   timeout=3.0, force=True)
         out["sub_online"], out["sub_online_reason"] = ok2, why2
+        _SUB_RETRY.pop(dev_id, None)
+
+    _PLC_STATUS[dev_id] = {
+        "online": out["online"],
+        "sub_online": out["sub_online"],
+        "checked": datetime.now().isoformat(timespec="seconds"),
+        "last_seen": datetime.now().isoformat(timespec="seconds") if out["online"] else None
+    }
+    return out
+
+
+@router.get("/plc-devices/{eid}/read-now")
+def plc_read_now(eid: int, user=Depends(get_current_user)):
+    """Is PLC ke bit ABHI padh kar dikhao — pate ke saath.
+
+    KYUN BANAYA (2026-09-12)
+    ------------------------
+    Pehle jaanchne ka ek hi zariya tha: `plc-recheck`, jo SIRF TCP connect
+    karta hai.  Yaani "online" ka matlab bas itna tha ki port khulta hai —
+    ek bhi bit padha ja raha hai ya nahi, wo kahin dikhta hi nahi tha.
+
+    Isi wajah se "data to aa raha hai par alarm nahi aata" wali dikkat
+    pakadna bahut mushkil tha: PLC hari dikhti thi, poll safal hota tha, aur
+    andar se `bits` khali tha.
+
+    Ab ye endpoint teen cheezein ek saath saaf kar deta hai:
+      1. kaunsa protocol SACH ME chal raha hai (maanga hua nahi),
+      2. har bit ka Modbus pata jo code nikalta hai (COIL/DI/HR + number),
+      3. us pate par ABHI ki value.
+
+    ⚠ POLLER KA HI CONNECTION istemal hota hai, naya nahi kholte — FX5U ek
+    waqt me sirf EK Modbus client jhelti hai.  Isliye `_plc_lock` ke andar
+    chalte hain, warna poller ke saath frame gutth jaate hain.
+    """
+    _ensure_tables()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT id, name, ip, port, series, protocol, unit_id, enabled
+                         FROM andon_plc_devices WHERE id=%s""", (eid,))
+        d = cur.fetchone()
+        if not d:
+            raise HTTPException(404, "PLC not found")
+        cur.execute("""SELECT do_index, display_name, bit_type, bit_no
+                         FROM andon_plc_output_mapping
+                        WHERE plc_id=%s ORDER BY do_index""", (eid,))
+        mine = cur.fetchall()
+        # Default rows alag se ginte hain — poller inhe NAHI padhta, par
+        # naam/department ke liye inpar fallback hota hai.  Isi farak ki wajah
+        # se screen bhari-bhari dikhti hai aur poll ke paas kuch hota nahi.
+        cur.execute("""SELECT COUNT(*) AS n FROM andon_plc_output_mapping
+                        WHERE plc_id IS NULL AND COALESCE(bit_type,'') <> ''
+                              AND COALESCE(bit_no,'') <> ''""")
+        n_default = cur.fetchone()["n"]
+
+    proto = _proto_for(d.get("series"), d.get("protocol"))
+    port  = int(d.get("port") or _default_port(proto))
+    out = {
+        "id": eid, "name": d.get("name"), "ip": d.get("ip"), "port": port,
+        "series": d.get("series"), "unit_id": d.get("unit_id"),
+        "enabled": bool(d.get("enabled")),
+        "protocol_asked": _norm_proto(d.get("protocol")),
+        "protocol_used":  proto,
+        "default_rows_with_bits": n_default,
+        "rows": [], "error": None, "hint": None,
+    }
+
+    # Do chup-chaap galtiyan jo yahin pakad leni chahiye.
+    if out["protocol_asked"] == "MODBUS" and proto != "MODBUS":
+        out["hint"] = (f"Protocol is set to MODBUS, but the series is '{d.get('series')}'. "
+                       f"Modbus runs only on FX5U, so MC protocol is being used instead. "
+                       f"Set the series to exactly FX5U.")
+    elif proto == "MODBUS" and port == MC_DEFAULT_PORT:
+        out["hint"] = (f"Protocol is MODBUS but the port is still {MC_DEFAULT_PORT} "
+                       f"(the MC default). Modbus TCP normally uses {MODBUS_DEFAULT_PORT}.")
+    elif proto == "MC" and port == MODBUS_DEFAULT_PORT:
+        out["hint"] = (f"Protocol is MC but the port is {MODBUS_DEFAULT_PORT} "
+                       f"(the Modbus default). MC normally uses {MC_DEFAULT_PORT}.")
+
+    usable = [r for r in mine
+              if (r["bit_type"] or "").strip() and str(r["bit_no"] or "").strip()]
+    if not usable:
+        out["error"] = ("No bit address is filled in on this PLC — that is why an alarm is "
+                        "never raised. The PLC still shows as online because the poller only "
+                        "makes a dummy read when nothing is mapped.")
+        if n_default:
+            out["hint"] = (f"{n_default} default output row(s) do have addresses, but the poller "
+                           f"reads addresses saved on THIS PLC only. Fill them in on this PLC's "
+                           f"Outputs table.")
+        return out
+
+    # Pehle pata nikaalo — galat/out-of-range address yahin pakda jayega,
+    # PLC se baat karne se pehle.
+    for r in usable:
+        item = {"do_index": r["do_index"],
+                "name": r["display_name"] or f"OUT{r['do_index']}",
+                "bit_type": r["bit_type"], "bit_no": r["bit_no"],
+                "addr": None, "value": None, "on": None, "error": None}
+        if proto == "MODBUS":
+            try:
+                sp, ad = _modbus_addr(r["bit_type"], r["bit_no"])
+                item["addr"] = f"{sp} {ad}"
+            except Exception as e:
+                item["error"] = str(e)
+        else:
+            item["addr"] = f"{(r['bit_type'] or '').upper()}{r['bit_no']}"
+        out["rows"].append(item)
+
+    thik = [i for i in out["rows"] if not i["error"]]
+    if not thik:
+        out["error"] = "Every mapped address is invalid — see the rows below."
+        return out
+
+    with _plc_lock(eid):
+        # Poller ne haar kar intezaar shuru kar diya ho to use hata do —
+        # user ne KHUD button dabaya hai, use abhi jawab chahiye.
+        _PLC_RETRY.pop(eid, None)
+        mc = _ensure_conn(_PLC_CONN, _PLC_RETRY, eid, d["ip"], port,
+                          d.get("series") or "Q", proto, d.get("unit_id"))
+        if mc is None:
+            out["error"] = ("Could not connect to the PLC right now. Check the IP, the port, "
+                            "and that the PLC's Modbus/MC server is switched on.")
+            return out
+        try:
+            vals = mc.read_many([(i["bit_type"], i["bit_no"]) for i in thik])
+            for i, v in zip(thik, vals):
+                i["value"] = v
+                i["on"] = bool(v)
+        except Exception as e:
+            out["error"] = f"{type(e).__name__}: {e}"
     return out
 
 
 @router.get("/plc-status")
 def plc_status(user=Depends(get_current_user)):
-    """Live connectivity of every PLC — {plc_id: {online, last_seen, checked}}."""
     _ensure_tables()
     return _PLC_STATUS
 
 
 def _check_plc_unique(cur, ip, name, skip_id=None):
-    """Ek IP / ek naam par do PLC na ban sakein.
-
-    Signal device par IP se bithaya jaata hai — do board ek hi IP par hon to
-    dono ka data ek hi line par chadh jayega aur kisi ko pata bhi nahi
-    chalega.  Isliye save se PEHLE rok dete hain, aur message me saaf batate
-    hain ki wo IP kis PLC ki hai (zone/line ke saath) — taaki galti turant
-    samajh aaye.  `skip_id` = edit karte waqt khud ko chhod do.
-    Compare case/space-safe hai (' 192.168.30.77 ' bhi wahi maana jayega).
-    """
     for field, value, label in (("ip", ip, "IP"), ("name", name, "Naam")):
         val = (value or "").strip()
         if not val:
@@ -2558,8 +1965,7 @@ def _check_plc_unique(cur, ip, name, skip_id=None):
             where = " · ".join(x for x in (ezone, eline) if x) or "zone/line set nahi"
             raise HTTPException(409,
                 f"Ye {label} '{val}' pehle se PLC \"{ename}\" ki hai ({where}, IP {eip}). "
-                f"Ek {label} sirf EK hi PLC ko de sakte hain — "
-                f"{'doosra IP dijiye' if field == 'ip' else 'doosra naam dijiye'}.")
+                f"Ek {label} sirf EK hi PLC ko de sakte hain.")
 
 
 @router.post("/plc-devices", status_code=201)
@@ -2596,7 +2002,6 @@ def edit_plc(eid: int, body: PlcIn, user=Depends(get_current_user)):
         raise HTTPException(400, "name and ip are required")
     with get_conn() as conn:
         cur = conn.cursor()
-        # Edit me bhi wahi rok — apne aap ko chhod kar (skip_id=eid)
         _check_plc_unique(cur, body.ip, body.name, skip_id=eid)
         proto     = _proto_for(body.series,     body.protocol)
         sub_proto = _proto_for(body.sub_series, body.sub_protocol)
@@ -2632,7 +2037,7 @@ def del_plc(eid: int, user=Depends(get_current_user)):
 
 
 # ════════════════════════════════════════════════════════════════════
-#  OUTPUT MAPPING (DO1–DO8 → department)
+#  OUTPUT MAPPING
 # ════════════════════════════════════════════════════════════════════
 class OutRow(BaseModel):
     do_index: int
@@ -2640,8 +2045,8 @@ class OutRow(BaseModel):
     department_id: Optional[int] = None
     priority: Optional[str] = "Normal"
     enabled: bool = True
-    bit_type: Optional[str] = ""       # PLC bit device — M/Y/X/L/D…
-    bit_no: Optional[str] = ""         # PLC bit number/address
+    bit_type: Optional[str] = ""
+    bit_no: Optional[str] = ""
 
 
 class OutSave(BaseModel):
@@ -2650,7 +2055,6 @@ class OutSave(BaseModel):
 
 @router.get("/outputs/default")
 def get_default_outputs(user=Depends(get_current_user)):
-    """The default output rows — one per department, in DO order (not padded)."""
     _ensure_tables()
     with get_conn() as conn:
         cur = dict_cursor(conn)
@@ -2661,7 +2065,6 @@ def get_default_outputs(user=Depends(get_current_user)):
 
 @router.get("/plc-devices/{eid}/outputs")
 def get_plc_outputs(eid: int, user=Depends(get_current_user)):
-    """This PLC's output rows — its own overrides if any, else the default set."""
     _ensure_tables()
     with get_conn() as conn:
         cur = dict_cursor(conn)
@@ -2681,7 +2084,6 @@ def get_plc_outputs(eid: int, user=Depends(get_current_user)):
 
 
 def _valid_rows(rows):
-    """Keep only do_index 1–8, and reject a department mapped to two outputs."""
     seen, out = set(), []
     for r in rows:
         if not (1 <= int(r.do_index) <= 8):
@@ -2695,8 +2097,6 @@ def _valid_rows(rows):
 
 
 def _replace_outputs(plc_id, rows):
-    """Replace ALL rows for a target (default = plc_id None, or a specific PLC) —
-    so adding / removing an output just works."""
     good = _valid_rows(rows)
     with get_conn() as conn:
         cur = conn.cursor()
@@ -2717,7 +2117,6 @@ def _replace_outputs(plc_id, rows):
 
 @router.put("/outputs/default")
 def save_default_outputs(body: OutSave, user=Depends(get_current_user)):
-    """Replace the shared default output template (one row per department)."""
     _ensure_tables()
     _replace_outputs(None, body.rows)
     return {"ok": True}
@@ -2725,20 +2124,17 @@ def save_default_outputs(body: OutSave, user=Depends(get_current_user)):
 
 @router.put("/plc-devices/{eid}/outputs")
 def save_plc_outputs(eid: int, body: OutSave, user=Depends(get_current_user)):
-    """Replace this PLC's output overrides."""
     _ensure_tables()
     _replace_outputs(eid, body.rows)
     return {"ok": True}
 
 
-# ── ASSIGN: per-machine Model & Fault value→name maps ──────────────────
-#  Assign page (per PLC device) me do lists: register-VALUE → model naam,
-#  aur register-VALUE → fault naam.  Dono ka shape same, isliye ek helper.
+# ── ASSIGN: Models & Faults
 class MapRow(BaseModel):
     device_type: Optional[str] = ""
     device_no:   Optional[str] = ""
     value:       Optional[int] = None
-    name:        Optional[str] = ""      # model_name ya fault_name
+    name:        Optional[str] = ""
 
 
 class MapSave(BaseModel):
@@ -2754,7 +2150,6 @@ def _get_map(table, name_col, eid):
 
 
 def _save_map(table, name_col, eid, rows):
-    """Replace-all: is PLC ki poori list nayi se likho (khali rows chhod ke)."""
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(f"DELETE FROM {table} WHERE plc_id=%s", (eid,))
@@ -2763,7 +2158,7 @@ def _save_map(table, name_col, eid, rows):
             dn = (r.device_no or "").strip() or None
             nm = (r.name or "").strip() or None
             if dt is None and dn is None and r.value is None and nm is None:
-                continue                                  # poori khali row skip
+                continue
             cur.execute(f"""INSERT INTO {table} (plc_id, device_type, device_no, value, {name_col})
                             VALUES (%s,%s,%s,%s,%s)""", (eid, dt, dn, r.value, nm))
         conn.commit()
@@ -2771,7 +2166,6 @@ def _save_map(table, name_col, eid, rows):
 
 @router.get("/plc-devices/{eid}/models")
 def get_plc_models(eid: int, user=Depends(get_current_user)):
-    """This PLC's value→model map (Assign → Model tab)."""
     _ensure_tables()
     return _get_map("andon_model_map", "model_name", eid)
 
@@ -2785,7 +2179,6 @@ def save_plc_models(eid: int, body: MapSave, user=Depends(get_current_user)):
 
 @router.get("/plc-devices/{eid}/faults")
 def get_plc_faults(eid: int, user=Depends(get_current_user)):
-    """This PLC's value→fault map (Assign → Fault tab)."""
     _ensure_tables()
     return _get_map("andon_fault_map", "fault_name", eid)
 
@@ -2797,9 +2190,8 @@ def save_plc_faults(eid: int, body: MapSave, user=Depends(get_current_user)):
     return {"ok": True}
 
 
-# ── FAULT HISTORY — kaunsa fault kitni baar (zone/line/machine/fault group + count) ──
+# ── FAULT HISTORY
 def _fy_range(fy):
-    """'2026-27' -> (Apr 1 us saal, agla Apr 1) — FY ka date range."""
     try:
         y = int(str(fy).split("-")[0])
         return (f"{y}-04-01", f"{y + 1}-04-01")
@@ -2811,12 +2203,7 @@ def _fy_range(fy):
 def fault_history(fy: str = "", month: str = "", date: str = "",
                   zone: str = "", line: str = "", machine_no: str = "", fault: str = "",
                   user=Depends(get_current_user)):
-    """Zone/Line/Machine/Fault ke hisaab se fault count — history (band call) + abhi ke
-    live OPEN call, dono.  Filters: fy(2026-27) · month(YYYY-MM) · date(YYYY-MM-DD) ·
-    zone · line · machine_no · fault.  Sab optional, AND me lagte hain."""
     _ensure_tables()
-    # SIRF define kiye hue fault dikhte hain — jinka fault khali/NULL hai (abhi tak
-    # fault-map define nahi hua) wo count me aate hi nahi.
     where, params = ["started_at IS NOT NULL", "COALESCE(fault,'') <> ''"], []
     rng = _fy_range(fy) if fy else None
     if rng:
@@ -2860,20 +2247,9 @@ def fault_history(fy: str = "", month: str = "", date: str = "",
 
 
 # ════════════════════════════════════════════════════════════════════
-#  CALL LIFECYCLE  (the PLC poll applies each output's ON/OFF here)
+#  CALL LIFECYCLE
 # ════════════════════════════════════════════════════════════════════
-#  The PLC bit is the source of truth for output state.  The poller reads every
-#  mapped bit and hands it to _apply_state:
-#     1 (ON)  →  open a call in andon_system (timer starts)
-#     0 (OFF) →  close it → move to andon_history with the elapsed duration
-#  DO2 / DO4 are ACK pulses that stamp the parent call's response time.
-
-
 def _resolve_output(cur, plc_id, do_index):
-    """Output ka (name, dept, priority).  Per-PLC row pehle, phir shared default.
-    Per-PLC row me department/name/priority MISSING (NULL) ho to default (dept
-    scheme) se bhar do — taaki user PLC par sirf BIT set kare to bhi call sahi
-    department se judi rahe."""
     cur.execute("""SELECT display_name, department_id, priority FROM andon_plc_output_mapping
                     WHERE plc_id=%s AND do_index=%s""", (plc_id, do_index))
     r = cur.fetchone()
@@ -2891,17 +2267,6 @@ def _resolve_output(cur, plc_id, do_index):
 
 
 def _apply_state(cur, dev, do_index, on, dur_override=None, model=None, fault=None):
-    """Open (ON) or close (OFF) the call for one output — idempotent.
-
-    DO2 / DO4 are acknowledgement pulses, not calls of their own:
-      • DO2 ON = maintenance responded to the open DO1 call
-      • DO4 ON = toolroom     responded to the open DO3 call
-    Their ON edge stamps acknowledged_at on the parent call (→ response time =
-    call-ON → ACK-ON); they never open an event or accumulate a duration.
-
-    dur_override (seconds): on OFF, use this hardware-measured duration instead
-    of the server-computed one — so a call that was closed WHILE the PLC was
-    disconnected (event flushed later on reconnect) still gets its true length."""
     ack_map = _ack_map(cur, dev["id"])
     if do_index in ack_map:
         if not on:
@@ -2925,7 +2290,7 @@ def _apply_state(cur, dev, do_index, on, dur_override=None, model=None, fault=No
                     ORDER BY id DESC LIMIT 1""", (dev["id"], do_index))
     open_ev = cur.fetchone()
     if on:
-        if open_ev:                                   # already open → duplicate ON, ignore
+        if open_ev:
             return {"do_index": do_index, "action": "already_open", "event_id": open_ev["id"]}
         disp, dept_id, prio = _resolve_output(cur, dev["id"], do_index)
         cur.execute("""INSERT INTO andon_system
@@ -2934,8 +2299,8 @@ def _apply_state(cur, dev, do_index, on, dur_override=None, model=None, fault=No
                     (dev["id"], do_index, dept_id, dev.get("zone"), dev.get("line"), dev.get("machine_no"), disp, prio, model, fault))
         return {"do_index": do_index, "action": "opened", "event_id": cur.fetchone()["id"],
                 "department_id": dept_id, "display_name": disp}
-    # OFF ─────────────────────────────────────────────────────────────
-    if not open_ev:                                   # OFF with no open call → nothing to close
+
+    if not open_ev:
         return {"do_index": do_index, "action": "not_open"}
     cur.execute("""INSERT INTO andon_history
                      (plc_id, do_index, department_id, zone, line, machine_no, display_name, priority, model, fault,
@@ -2950,16 +2315,12 @@ def _apply_state(cur, dev, do_index, on, dur_override=None, model=None, fault=No
     hist = cur.fetchone()
     cur.execute("DELETE FROM andon_system WHERE id=%s", (open_ev["id"],))
     return {"do_index": do_index, "action": "closed",
-            # `event_id` = live-call ka id.  Slip isi se judi hoti hai (ACK par
-            # ban chuki hoti hai), isliye band hone par usi row me OK-time bhar
-            # paate hain — nayi slip nahi banti.
             "event_id": open_ev["id"],
             "history_id": hist["id"], "duration_seconds": hist["duration_seconds"]}
 
 
 @router.get("/events")
 def live_events(user=Depends(get_current_user)):
-    """Currently OPEN calls (running timer) — for the live board."""
     _ensure_tables()
     with get_conn() as conn:
         cur = dict_cursor(conn)
@@ -2977,10 +2338,6 @@ def live_events(user=Depends(get_current_user)):
 
 @router.get("/monitor")
 def monitor_board(user=Depends(get_current_user)):
-    """Simple ALL-department ANDON monitor page: every OPEN call
-    (department / zone / line / running timer), the department list with each
-    one's active-call count (for the 6 buttons), and top stats
-    (active now · longest active · total today).  Read-only, from andon_system."""
     _ensure_tables()
     with get_conn() as conn:
         cur = dict_cursor(conn)
@@ -3008,7 +2365,6 @@ def monitor_board(user=Depends(get_current_user)):
             + (SELECT COUNT(*) FROM andon_history
                  WHERE started_at >= ({day_start}) AND started_at < {day_end}) AS today""")
         today = int((cur.fetchone() or {}).get("today") or 0)
-        # per-department today count (same 7 AM window) — for the scoped stat cards
         cur.execute(f"""
             SELECT COALESCE(dep.name, x.display_name) AS department, COUNT(*) AS n
               FROM (SELECT department_id, display_name, started_at FROM andon_system
@@ -3028,30 +2384,13 @@ def monitor_board(user=Depends(get_current_user)):
     for d in depts:
         name = (d["name"] or "").strip()
         d["active"] = counts.get(name, 0)
-        d["today"]  = today_by_dept.get(name, 0)   # per-department today total
+        d["today"]  = today_by_dept.get(name, 0)
     return {"rows": rows, "departments": depts,
             "stats": {"active": len(rows), "longest_seconds": int(longest), "today": today}}
 
 
 @router.get("/dashboard")
 def dashboard_board(user=Depends(get_current_user)):
-    """Maintenance Dashboard ke ANDON table ke liye — SIRF abhi chalu calls.
-
-    Dashboard ka live data yahin se aata hai.
-    Ab wahi table PLC ke asli ANDON calls dikhata hai. Dikhne ka format wahi
-    purana hai, isliye yahan fields bhi wahi naam se bhejte hain jo
-    AndonTable.jsx padhta hai:
-        serial_in_shift → S.No       zone_name → Zone
-        line_name       → Line Name  started_at → Start Time + Duration
-    Table me sirf wahi call dikhta hai jo ABHI chal raha hai (button dabaya hua
-    hai) — band hote hi row apne aap hat jaati hai, duration live badhta rehta
-    hai. Band ho chuke calls Reports/History me dekhe jaate hain, dashboard par
-    nahi.
-
-    Return: {"rows": [...], "stats": {active, awaiting, today, longest_seconds}}
-    — stats dashboard ke 4 cards ke liye (`today` me band hue bhi ginte hain,
-    wo sirf ek ginti hai, table me unki row nahi aati).
-    """
     _ensure_tables()
     with get_conn() as conn:
         cur = dict_cursor(conn)
@@ -3061,10 +2400,6 @@ def dashboard_board(user=Depends(get_current_user)):
                    e.zone AS zone_name, e.line AS line_name,
                    e.started_at, NULL::timestamp AS ended_at,
                    NULL::int AS duration_seconds,
-                   -- server-computed elapsed (skew-free) — DB clock aur browser
-                   -- clock alag ho to bhi duration breakdown START se sahi chale
-                   -- (pehle frontend started_at se ginta tha -> DB skew ~1min ka
-                   --  delay dikhta tha, threshold ki tarah).
                    EXTRACT(EPOCH FROM (NOW() - e.started_at))::int AS elapsed_seconds,
                    CASE WHEN e.acknowledged_at IS NOT NULL
                         THEN EXTRACT(EPOCH FROM (e.acknowledged_at - e.started_at))::int END
@@ -3073,13 +2408,9 @@ def dashboard_board(user=Depends(get_current_user)):
               FROM andon_system e
               LEFT JOIN andon_plc_devices d   ON d.id   = e.plc_id
               LEFT JOIN andon_departments dep ON dep.id = e.department_id
-             WHERE e.state='OPEN'                 -- SIRF chalu calls (band hue nahi)
-               -- Ye panel "MAINTENANCE ANDON" hai -> sirf Maintenance ke call.
-               -- Toolroom / Quality / Material / Other Loss yahan nahi aayenge
-               -- (wo ANDON System page ke Live Board par dikhte hain).
-               -- department mapping na ho to display_name se maan lo.
+             WHERE e.state='OPEN'
                AND COALESCE(dep.name, e.display_name) ILIKE 'maintenance'
-             ORDER BY e.started_at                 -- sabse purana upar (sabse lamba chal raha)
+             ORDER BY e.started_at
         """)
         rows = cur.fetchall()
 
@@ -3087,11 +2418,7 @@ def dashboard_board(user=Depends(get_current_user)):
             "CASE WHEN NOW()::time >= TIME '07:00' "
             "     THEN CURRENT_DATE + TIME '07:00' "
             "     ELSE (CURRENT_DATE - INTERVAL '1 day') + TIME '07:00' END")
-        day_end = f"(({day_start}) + INTERVAL '23 hours 30 minutes')"   # agle din 06:30
-        # Ye panel "MAINTENANCE ANDON" hai → saare stat cards bhi SIRF maintenance
-        # ke calls ginein (table pehle se maintenance-only tha).  Pehle cards har
-        # department gin lete the, isliye Other Loss ki open call bhi ACTIVE /
-        # AWAITING / LONGEST me aa jaati thi jabki table khaali dikhta tha.
+        day_end = f"(({day_start}) + INTERVAL '23 hours 30 minutes')"
         maint_e = "COALESCE(dep.name, e.display_name) ILIKE 'maintenance'"
         maint_h = "COALESCE(dep.name, h.display_name) ILIKE 'maintenance'"
         cur.execute(f"""
@@ -3118,7 +2445,6 @@ def dashboard_board(user=Depends(get_current_user)):
         """)
         stats = dict(cur.fetchone() or {})
 
-    # S.No: list me position (PLC data me shift-wise serial hota hi nahi)
     for i, r in enumerate(rows, 1):
         r["serial_in_shift"] = i
     return {"rows": rows, "stats": stats}
@@ -3128,14 +2454,6 @@ def dashboard_board(user=Depends(get_current_user)):
 def today_calls(frm: Optional[str] = Query(None, alias="from"),
                 to:  Optional[str] = None,
                 user=Depends(get_current_user)):
-    """Dashboard ke "Today" card par click → us plant-day (D 07:00 → D+1 06:30)
-    ki SIRF MAINTENANCE ANDON calls (ye Maintenance panel hai — Other Loss / Quality
-    / Toolroom yahan nahi).  Har row: zone, line, department, start-time, end-time,
-    total-time (loss seconds).  Band ho chuke (andon_history) + abhi chalu
-    (andon_system OPEN, end = abhi) dono.  Newest first.  `today` stat card wahi
-    window + wahi maintenance filter ginta hai, to count modal se match karti hai.
-    from/to na do to aaj ka plant-day.
-    """
     _ensure_tables()
     with get_conn() as conn:
         cur = dict_cursor(conn)
@@ -3144,7 +2462,6 @@ def today_calls(frm: Optional[str] = Query(None, alias="from"),
         today_pd = cur.fetchone()["d"].isoformat()
         f = frm or today_pd
         t = to or f
-        # window: from-date 07:00  se  (to-date + 1 din) 06:30
         cur.execute("""
             SELECT h.id, h.zone, h.line, COALESCE(dep.name, h.display_name) AS department,
                    h.started_at, h.ended_at, h.duration_seconds, FALSE AS is_live
@@ -3154,9 +2471,6 @@ def today_calls(frm: Optional[str] = Query(None, alias="from"),
                AND h.started_at <  ((%s::date + INTERVAL '1 day') + TIME '06:30')
                AND COALESCE(dep.name, h.display_name) ILIKE 'maintenance'
             UNION ALL
-            -- id sirf HISTORY rows ki aati hai.  Chalu call (andon_system) ki
-            -- id NULL rakhi hai jaan-boojh kar — UI use delete nahi karne deti,
-            -- aur backend bhi sirf andon_history se hi hatata hai.
             SELECT NULL::int AS id,
                    e.zone, e.line, COALESCE(dep.name, e.display_name) AS department,
                    e.started_at, NULL::timestamp AS ended_at,
@@ -3179,8 +2493,6 @@ def today_calls(frm: Optional[str] = Query(None, alias="from"),
         dur = int(r["duration_seconds"] or 0)
         total += dur
         out.append({
-            # id sirf history rows ki — chalu call ki NULL.  UI isi se tay karti
-            # hai ki delete ka button dikhana hai ya nahi.
             "id":         r["id"],
             "zone":       r["zone"], "line": r["line"],
             "department": r["department"],
@@ -3196,13 +2508,6 @@ def today_calls(frm: Optional[str] = Query(None, alias="from"),
 
 @router.get("/today-totals")
 def today_totals(user=Depends(get_current_user)):
-    """Aaj ka (plant-day 7AM → agle din 6:30AM) HAR department ka TOTAL LOSS.
-
-    total_loss_seconds = us department ke aaj ke calls ka poora down-time —
-    band ho chuke calls (andon_history.duration_seconds) + abhi chalu calls ka
-    ab tak ka elapsed (NOW - started_at).  Response time yahan nahi (user ne
-    kaha "respoance rhne dena").  Har department dikhta hai, chahe aaj 0 hi ho.
-    """
     _ensure_tables()
     day_start = (
         "(CASE WHEN NOW()::time >= TIME '07:00' "
@@ -3210,7 +2515,6 @@ def today_totals(user=Depends(get_current_user)):
         "      ELSE (CURRENT_DATE - INTERVAL '1 day') + TIME '07:00' END)")
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        # band ho chuke (aaj) — poora duration
         cur.execute(f"""
             SELECT COALESCE(dep.name, h.display_name) AS dept,
                    COALESCE(SUM(h.duration_seconds), 0)::int AS secs,
@@ -3220,7 +2524,6 @@ def today_totals(user=Depends(get_current_user)):
              WHERE h.started_at >= {day_start}
              GROUP BY 1""")
         closed = {r["dept"]: r for r in cur.fetchall()}
-        # abhi chalu — ab tak ka elapsed
         cur.execute(f"""
             SELECT COALESCE(dep.name, e.display_name) AS dept,
                    COALESCE(SUM(EXTRACT(EPOCH FROM (NOW() - e.started_at)))::int, 0) AS secs,
@@ -3230,7 +2533,6 @@ def today_totals(user=Depends(get_current_user)):
              WHERE e.state = 'OPEN' AND e.started_at >= {day_start}
              GROUP BY 1""")
         openc = {r["dept"]: r for r in cur.fetchall()}
-        # saare departments (config wale) — 0 hone par bhi card dikhe
         cur.execute("SELECT name, color FROM andon_departments ORDER BY id")
         depts = cur.fetchall()
 
@@ -3241,10 +2543,6 @@ def today_totals(user=Depends(get_current_user)):
         out.append({
             "department": nm,
             "color": d["color"],
-            # closed_loss_seconds = band ho chuke calls ka total (BADALTA NAHI).
-            # Frontend ise base rakh kar chalu calls ka apna smooth timer jod deta
-            # hai, taaki card ka number bhi har SECOND ek-ek karke bade (2 sec ke
-            # poll par jhatka na lage).  total_loss_seconds sirf fallback ke liye.
             "closed_loss_seconds": int(c.get("secs", 0)),
             "total_loss_seconds":  int(c.get("secs", 0)) + int(o.get("secs", 0)),
             "calls": int(c.get("calls", 0)) + int(o.get("calls", 0)),
@@ -3253,7 +2551,6 @@ def today_totals(user=Depends(get_current_user)):
 
 
 def _fy_window(fy: str):
-    """"2026-27" -> (2026-04-01, 2027-03-31).  Galat ho to (None, None)."""
     try:
         y = int(str(fy).split("-")[0])
         return f"{y}-04-01", f"{y+1}-03-31"
@@ -3262,7 +2559,6 @@ def _fy_window(fy: str):
 
 
 def _month_window(month: str):
-    """"2026-08" -> (2026-08-01, 2026-08-31)."""
     try:
         y, m = (int(x) for x in str(month).split("-")[:2])
         import calendar
@@ -3272,21 +2568,6 @@ def _month_window(month: str):
 
 
 def _preempt_split(rows):
-    """Har lamhe par SIRF EK call ginti hai — jo sabse BAAD me shuru hui.
-
-    Requirement (user): Maintenance chal raha hai aur beech me Tool Room daba
-    diya → Maintenance ka counting wahin ruk jaata hai aur Tool Room se shuru;
-    usi beech Quality daba to Tool Room ruk jaata hai.  Jab naya call khatam
-    hota hai to purana (agar abhi tak khula hai) **phir se ginne lagta hai** —
-    warna line down rehne ke bawajood wo waqt kisi ke khaate me na jaata aur
-    total asli down-time se kam nikalta.
-
-    Isi wajah se in tukdon ka JOD hamesha union ke barabar hota hai — yaani
-    "kis department ka kitna" ka batwara total ko badalta nahi, sirf baant'ta
-    hai.  ACC (DO2/DO4) yahan aati hi nahi: wo kabhi call-row banati hi nahi.
-
-    rows: [{s, e, dept, zone, line}]  ->  ({dept: seconds}, total_seconds)
-    """
     iv = [(r["s"], r["e"], r["dept"]) for r in rows
           if r["s"] and r["e"] and r["e"] > r["s"]]
     if not iv:
@@ -3298,15 +2579,9 @@ def _preempt_split(rows):
         span = (b - a).total_seconds()
         if span <= 0:
             continue
-        # is tukde me jo calls khuli hain, unme se sabse BAAD wali jeetegi
         live = [(s, e, d) for s, e, d in iv if s <= a and e >= b]
         if not live:
-            continue                      # kuch khula hi nahi → line down nahi
-        # Jeet SABSE BAAD me shuru hui call ki.  Barabari par? — ek hi poll me do
-        # bit badlein to dono ka `started_at` BILKUL ek hota hai (NOW() poore
-        # transaction me ek hi rehta hai), isliye ye sach me ho sakta hai.  Aise
-        # me (end, naam) se tod dete hain — sirf isliye ki nateeja HAR BAAR EK
-        # jaisa aaye; total to waise bhi nahi badalta, sirf batwara tay hota hai.
+            continue
         winner = max(live, key=lambda x: (x[0], x[1], str(x[2])))[2]
         per[winner] = per.get(winner, 0.0) + span
         total += span
@@ -3321,25 +2596,12 @@ def total_loss(frm: Optional[str] = Query(None, alias="from"),
                zone:  Optional[str] = None,
                line:  Optional[str] = None,
                user=Depends(get_current_user)):
-    """LINE ka TOTAL LOSS — jitni der line down rahi (chahe kitne bhi department
-    ne button dabaya ho).
-
-    Ahem baat: OVERLAP ek hi baar ginte hain.  Jaise Maintenance 10:00–10:05 aur
-    Tool Room 10:03–10:08 dabaye — line 10:00 se 10:08 tak down thi = 8 min
-    (5+5=10 NAHI).  Ek waqt par ek hi loss.  Iske liye SAARE calls ke time-window
-    ko MERGE (union) karke jodte hain.
-
-    Date plant-day se (D subah 7:00 → agle din 6:30), from/to na do to aaj.
-    Band + chalu dono calls ginate hain (chalu ka end = abhi).
-    """
     _ensure_tables()
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("""SELECT (CASE WHEN NOW()::time >= TIME '07:00' THEN CURRENT_DATE
                                     ELSE CURRENT_DATE - INTERVAL '1 day' END)::date AS d""")
         today_pd = cur.fetchone()["d"].isoformat()
-        # Filter ka kram: MONTH sabse pakka, phir FY, phir from/to, phir aaj.
-        # (Month FY ke andar hi hota hai, isliye month upar rakha.)
         wf = wt = None
         if month:
             wf, wt = _month_window(month)
@@ -3348,14 +2610,12 @@ def total_loss(frm: Optional[str] = Query(None, alias="from"),
         f = wf or frm or today_pd
         t = wt or to or f
 
-        # zone/line ka filter — dono tables par ek jaisa lagta hai
         cond, args = "", []
         if zone:
             cond += " AND TRIM(LOWER(COALESCE(zone,''))) = TRIM(LOWER(%s))"; args.append(zone)
         if line:
             cond += " AND TRIM(LOWER(COALESCE(line,''))) = TRIM(LOWER(%s))"; args.append(line)
 
-        # window: from-date 07:00 se (to-date + 1 din) 06:30  (plant-day)
         cur.execute(f"""
             SELECT h.started_at AS s, h.ended_at AS e,
                    COALESCE(d.name, h.display_name, 'DO' || h.do_index) AS dept,
@@ -3379,7 +2639,6 @@ def total_loss(frm: Optional[str] = Query(None, alias="from"),
         """, [f, t] + args + [f, t] + args)
         rows = cur.fetchall()
 
-    # intervals ko waqt se sort karke MERGE karo (union) — overlap ek baar
     ivals = sorted(((r["s"], r["e"]) for r in rows if r["s"] and r["e"] and r["e"] > r["s"]),
                    key=lambda x: x[0])
     union_sec = 0
@@ -3389,26 +2648,15 @@ def total_loss(frm: Optional[str] = Query(None, alias="from"),
         raw_sec += (e - s).total_seconds()
         if cur_e is None:
             cur_s, cur_e = s, e
-        elif s <= cur_e:                       # overlap ya laga hua → merge
+        elif s <= cur_e:
             if e > cur_e:
                 cur_e = e
-        else:                                  # gap → pichhla band karo
+        else:
             union_sec += (cur_e - cur_s).total_seconds()
             cur_s, cur_e = s, e
     if cur_e is not None:
         union_sec += (cur_e - cur_s).total_seconds()
 
-    # Department-wise batwara — preemption ke hisaab se (jo baad me dabi wahi
-    # us lamhe ginegi).  Iska JOD union ke barabar hi rehta hai, isliye total
-    # nahi badalta — sirf pata chalta hai kis department ka kitna hissa hai.
-
-    # ── DATE x ZONE x LINE ka breakdown ──────────────────────────────
-    # Har LINE apni alag hai: ek line par jo call chal rahi hai wo doosri line
-    # ko nahi rokti.  Isliye preemption HAR (date, zone, line) ke andar alag se
-    # lagti hai — sab ko ek saath merge karna galat hota (do alag line ek waqt
-    # par down ho sakti hain, aur dono ka loss ginna chahiye).
-    # Plant-day: 07:00 se agle din 06:30 — isliye 7 ghante peeche karke date
-    # nikalte hain (subah 6 baje wali call PICHHLE din ki hai).
     from collections import defaultdict
     buckets = defaultdict(list)
     for r in rows:
@@ -3430,32 +2678,23 @@ def total_loss(frm: Optional[str] = Query(None, alias="from"),
     by_line.sort(key=lambda x: (x["date"], x["zone"], x["line"]), reverse=True)
     lines_total = sum(x["seconds"] for x in by_line)
 
-    # Department-wise bhi PER-LINE ke tukdon ka jod hai, global union ka nahi.
-    # Wajah wahi: do alag line ek hi waqt down ho sakti hain aur dono ka loss
-    # asli hai; global union unhe ek maan kar kam bata deta.  Isse
-    # by_department ka jod = by_line ka jod = lines_total — teeno ek rehte hain.
     agg = {}
     for bl in by_line:
         for d in bl["departments"]:
             agg[d["department"]] = agg.get(d["department"], 0) + d["seconds"]
     by_dept = sorted(({"department": k, "seconds": v} for k, v in agg.items()),
                      key=lambda x: -x["seconds"])
-    _, split_total = _preempt_split(rows)   # sirf reference (poori line ek maan kar)
+    _, split_total = _preempt_split(rows)
 
     return {"from": f, "to": t,
             "fy": fy or "", "month": month or "", "zone": zone or "", "line": line or "",
-            # TOTAL = har line ka apna loss jodkar.  Ek hi line ho to ye global
-            # union ke barabar hi hota hai; kai line hon to yahi sahi hai —
-            # do line ek saath down hon to dono ka waqt ginna chahiye.
             "total_loss_seconds": int(lines_total),
-            "union_seconds":      int(round(union_sec)),   # sab line ek maan kar (reference)
-            "raw_sum_seconds":    int(round(raw_sec)),      # saade jod (overlap do baar) — reference
+            "union_seconds":      int(round(union_sec)),
+            "raw_sum_seconds":    int(round(raw_sec)),
             "calls": len(ivals),
             "by_department": by_dept,
-            # har (date, zone, line) ka apna total — table iske se banti hai
             "by_line": by_line,
             "lines_total_seconds": int(lines_total),
-            # jaanch ke liye: ye union se match karna chahiye
             "split_total_seconds": int(round(split_total))}
 
 
@@ -3464,17 +2703,7 @@ def dept_history(department: str,
                  frm: Optional[str] = Query(None, alias="from"),
                  to:  Optional[str] = None,
                  user=Depends(get_current_user)):
-    """Ek department ki call HISTORY — card par click karke khulti hai.
-
-    Date PLANT-DAY se: chuni hui date D ka matlab D subah 7:00 se agle din 6:30
-    tak (wahi window jo cards use karte hain).  from/to na do to aaj ka plant-day.
-    Har row: date, zone, line, start-time, end-time, duration (loss), aur
-    response (jo Maintenance/Toolroom me hi aata hai — unhi ke ACK output hote
-    hain).  Sirf BAND ho chuke calls (andon_history) — chalu call band hone par
-    yahan aayega.
-    """
     _ensure_tables()
-    # aaj ka plant-day date (agar abhi 7 baje se pehle hai to kal ki date)
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("""SELECT (CASE WHEN NOW()::time >= TIME '07:00' THEN CURRENT_DATE
@@ -3482,7 +2711,6 @@ def dept_history(department: str,
         today_pd = cur.fetchone()["d"].isoformat()
         f = frm or today_pd
         t = to or f
-        # window: from-date 07:00  se  (to-date + 1 din) 06:30
         cur.execute("""
             SELECT h.id, h.zone, h.line, h.display_name,
                    h.started_at, h.ended_at, h.duration_seconds, h.response_seconds
@@ -3523,23 +2751,6 @@ class HistoryDeleteIn(BaseModel):
 
 @router.post("/history/delete")
 def delete_history(body: HistoryDeleteIn, admin=Depends(require_admin)):
-    """ANDON history ki chuni hui rows hatao — SIRF admin.
-
-    Zaroorat: testing ya PLC ki kharabi se kabhi kachra rows ban jaati hain
-    (do-do second ki calls, ya galat department), aur wo report ke number
-    bigadti hain.  Admin unhe yahan se hata sakta hai.
-
-    Teen baatein jaan-boojh kar:
-
-    1. **Sirf `andon_history`.**  `andon_system` (abhi chalu calls) yahan se
-       nahi chhedi jaati — chalti call ko beech me mita dene par output bit
-       aur slip ka hisaab dono bigad jaate.  Call band hone do, phir hatao.
-
-    2. **Audit me likha jaata hai** — kisne, kab, kaunsi id, aur us row ka
-       saar.  Delete wapas nahi aata, isliye kam se kam nishan to rahe.
-
-    3. **Ek baar me 500 tak** — galti se poori table jaane se bachne ke liye.
-    """
     ids = [int(i) for i in (body.ids or []) if i is not None]
     if not ids:
         raise HTTPException(400, "Koi row select nahi ki")
@@ -3548,7 +2759,6 @@ def delete_history(body: HistoryDeleteIn, admin=Depends(require_admin)):
     _ensure_tables()
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        # pehle padho — audit me kya gaya, ye likhna hai
         cur.execute("""SELECT h.id, COALESCE(dep.name, h.display_name) AS dept,
                               h.zone, h.line, h.machine_no, h.started_at,
                               h.duration_seconds
@@ -3557,7 +2767,7 @@ def delete_history(body: HistoryDeleteIn, admin=Depends(require_admin)):
                         WHERE h.id = ANY(%s)""", (ids,))
         rows = cur.fetchall()
         if not rows:
-            raise HTTPException(404, "Ye rows mili hi nahi (shayad pehle hi hat chuki hain)")
+            raise HTTPException(404, "Ye rows mili hi nahi")
         cur.execute("DELETE FROM andon_history WHERE id = ANY(%s)", (ids,))
         n = cur.rowcount
         try:
@@ -3569,7 +2779,7 @@ def delete_history(body: HistoryDeleteIn, admin=Depends(require_admin)):
                 summary += f" ... (+{len(rows) - 20} aur)"
             write_audit(conn, action="ANDON_HISTORY_DELETE", entity_type="andon_history",
                         entity_id=rows[0]["id"], details=summary, user=admin)
-        except Exception as e:                       # audit kabhi kaam na roke
+        except Exception as e:
             print(f"[ANDON] history delete ka audit nahi likha: {e}")
         conn.commit()
     return {"ok": True, "deleted": n, "ids": [r["id"] for r in rows]}
@@ -3577,7 +2787,6 @@ def delete_history(body: HistoryDeleteIn, admin=Depends(require_admin)):
 
 @router.get("/history")
 def event_history(limit: int = 200, user=Depends(get_current_user)):
-    """Closed calls (duration / response) — for reports."""
     _ensure_tables()
     with get_conn() as conn:
         cur = dict_cursor(conn)

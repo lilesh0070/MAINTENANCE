@@ -744,6 +744,19 @@ export default function AndonSystem() {
   // hai "dobara dekho" tab ye taaza probe karwata hai aur sirf usi row ko
   // update karta hai — poori list dobara nahi mangwate.
   const [rechecking, setRechecking] = useState(null);   // jis PLC ki jaanch chal rahi hai
+
+  /* "Read now" — PLC ke bit ABHI padh kar dikhao.
+     Pehle jaanchne ka ek hi zariya tha: Retry, jo sirf TCP connect karta hai.
+     Usse "port khulta hai" to pata chalta tha, par "bit padha ja raha hai ya
+     nahi" kabhi nahi — aur asli dikkat wahin chhupi rehti thi. */
+  const [readBusy, setReadBusy] = useState(null);
+  const [readOut,  setReadOut]  = useState(null);
+  const readNow = async (id) => {
+    setReadBusy(id);
+    try   { setReadOut(await api(`/plc-devices/${id}/read-now`)); }
+    catch (e) { setReadOut({ error: e.message || "Could not read from the PLC" }); }
+    finally   { setReadBusy(null); }
+  };
   const recheckPlc = async (id) => {
     setRechecking(id);
     try {
@@ -1005,7 +1018,10 @@ export default function AndonSystem() {
                             <td>{[e.zone, e.line, e.machine_no].filter(Boolean).join(" / ") || "—"}</td>
                             <td>
                               {!e.enabled ? <span style={{ color:"#94a3b8", fontSize:12 }}>— off —</span> : (
-                                <span style={{ display:"inline-flex", alignItems:"center", gap:8 }}>
+                                /* flexWrap: is patti me ab paanch cheezein hain (state, poll
+                                   error, no-bits, Retry, Read now).  Phone/tablet ki tang
+                                   chaudai par bina wrap ke ye ek doosre ko sikoda deti hain. */
+                                <span style={{ display:"inline-flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
                                   <PlcState online={e.online} reason={e.online_reason} dot={10} glow
                                             title={e.last_seen ? `last seen ${e.last_seen}` : (e.checked ? `checked ${e.checked}` : "")} />
                                   {/* Poller ki ASLI shikayat.  TCP probe se ye nahi dikhti —
@@ -1019,6 +1035,17 @@ export default function AndonSystem() {
                                       {e.poll_error}{e.poll_error_count > 1 ? ` ×${e.poll_error_count}` : ""}
                                     </span>
                                   )}
+                                  {/* PLC juda hua hai par usme ek bhi bit-address
+                                      bhara nahi — poll SAFAL hota hai (dummy read)
+                                      isliye batti hari rehti hai, par alarm kabhi
+                                      ban hi nahi sakta.  Pehle ye kahin dikhta nahi tha. */}
+                                  {e.no_bits && (
+                                    <span title="No bit address is filled in on this PLC, so an alarm can never be raised. Open Outputs below and fill in Address + Bit No."
+                                          style={{ fontSize:10.5, color:"#b45309", background:"#fef3c7",
+                                                   padding:"1px 6px", borderRadius:4, whiteSpace:"nowrap" }}>
+                                      ⚠ no bits mapped
+                                    </span>
+                                  )}
                                   {e.online === false && (
                                     <button className="an-btn gh sm" disabled={rechecking === e.id}
                                             onClick={() => recheckPlc(e.id)}
@@ -1026,6 +1053,11 @@ export default function AndonSystem() {
                                       {rechecking === e.id ? "Checking…" : "↻ Retry"}
                                     </button>
                                   )}
+                                  <button className="an-btn gh sm" disabled={readBusy === e.id}
+                                          onClick={() => readNow(e.id)}
+                                          title="Read this PLC's mapped bits right now and show their live values">
+                                    {readBusy === e.id ? "Reading…" : "👁 Read now"}
+                                  </button>
                                 </span>
                               )}
                             </td>
@@ -1871,6 +1903,113 @@ export default function AndonSystem() {
       {msg && <div className="an-msg">{msg}</div>}
 
       {/* ── Department loss HISTORY modal (card par click se) ────────────── */}
+      {/* ── "Read now" ka natija ────────────────────────────────────────
+          Yahan teen cheezein ek saath dikhti hain, jo pehle kahin nahi
+          dikhti thin: kaunsa protocol SACH ME chala, har bit ka asli Modbus
+          pata, aur us pate par ABHI ki value.  "Data aa raha hai par alarm
+          nahi" jaisi dikkat isi table se ek nazar me pakdi jaati hai. */}
+      {readOut && (
+        <div onClick={() => setReadOut(null)}
+             style={{ position:"fixed", inset:0, background:"rgba(15,23,42,.55)",
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                      zIndex:1000, padding:20 }}>
+          <div onClick={(e) => e.stopPropagation()}
+               style={{ background:"#fff", borderRadius:16, width:"min(760px,96vw)",
+                        maxHeight:"88vh", display:"flex", flexDirection:"column",
+                        boxShadow:"0 20px 60px rgba(0,0,0,.35)", overflow:"hidden" }}>
+            <div style={{ padding:"16px 20px", borderBottom:"1px solid #e2e8f0",
+                          display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <div>
+                <div style={{ fontSize:15, fontWeight:800, color:"#0f172a" }}>
+                  Live read — {readOut.name || "PLC"}
+                </div>
+                {readOut.ip && (
+                  <div style={{ fontSize:11.5, color:"#64748b", marginTop:2 }}>
+                    {readOut.ip}:{readOut.port} · {readOut.series || "?"} ·
+                    {" "}protocol <b>{readOut.protocol_used}</b>
+                    {readOut.protocol_asked !== readOut.protocol_used
+                      ? ` (set to ${readOut.protocol_asked})` : ""}
+                    {readOut.protocol_used === "MODBUS" ? ` · unit ${readOut.unit_id}` : ""}
+                  </div>
+                )}
+              </div>
+              <button className="an-btn gh sm" onClick={() => setReadOut(null)}>Close</button>
+            </div>
+
+            <div style={{ padding:"14px 20px", overflowY:"auto" }}>
+              {readOut.error && (
+                <div style={{ background:"#fef2f2", border:"1px solid #fecaca", color:"#991b1b",
+                              borderRadius:8, padding:"10px 12px", fontSize:12.5,
+                              fontWeight:600, lineHeight:1.5, marginBottom:10 }}>
+                  {readOut.error}
+                </div>
+              )}
+              {readOut.hint && (
+                <div style={{ background:"#fffbeb", border:"1px solid #fde68a", color:"#92400e",
+                              borderRadius:8, padding:"10px 12px", fontSize:12.5,
+                              fontWeight:600, lineHeight:1.5, marginBottom:10 }}>
+                  {readOut.hint}
+                </div>
+              )}
+
+              {!!(readOut.rows || []).length && (
+                /* Phone par chaar column tang padte hain -- table ko apne
+                   dabbe me side se khisakne dete hain, page ko nahi. */
+                <div style={{ overflowX:"auto" }}>
+                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12.5,
+                                minWidth:420 }}>
+                  <thead>
+                    <tr style={{ textAlign:"left", color:"#64748b", fontSize:11 }}>
+                      <th style={{ padding:"6px 8px" }}>Output</th>
+                      <th style={{ padding:"6px 8px" }}>Device</th>
+                      <th style={{ padding:"6px 8px" }}>Address read</th>
+                      <th style={{ padding:"6px 8px", textAlign:"center" }}>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {readOut.rows.map((r) => (
+                      <tr key={r.do_index} style={{ borderTop:"1px solid #f1f5f9" }}>
+                        <td style={{ padding:"7px 8px", fontWeight:700 }}>
+                          {r.name}
+                          <div style={{ fontSize:10.5, fontWeight:600, color:"#94a3b8" }}>OUT{r.do_index}</div>
+                        </td>
+                        <td style={{ padding:"7px 8px", fontFamily:"monospace" }}>
+                          {r.bit_type}{r.bit_no}
+                        </td>
+                        <td style={{ padding:"7px 8px", fontFamily:"monospace", color:"#475569" }}>
+                          {r.addr || "—"}
+                        </td>
+                        <td style={{ padding:"7px 8px", textAlign:"center" }}>
+                          {r.error
+                            ? <span style={{ color:"#b91c1c", fontWeight:700, fontSize:11.5 }}>{r.error}</span>
+                            : r.value === null || r.value === undefined
+                              ? <span style={{ color:"#94a3b8" }}>—</span>
+                              : <span style={{ fontWeight:800,
+                                               color: r.on ? "#15803d" : "#94a3b8" }}>
+                                  {r.on ? "ON" : "off"} ({r.value})
+                                </span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </div>
+              )}
+
+              {!readOut.error && !(readOut.rows || []).length && (
+                <div style={{ color:"#94a3b8", fontSize:12.5 }}>Nothing to show.</div>
+              )}
+
+              <div style={{ marginTop:12, fontSize:11.5, color:"#64748b", lineHeight:1.6 }}>
+                A bit shows <b>ON</b> only while the PLC is actually holding that output on.
+                If you raise a call on the machine and the value here stays <b>off</b>, the
+                address is pointing somewhere else — compare it with the PLC’s own device list.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {histDept && (() => {
         const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
         const plantToday = () => { const n = new Date(); const d = new Date(n); if (n.getHours() < 7) d.setDate(d.getDate()-1); return ymd(d); };
