@@ -1,5 +1,5 @@
 {
-  "version": "1.4.51",
-  "notes": "BD History filters: the Last 7 Days period is gone, a Date filter (today by default) and a Category A/B filter have been added; Clear now shows every entry",
-  "released_at": "2026-09-13T10:38:18"
+  "version": "1.4.52",
+  "notes": "Date filter now defaults to today on History Card and the Log Book list; ANDON screens (PLC Devices, Call History, Call to Output, Assign) now fit properly on a phone",
+  "released_at": "2026-09-13T12:24:28"
 }

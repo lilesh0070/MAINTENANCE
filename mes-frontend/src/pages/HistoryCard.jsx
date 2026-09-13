@@ -33,6 +33,11 @@ function todayLocalISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+/* "2026-09" -> "2026-09-30" (us mahine ka aakhri din) */
+function mahineKaAnt(ym) {
+  const [y, m] = String(ym).split("-").map(Number);
+  return y && m ? `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}` : "";
+}
 // "2025-26" → [Apr 2025, Apr 2026)   (financial year Apr → Mar)
 function fyWindow(fy) {
   const y = parseInt(String(fy).split("-")[0], 10);
@@ -105,7 +110,10 @@ export default function HistoryCard() {
   const [years, setYears] = useState([]);
   const [fFy, setFFy]     = useState("");
   const [fMonth, setFMonth] = useState("");
-  const [fDate, setFDate]   = useState("");   // manual date pick (empty = month drives the view)
+  // Page khulte hi AAJ ka din.  Khali karte hi mahina/FY wapas view chalate
+  // hain.  (User: "default date current date rhegi, baad me zarurat padne par
+  // clear kar sakte hain" -- BD History par bhi yahi rakha hai.)
+  const [fDate, setFDate]   = useState(todayLocalISO());
   const [fLine, setFLine]   = useState("");
   const [fMno, setFMno]     = useState("");
   const [fMname, setFMname] = useState("");
@@ -184,6 +192,10 @@ export default function HistoryCard() {
       setFMonth(`${startY}-04`);                         // April of that FY
     }
   };
+
+  /* Mahina badla aur chuna hua din us mahine ka nahi -- to din hata do.
+     Warna table khali dikhti hai aur wajah kahin likhi nahi hoti. */
+  const onMonth = (v) => { setFMonth(v); if (fDate && v && fDate.slice(0, 7) !== v) setFDate(""); };
 
   // Changing the zone tab resets the line/machine filters (they're zone-scoped).
   const pickZone = (z) => { setZone(z); setFLine(""); setFMno(""); setFMname(""); };
@@ -324,14 +336,19 @@ export default function HistoryCard() {
             </div>
             <div className="hc-fld">
               <label>Month</label>
-              <select className="hc-fsel" value={fMonth} onChange={(e) => setFMonth(e.target.value)} disabled={!fFy}>
+              <select className="hc-fsel" value={fMonth} onChange={(e) => onMonth(e.target.value)} disabled={!fFy}>
                 <option value="">All Months</option>
                 {monthOpts.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
               </select>
             </div>
             <div className="hc-fld">
               <label>Date</label>
-              <input className="hc-fsel" type="date" value={fDate} onChange={(e) => setFDate(e.target.value)} />
+              {/* Mahina chuna ho to calendar usi mahine tak simit -- bahar ki
+                  tareekh chunne par table khali aati, aur wajah dikhti nahi. */}
+              <input className="hc-fsel" type="date" value={fDate}
+                     min={fMonth ? `${fMonth}-01` : undefined}
+                     max={fMonth ? mahineKaAnt(fMonth) : undefined}
+                     onChange={(e) => setFDate(e.target.value)} />
             </div>
             <div className="hc-fld">
               <label>Line</label>

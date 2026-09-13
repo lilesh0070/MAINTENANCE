@@ -43,6 +43,11 @@ const todayISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+/* "2026-09" -> "2026-09-30" (us mahine ka aakhri din) */
+const mahineKaAnt = (ym) => {
+  const [y, m] = String(ym).split("-").map(Number);
+  return y && m ? `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}` : "";
+};
 
 // Financial year (Apr→Mar) helpers — FY window + uske months.
 const MON3 = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -142,7 +147,9 @@ export default function BreakdownLogBook() {
   const [flFy, setFlFy]       = useState("");        // default current FY (boot me set)
   const [flYears, setFlYears] = useState([]);
   const [flMonth, setFlMonth] = useState("");        // default current month (boot me set)
-  const [flDate, setFlDate]   = useState("");
+  // Page khulte hi AAJ ka din.  Khali karte hi mahina/FY wapas view chalate
+  // hain.  (BD History aur History Card par bhi bilkul yahi rakha hai.)
+  const [flDate, setFlDate]   = useState(todayISO());
   const [flShift, setFlShift] = useState("");
   const [flZone, setFlZone]   = useState("");
   const [flLine, setFlLine]   = useState("");
@@ -254,6 +261,9 @@ export default function BreakdownLogBook() {
     ? [...new Set(master.filter((m) => m.zone_name === flZone && m.line_name === flLine).map((m) => m.machine_no).filter(Boolean))].sort() : [], [master, flZone, flLine]);
   const onFlZone = (v) => { setFlZone(v); setFlLine(""); setFlMno(""); };
   const onFlLine = (v) => { setFlLine(v); setFlMno(""); };
+  /* Mahina badla aur chuna hua din us mahine ka nahi -- to din hata do.
+     Warna list khali dikhti hai aur wajah kahin likhi nahi hoti. */
+  const onFlMonth = (v) => { setFlMonth(v); if (flDate && v && flDate.slice(0, 7) !== v) setFlDate(""); };
   const clearFilters = () => { setFlFy(""); setFlMonth(""); setFlDate(""); setFlShift(""); setFlZone(""); setFlLine(""); setFlMno(""); };
 
   const filteredRows = useMemo(() => rows.filter((r) => {
@@ -578,21 +588,26 @@ export default function BreakdownLogBook() {
                             padding:"16px 20px", borderBottom:"1px solid #eef2f7", background:"#fafbfc" }}>
                 <div className="lb-field" style={{ minWidth:150 }}>
                   <span className="lb-lbl">Financial Year</span>
-                  <select className="lb-sel" value={flFy} onChange={(e) => { setFlFy(e.target.value); setFlMonth(""); }}>
+                  <select className="lb-sel" value={flFy} onChange={(e) => { setFlFy(e.target.value); setFlMonth(""); setFlDate(""); }}>
                     <option value="">All FY</option>
                     {flYears.map((y) => <option key={y.fy} value={y.fy}>{y.fy}{y.is_current ? "  (current)" : ""}</option>)}
                   </select>
                 </div>
                 <div className="lb-field" style={{ minWidth:150 }}>
                   <span className="lb-lbl">Month</span>
-                  <select className="lb-sel" value={flMonth} onChange={(e) => setFlMonth(e.target.value)} disabled={!flFy}>
+                  <select className="lb-sel" value={flMonth} onChange={(e) => onFlMonth(e.target.value)} disabled={!flFy}>
                     <option value="">All Months</option>
                     {fyMonths(flFy).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                   </select>
                 </div>
                 <div className="lb-field" style={{ minWidth:150 }}>
                   <span className="lb-lbl">Date</span>
-                  <input className="lb-in" type="date" value={flDate} onChange={(e) => setFlDate(e.target.value)} />
+                  {/* Mahina chuna ho to calendar usi mahine tak simit -- bahar ki
+                      tareekh chunne par list khali aati, aur wajah dikhti nahi. */}
+                  <input className="lb-in" type="date" value={flDate}
+                         min={flMonth ? `${flMonth}-01` : undefined}
+                         max={flMonth ? mahineKaAnt(flMonth) : undefined}
+                         onChange={(e) => setFlDate(e.target.value)} />
                 </div>
                 <div className="lb-field" style={{ minWidth:110 }}>
                   <span className="lb-lbl">Shift</span>

@@ -852,20 +852,23 @@ export default function AndonSystem() {
         {outFor?.name && <span style={{ fontSize: 11.5, color: "#64748b", fontWeight: 600 }}>· {outFor.name}</span>}
         <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#94a3b8" }}>PLC register value → {label.toLowerCase()} name.</span>
       </div>
-      <table className="an-tbl">
+      {/* `an-stack` -- phone par har qatar ek chhota card.  Paanch khaane
+          343px me thoos diye jaate the, jisme Device ka select sirf ~36px ka
+          bachta tha -- yaani chuni hui "D" teer ke peechhe CHHUP jaati thi. */}
+      <table className="an-tbl an-stack">
         <thead><tr><th style={{ width: 110 }}>Device</th><th style={{ width: 150 }}>Device No</th><th style={{ width: 120 }}>Value</th><th>{label} Name</th><th style={{ width: 40 }}></th></tr></thead>
         <tbody>
           {rows.map((r, i) => (
             <tr key={i}>
-              <td>
+              <td data-lbl="Device">
                 <select className="an-in" style={{ width: "100%", padding: "6px 8px" }} value={r.device_type || ""} onChange={(e) => setMap(which, i, "device_type", e.target.value)} title={MODBUS_ADDR_HINT[r.device_type] || ""}>
                   <option value="">—</option>
                   <AddrOptions proto={curProto} mcList={MC_ADDR} />
                 </select>
               </td>
-              <td><input className="an-in" style={{ width: "100%", padding: "6px 8px" }} value={r.device_no || ""} onChange={(e) => setMap(which, i, "device_no", e.target.value)} placeholder="e.g. 3001" /></td>
-              <td><input className="an-in" type="number" style={{ width: "100%", padding: "6px 8px" }} value={r.value ?? ""} onChange={(e) => setMap(which, i, "value", e.target.value)} placeholder="e.g. 5" /></td>
-              <td><input className="an-in" style={{ width: "100%", padding: "6px 8px" }} value={r.name || ""} onChange={(e) => setMap(which, i, "name", e.target.value)} placeholder={`${label} name`} /></td>
+              <td data-lbl="Device No"><input className="an-in" style={{ width: "100%", padding: "6px 8px" }} value={r.device_no || ""} onChange={(e) => setMap(which, i, "device_no", e.target.value)} placeholder="e.g. 3001" /></td>
+              <td data-lbl="Value"><input className="an-in" type="number" style={{ width: "100%", padding: "6px 8px" }} value={r.value ?? ""} onChange={(e) => setMap(which, i, "value", e.target.value)} placeholder="e.g. 5" /></td>
+              <td data-lbl={`${label} Name`}><input className="an-in" style={{ width: "100%", padding: "6px 8px" }} value={r.name || ""} onChange={(e) => setMap(which, i, "name", e.target.value)} placeholder={`${label} name`} /></td>
               <td><button className="an-x" onClick={() => delMap(which, i)}>×</button></td>
             </tr>
           ))}
@@ -974,7 +977,7 @@ export default function AndonSystem() {
                 <>
                   <div className="an-card" style={{ marginBottom:14 }}>
                     <b style={{ fontSize:14 }}>{plcEdit ? "Edit PLC" : "Add PLC"}</b>
-                    <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginTop:12 }}>
+                    <div className="an-fgrid" style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginTop:12 }}>
                       <div><label className="an-lbl">Zone</label>
                         <select className="an-in" style={{ width:"100%" }} value={plcForm.zone} onChange={(e) => setPlcForm({ ...plcForm, zone: e.target.value, line: "", machine_no: "", machine_name: "" })}>
                           <option value="">— select —</option>{plcZones.map((z) => <option key={z} value={z}>{z}</option>)}
@@ -1016,12 +1019,18 @@ export default function AndonSystem() {
                     </div>
                     {/* ── SUB PLC (optional) — Model/Fault kisi doosre PLC se ── */}
                     <div style={{ marginTop:14, paddingTop:12, borderTop:"1px dashed #e2e8f0" }}>
-                      <label style={{ fontSize:13, fontWeight:700, display:"flex", alignItems:"center", gap:7 }}>
+                      {/* ⚠ Poora likhawat EK <span> me hai.  Label `display:flex` hai --
+                          aur flex me `<u>` aur `<span>` APNE ALAG item ban jaate hain,
+                          yaani "from a" / "different" / "PLC?" alag-alag dabbe.  Badi
+                          screen par sab ek line me aa jaata tha isliye dikhta nahi tha;
+                          phone par ye teen tukdon me toot kar bhadda lagta tha. */}
+                      <label className="an-sub-toggle"
+                             style={{ fontSize:13, fontWeight:700, display:"flex", alignItems:"center", gap:7 }}>
                         <input type="checkbox" checked={plcForm.sub_on} onChange={(e) => setPlcForm({ ...plcForm, sub_on: e.target.checked })} />
-                        Sub PLC — read Model / Fault from a <u>different</u> PLC? <span style={{ fontWeight:600, color:"#64748b" }}>(ANDON stays on this main PLC)</span>
+                        <span>Sub PLC — read Model / Fault from a <u>different</u> PLC? <span style={{ fontWeight:600, color:"#64748b" }}>(ANDON stays on this main PLC)</span></span>
                       </label>
                       {plcForm.sub_on && (
-                        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10, marginTop:12 }}>
+                        <div className="an-fgrid" style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10, marginTop:12 }}>
                           <div><label className="an-lbl">Sub Machine No</label>
                             <select className="an-in" style={{ width:"100%" }} value={plcForm.sub_machine_no} onChange={(e) => onSubMachine(e.target.value)} disabled={!plcMachines.length}>
                               <option value="">select</option>
@@ -1059,19 +1068,24 @@ export default function AndonSystem() {
                   </div>
                   <div className="an-card">
                     <b style={{ fontSize:14 }}>PLC Devices ({plcs.length})</b>
-                    <table className="an-tbl">
+                    {/* `an-stack` = phone par is table ki har row ek chhota card
+                        ban jaati hai (responsive.css dekho).  Chhe column 948px
+                        maangte hain aur phone par 367px hi milte hain -- scroll
+                        se kaam nahi chalta tha, aadhi cheezein dikhti hi nahi
+                        thi.  Website/tablet/TV par ye class kuch nahi karti. */}
+                    <table className="an-tbl an-stack">
                       <thead><tr><th>Name</th><th>IP:Port</th><th>Zone / Line / M/C</th><th>Connection</th><th>Status</th><th></th></tr></thead>
                       <tbody>
                         {plcs.map((e) => (
                           <Fragment key={e.id}>
                           <tr>
-                            <td style={{ fontWeight:600 }}>{e.name}</td>
-                            <td>{e.ip}:{e.port}
+                            <td className="an-stk-hdr" style={{ fontWeight:600 }}>{e.name}</td>
+                            <td data-lbl="IP : Port">{e.ip}:{e.port}
                               {effProto(e.series, e.protocol) === "MODBUS"
                                 ? <Tag text={`${e.series} · Modbus · unit ${e.unit_id ?? 1}`} on />
                                 : <Tag text={e.series} />}</td>
-                            <td>{[e.zone, e.line, e.machine_no].filter(Boolean).join(" / ") || "—"}</td>
-                            <td>
+                            <td data-lbl="Zone / Line / M/C">{[e.zone, e.line, e.machine_no].filter(Boolean).join(" / ") || "—"}</td>
+                            <td data-lbl="Connection">
                               {!e.enabled ? <span style={{ color:"#94a3b8", fontSize:12 }}>— off —</span> : (
                                 /* flexWrap: is patti me ab paanch cheezein hain (state, poll
                                    error, no-bits, Retry, Read now).  Phone/tablet ki tang
@@ -1116,7 +1130,7 @@ export default function AndonSystem() {
                                 </span>
                               )}
                             </td>
-                            <td><span className="an-chip" style={{ padding:"2px 9px", background: e.enabled ? "#dcfce7" : "#fee2e2", color: e.enabled ? "#16a34a" : "#dc2626" }}>{e.enabled ? "Enabled" : "Disabled"}</span></td>
+                            <td data-lbl="Status"><span className="an-chip" style={{ padding:"2px 9px", background: e.enabled ? "#dcfce7" : "#fee2e2", color: e.enabled ? "#16a34a" : "#dc2626" }}>{e.enabled ? "Enabled" : "Disabled"}</span></td>
                             <td style={{ whiteSpace:"nowrap" }}>
                               <button className="an-btn gh sm" onClick={() => openAssign(e)}>📍 Assign</button>{" "}
                               <button className="an-btn gh sm" onClick={() => startPlcEdit(e)}>Edit</button>{" "}
@@ -1125,13 +1139,13 @@ export default function AndonSystem() {
                           </tr>
                           {e.sub_ip && (
                             <tr>
-                              <td style={{ color:"#64748b", fontSize:11.5, paddingTop:0, borderBottom:"1px solid #f1f5f9" }}>↳ Sub PLC</td>
-                              <td style={{ paddingTop:0 }}>{e.sub_ip}:{e.sub_port}
+                              <td className="an-stk-hdr" style={{ color:"#64748b", fontSize:11.5, paddingTop:0, borderBottom:"1px solid #f1f5f9" }}>↳ Sub PLC</td>
+                              <td data-lbl="IP : Port" style={{ paddingTop:0 }}>{e.sub_ip}:{e.sub_port}
                                 {effProto(e.sub_series, e.sub_protocol) === "MODBUS"
                                   ? <Tag text={`${e.sub_series} · Modbus · unit ${e.sub_unit_id ?? 1}`} on />
                                   : <Tag text={e.sub_series} />}</td>
-                              <td style={{ color:"#94a3b8", fontSize:11.5, paddingTop:0 }}>Model / Fault{e.sub_machine_no ? ` · ${e.sub_machine_no}` : ""}</td>
-                              <td style={{ paddingTop:0 }}>
+                              <td data-lbl="Role" style={{ color:"#94a3b8", fontSize:11.5, paddingTop:0 }}>Model / Fault{e.sub_machine_no ? ` · ${e.sub_machine_no}` : ""}</td>
+                              <td data-lbl="Connection" style={{ paddingTop:0 }}>
                                 <span style={{ display:"inline-flex", alignItems:"center", gap:8 }}>
                                   <PlcState online={e.sub_online} reason={e.sub_online_reason} dot={9}
                                             title="Sub PLC (Model/Fault) connection" />
@@ -1197,7 +1211,10 @@ export default function AndonSystem() {
                         {isModbus(curProto) && " Modbus: write the address exactly as in the PLC (D3001); it is mapped automatically."}
                       </span>
                     </div>
-                    <table className="an-tbl">
+                    {/* `an-stack` -- phone par har OUT ek chhota card.  Chaar khaane
+                        343px me thoose jaate the aur Device ka select sirf ~36px ka
+                        bachta tha -- chuni hui "D" dikhti hi nahi thi. */}
+                    <table className="an-tbl an-stack">
                       <thead><tr><th style={{ width:200 }}>Output</th><th>Department / role</th><th style={{ width:120 }}>Device</th><th style={{ width:130 }}>Device No</th></tr></thead>
                       <tbody>
                         {outRows.map((r, i) => {
@@ -1207,21 +1224,21 @@ export default function AndonSystem() {
                           const dept = depts.find((d) => d.id === deptId);
                           return (
                             <tr key={r.do_index}>
-                              <td style={{ fontWeight:800 }}>
+                              <td className="an-stk-hdr" style={{ fontWeight:800 }}>
                                 {r.display_name || `OUT${r.do_index}`}
                                 <div style={{ fontSize:10.5, fontWeight:600, color:"#94a3b8" }}>OUT{r.do_index}</div>
                               </td>
-                              <td>
+                              <td data-lbl="Department / role">
                                 <span style={{ fontWeight:700 }}>{dept ? dept.name : (r.display_name || "—")}</span>
                                 {isAck && <span style={{ fontSize:10.5, fontWeight:600, color:"#94a3b8", marginLeft:8 }}>⏱ response time</span>}
                               </td>
-                              <td>
+                              <td data-lbl="Device">
                                 <select className="an-in" style={{ width:"100%", padding:"6px 8px" }} value={r.bit_type || ""} onChange={(e) => setOut(i, "bit_type", e.target.value)} title={MODBUS_ADDR_HINT[r.bit_type] || ""}>
                                   <option value="">—</option>
                                   <AddrOptions proto={curProto} mcList={MC_BIT_ADDR} />
                                 </select>
                               </td>
-                              <td>
+                              <td data-lbl="Device No">
                                 <input className="an-in" style={{ width:"100%", padding:"6px 8px" }} value={r.bit_no || ""} onChange={(e) => setOut(i, "bit_no", e.target.value)} placeholder="e.g. 100" />
                               </td>
                             </tr>
@@ -1253,7 +1270,7 @@ export default function AndonSystem() {
                 {/* Lamba samjhaane wala paragraph hata diya — wahi baat ab neeche
                     har bit ke saamne "Off trigger" me likhi hai, jahan uski zaroorat
                     hai.  Do jagah likhne se form bhara-bhara lagta tha. */}
-                <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:9, marginTop:12 }}>
+                <div className="an-fgrid" style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:9, marginTop:12 }}>
                   <div><label className="an-lbl">Department (call)</label>
                     <select className="an-in" style={{ width:"100%" }} value={outForm.department} onChange={(e) => setOutForm({ ...outForm, department: e.target.value })}>
                       <option value="">— select —</option>{depts.map((d) => <option key={d.id} value={d.name}>{d.name}</option>)}
@@ -1356,25 +1373,35 @@ export default function AndonSystem() {
                 {(() => {
                   const w = outs.find((o) => o.writer);
                   return (
-                    <div style={{ fontSize:12, fontWeight:700, marginTop:6, marginBottom:2,
+                    <div className="an-writer-line"
+                         style={{ fontSize:12, fontWeight:700, marginTop:6, marginBottom:2,
                                   display:"flex", alignItems:"center", gap:7,
                                   color: w ? "#16a34a" : "#dc2626" }}>
                       <span style={{ width:9, height:9, borderRadius:"50%", flex:"0 0 auto",
                                      background: w ? "#16a34a" : "#dc2626",
                                      boxShadow: w ? "0 0 0 3px rgba(22,163,74,.2)" : "0 0 0 3px rgba(220,38,38,.2)" }} />
-                      {w ? <>Writer active — <span style={{ fontFamily:"monospace" }}>{w.writer}</span> backend is maintaining the bits (last seen {w.writer_age}s ago)</>
-                         : <>No active writer — bits are not being maintained (the backend with ANDON_OUTPUT_ENABLED=1 is down)</>}
+                      {/* ⚠ Poora vaakya EK <span> me -- ye div `display:flex` hai aur
+                          flex me andar ka `<span>` APNA ALAG item ban jaata hai, yaani
+                          "Writer active —" / naam / baaki vaakya teen alag dabbe.  Badi
+                          screen par ek line me aa jaata tha isliye dikhta nahi tha;
+                          phone par teen tang column me toot raha tha. */}
+                      <span>
+                        {w ? <>Writer active — <span style={{ fontFamily:"monospace" }}>{w.writer}</span> backend is maintaining the bits (last seen {w.writer_age}s ago)</>
+                           : <>No active writer — bits are not being maintained (the backend with ANDON_OUTPUT_ENABLED=1 is down)</>}
+                      </span>
                     </div>
                   );
                 })()}
-                <table className="an-tbl">
+                {/* `an-stack` -- phone par har row ek chhota card.  Nau column
+                    914px maangte hain aur card me 367px hi hain. */}
+                <table className="an-tbl an-stack">
                   <thead><tr><th>Department</th><th>Output PLC</th><th>Bit</th><th>Off trigger</th><th>Connection</th><th>Program bit</th><th>PLC bit</th><th>Status</th><th></th></tr></thead>
                   <tbody>
                     {outs.length === 0 && <tr><td colSpan={9} style={{ color:"#94a3b8", padding:16, textAlign:"center" }}>No mappings yet — add one above.</td></tr>}
                     {outs.map((o) => (
                       <tr key={o.id}>
-                        <td style={{ fontWeight:700 }}>{o.department}</td>
-                        <td style={{ fontFamily:"monospace" }}>
+                        <td className="an-stk-hdr" style={{ fontWeight:700 }}>{o.department}</td>
+                        <td data-lbl="Output PLC" style={{ fontFamily:"monospace" }}>
                           {o.plc_ip}:{o.plc_port}
                           <Tag text={o.plc_series} />
                           {/* Protocol ka nishaan — pehle ye kahin dikhta hi nahi tha,
@@ -1387,7 +1414,7 @@ export default function AndonSystem() {
                             (Bit / Off trigger / Program bit / PLC bit) ek jaisi
                             do lines dikhate hain, isliye 1 aur 2 aapas me sidhe
                             me padhe jaate hain. */}
-                        <td style={{ fontFamily:"monospace", fontWeight:700, lineHeight:1.75 }}>
+                        <td data-lbl="Bit" style={{ fontFamily:"monospace", fontWeight:700, lineHeight:1.75 }}>
                           <div><span style={{ color:"#94a3b8", marginRight:6 }}>1</span>{o.bit_type}{o.bit_no}</div>
                           {o.bit2_allowed && (
                             <div style={{ color: (o.bit2_no || "").trim() ? "#0e7490" : "#cbd5e1" }}>
@@ -1396,7 +1423,7 @@ export default function AndonSystem() {
                             </div>
                           )}
                         </td>
-                        <td style={{ fontSize:12, lineHeight:1.75 }}>
+                        <td data-lbl="Off trigger" style={{ fontSize:12, lineHeight:1.75 }}>
                           <div style={{ color: o.off_on_ack ? "#b45309" : "#0e7490", fontWeight:700 }}>
                             {o.off_on_ack ? "On acknowledge" : "When breakdown closes"}
                           </div>
@@ -1406,7 +1433,7 @@ export default function AndonSystem() {
                             </div>
                           )}
                         </td>
-                        <td>
+                        <td data-lbl="Connection">
                           <span style={{ display:"inline-flex", alignItems:"center", gap:7, fontWeight:700, fontSize:12,
                                          color: o.reachable === true ? "#16a34a" : o.reachable === false ? "#dc2626" : "#94a3b8" }}>
                             <span style={{ width:10, height:10, borderRadius:"50%", flex:"0 0 auto",
@@ -1452,7 +1479,7 @@ export default function AndonSystem() {
                         </td>
                         {/* PROGRAM BIT = software ne kya tay kiya (khuli calls se).  Ye hamesha
                             pata hota hai — PLC se baat na ho tab bhi. */}
-                        <td style={{ lineHeight:1.75, fontWeight:800 }}>
+                        <td data-lbl="Program bit" style={{ lineHeight:1.75, fontWeight:800 }}>
                           <div style={{ color: o.should_be_on ? "#16a34a" : "#94a3b8" }}>
                             {o.should_be_on ? "● ON" : "OFF"}
                           </div>
@@ -1463,7 +1490,7 @@ export default function AndonSystem() {
                             </div>
                           )}
                         </td>
-                        <td style={{ lineHeight:1.75, fontWeight:800 }}>
+                        <td data-lbl="PLC bit" style={{ lineHeight:1.75, fontWeight:800 }}>
                           <div style={{ color: o.bit_on === true ? "#16a34a"
                                              : o.bit_on === false ? "#94a3b8" : "#cbd5e1" }}>
                             {o.bit_on === true ? "● ON" : o.bit_on === false ? "OFF" : "—"}
@@ -1490,7 +1517,7 @@ export default function AndonSystem() {
                           </div>
                           )}
                         </td>
-                        <td><span className="an-chip" style={{ padding:"2px 9px", background: o.enabled ? "#dcfce7" : "#fee2e2", color: o.enabled ? "#16a34a" : "#dc2626" }}>{o.enabled ? "Enabled" : "Disabled"}</span></td>
+                        <td data-lbl="Status"><span className="an-chip" style={{ padding:"2px 9px", background: o.enabled ? "#dcfce7" : "#fee2e2", color: o.enabled ? "#16a34a" : "#dc2626" }}>{o.enabled ? "Enabled" : "Disabled"}</span></td>
                         <td style={{ whiteSpace:"nowrap" }}>
                           <button className="an-btn gh sm" onClick={() => { setOutEdit(o.id); setOutForm({ department:o.department, plc_ip:o.plc_ip, plc_port:o.plc_port, plc_series:o.plc_series, protocol:o.protocol || "MC", unit_id:o.unit_id ?? 1, bit_type:o.bit_type, bit_no:o.bit_no, bit2_type:o.bit2_type || "M", bit2_no:o.bit2_no || "", enabled:o.enabled }); }}>Edit</button>{" "}
                           <button className="an-x" onClick={() => wrap(() => api(`/call-outputs/${o.id}`, { method:"DELETE" }), "Mapping removed")}>×</button>
@@ -1721,7 +1748,9 @@ export default function AndonSystem() {
               </div>
 
               <div style={{ maxHeight:520, overflowY:"auto" }}>
-                <table className="an-tbl">
+                {/* `an-stack` -- phone par har row ek chhota card.  Dus column
+                    804px maangte hain aur card me 367px hi hain. */}
+                <table className="an-tbl an-stack">
                   <thead><tr>
                     {isAdmin && <th style={{ width:34 }}>
                       <input type="checkbox"
@@ -1744,23 +1773,23 @@ export default function AndonSystem() {
                       </td></tr>}
                     {!chLoading && chShown.map((r) => (
                       <tr key={r.id} style={{ background: chSel.has(r.id) ? "#fef2f2" : undefined }}>
-                        {isAdmin && <td>
+                        {isAdmin && <td data-lbl="Select">
                           <input type="checkbox" checked={chSel.has(r.id)}
                                  onChange={() => chToggle(r.id)} />
                         </td>}
-                        <td style={{ color:"#94a3b8" }}>{r.id}</td>
-                        <td style={{ fontWeight:700 }}>{r.department || r.display_name || "—"}</td>
-                        <td>{r.zone || "—"}</td>
-                        <td>{r.line || "—"}</td>
-                        <td className="an-mno">{r.machine_no || "—"}</td>
-                        <td style={{ whiteSpace:"nowrap", fontSize:12 }}>{fmtDT(r.started_at)}</td>
-                        <td style={{ whiteSpace:"nowrap", fontSize:12 }}>{fmtDT(r.ended_at)}</td>
-                        <td style={{ textAlign:"center" }}>
+                        <td data-lbl="ID" style={{ color:"#94a3b8" }}>{r.id}</td>
+                        <td className="an-stk-hdr" style={{ fontWeight:700 }}>{r.department || r.display_name || "—"}</td>
+                        <td data-lbl="Zone">{r.zone || "—"}</td>
+                        <td data-lbl="Line">{r.line || "—"}</td>
+                        <td data-lbl="Machine" className="an-mno">{r.machine_no || "—"}</td>
+                        <td data-lbl="Started" style={{ whiteSpace:"nowrap", fontSize:12 }}>{fmtDT(r.started_at)}</td>
+                        <td data-lbl="Ended" style={{ whiteSpace:"nowrap", fontSize:12 }}>{fmtDT(r.ended_at)}</td>
+                        <td data-lbl="Response" style={{ textAlign:"center" }}>
                           {r.response_seconds == null
                             ? <span style={{ color:"#94a3b8" }}>—</span>
                             : `${r.response_seconds}s`}
                         </td>
-                        <td style={{ textAlign:"center", fontWeight:800 }}>
+                        <td data-lbl="Total" style={{ textAlign:"center", fontWeight:800 }}>
                           {r.duration_seconds == null ? "—" : `${r.duration_seconds}s`}
                         </td>
                       </tr>
