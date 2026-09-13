@@ -79,11 +79,16 @@ export const PAGE_PERM_GROUPS = [
       { key: "andon-reports", label: "Reports" },
     ]},
     { key: "walkie-talkie",              label: "Walkie-Talkie", children: [
-      /* Buzz aur Voice alag-alag: kisi ko sirf bulane ki ijazat deni ho aur
-         bolne ki nahi, to Voice ko "none" kar do.  Khali chhodne par dono
-         upar wale "Walkie-Talkie" se mil jaati hain. */
-      { key: "walkie-buzz",    label: "Buzz (ring someone's phone)" },
-      { key: "walkie-voice",   label: "Voice (press and hold to talk)" },
+      /* ⚠ IN TEENO KA NIYAM BAAKI SE ALAG HAI (jaan-boojh kar):
+         in me se KUCH BHI chun liya, to us user ko SIRF WAHI milega.
+         Teeno khali chhodo to teeno upar wale "Walkie-Talkie" se mil
+         jaate hain (purane user ka bartaav na toote).
+         Pehle ye aam niyam par the -- yaani sirf "Buzz" dene par bhi
+         "Voice" upar wale se mil jaata tha aur bolne ka button dikhta
+         rehta tha.  Ab "jo tick kiya wahi milega". */
+      { key: "walkie-buzz",    label: "Buzz — ring someone's phone" },
+      { key: "walkie-voice",   label: "Voice — press and hold to talk" },
+      { key: "walkie-channel", label: "Groups — talk/buzz a whole channel" },
       { key: "walkie-setup",   label: "Setup (who can use it · channels)" },
       { key: "walkie-history", label: "History (who buzzed whom)" },
     ]},

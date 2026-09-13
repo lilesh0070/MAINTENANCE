@@ -1,5 +1,5 @@
 {
-  "version": "1.4.60",
-  "notes": "Walkie-Talkie: Buzz and Voice are now separate permissions, admins can delete history entries, and people can be picked while creating a channel",
-  "released_at": "2026-09-13T17:08:36"
+  "version": "1.4.61",
+  "notes": "Walkie-Talkie permissions: ticking Buzz now really means only Buzz, and there is a separate Groups permission for channels",
+  "released_at": "2026-09-13T17:28:50"
 }

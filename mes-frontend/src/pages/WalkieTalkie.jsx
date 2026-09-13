@@ -84,8 +84,9 @@ export default function WalkieTalkie() {
      ⚠ Ye lines `roster` ke BAAD hi aa sakti hain -- pehle rakhne par
      "Cannot access 'roster' before initialization" aata hai (error-boundary
      ne hi pakda tha). */
-  const canVoice = roster?.me?.can_voice !== false;
-  const canBuzz  = roster?.me?.can_buzz  !== false;
+  const canVoice   = roster?.me?.can_voice   !== false;
+  const canBuzz    = roster?.me?.can_buzz    !== false;
+  const canChannel = roster?.me?.can_channel !== false;
   const [online, setOnline] = useState([]);
   const [conn, setConn] = useState("connecting");      // connecting | on | off | denied
   const [pick, setPick] = useState(null);              // {type:"user"|"channel", id, name}
@@ -435,6 +436,10 @@ export default function WalkieTalkie() {
             )}
 
             {conn !== "denied" && (<>
+              {/* Group ki ijazat na ho to ye poora hissa aata hi nahi.
+                  (Server bhi channel ki list nahi bhejta aur channel par
+                  bolne/buzz karne se mana kar deta hai.) */}
+              {canChannel && (
               <div className="wk-card">
                 <div className="wk-h">Channels</div>
                 {!roster.channels?.length && <div className="wk-empty">You are not in any channel.</div>}
@@ -457,6 +462,7 @@ export default function WalkieTalkie() {
                   );
                 })}
               </div>
+              )}
 
               <div className="wk-card">
                 <div className="wk-h">People</div>

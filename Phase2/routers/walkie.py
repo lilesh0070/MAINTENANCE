@@ -190,19 +190,31 @@ def _naam(u: dict) -> str:
 # Walkie ke sab sub-key isi page se latakte hain.
 _PARENT = "walkie-talkie"
 
+# Ye TEEN "kaam" hain (page nahi).  Inka niyam baaki sub-page se ALAG hai --
+# neeche `_can` me wajah likhi hai.
+_CAPS = ("walkie-buzz", "walkie-voice", "walkie-channel")
+
 
 def _can(user: dict, key: str) -> bool:
     """Kya is user ko `key` ki ijazat hai?
 
-    Niyam BILKUL wahi hai jo frontend ke `canAccess` me hai -- warna dono
-    alag faisla karte aur kabhi na kabhi wo aapas me na milte:
-      admin            -> hamesha haan
-      explicit entry   -> read/full = haan, none = NAHI
-      kuch set hi nahi -> parent page (`walkie-talkie`) se mil jaata hai
-      wo bhi na ho     -> nahi
+    ⚠ BUZZ / VOICE / GROUP KA NIYAM BAAKI SE ALAG HAI -- aur ye jaan-boojh
+    kar hai.  App ka aam niyam ye hai ki sub-page khali chhodne par parent se
+    ijazat mil jaati hai.  Us niyam par ye teeno TOOT GAYE THE: admin ne kisi
+    ko sirf "Buzz" di, par "Voice" kahin set hi nahi tha, to wo upar wali
+    `walkie-talkie` se apne aap mil gaya -- aur bande ko bolne ka button bhi
+    dikhne laga.  (User ne device par yahi pakda.)
 
-    ⚠ YE JAANCH SERVER PAR HONI HI CHAHIYE.  Sirf button chhupa dena
-    permission nahi hoti -- socket seedha bhi khola ja sakta hai.
+    Isliye yahan niyam ye hai:
+      admin                        -> hamesha haan
+      in teeno me se KUCH BHI set  -> sirf wahi milega jo saaf-saaf diya hai
+      teeno me se kuch bhi set nahi -> parent se mil jaata hai (purane user
+                                       ka bartaav na toote)
+
+    Yaani "jo tick kiya, wahi milega" -- wahi jo admin se ummeed ki jaati hai.
+
+    ⚠ JAANCH SERVER PAR HONI HI CHAHIYE.  Sirf button chhupa dena permission
+    nahi hoti -- socket seedha bhi khola ja sakta hai.
     """
     if (user.get("role") or "") == "admin":
         return True
@@ -211,18 +223,24 @@ def _can(user: dict, key: str) -> bool:
             cur = dict_cursor(conn)
             cur.execute(
                 "SELECT page_key, perm_level FROM maintenance_user_permissions"
-                " WHERE user_id = %s AND page_key IN (%s, %s)",
-                (user["id"], key, _PARENT))
+                " WHERE user_id = %s AND page_key = ANY(%s)",
+                (user["id"], list(_CAPS) + [_PARENT, key]))
             got = {r["page_key"]: r["perm_level"] for r in (cur.fetchall() or [])}
     except Exception:
         return False
+
     lvl = got.get(key)
-    if lvl in ("read", "full"):
-        return True
-    if lvl == "none":
-        return False
-    par = got.get(_PARENT)
-    return par in ("read", "full")
+    if key in _CAPS:
+        koi_set = any(got.get(k) in ("read", "full", "none") for k in _CAPS)
+        if koi_set:
+            return lvl in ("read", "full")
+    else:
+        # baaki sub-key (setup/history) -- app ka aam niyam
+        if lvl in ("read", "full"):
+            return True
+        if lvl == "none":
+            return False
+    return got.get(_PARENT) in ("read", "full")
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -242,14 +260,17 @@ def roster(user=Depends(get_current_user)):
                # UI ka faisla bhi SERVER se aata hai, taaki dono jagah ek hi
                # jawab rahe (frontend ka `canAccess` sirf dikhane ke liye).
                "can_voice": _can(user, "walkie-voice"),
-               "can_buzz": _can(user, "walkie-buzz")},
+               "can_buzz": _can(user, "walkie-buzz"),
+               "can_channel": _can(user, "walkie-channel")},
         "people": [{"id": r["id"], "name": _naam(r), "username": r["username"],
                     "online": r["id"] in online}
                    for r in rows if r["id"] != user["id"]],
-        "channels": [{"id": c["id"], "name": c["name"], "color": c["color"],
-                      "size": len(c["members"]),
-                      "online": len([u for u in c["members"] if u in online])}
-                     for c in me_in],
+        # Group ki ijazat na ho to list bhejte hi nahi -- page chhupa de,
+        # itna kaafi nahi hota.
+        "channels": ([{"id": c["id"], "name": c["name"], "color": c["color"],
+                       "size": len(c["members"]),
+                       "online": len([u for u in c["members"] if u in online])}
+                      for c in me_in] if _can(user, "walkie-channel") else []),
     }
 
 
@@ -722,6 +743,12 @@ async def walkie_ws(ws: WebSocket,
             if t == "ping":
                 await ws.send_text(json.dumps({"t": "pong"}))
             elif t == "ptt_start":
+                if (d.get("target") or {}).get("type") == "channel" \
+                        and not _can(user, "walkie-channel"):
+                    await ws.send_text(json.dumps(
+                        {"t": "floor", "ok": False,
+                         "why": "You are not allowed to use groups"}))
+                    continue
                 if not _can(user, "walkie-voice"):
                     await ws.send_text(json.dumps(
                         {"t": "floor", "ok": False,
@@ -735,6 +762,12 @@ async def walkie_ws(ws: WebSocket,
                 await _hub.drop_floor(c)
                 await ws.send_text(json.dumps({"t": "floor", "ok": False, "why": "stopped"}))
             elif t == "buzz":
+                if (d.get("target") or {}).get("type") == "channel" \
+                        and not _can(user, "walkie-channel"):
+                    await ws.send_text(json.dumps(
+                        {"t": "buzz_sent", "listeners": 0,
+                         "why": "You are not allowed to use groups"}))
+                    continue
                 if not _can(user, "walkie-buzz"):
                     await ws.send_text(json.dumps(
                         {"t": "buzz_sent", "listeners": 0,
