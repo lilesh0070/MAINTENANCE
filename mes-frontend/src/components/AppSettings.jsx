@@ -325,8 +325,17 @@ export default function AppSettings() {
                       zIndex: 10001, display: "flex", alignItems: "flex-start",
                       justifyContent: "flex-end", padding: "60px 12px 12px" }}>
           <div onClick={(e) => e.stopPropagation()}
+               /* maxHeight + overflow ZAROORI hai: is parde me pankti judti
+                  rehti hain (ab "Run in background" bhi), aur phone ki chhoti
+                  screen par content bahar nikal jaata tha -- neeche wala hissa
+                  (Check for update / Close / Logout) chhup jaata aur us tak
+                  pahunchne ka koi raasta hi nahi bachta tha.
+                  Ghatav = bahar wale div ka padding (60 upar + 12 neeche) +
+                  thodi si dheel. */
                style={{ background: "#fff", borderRadius: 14, padding: "16px 18px",
                         width: "100%", maxWidth: 340,
+                        maxHeight: "calc(100vh - 84px)", overflowY: "auto",
+                        WebkitOverflowScrolling: "touch",
                         boxShadow: "0 14px 44px rgba(0,0,0,.32)" }}>
 
             <div style={{ fontWeight: 800, fontSize: 15, color: "#0f172a", marginBottom: 4 }}>
