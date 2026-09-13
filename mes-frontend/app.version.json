@@ -1,5 +1,5 @@
 {
-  "version": "1.4.53",
-  "notes": "New Walkie-Talkie module: press and hold to talk to a person or a channel, or buzz their phone. Calls arrive even when the app is closed. Admin chooses who can use it, in the new Walkie-Talkie page.",
-  "released_at": "2026-09-13T14:14:15"
+  "version": "1.4.54",
+  "notes": "Walkie-Talkie: incoming voice now plays on the loudspeaker at media volume (it was going to the earpiece and could not be heard), plus a short beep before someone starts speaking",
+  "released_at": "2026-09-13T14:35:58"
 }

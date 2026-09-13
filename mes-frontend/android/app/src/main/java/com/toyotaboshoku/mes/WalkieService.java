@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
@@ -84,6 +85,7 @@ public class WalkieService extends Service {
     private final Handler main = new Handler(Looper.getMainLooper());
 
     private AudioTrack track;
+    private AudioFocusRequest focus;
     private Thread writer;
     private final ArrayBlockingQueue<byte[]> qatar = new ArrayBlockingQueue<>(64);
     private PowerManager.WakeLock wake;
@@ -210,6 +212,7 @@ public class WalkieService extends Service {
                     } else if ("rx_start".equals(t)) {
                         JSONObject f = d.optJSONObject("from");
                         audioTaiyaar();
+                        chirp();
                         likho((f != null ? f.optString("name", "Someone") : "Someone") + " is speaking…");
                     } else if ("rx_stop".equals(t)) {
                         likho("Listening");
@@ -279,10 +282,19 @@ public class WalkieService extends Service {
         if (min <= 0) min = RATE;                 // kuch device 0/-2 lauta dete hain
         int buf = Math.max(min, RATE / 2);        // ~0.5s — hichki jhelne ke liye
 
+        /* ⚠ YAHAN PEHLE `USAGE_VOICE_COMMUNICATION` THA AUR WO GALAT NIKLA.
+           Us usage par Android aawaz ko "phone call" maan leta hai: wo KAAN
+           WALE chhote speaker (earpiece) par chali jaati hai aur CALL wale
+           volume se bandh jaati hai.  Nateeja — device par test me sab kuch
+           theek chalta dikha (frame aate rahe, notification badalti rahi) par
+           phone se AAWAZ SUNAYI HI NAHI DI.
+
+           `USAGE_MEDIA` par wo aam loudspeaker par aati hai aur MEDIA wale
+           volume se chalti hai — yaani volume ke button se ghatai-badhai ja
+           sakti hai.  `mediaPlayback` wali foreground-service ki kism bhi
+           isi se milti hai (manifest dekho). */
         AudioAttributes attrs = new AudioAttributes.Builder()
-                // VOICE_COMMUNICATION: phone ise "baat-cheet" maanta hai — speaker
-                // par aata hai aur ringer/media ke volume se alag rehta hai.
-                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                .setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build();
         AudioFormat fmt = new AudioFormat.Builder()
@@ -292,6 +304,11 @@ public class WalkieService extends Service {
                 .build();
         track = new AudioTrack(attrs, fmt, buf, AudioTrack.MODE_STREAM,
                 AudioManager.AUDIO_SESSION_ID_GENERATE);
+        // Track ka apna volume poora.  (Phone ka MEDIA volume iske upar alag
+        // se lagta hai — wo user ke haath me rehna hi chahiye.)
+        try { track.setVolume(AudioTrack.getMaxVolume()); } catch (Throwable ignored) { /* purana device */ }
+        // Koi gaana/video chal raha ho to call ke waqt wo dheema ho jaye.
+        focusLo(attrs);
         track.play();
 
         writer = new Thread(() -> {
@@ -311,10 +328,68 @@ public class WalkieService extends Service {
         writer.start();
     }
 
+    /* Audio focus: bina iske bajta to hai, par doosri app ka gaana saath me
+       chalta rehta hai aur call uske neeche dab jaati hai. */
+    private void focusLo(AudioAttributes attrs) {
+        try {
+            AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (am == null) return;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                focus = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                        .setAudioAttributes(attrs).build();
+                am.requestAudioFocus(focus);
+            } else {
+                am.requestAudioFocus(null, AudioManager.STREAM_MUSIC,
+                        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
+            }
+        } catch (Throwable e) { Log.w(TAG, "focus: " + e); }
+    }
+
+    private void focusChhodo() {
+        try {
+            AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (am == null) return;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (focus != null) am.abandonAudioFocusRequest(focus);
+            } else {
+                am.abandonAudioFocus(null);
+            }
+        } catch (Throwable ignored) { /* pehle se chhoot gaya */ }
+        focus = null;
+    }
+
+    /* Bolne se PEHLE ek chhoti si do-suron wali chirp — bilkul asli
+       walkie-talkie jaisi.  Do kaam karti hai: sunne wale ko pata chal jaata
+       hai ki koi bolne wala hai (warna pehla lafz kat jaata hai), aur ye khud
+       hi sabit kar deti hai ki phone ki aawaz chaalu hai.
+       Koi sound file nahi rakhi — PCM yahin bana lete hain, taaki APK me ek
+       aur asset na jude aur naap (16 kHz) hamesha milti rahe. */
+    private void chirp() {
+        AudioTrack t = track;
+        if (t == null) return;
+        try {
+            final int[] hz = { 1000, 1400 };
+            final int ms = 70;
+            for (int f : hz) {
+                int n = RATE * ms / 1000;
+                byte[] b = new byte[n * 2];
+                for (int i = 0; i < n; i++) {
+                    // shuru aur ant me halka fade -- warna "tik" ki awaaz aati hai
+                    double fade = Math.min(1.0, Math.min(i, n - i) / (RATE * 0.005));
+                    int v = (int) (6000 * fade * Math.sin(2 * Math.PI * f * i / (double) RATE));
+                    b[i * 2] = (byte) (v & 0xff);
+                    b[i * 2 + 1] = (byte) ((v >> 8) & 0xff);
+                }
+                if (!qatar.offer(b)) { qatar.poll(); qatar.offer(b); }
+            }
+        } catch (Throwable e) { Log.w(TAG, "chirp: " + e); }
+    }
+
     private synchronized void audioBand() {
         qatar.clear();
         Thread w = writer; writer = null;
         if (w != null) w.interrupt();
+        focusChhodo();
         AudioTrack t = track; track = null;
         if (t != null) {
             try { t.stop(); } catch (Throwable ignored) { /* pehle se ruka hua */ }
