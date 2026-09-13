@@ -1,5 +1,5 @@
 {
-  "version": "1.4.54",
-  "notes": "Walkie-Talkie: incoming voice now plays on the loudspeaker at media volume (it was going to the earpiece and could not be heard), plus a short beep before someone starts speaking",
-  "released_at": "2026-09-13T14:35:58"
+  "version": "1.4.55",
+  "notes": "Walkie-Talkie: a buzz now rings the phone with its own ringtone as well as vibrating, so it can be heard from a pocket",
+  "released_at": "2026-09-13T14:45:20"
 }

@@ -13,6 +13,9 @@ import android.media.AudioFocusRequest;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
+import android.media.Ringtone;
+import android.media.RingtoneManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -86,6 +89,7 @@ public class WalkieService extends Service {
 
     private AudioTrack track;
     private AudioFocusRequest focus;
+    private Ringtone ring;
     private Thread writer;
     private final ArrayBlockingQueue<byte[]> qatar = new ArrayBlockingQueue<>(64);
     private PowerManager.WakeLock wake;
@@ -206,11 +210,16 @@ public class WalkieService extends Service {
                     if (!"presence".equals(t)) Log.i(TAG, "TXT " + t);
                     if ("buzz".equals(t)) {
                         JSONObject f = d.optJSONObject("from");
-                        thartharao();
+                        bajao();          // phone ki apni ring
+                        thartharao();     // + vibration
                         likho((f != null ? f.optString("name", "Someone") : "Someone") + " buzzed you");
                         main.postDelayed(() -> likho("Listening"), 6000);
                     } else if ("rx_start".equals(t)) {
                         JSONObject f = d.optJSONObject("from");
+                        // Buzz ki ring abhi baj rahi ho to use rok do -- warna
+                        // ring aur aawaz ek saath chalti hain aur kuch samajh
+                        // nahi aata.
+                        ringBand();
                         audioTaiyaar();
                         chirp();
                         likho((f != null ? f.optString("name", "Someone") : "Someone") + " is speaking…");
@@ -269,6 +278,7 @@ public class WalkieService extends Service {
         CONNECTED = false;
         try { if (ws != null) ws.close(1000, "bye"); } catch (Throwable ignored) { /* pehle se band */ }
         ws = null;
+        ringBand();
         audioBand();
         try { if (wake != null && wake.isHeld()) wake.release(); } catch (Throwable ignored) { /* pehle se chhoot gaya */ }
         wake = null;
@@ -397,16 +407,65 @@ public class WalkieService extends Service {
         }
     }
 
+    /* BUZZ PAR PHONE KI APNI RING.
+     *
+     * User ne yahi maanga: "buzz dabaye to vibration ke saath jo ring humne
+     * set kar rakhi hai wo bhi baje".  Isliye koi apni sound file nahi rakhi
+     * -- phone me jo ringtone chuni hui hai, WAHI bajti hai.
+     *
+     * `USAGE_NOTIFICATION_RINGTONE` isliye ki wo RING wale volume par chale
+     * (wahi jo phone call ke liye chalta hai), media wale par nahi -- buzz ek
+     * bulawa hai, gaana nahi.  Phone silent par ho to ring apne aap nahi
+     * bajegi, par VIBRATION phir bhi hoti hai -- wo theek hai, silent ka
+     * matlab hi yahi hota hai.
+     *
+     * RING_SECONDS ke baad khud band.  Poori ringtone 30 second ki ho sakti
+     * hai; itni der bajti rahe to wo bulawa nahi, pareshani ban jaati hai. */
+    private static final int RING_SECONDS = 6;
+
+    private void bajao() {
+        try {
+            ringBand();
+            Uri u = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+            if (u == null) u = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            if (u == null) { Log.w(TAG, "RING koi uri nahi"); return; }
+            Ringtone r = RingtoneManager.getRingtone(this, u);
+            if (r == null) { Log.w(TAG, "RING banti nahi"); return; }
+            r.setAudioAttributes(new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build());
+            ring = r;
+            r.play();
+            Log.i(TAG, "RING chal padi");
+            main.postDelayed(this::ringBand, RING_SECONDS * 1000L);
+        } catch (Throwable e) {
+            Log.w(TAG, "ring: " + e);
+        }
+    }
+
+    private void ringBand() {
+        Ringtone r = ring; ring = null;
+        try { if (r != null && r.isPlaying()) r.stop(); } catch (Throwable ignored) { /* pehle se ruki hui */ }
+        try {
+            Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+            if (v != null) v.cancel();
+        } catch (Throwable ignored) { /* kuch nahi */ }
+    }
+
     private void thartharao() {
         try {
             Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
             Log.i(TAG, "VIB v=" + (v != null) + " has=" + (v != null && v.hasVibrator()));
             if (v == null || !v.hasVibrator()) return;
-            long[] pat = { 0, 260, 120, 260, 120, 260 };
+            /* Ring jitni der hilta rahe -- jeb me pada phone ek jhatke se
+               nahi pata chalta.  `repeat = 0` yaani pattern dobara-dobara;
+               `ringBand()` RING_SECONDS baad `cancel()` kar deta hai. */
+            long[] pat = { 0, 500, 400 };
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                v.vibrate(VibrationEffect.createWaveform(pat, -1));
+                v.vibrate(VibrationEffect.createWaveform(pat, 0));
             } else {
-                v.vibrate(pat, -1);
+                v.vibrate(pat, 0);
             }
         } catch (Throwable e) {
             Log.w(TAG, "vibrate: " + e);
