@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { tasveeronKoAndarBithao, nativeChhapo } from "../../constants/sheetTools";
+import { tasveeronKoAndarBithao, nativeChhapo, pdfDocSe,
+         inputonKoTextBanao, haalatKoAttributeBanao } from "../../constants/sheetTools";
 import { createRoot } from "react-dom/client";
 import { Btn, api, fmtDuration, fmtDateTime } from "./shared";
 import { upperCaret, maskCaret } from "../../constants/upperCaret";
@@ -217,6 +218,14 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   };
 
   const [data, setData] = useState({});
+  // PDF ka haal.  Ye do hook YAHAN (baaki hooks ke saath) hone hi
+  // chahiye -- pehle maine inhe `pdfSlip` ke paas neeche rakha tha aur
+  // eslint ne pakda: us jagah tak pahunchne se pehle component me ek
+  // early return aa jaata hai, yaani hook har render me nahi chalta.
+  // React ka pehla niyam yahi hai -- hook ka kram har render me ek
+  // jaisa rehna chahiye.
+  const [pdfChal, setPdfChal]   = useState(false);
+  const [pdfKehna, setPdfKehna] = useState("");
   const [saving, setSaving] = useState(false);
   const [machines, setMachines] = useState([]);  // [{serial_no, machine_no(code), machine_name}]
   const [masterRows, setMasterRows]     = useState([]);
@@ -602,14 +611,26 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   //      An iframe with an empty title and no surrounding chrome side-steps
   //      both — combined with @page margin:0 we get a clean single-sheet
   //      print of just the slip.
-  const printSlip = async () => {
+  // Slip ka poora chhapne-laayak HTML.  Print aur PDF DONO yahi bulate
+  // hain -- do copy hoti to ek me CSS badal jaati aur doosri me chhoot
+  // jaati, chup-chaap.  (Yahi soch `printDoc` par bhi likhi hai.)
+  const slipDoc = async ({ pdf = false } = {}) => {
     const node = document.querySelector(".bds-modal");
-    if (!node) return;
+    if (!node) return null;
     // APK me print ke liye ek ALAG WebView banti hai jo Capacitor ke local
     // server se judi nahi hoti -- wahan `/logo.jpg` jaisa rishtedaar rasta
     // khulta hi nahi aur logo ki jagah tooti tasveer aati hai.  Isliye saari
     // tasveerein pehle hi HTML ke ANDAR (data: URI) bitha dete hain.
-    const slipHtml = (await tasveeronKoAndarBithao(node)).outerHTML;
+    const clone = await tasveeronKoAndarBithao(node);
+    // Tick aur select ki haalat ATTRIBUTE me daal do.  `outerHTML` sirf
+    // attribute likhta hai aur React checked/selected ko attribute me
+    // rakhta hi nahi -- bina iske CHHAPI HUI slip me machine no. par
+    // "-- select --" aata tha aur saare tick khaali.  PRINT aur PDF dono
+    // ko chahiye, isliye pdf-branch se PEHLE.
+    haalatKoAttributeBanao(clone, node);
+    // PDF ke liye input hata kar saada text -- wajah sheetTools me
+    // `inputonKoTextBanao` par likhi hai.  Print ko iski zaroorat nahi.
+    const slipHtml = (pdf ? inputonKoTextBanao(clone, node) : clone).outerHTML;
     // Pull all the <style> blocks the host page has injected so the slip
     // looks identical inside the iframe (font, table grid, colours).
     const styles = Array.from(document.querySelectorAll("style"))
@@ -652,8 +673,18 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
     border-radius: 0 !important; max-width: none !important;
     width: 297mm !important;
     margin: 0 !important; padding: 6mm !important; box-sizing: border-box !important;
+    /* ⚠ overflow ko KHOLNA zaroori hai.  Screen par modal par inline
+       overflow:hidden laga hai (gol kone ke liye).  Print me usse kuch
+       nahi bigadta -- kuch overflow hota hi nahi -- par PDF me html2canvas
+       us overflow:hidden + box-sizing:border-box ke JOD par slip ki
+       AAKHRI LINE KAAT deta hai: naap kar dekha, content 658px ka tha aur
+       tasveer me sirf 634px aaya -- theek 24px kam, yaani neeche wali 6mm
+       padding jitna.  Screen par DOM me kahin koi clipping thi hi nahi
+       (fit/modal/body teeno 658 bata rahe the), isliye ye galti sirf
+       banni hui file me dikhti thi. */
+    overflow: visible !important;
   }
-  .bds-close-x, .bds-print-btn, .bds-edit-btn, .bds-footer { display: none !important; }
+  .bds-close-x, .bds-print-btn, .bds-pdf-btn, .bds-edit-btn, .bds-footer { display: none !important; }
   .bds-body { max-height: none !important; overflow: visible !important; padding: 0 !important; }
 
   /* ── Print-only size shrink ─────────────────────────────────────────
@@ -704,6 +735,75 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   .bds-cell, .bds-row, .bds-cat-row, .bds-sign-grid > * { page-break-inside: avoid; }
 </style>
 </head><body><div class="bds-print-page"><div class="bds-print-fit">${slipHtml}</div></div></body></html>`;
+    return html;
+  };
+
+  // ── Slip ki PDF — ek tap, koi parda nahi ───────────────────────────
+  //
+  // Doc wahi hai jo print ka hai (`slipDoc`), isliye PDF aur kaagaz par
+  // slip HU-BA-HU ek jaisi aati hai.
+  //
+  // Do cheezein `pdfDocSe` ko saaf-saaf batani padti hain:
+  //   margin: 0   -- slip ka apna `@page` bhi 0 par hai aur uska
+  //                  `.bds-print-page` poore 297x210mm ka banaya gaya hai.
+  //                  6mm ghata dete to naap galat hoti aur slip simat kar
+  //                  panne ke ek kone me baith jaati.
+  //   taiyaar     -- fit slip KHUD karta hai (dono taraf ka anupaat dekh
+  //                  kar, `min(sx, sy, 1)`), bilkul waise hi jaise print
+  //                  wale iframe me hota hai.  Ye diya ho to sheetTools
+  //                  apni simatne wali naap band kar deta hai, warna do
+  //                  scale ek saath lag jaate.
+  const pdfSlip = async () => {
+    if (pdfChal) return;
+    setPdfChal(true); setPdfKehna("");
+    try {
+      const html = await slipDoc({ pdf: true });
+      if (!html) { setPdfKehna("Nothing to save"); return; }
+      const r = await pdfDocSe(html, {
+        // Naam me machine aur date isliye ki Downloads me das slip ek jaise
+        // naam se padi ho to koi pehchan hi nahi paata.  Auto aur manual bhi
+        // alag likhte hain -- wo do alag cheezein hain.
+        naam: [isAutoSlip ? "Auto-Breakdown-Slip" : "Breakdown-Slip",
+               data?.machine_no, String(data?.date || "").slice(0, 10)]
+              .filter(Boolean).join("_").replace(/[^\w-]+/g, "-"),
+        khada: false,
+        margin: 0,
+        // ⚠ `.bds-print-fit` utaarte hain, `.bds-print-page` nahi.
+        // Page 297x210mm ka FIXED dabba hai aur uska content usse chhota
+        // hota hai.  Us dabbe ko utaarne par html2canvas neeche se ~24px
+        // KAAT deta tha -- slip ki aakhri (signature) line aadhi kati hui
+        // aati thi.  Naap kar dekha: DOM me kahin koi clipping thi hi nahi
+        // (fit/modal/body teeno 658px bata rahe the) aur page 794px ka tha,
+        // phir bhi tasveer 634px par ruk jaati thi.  `.bds-print-fit` ki
+        // lambai THEEK content jitni hoti hai, to ye gadbad aati hi nahi.
+        // jsPDF use panne ki chaudai par bitha deta hai -- nateeja wahi,
+        // bas neeche ki khali patti PDF me nahi aati.
+        kyaLein: (w) => w.document.querySelector(".bds-print-fit"),
+        taiyaar: (w) => {
+          const idoc = w.document;
+          const page = idoc.querySelector(".bds-print-page");
+          const fit  = idoc.querySelector(".bds-print-fit");
+          if (!page || !fit) return;
+          const s2 = Math.min(page.clientWidth / fit.scrollWidth,
+                              page.clientHeight / fit.scrollHeight, 1);
+          if (s2 < 0.999) fit.style.transform = `scale(${s2})`;
+        },
+      });
+      setPdfKehna(r?.theek
+        ? (r.native ? "Saved to " + r.kahan : "Downloaded")
+        : (r?.kyun || "Could not create the PDF"));
+    } catch (e) {
+      setPdfKehna(e?.message || "Could not create the PDF");
+    } finally {
+      setPdfChal(false);
+      setTimeout(() => setPdfKehna(""), 5000);
+    }
+  };
+
+  // ── Slip ko CHHAPO ────────────────────────────────────
+  const printSlip = async () => {
+    const html = await slipDoc();
+    if (!html) return;
 
     // ⚠ APK ME NEECHE WALA IFRAME KUCH NAHI KARTA.
     // Android WebView `window.print()` ko laagu hi nahi karta -- button
@@ -792,6 +892,17 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
           {readOnly && (
             <div className="bds-print-btn" onClick={() => printSlip()} title="Print this slip">
               🖨 Print
+            </div>
+          )}
+          {/* PDF -- ek tap me file.  Print ka parda "Save as PDF" bhi deta hai,
+              par wo do-teen tap ka kaam hai aur TV/tablet par printer hota hi
+              nahi.  Doc dono ka EK HI hai, to file aur kaagaz hu-ba-hu ek
+              jaise aate hain. */}
+          {readOnly && (
+            <div className="bds-pdf-btn" onClick={pdfSlip}
+                 title="Download this slip as a PDF file"
+                 style={pdfChal ? { opacity: .6, cursor: "default" } : undefined}>
+              {pdfChal ? "⤓ Making…" : (pdfKehna ? "✓ " + pdfKehna : "⤓ PDF")}
             </div>
           )}
           {/* Edit — sirf tab dikhta hai jab caller ne `onEdit` diya ho.
@@ -1266,6 +1377,14 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
           letter-spacing:.04em; user-select:none;
           font-family:'Barlow',sans-serif;
         }
+        .bds-pdf-btn {
+          padding:0 16px; cursor:pointer; display:flex; align-items:center;
+          gap:8px; font-size:12px; font-weight:700; color:#1d4ed8;
+          border-left:1.5px solid #0f172a; background:#eff6ff;
+          letter-spacing:.04em; user-select:none; white-space:nowrap;
+          font-family:'Barlow',sans-serif;
+        }
+        .bds-pdf-btn:hover { background:rgba(29,78,216,.10); color:#1e3a8a; }
         .bds-print-btn:hover { background:rgba(30,64,175,.08); color:#1e3a8a; }
 
         /* Print is handled via a sandboxed iframe by printSlip() in

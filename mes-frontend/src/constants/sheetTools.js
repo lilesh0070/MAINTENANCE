@@ -121,6 +121,133 @@ export async function tasveeronKoAndarBithao(node) {
   return clone;
 }
 
+/* Live control ki HAALAT ko ATTRIBUTE bana do, taaki `outerHTML` me bach jaye.
+ *
+ * KYUN ZAROORI HAI (naap kar nikla, 2026-09-13)
+ * ---------------------------------------------
+ * `cloneNode` control ki haalat MEMORY me utaar leta hai, par `outerHTML`
+ * sirf ATTRIBUTE likhta hai -- aur React `checked`/`selected` ko attribute
+ * me rakhta hi nahi, wo seedha property set karta hai.  Nateeja: CHHAPI HUI
+ * Breakdown Slip me MACHINE NO. par "-- select --" aata tha aur A/B category,
+ * MAINTENANCE, ELECTRICAL, SPARE USED ke saare tick KHAALI -- jabki parde
+ * par sab theek bhara dikhta hai.
+ *
+ * `<input type=text>` ka `value` aur `<textarea>` ka text React khud sahi
+ * rakhta hai (naapa: dono attribute/text me maujood the) -- wo pehle se
+ * theek the, isliye yahan sirf tick aur select hain.
+ *
+ * Ye PRINT aur PDF DONO ko chahiye -- serialize dono jagah hota hai. */
+export function haalatKoAttributeBanao(clone, live) {
+  const jodi = (chunav, kaam) => {
+    const zinda = Array.from(live.querySelectorAll(chunav));
+    Array.from(clone.querySelectorAll(chunav)).forEach((el, i) => {
+      if (zinda[i]) kaam(el, zinda[i]);
+    });
+  };
+  jodi("input[type=checkbox], input[type=radio]", (el, z) => {
+    if (z.checked) el.setAttribute("checked", "");
+    else el.removeAttribute("checked");
+  });
+  jodi("select", (el, z) => {
+    Array.from(el.options).forEach((o, i) => {
+      if (z.options[i] && z.options[i].selected) o.setAttribute("selected", "");
+      else o.removeAttribute("selected");
+    });
+  });
+  return clone;
+}
+
+/* Clone me har <input>/<textarea>/<select> ki jagah uska TEXT bitha do.
+ *
+ * KYUN ZAROORI HAI (naap kar nikla, 2026-09-12 aur 13)
+ * ----------------------------------------------------
+ * html2canvas form-control KHUD banata hai -- browser ka apna layout
+ * istemal nahi karta -- aur do jagah galat nikalta hai:
+ *
+ *   1. input ka text uske dabbe par KAAT deta hai.  Breakdown Slip me isi
+ *      wajah se aakhri (signature) row ke naam AADHE kat rahe the: "NEERAJ"
+ *      ka upper aadha hi aata tha.  DOM me kahin koi clipping thi hi nahi
+ *      (naapa: fit/modal/body teeno 658px, panna 794px) -- galti sirf banni
+ *      hui file me dikhti thi.
+ *   2. tick/radio aur select ki HAALAT banata hi nahi.  Naapa: slip me 4
+ *      tick lage the aur MACHINE NO. me YFG_SS_04 chuna tha -- PDF me ek
+ *      bhi tick nahi aaya aur machine ki jagah "-- select --" likha tha.
+ *
+ * Pehle (1) ke liye teen cheezein aazma kar dekhi aur teeno bekaar gayin:
+ * modal ka overflow kholna, line-height badhana, input ko lambai dena.
+ * Asli hal yahi hai -- control rehne hi mat do.
+ *
+ * PRINT ko iski zaroorat nahi (browser control bilkul theek likhta hai) --
+ * use `haalatKoAttributeBanao` chahiye, jo upar hai.  Isliye ye sirf PDF
+ * wale raaste par lagta hai.
+ *
+ * Naap LIVE element se lete hain (clone kabhi DOM me laga hi nahi, uska
+ * computed style khali hota hai), aur span par wahi font/padding/align
+ * chipka dete hain taaki dekhne me koi farak na pade. */
+export function inputonKoTextBanao(clone, live) {
+  const CHUNAV = "input, textarea, select";
+  const zinda = Array.from(live.querySelectorAll(CHUNAV));
+  const nakli = Array.from(clone.querySelectorAll(CHUNAV));
+  nakli.forEach((el, i) => {
+    const z = zinda[i];
+    const tag = (el.tagName || "").toLowerCase();
+    const kism = (el.getAttribute("type") || "").toLowerCase();
+    let cs = null;
+    try { cs = z ? window.getComputedStyle(z) : null; } catch { cs = null; }
+
+    // ── tick / radio ── inka text nahi hota, dabba hota hai.  Isliye span
+    // par wahi dabba khud banate hain aur lagne par nishaan bhi.  (Nishaan
+    // ke glyph slip ke apne header me pehle se chhap rahe hain -- "TICK
+    // DOWN (✓)" -- to font ki kami ka dar nahi.)
+    if (tag === "input" && /^(checkbox|radio)$/.test(kism)) {
+      const gol  = kism === "radio";
+      const naap = (v, d) => { const n = parseFloat(v); return n > 0 ? n : d; };
+      const w = naap(cs && cs.width, 13), h = naap(cs && cs.height, 13);
+      const sp = clone.ownerDocument.createElement("span");
+      sp.className = el.className;
+      if (z && z.checked) sp.textContent = gol ? "●" : "✓";
+      sp.setAttribute("style", [
+        "display:inline-block", "box-sizing:border-box",
+        "width:" + w + "px", "height:" + h + "px",
+        "border:1px solid #555", "border-radius:" + (gol ? "50%" : "2px"),
+        "background:#fff", "color:#000", "text-align:center",
+        "line-height:" + Math.max(1, h - 3) + "px",
+        "font-size:" + Math.max(8, Math.round(h * (gol ? 0.8 : 0.9))) + "px",
+        "vertical-align:middle", "overflow:hidden",
+        cs ? "margin:" + cs.margin : "",
+      ].filter(Boolean).join(";"));
+      el.replaceWith(sp);
+      return;
+    }
+
+    // Select ka chuna hua text.  Kuch chuna hi na ho to KHAALI -- kaagaz par
+    // "-- select --" chhapna bekaar hai, wo parde ka placeholder hai.
+    const val = tag === "select"
+      ? (z && z.value
+          ? ((z.options[z.selectedIndex] || {}).text || z.value)
+          : "")
+      : ((z && z.value) || el.getAttribute("value") || el.textContent || "");
+
+    const sp = clone.ownerDocument.createElement("span");
+    sp.className = el.className;
+    sp.textContent = val;
+    const box = [
+      "display:inline-block", "box-sizing:border-box", "width:100%",
+      "white-space:pre-wrap", "word-break:break-word", "background:transparent",
+      "border:0",
+    ];
+    if (cs) {
+      box.push("font:" + cs.font, "color:" + cs.color, "padding:" + cs.padding,
+               "text-align:" + cs.textAlign, "line-height:" + cs.lineHeight,
+               // textarea ki lambai bani rahe, warna row simat jaati hai
+               tag === "textarea" ? "min-height:" + cs.height : "");
+    }
+    sp.setAttribute("style", box.filter(Boolean).join(";"));
+    el.replaceWith(sp);
+  });
+  return clone;
+}
+
 /* Native pul se chhapo; pul na ho to `null` lauta do.
  *
  * ClosureFormModal (Breakdown Slip / Auto Slip) ki apni print-CSS bahut
@@ -248,10 +375,14 @@ function asliChaudai(fit) {
  *                    tasveer ko panne ki chaudai par bithakar).  Isliye
  *                    yahan sheet ko uski poori chaudai de dete hain.
  */
-function kaagazParBithao(doc, khada, kaam, { simtao = true, kamSeKam = 0.4 } = {}) {
-  // Kaagaz ki naap (96dpi par A4, dono taraf ke 6mm margin ghata kar).
-  const chaudaiMm = (khada ? 210 : 297) - 12;
-  const lambaiMm  = (khada ? 297 : 210) - 12;
+function kaagazParBithao(doc, khada, kaam,
+                         { simtao = true, kamSeKam = 0.4, margin = 6 } = {}) {
+  // Kaagaz ki naap (96dpi par A4, dono taraf ka margin ghata kar).
+  // `margin` parameter isliye: Breakdown Slip apna doc `@page margin:0`
+  // par banata hai aur uska `.bds-print-page` poore 297x210mm ka hai --
+  // uske liye 6mm ghatana galat naap de deta.
+  const chaudaiMm = (khada ? 210 : 297) - 2 * margin;
+  const lambaiMm  = (khada ? 297 : 210) - 2 * margin;
   const px  = Math.round((chaudaiMm / 25.4) * 96);
   const pxH = Math.round((lambaiMm / 25.4) * 96);
 
@@ -278,6 +409,14 @@ function kaagazParBithao(doc, khada, kaam, { simtao = true, kamSeKam = 0.4 } = {
     const chalao = async () => {
       try {
         const w = f.contentWindow;
+        // ⚠ FONT UTARNE KA INTEZAAR -- warna naap GALAT aati hai.
+        // Neeche saara hisaab (scale, lambai) text ki naap par tika hai, aur
+        // font badalte hi wo naap badal jaati hai.  Breakdown Slip par yahi
+        // pakda gaya: font aane se pehle naapne par slip chhoti lagti thi,
+        // scale bada reh jaata, aur PDF me neeche ka signature wala hissa
+        // KAT jaata tha -- jabki print (jo 300ms ruk kar naapta hai) poora
+        // aata tha.  `fonts.ready` us andaze ko hata deta hai.
+        try { await w?.document?.fonts?.ready; } catch { /* purana browser */ }
         const fit = w?.document?.querySelector(".tb-print-fit");
         const ctx = { px, pxH, fit, chaudai: px };
         if (fit) {
@@ -493,13 +632,13 @@ const blobBase64 = (blob) => new Promise((res, rej) => {
  * gin kar dekha) -- bade flat hisse aur teekhe kinare.  Deflate ise dabata
  * hai; JPEG ka DCT ulta har akshar ke kinare par bits kharch karta hai aur
  * dhundhla bhi kar deta hai.  Yahan file chhoti BHI hai aur text saaf BHI. */
-function canvasSePdf(jsPDF, canvas, khada) {
+function canvasSePdf(jsPDF, canvas, khada, margin = 6) {
   // ⚠ `compress: true` LAZMI HAI -- upar ke aankde dekhein.  Iske bina
   // jsPDF PNG ko kholkar RAW pixel bhar deta hai aur sheet 14 MB ki ho
   // jaati hai.
   const pdf = new jsPDF({ orientation: khada ? "portrait" : "landscape",
                           unit: "mm", format: "a4", compress: true });
-  const M  = 6;
+  const M  = margin;
   const pw = (khada ? 210 : 297) - 2 * M;      // panne par usable chaudai (mm)
   const ph = (khada ? 297 : 210) - 2 * M;      // ...aur lambai
 
@@ -521,71 +660,11 @@ function canvasSePdf(jsPDF, canvas, khada) {
   return { blob: pdf.output("blob"), panne };
 }
 
-/* Ek DOM node ko PDF bana kar SEEDHA de do — ek tap, koi parda nahi.
- *
- *   APP     — bytes `SheetTools.faylSejo` ko jaate hain, wahan se asli
- *             Downloads folder me file girti hai.
- *   WEBSITE — blob ka seedha download.
- *
- * Lautata hai { theek, native, kahan, panne } ya { theek:false, kyun } —
- * UI isi se tay karta hai ki kya likhna hai.  "Ho gaya" bolna jab kuch
- * hua hi na ho, sabse bura hai. */
-export async function pdfNikalo(node, { naam = "sheet", khada = false, css = "" } = {}) {
-  if (!node) return { theek: false, kyun: "There is nothing to save" };
-
-  let jsPDF, html2canvas;
-  try {
-    ({ jsPDF, html2canvas } = await pdfLagao());
-  } catch {
-    return { theek: false, kyun: "The PDF library could not be loaded — reload the page and try again" };
-  }
-
-  const chhapneWala = await tasveeronKoAndarBithao(node);
-  const doc = printDoc(chhapneWala, naam, khada, css);
-
-  let out;
-  try {
-    out = await kaagazParBithao(doc, khada, async (w, ctx, hatao) => {
-      try {
-        const fit = ctx.fit || w.document.body;
-        const naapH = Math.ceil(fit.getBoundingClientRect().height);
-        const naapW = Math.ceil(Math.max(ctx.px, ctx.chaudai));
-
-        // ⚠ BAHUT LAMBI SHEET PAR SCALE KHUD KAM KAR DETE HAIN.
-        // Browser ka canvas ek hadd ke baad CHUP-CHAAP khali lauta deta hai
-        // (Chrome me kul pixel ki seema hai, aur koi error nahi aata) — aur
-        // khali PDF dena hi wo cheez thi jiski wajah se pichhla raasta hata
-        // tha.  Saath hi PNG banane ka waqt bhi pixel ke saath hi badhta
-        // hai.  Isliye pixel ki apni hadd rakh kar scale ghata dete hain:
-        // 180dpi se 135dpi par girna, khali kaagaz dene se behtar hai.
-        const PX_HADD = 24e6;
-        let sc = 2;
-        while (sc > 1 && naapW * naapH * sc * sc > PX_HADD) sc -= 0.25;
-
-        const canvas = await html2canvas(fit, {
-          backgroundColor: "#ffffff",
-          scale: sc,                // 2 = ~180dpi (naap kar chuna); lambi sheet par khud ghatta hai
-          useCORS: true,
-          logging: false,
-          // Naap SAAF-SAAF dete hain.  Chhupe iframe me html2canvas ka apna
-          // andaza kabhi-kabhi 0 aa jaata hai, aur tab PDF khali banti hai.
-          width: naapW,
-          height: naapH,
-          windowWidth: naapW,
-          windowHeight: naapH,
-          scrollX: 0,
-          scrollY: 0,
-        });
-        if (!canvas.width || !canvas.height) throw new Error("The sheet could not be captured");
-        return canvasSePdf(jsPDF, canvas, khada);
-      } finally {
-        hatao();
-      }
-    }, { simtao: false });
-  } catch (e) {
-    return { theek: false, kyun: e?.message || "Could not create the PDF" };
-  }
-
+/* Bani hui PDF user tak pahuncha do.
+ *   APP     -- bytes `SheetTools.faylSejo` ko, wahan se asli Downloads me.
+ *   WEBSITE -- blob ka seedha download.
+ * Teen jagah se bulaya jaata hai, isliye alag rakha hai. */
+async function pdfDeDo(out, naam) {
   const file = naam + ".pdf";
   try {
     const P = nativePul();
@@ -605,6 +684,91 @@ export async function pdfNikalo(node, { naam = "sheet", khada = false, css = "" 
   } catch (e) {
     return { theek: false, kyun: e?.message || "The PDF was created but could not be saved" };
   }
+}
+
+/* Ek POORA HTML document (jo caller ne KHUD banaya ho) se PDF.
+ *
+ * KYUN ALAG DARWAZA
+ * -----------------
+ * `pdfNikalo` DOM node leta hai aur print-doc khud banata hai.  Par
+ * Breakdown Slip (manual aur auto, dono) apna doc KHUD banata hai -- uski
+ * print-CSS bahut baarik hai (poora A4 landscape ka ek panna, `@page
+ * margin:0`, apni shrink-CSS) aur wo mahino se chal rahi hai.  Use badalna
+ * nahi tha.  Yahi soch `nativeChhapo` me bhi lagayi thi.
+ *
+ *   doc     -- poora <!doctype html> ... </html>
+ *   margin  -- kaagaz ka margin mm me (slip 0 bhejta hai, uska panna poora
+ *              297x210mm ka hai)
+ *   taiyaar(win, ctx) -- capture se PEHLE caller ka apna fit/scale.  Ye
+ *              diya ho to hamari apni simatne wali naap BAND ho jaati hai,
+ *              warna do scale ek saath lag jaate.
+ *   kyaLein(win) -- kis element ko utaarna hai (slip `.bds-print-page`
+ *              deta hai; na de to `.tb-print-fit`, aur wo bhi na mile to
+ *              poora body) */
+export async function pdfDocSe(doc, { naam = "sheet", khada = false, margin = 6,
+                                      taiyaar = null, kyaLein = null } = {}) {
+  let jsPDF, html2canvas;
+  try {
+    ({ jsPDF, html2canvas } = await pdfLagao());
+  } catch {
+    return { theek: false, kyun: "The PDF library could not be loaded — reload the page and try again" };
+  }
+
+  let out;
+  try {
+    out = await kaagazParBithao(doc, khada, async (w, ctx, hatao) => {
+      try {
+        if (taiyaar) await taiyaar(w, ctx);
+        const el = (kyaLein ? kyaLein(w) : null) || ctx.fit || w.document.body;
+        const r = el.getBoundingClientRect();
+        const naapW = Math.ceil(r.width  || ctx.px);
+        const naapH = Math.ceil(r.height || ctx.pxH);
+
+        // ⚠ BAHUT LAMBI SHEET PAR SCALE KHUD KAM KAR DETE HAIN.
+        // Browser ka canvas ek hadd ke baad CHUP-CHAAP khali lauta deta hai
+        // (Chrome me kul pixel ki seema hai, aur koi error nahi aata) — aur
+        // khali PDF dena hi wo cheez thi jiski wajah se pichhla raasta hata
+        // tha.  Saath hi PNG banane ka waqt bhi pixel ke saath hi badhta
+        // hai.  180dpi se 135dpi par girna, khali kaagaz dene se behtar hai.
+        const PX_HADD = 24e6;
+        let sc = 2;
+        while (sc > 1 && naapW * naapH * sc * sc > PX_HADD) sc -= 0.25;
+
+        const canvas = await html2canvas(el, {
+          backgroundColor: "#ffffff",
+          scale: sc,                // 2 = ~180dpi (naap kar chuna)
+          useCORS: true,
+          logging: false,
+          // Naap SAAF-SAAF dete hain.  Chhupe iframe me html2canvas ka apna
+          // andaza kabhi-kabhi 0 aa jaata hai, aur tab PDF khali banti hai.
+          width: naapW, height: naapH,
+          windowWidth: naapW, windowHeight: naapH,
+          scrollX: 0, scrollY: 0,
+        });
+        if (!canvas.width || !canvas.height) throw new Error("The sheet could not be captured");
+        return canvasSePdf(jsPDF, canvas, khada, margin);
+      } finally {
+        hatao();
+      }
+    }, { simtao: !taiyaar, margin });
+  } catch (e) {
+    return { theek: false, kyun: e?.message || "Could not create the PDF" };
+  }
+  return pdfDeDo(out, naam);
+}
+
+/* Ek DOM node ko PDF bana kar SEEDHA de do — ek tap, koi parda nahi.
+ *
+ * Doc yahan banta hai (`printDoc`), phir kaam `pdfDocSe` karta hai — to
+ * print aur PDF hamesha EK HI doc se bante hain.
+ *
+ * Lautata hai { theek, native, kahan, panne } ya { theek:false, kyun } —
+ * UI isi se tay karta hai ki kya likhna hai.  "Ho gaya" bolna jab kuch hua
+ * hi na ho, sabse bura hai. */
+export async function pdfNikalo(node, { naam = "sheet", khada = false, css = "" } = {}) {
+  if (!node) return { theek: false, kyun: "There is nothing to save" };
+  const chhapneWala = await tasveeronKoAndarBithao(node);
+  return pdfDocSe(printDoc(chhapneWala, naam, khada, css), { naam, khada });
 }
 
 /* Table wale REPORT page (History Card, BD History…) ki print-CSS.
