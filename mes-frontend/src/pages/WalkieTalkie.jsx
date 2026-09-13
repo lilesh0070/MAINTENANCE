@@ -75,8 +75,17 @@ export default function WalkieTalkie() {
   const nav = useNavigate();
   const isAdmin = user?.role === "admin";
 
-  const [tab, setTab] = useState("talk");
   const [roster, setRoster] = useState({ me: null, people: [], channels: [] });
+  const [tab, setTab] = useState("talk");
+
+  /* Buzz aur Voice ki ijazat SERVER se aati hai (`roster.me`), frontend ke
+     apne hisaab se nahi -- warna dono jagah do alag jawab ho sakte the.
+     Server WS par bhi yahi jaanchta hai; yahan sirf dikhane ke liye.
+     ⚠ Ye lines `roster` ke BAAD hi aa sakti hain -- pehle rakhne par
+     "Cannot access 'roster' before initialization" aata hai (error-boundary
+     ne hi pakda tha). */
+  const canVoice = roster?.me?.can_voice !== false;
+  const canBuzz  = roster?.me?.can_buzz  !== false;
   const [online, setOnline] = useState([]);
   const [conn, setConn] = useState("connecting");      // connecting | on | off | denied
   const [pick, setPick] = useState(null);              // {type:"user"|"channel", id, name}
@@ -126,7 +135,7 @@ export default function WalkieTalkie() {
         setKehna("Talk time limit reached");
         rukJao(false);
       } else if (d.t === "buzz_sent") {
-        setKehna(d.listeners ? "Buzz sent" : "Nobody is online to buzz");
+        setKehna(d.why || (d.listeners ? "Buzz sent" : "Nobody is online to buzz"));
         setTimeout(() => setKehna(""), 3000);
       }
     });
@@ -194,6 +203,7 @@ export default function WalkieTalkie() {
   const [members, setMembers] = useState([]);
   const [chans, setChans] = useState([]);
   const [newCh, setNewCh] = useState("");
+  const [newChWho, setNewChWho] = useState([]);   // naya channel banate waqt hi log
 
   /* ── History (admin) ────────────────────────────────────────────
      Default: chaalu FY + chaalu mahina + AAJ ka din — bilkul waise hi
@@ -206,6 +216,7 @@ export default function WalkieTalkie() {
   const [hWho, setHWho]     = useState("");
   const [hKind, setHKind]   = useState("");
   const [hRows, setHRows]   = useState([]);
+  const [hSel, setHSel]     = useState(new Set());   // mitane ke liye chuni hui qatarein
   const [hBusy, setHBusy]   = useState(false);
   const booted = useRef(false);
 
@@ -234,6 +245,7 @@ export default function WalkieTalkie() {
     if (hWho) p.set("user_id", hWho);
     if (hKind) p.set("kind", hKind);
     setHBusy(true);
+    setHSel(new Set());
     api.get(`/api/walkie/events?${p.toString()}`, token)
       .then((d) => setHRows(Array.isArray(d) ? d : []))
       .catch(() => setHRows([]))
@@ -245,6 +257,27 @@ export default function WalkieTalkie() {
      warna table khali dikhti hai aur wajah kahin likhi nahi hoti. */
   const onHMonth = (v) => { setHMonth(v); if (hDate && v && hDate.slice(0, 7) !== v) setHDate(""); };
   const onHFy = (v) => { setHFy(v); setHMonth(""); setHDate(""); };
+
+  const histChuno = (id) => setHSel((s) => {
+    const n = new Set(s);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  });
+
+  /* Mitana wapas nahi aata, isliye ek baar poochh lete hain -- aur ginti
+     saath me dikhate hain taaki galti se poori list na chali jaye. */
+  const histMitao = async () => {
+    const ids = [...hSel];
+    if (!ids.length) return;
+    if (!window.confirm(`Delete ${ids.length} ${ids.length === 1 ? "entry" : "entries"} from the history? This cannot be undone.`)) return;
+    setHBusy(true);
+    try {
+      await api.send("POST", "/api/walkie/events/delete", { ids }, token);
+      setHSel(new Set());
+      loadHist();
+    } catch (e) { setKehna(e?.message || "Could not delete"); }
+    finally { setHBusy(false); }
+  };
   const histSaaf = () => { setHFy(""); setHMonth(""); setHDate(""); setHWho(""); setHKind(""); };
   const loadSetup = useCallback(() => {
     if (!token || !isAdmin) return;
@@ -269,7 +302,17 @@ export default function WalkieTalkie() {
     const nm = newCh.trim();
     if (!nm) return;
     setBusy(true);
-    try { await api.send("POST", "/api/walkie/channels", { name: nm }, token); setNewCh(""); loadSetup(); }
+    try {
+      const r = await api.send("POST", "/api/walkie/channels", { name: nm }, token);
+      // Channel banate hi usme log daal do -- warna banane ke baad alag se
+      // jaakar chunna padta tha, aur wahi sabse aam bhool thi (khali channel
+      // par buzz karo to "Nobody is online" aata hai aur wajah samajh nahi
+      // aati).
+      if (r?.id && newChWho.length) {
+        await api.send("PUT", `/api/walkie/channels/${r.id}/members`, { user_ids: newChWho }, token);
+      }
+      setNewCh(""); setNewChWho([]); loadSetup(); loadRoster();
+    }
     catch (e) { setKehna(String(e.message || e).slice(0, 120)); }
     finally { setBusy(false); }
   };
@@ -405,9 +448,11 @@ export default function WalkieTalkie() {
                         <div className="wk-row-name">{c.name}</div>
                         <div className="wk-row-sub">{c.online} of {c.size} online</div>
                       </span>
-                      <button className="wk-mini" onClick={(e) => { e.stopPropagation(); buzz({ type:"channel", id:c.id }); }}>
-                        📳 Buzz
-                      </button>
+                      {canBuzz && (
+                        <button className="wk-mini" onClick={(e) => { e.stopPropagation(); buzz({ type:"channel", id:c.id }); }}>
+                          📳 Buzz
+                        </button>
+                      )}
                     </div>
                   );
                 })}
@@ -426,10 +471,12 @@ export default function WalkieTalkie() {
                         <div className="wk-row-name">{p.name}</div>
                         <div className="wk-row-sub">{p.online ? "Online" : "Offline"}</div>
                       </span>
-                      <button className="wk-mini" disabled={!p.online}
-                              onClick={(e) => { e.stopPropagation(); buzz({ type:"user", id:p.id }); }}>
-                        📳 Buzz
-                      </button>
+                      {canBuzz && (
+                        <button className="wk-mini" disabled={!p.online}
+                                onClick={(e) => { e.stopPropagation(); buzz({ type:"user", id:p.id }); }}>
+                          📳 Buzz
+                        </button>
+                      )}
                     </div>
                   );
                 })}
@@ -445,13 +492,20 @@ export default function WalkieTalkie() {
                     likhne ki zaroorat nahi (aur dono ek saath chalne se
                     button do baar dabta tha). */}
                 <button className={`wk-ptt${talking ? " live" : ""}`}
-                        disabled={!pick || conn !== "on"}
+                        disabled={!pick || conn !== "on" || !canVoice}
                         onPointerDown={(e) => { e.currentTarget.setPointerCapture?.(e.pointerId); boloShuru(); }}
                         onPointerUp={() => talking && rukJao()}
                         onPointerCancel={() => talking && rukJao()}
                         onContextMenu={(e) => e.preventDefault()}>
-                  {talking ? "● ON AIR — release to stop" : "🎙 PRESS AND HOLD TO TALK"}
+                  {!canVoice ? "🔇 Voice is not enabled for you"
+                    : talking ? "● ON AIR — release to stop"
+                    : "🎙 PRESS AND HOLD TO TALK"}
                 </button>
+                {!canVoice && (
+                  <div className="wk-note" style={{ color:"#64748b" }}>
+                    You can still buzz people. Ask an administrator if you need to talk.
+                  </div>
+                )}
                 <div className="wk-meter"><i style={{ width: `${Math.round(level * 100)}%` }} /></div>
               </div>
 
@@ -521,18 +575,38 @@ export default function WalkieTalkie() {
             </div>
 
             <div className="wk-card">
-              <div className="wk-h">
-                {hBusy ? "Loading…" : `${hRows.length} ${hRows.length === 1 ? "entry" : "entries"}`}
+              <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+                <span className="wk-h">
+                  {hBusy ? "Loading…" : `${hRows.length} ${hRows.length === 1 ? "entry" : "entries"}`}
+                </span>
+                {!!hSel.size && (
+                  <>
+                    <span className="wk-row-sub">{hSel.size} selected</span>
+                    <button className="wk-mini" disabled={hBusy} onClick={histMitao}
+                            style={{ color:"#dc2626", borderColor:"#fecaca" }}>
+                      🗑 Delete selected
+                    </button>
+                    <button className="wk-mini" onClick={() => setHSel(new Set())}>Clear selection</button>
+                  </>
+                )}
               </div>
               <div style={{ overflowX:"auto" }}>
                 <table className="wk-tbl">
                   <thead><tr>
+                    <th style={{ width:30 }}>
+                      <input type="checkbox" title="Select all shown"
+                             checked={!!hRows.length && hSel.size === hRows.length}
+                             onChange={(e) => setHSel(e.target.checked
+                               ? new Set(hRows.map((r) => r.id)) : new Set())} />
+                    </th>
                     <th>When</th><th>Who</th><th>What</th><th>To</th><th>Answered</th><th>Length</th>
                   </tr></thead>
                   <tbody>
-                    {!hBusy && !hRows.length && <tr><td colSpan={6} className="wk-empty">Nothing for this filter.</td></tr>}
+                    {!hBusy && !hRows.length && <tr><td colSpan={7} className="wk-empty">Nothing for this filter.</td></tr>}
                     {hRows.map((e) => (
-                      <tr key={e.id}>
+                      <tr key={e.id} style={{ background: hSel.has(e.id) ? "#fef2f2" : undefined }}>
+                        <td><input type="checkbox" checked={hSel.has(e.id)}
+                                   onChange={() => histChuno(e.id)} /></td>
                         <td style={{ whiteSpace:"nowrap" }}>{fmtWhen(e.at)}</td>
                         <td style={{ fontWeight:700 }}>{e.from_name || "—"}</td>
                         <td style={{ whiteSpace:"nowrap" }}>{e.kind === "buzz" ? "📳 Buzz" : "🎙 Voice"}</td>
@@ -581,9 +655,30 @@ export default function WalkieTalkie() {
               <div style={{ display:"flex", gap:8, marginTop:10 }}>
                 <input className="wk-in" style={{ flex:1 }} placeholder="New channel name"
                        value={newCh} onChange={(e) => setNewCh(e.target.value)} />
-                <button className="wk-mini" style={{ padding:"8px 16px" }} disabled={busy} onClick={addChannel}>
+                <button className="wk-mini" style={{ padding:"8px 16px" }} disabled={busy || !newCh.trim()}
+                        onClick={addChannel}>
                   + Add
                 </button>
+              </div>
+              {/* Log YAHIN chun lo -- channel banate waqt.  Baad me bhi
+                  badle ja sakte hain (neeche har channel ke apne chips). */}
+              <div style={{ marginTop:8 }}>
+                <div className="wk-row-sub" style={{ marginBottom:6 }}>
+                  Who will be in it{newChWho.length ? ` — ${newChWho.length} selected` : ""}
+                </div>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                  {enabledMembers.map((m) => {
+                    const on = newChWho.includes(m.id);
+                    return (
+                      <button key={m.id} className="wk-mini"
+                              style={on ? { background:theme.soft, borderColor:theme.accent, color:"#0f172a" } : undefined}
+                              onClick={() => setNewChWho((x) => on ? x.filter((i) => i !== m.id) : [...x, m.id])}>
+                        {on ? "✓ " : ""}{m.name}
+                      </button>
+                    );
+                  })}
+                  {!enabledMembers.length && <span className="wk-row-sub">Add people above first.</span>}
+                </div>
               </div>
               {chans.map((c) => (
                 <div key={c.id} style={{ marginTop:12, borderTop:"1px dashed #e2e8f0", paddingTop:10 }}>

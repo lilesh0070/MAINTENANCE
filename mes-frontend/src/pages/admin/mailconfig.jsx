@@ -79,8 +79,13 @@ export const PAGE_PERM_GROUPS = [
       { key: "andon-reports", label: "Reports" },
     ]},
     { key: "walkie-talkie",              label: "Walkie-Talkie", children: [
-      { key: "walkie-talk",  label: "Talk (press to talk / buzz)" },
-      { key: "walkie-setup", label: "Setup (who can use it · channels)" },
+      /* Buzz aur Voice alag-alag: kisi ko sirf bulane ki ijazat deni ho aur
+         bolne ki nahi, to Voice ko "none" kar do.  Khali chhodne par dono
+         upar wale "Walkie-Talkie" se mil jaati hain. */
+      { key: "walkie-buzz",    label: "Buzz (ring someone's phone)" },
+      { key: "walkie-voice",   label: "Voice (press and hold to talk)" },
+      { key: "walkie-setup",   label: "Setup (who can use it · channels)" },
+      { key: "walkie-history", label: "History (who buzzed whom)" },
     ]},
     { key: "maintenance-update-plan",    label: "Update Plan", children: [
       { key: "maintenance-plan-yearly",     label: "Preventive Yearly Plan" },

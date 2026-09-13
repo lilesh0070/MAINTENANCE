@@ -1,5 +1,5 @@
 {
-  "version": "1.4.59",
-  "notes": "Walkie-Talkie: a buzz now pops up on whatever page you have open, tapping the notification opens the Walkie-Talkie page, and admins get a History tab showing who buzzed whom, when, and who answered",
-  "released_at": "2026-09-13T16:47:53"
+  "version": "1.4.60",
+  "notes": "Walkie-Talkie: Buzz and Voice are now separate permissions, admins can delete history entries, and people can be picked while creating a channel",
+  "released_at": "2026-09-13T17:08:36"
 }

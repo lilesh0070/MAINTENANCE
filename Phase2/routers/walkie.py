@@ -187,6 +187,44 @@ def _naam(u: dict) -> str:
     return (u.get("full_name") or "").strip() or u.get("username") or f"#{u.get('id')}"
 
 
+# Walkie ke sab sub-key isi page se latakte hain.
+_PARENT = "walkie-talkie"
+
+
+def _can(user: dict, key: str) -> bool:
+    """Kya is user ko `key` ki ijazat hai?
+
+    Niyam BILKUL wahi hai jo frontend ke `canAccess` me hai -- warna dono
+    alag faisla karte aur kabhi na kabhi wo aapas me na milte:
+      admin            -> hamesha haan
+      explicit entry   -> read/full = haan, none = NAHI
+      kuch set hi nahi -> parent page (`walkie-talkie`) se mil jaata hai
+      wo bhi na ho     -> nahi
+
+    ⚠ YE JAANCH SERVER PAR HONI HI CHAHIYE.  Sirf button chhupa dena
+    permission nahi hoti -- socket seedha bhi khola ja sakta hai.
+    """
+    if (user.get("role") or "") == "admin":
+        return True
+    try:
+        with get_conn() as conn:
+            cur = dict_cursor(conn)
+            cur.execute(
+                "SELECT page_key, perm_level FROM maintenance_user_permissions"
+                " WHERE user_id = %s AND page_key IN (%s, %s)",
+                (user["id"], key, _PARENT))
+            got = {r["page_key"]: r["perm_level"] for r in (cur.fetchall() or [])}
+    except Exception:
+        return False
+    lvl = got.get(key)
+    if lvl in ("read", "full"):
+        return True
+    if lvl == "none":
+        return False
+    par = got.get(_PARENT)
+    return par in ("read", "full")
+
+
 # ══════════════════════════════════════════════════════════════════
 #  REST
 # ══════════════════════════════════════════════════════════════════
@@ -199,7 +237,12 @@ def roster(user=Depends(get_current_user)):
     online = _hub.online_ids()
     me_in = [c for c in _channels_rows() if user["id"] in c["members"]]
     return {
-        "me": {"id": user["id"], "name": _naam(user), "enabled": user["id"] in {r["id"] for r in rows}},
+        "me": {"id": user["id"], "name": _naam(user),
+               "enabled": user["id"] in {r["id"] for r in rows},
+               # UI ka faisla bhi SERVER se aata hai, taaki dono jagah ek hi
+               # jawab rahe (frontend ka `canAccess` sirf dikhane ke liye).
+               "can_voice": _can(user, "walkie-voice"),
+               "can_buzz": _can(user, "walkie-buzz")},
         "people": [{"id": r["id"], "name": _naam(r), "username": r["username"],
                     "online": r["id"] in online}
                    for r in rows if r["id"] != user["id"]],
@@ -323,6 +366,28 @@ def ack_event(eid: int, user=Depends(get_current_user)):
             (user["id"], _naam(user), eid))
         conn.commit()
         return {"ok": True, "first": cur.rowcount > 0}
+
+
+class DeleteIn(BaseModel):
+    ids: list[int]
+
+
+@router.post("/events/delete")
+def delete_events(body: DeleteIn, user=Depends(require_admin)):
+    """History se qatarein hatao.  SIRF ADMIN.
+
+    Ek-ek `DELETE` ke bajaye ek hi call me kai id -- history me 100-200
+    qatar aam baat hai, aur ek-ek karke hatana dono taraf bhaari padta."""
+    _ensure_tables()
+    ids = [int(i) for i in (body.ids or [])]
+    if not ids:
+        return {"ok": True, "deleted": 0}
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM walkie_events WHERE id = ANY(%s)", (ids,))
+        n = cur.rowcount
+        conn.commit()
+    return {"ok": True, "deleted": n}
 
 
 def _fy_window(fy: str):
@@ -657,6 +722,11 @@ async def walkie_ws(ws: WebSocket,
             if t == "ping":
                 await ws.send_text(json.dumps({"t": "pong"}))
             elif t == "ptt_start":
+                if not _can(user, "walkie-voice"):
+                    await ws.send_text(json.dumps(
+                        {"t": "floor", "ok": False,
+                         "why": "You are not allowed to talk — you can still buzz"}))
+                    continue
                 ok, info = await _hub.take_floor(c, d.get("target") or {})
                 await ws.send_text(json.dumps(
                     {"t": "floor", "ok": ok,
@@ -665,6 +735,11 @@ async def walkie_ws(ws: WebSocket,
                 await _hub.drop_floor(c)
                 await ws.send_text(json.dumps({"t": "floor", "ok": False, "why": "stopped"}))
             elif t == "buzz":
+                if not _can(user, "walkie-buzz"):
+                    await ws.send_text(json.dumps(
+                        {"t": "buzz_sent", "listeners": 0,
+                         "why": "You are not allowed to buzz"}))
+                    continue
                 n = await _hub.buzz(c, d.get("target") or {})
                 await ws.send_text(json.dumps({"t": "buzz_sent", "listeners": n}))
     except WebSocketDisconnect:

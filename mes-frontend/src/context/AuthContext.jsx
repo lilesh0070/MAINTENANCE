@@ -37,9 +37,14 @@ export const SUBPAGE_PARENT = {
   "andon-config":  "andon-system",
   "andon-callout": "andon-system",
   "andon-reports": "andon-system",
-  // Walkie-Talkie
-  "walkie-talk":  "walkie-talkie",
-  "walkie-setup": "walkie-talkie",
+  // Walkie-Talkie.  Buzz aur Voice ALAG isliye hain ki sabko bolne ki
+  // ijazat nahi deni hoti -- kisi ko sirf "bulane" (buzz) dena hota hai.
+  // Set na ho to parent (`walkie-talkie`) se mil jaati hai; rokne ke liye
+  // us khaane ko saaf-saaf "none" karna padta hai.
+  "walkie-buzz":    "walkie-talkie",
+  "walkie-voice":   "walkie-talkie",
+  "walkie-setup":   "walkie-talkie",
+  "walkie-history": "walkie-talkie",
   // Historical Data (aathon section)
   "hist-bd":   "maintenance-historical",
   "hist-auto": "maintenance-historical",
