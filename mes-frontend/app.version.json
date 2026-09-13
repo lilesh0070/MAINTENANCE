@@ -1,5 +1,5 @@
 {
-  "version": "1.4.50",
-  "notes": "Breakdown Slip PDF: machine number and all tick marks now appear correctly on both the printed slip and the PDF (manual and auto)",
-  "released_at": "2026-09-13T10:10:28"
+  "version": "1.4.51",
+  "notes": "BD History filters: the Last 7 Days period is gone, a Date filter (today by default) and a Category A/B filter have been added; Clear now shows every entry",
+  "released_at": "2026-09-13T10:38:18"
 }

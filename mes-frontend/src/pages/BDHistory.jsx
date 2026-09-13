@@ -25,6 +25,16 @@ const api = {
 };
 
 const fmtDate = (d) => (d ? String(d).slice(0, 10) : "—");
+const pad2 = (n) => String(n).padStart(2, "0");
+/* Aaj ki tareekh LOCAL time me.  `toISOString()` jaan-boojh kar nahi --
+   wo UTC me badal deta hai aur IST me 05:30 se pehle ek din PICHHE chala
+   jaata hai (yahi galti Historical page par pakdi ja chuki hai). */
+const aajISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
+/* "2026-09" -> "2026-09-30" (us mahine ka aakhri din) */
+const mahineKaAnt = (ym) => {
+  const [y, m] = String(ym).split("-").map(Number);
+  return y && m ? `${ym}-${pad2(new Date(y, m, 0).getDate())}` : "";
+};
 const MON = ["", "January", "February", "March", "April", "May", "June", "July",
              "August", "September", "October", "November", "December"];
 function fyWindow(fy) {
@@ -88,22 +98,26 @@ export default function BDHistory() {
   const [rows, setRows]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ]         = useState("");
-  const [period, setPeriod] = useState("7");   // days window — default last 7 days
   const [years, setYears]   = useState([]);
   const [fFy, setFFy]       = useState("");
   const [fMonth, setFMonth] = useState("");
+  // Din wala filter -- page khulte hi AAJ ka din.  Khali karte hi poora
+  // mahina/FY dikhne lagta hai (user ne yahi maanga: "clear karke sab").
+  const [fDate, setFDate]   = useState(aajISO());
   const [fZone, setFZone]   = useState("");
   const [fLine, setFLine]   = useState("");
   const [fMachineNo, setFMachineNo]     = useState("");
   const [fMachineName, setFMachineName] = useState("");
+  const [fCat, setFCat]                 = useState("");   // A / B (slip ka B/D category)
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       // Source = maintenance_breakdown_data — the SAME table the Maintenance KPI /
       // MTTR-MTBF pages compute from, so counts always match.
-      // Only the selected window is fetched (default: last 7 days) so the
-      // page stays light on a continuously running site.
+      // FY chuni ho to sirf USI saal ki qatarein aati hain.  FY khali ho
+      // (yaani user ne Clear dabaya) to SAB aata hai -- "Last 7 Days" wala
+      // period filter hata diya gaya hai, user ko poora register chahiye.
       const qs = new URLSearchParams({ limit: "3000" });
       if (fFy) {
         const w = fyWindow(fFy);                     // FY selected → load that FY
@@ -115,8 +129,6 @@ export default function BDHistory() {
           qs.set("date_from", w.start);
           qs.set("date_to", dt);
         }
-      } else if (period !== "all") {
-        qs.set("days", period);
       }
       const r = await api.get(`/api/breakdowns/log?${qs.toString()}`, token);
       const bd = (r?.rows || [])
@@ -125,7 +137,7 @@ export default function BDHistory() {
       setRows(bd);
     } catch { setRows([]); }
     finally { setLoading(false); }
-  }, [token, period, fFy]);
+  }, [token, fFy]);
   useEffect(() => { load(); }, [load]);
 
   // FY list + Machine Master List (maintenance_machines — the single master for
@@ -169,23 +181,31 @@ export default function BDHistory() {
   const autoMonth = useRef(false);
   // Print/PDF ke liye card ka pata.
   const cardRef = useRef(null);
-  const onFy = (v) => { setFFy(v); setFMonth(""); autoMonth.current = !!v; };
+  const onFy = (v) => { setFFy(v); setFMonth(""); setFDate(""); autoMonth.current = !!v; };
+  /* Mahina badla aur chuna hua din us mahine ka nahi -- to din hata do.
+     Warna table khali dikhti hai aur wajah kahin likhi nahi hoti. */
+  const onMonth = (v) => { setFMonth(v); if (fDate && v && fDate.slice(0, 7) !== v) setFDate(""); };
   useEffect(() => {
     if (!autoMonth.current || !fFy || rows.length === 0) return;
     const months = [...new Set(rows.map((r) => String(r.bd_date).slice(0, 7)))].sort();
     if (months.length) { setFMonth(months[months.length - 1]); autoMonth.current = false; }
   }, [rows, fFy]);
 
-  const clearFilters = () => { autoMonth.current = false; setPeriod("7"); setFFy(""); setFMonth(""); setFZone(""); setFLine(""); setFMachineNo(""); setFMachineName(""); setQ(""); };
+  const clearFilters = () => { autoMonth.current = false; setFFy(""); setFMonth(""); setFDate("");
+    setFZone(""); setFLine(""); setFMachineNo(""); setFMachineName(""); setFCat(""); setQ(""); };
 
   const filtered = rows.filter((r) => {
     const d = r.bd_date ? String(r.bd_date).slice(0, 10) : "";
     if (fFy) { const w = fyWindow(fFy); if (w && !(d >= w.start && d < w.end)) return false; }
     if (fMonth && d.slice(0, 7) !== fMonth) return false;
+    if (fDate && d !== fDate) return false;
     if (fZone && r.zone_name !== fZone) return false;
     if (fLine && r.line_name !== fLine) return false;
     if (fMachineNo && r.machine_no !== fMachineNo) return false;
     if (fMachineName && r.machine_name !== fMachineName) return false;
+    // DB me ek qatar "B  " (peechhe space) bhi padi hai -- trim kiye bina
+    // wo B ke filter me aati hi nahi.  (Naapa: A 322, B 19, "B  " 1.)
+    if (fCat && String(r.category ?? "").trim().toUpperCase() !== fCat) return false;
     if (q) {
       const s = q.toLowerCase();
       const hay = [r.zone_name, r.line_name, r.machine_no, r.machine_name, r.attended_by, r.category, r.shift, fmtDate(r.bd_date)]
@@ -220,6 +240,9 @@ export default function BDHistory() {
                   color:#0f172a; outline:none; font-family:'Barlow',sans-serif; background:#fff; min-width:150px; }
         .bh-sel:focus { border-color:${theme.accent}; }
         .bh-sel:disabled { background:#f1f5f9; color:#94a3b8; cursor:not-allowed; }
+        /* date input ko baaki dropdown jaisi hi lambai -- warna wo chhota
+           reh jaata hai aur pankti tedhi dikhti hai. */
+        .bh-date { min-width:150px; }
         .bh-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden;
                    box-shadow:0 1px 4px rgba(15,23,42,.06); }
         .bh-card-head { background:#0f172a; color:#fff; font-weight:800; font-size:13px;
@@ -255,18 +278,6 @@ export default function BDHistory() {
           {/* filter bar — same style as the Maintenance KPI page */}
           <div className="bh-filters">
             <div className="bh-fld">
-              <label>Period</label>
-              <select className="bh-sel" value={period} onChange={(e) => setPeriod(e.target.value)} disabled={!!fFy}
-                      title={fFy ? "Financial Year selected — period follows the FY" : ""}>
-                <option value="7">Last 7 Days</option>
-                <option value="15">Last 15 Days</option>
-                <option value="30">Last 1 Month</option>
-                <option value="120">Last 4 Months</option>
-                <option value="365">Last 1 Year</option>
-                <option value="all">All</option>
-              </select>
-            </div>
-            <div className="bh-fld">
               <label>Financial Year</label>
               <select className="bh-sel" value={fFy} onChange={(e) => onFy(e.target.value)}>
                 <option value="">All Financial Years</option>
@@ -275,10 +286,19 @@ export default function BDHistory() {
             </div>
             <div className="bh-fld">
               <label>Month</label>
-              <select className="bh-sel" value={fMonth} onChange={(e) => setFMonth(e.target.value)} disabled={!fFy}>
+              <select className="bh-sel" value={fMonth} onChange={(e) => onMonth(e.target.value)} disabled={!fFy}>
                 <option value="">All Months</option>
                 {monthOpts.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
               </select>
+            </div>
+            <div className="bh-fld">
+              <label>Date</label>
+              {/* Mahina chuna ho to calendar usi mahine tak simit -- bahar ki
+                  tareekh chunne par table khali aati, aur wajah dikhti nahi. */}
+              <input type="date" className="bh-sel bh-date" value={fDate}
+                     min={fMonth ? `${fMonth}-01` : undefined}
+                     max={fMonth ? mahineKaAnt(fMonth) : undefined}
+                     onChange={(e) => setFDate(e.target.value)} />
             </div>
             <div className="bh-fld">
               <label>Zone</label>
@@ -306,6 +326,17 @@ export default function BDHistory() {
               <select className="bh-sel" value={fMachineName} onChange={(e) => setFMachineName(e.target.value)} disabled={!fLine}>
                 <option value="">All Machine Names</option>
                 {machineNameOpts.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div className="bh-fld">
+              <label>Category</label>
+              {/* Slip par do hi category hain -- "A CATEGORY B/D" aur
+                  "B CATEGORY B/D".  Isliye list yahin fixed hai, master se
+                  nahi aati (master me machine hoti hai, category nahi). */}
+              <select className="bh-sel" value={fCat} onChange={(e) => setFCat(e.target.value)}>
+                <option value="">All Categories</option>
+                <option value="A">A</option>
+                <option value="B">B</option>
               </select>
             </div>
             <div className="bh-fld">
