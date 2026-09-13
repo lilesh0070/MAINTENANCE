@@ -101,6 +101,16 @@ public class Walkie extends Plugin {
         call.resolve(haal());
     }
 
+    /** Page ke "OK" se aata hai -- ring/vibration band aur server par jawab. */
+    @PluginMethod
+    public void ack(PluginCall call) {
+        Context c = getContext();
+        Intent i = new Intent(c, WalkieService.class);
+        i.setAction(WalkieService.ACTION_ACK);
+        try { c.startService(i); } catch (Throwable ignored) { /* service chal hi nahi rahi */ }
+        call.resolve();
+    }
+
     @PluginMethod
     public void stop(PluginCall call) {
         Context c = getContext();

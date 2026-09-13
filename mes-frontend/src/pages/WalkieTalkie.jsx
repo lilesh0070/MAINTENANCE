@@ -42,6 +42,26 @@ const api = {
   },
 };
 
+const MON3 = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const pad2 = (n) => String(n).padStart(2, "0");
+const aajISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
+const mahineKaAnt = (ym) => {
+  const [y, m] = String(ym).split("-").map(Number);
+  return y && m ? `${ym}-${pad2(new Date(y, m, 0).getDate())}` : "";
+};
+/* FY Apr->Mar — bilkul wahi jo BD History / History Card me hai. */
+function fyMonths(fy) {
+  const y = parseInt(String(fy).split("-")[0], 10);
+  if (isNaN(y)) return [];
+  const out = [];
+  for (let i = 0; i < 12; i++) {
+    const mo = ((3 + i) % 12) + 1;
+    const yr = mo >= 4 ? y : y + 1;
+    out.push({ value: `${yr}-${pad2(mo)}`, label: `${MON3[mo]} ${yr}` });
+  }
+  return out;
+}
+
 const fmtWhen = (s) => {
   if (!s) return "—";
   const d = new Date(String(s).replace(" ", "T"));
@@ -174,14 +194,67 @@ export default function WalkieTalkie() {
   const [members, setMembers] = useState([]);
   const [chans, setChans] = useState([]);
   const [newCh, setNewCh] = useState("");
-  const [events, setEvents] = useState([]);
+
+  /* ── History (admin) ────────────────────────────────────────────
+     Default: chaalu FY + chaalu mahina + AAJ ka din — bilkul waise hi
+     jaise BD History aur History Card me hai, taaki teeno jagah ek jaisa
+     lage.  Date khali karte hi poora mahina dikh jaata hai. */
+  const [years, setYears]   = useState([]);
+  const [hFy, setHFy]       = useState("");
+  const [hMonth, setHMonth] = useState("");
+  const [hDate, setHDate]   = useState(aajISO());
+  const [hWho, setHWho]     = useState("");
+  const [hKind, setHKind]   = useState("");
+  const [hRows, setHRows]   = useState([]);
+  const [hBusy, setHBusy]   = useState(false);
+  const booted = useRef(false);
+
+  useEffect(() => {
+    if (!token || !isAdmin) return;
+    api.get("/api/maintenance-kpi/financial-years", token).then((y) => {
+      const list = Array.isArray(y) ? y : [];
+      setYears(list);
+      if (!booted.current && list.length) {
+        booted.current = true;
+        const cur = (list.find((v) => v.is_current) || list[list.length - 1]).fy;
+        setHFy(cur);
+        const now = new Date();
+        const cm = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
+        if (fyMonths(cur).some((m) => m.value === cm)) setHMonth(cm);
+      }
+    }).catch(() => setYears([]));
+  }, [token, isAdmin]);
+
+  const loadHist = useCallback(() => {
+    if (!token || !isAdmin) return;
+    const p = new URLSearchParams({ limit: "500" });
+    if (hFy) p.set("fy", hFy);
+    if (hMonth) p.set("month", hMonth);
+    if (hDate) p.set("date", hDate);
+    if (hWho) p.set("user_id", hWho);
+    if (hKind) p.set("kind", hKind);
+    setHBusy(true);
+    api.get(`/api/walkie/events?${p.toString()}`, token)
+      .then((d) => setHRows(Array.isArray(d) ? d : []))
+      .catch(() => setHRows([]))
+      .finally(() => setHBusy(false));
+  }, [token, isAdmin, hFy, hMonth, hDate, hWho, hKind]);
+  useEffect(() => { if (tab === "hist") loadHist(); }, [tab, loadHist]);
+
+  /* Mahina badla aur chuna hua din us mahine ka nahi — to din hata do,
+     warna table khali dikhti hai aur wajah kahin likhi nahi hoti. */
+  const onHMonth = (v) => { setHMonth(v); if (hDate && v && hDate.slice(0, 7) !== v) setHDate(""); };
+  const onHFy = (v) => { setHFy(v); setHMonth(""); setHDate(""); };
+  const histSaaf = () => { setHFy(""); setHMonth(""); setHDate(""); setHWho(""); setHKind(""); };
   const loadSetup = useCallback(() => {
     if (!token || !isAdmin) return;
     api.get("/api/walkie/members", token).then(setMembers).catch(() => setMembers([]));
     api.get("/api/walkie/channels", token).then(setChans).catch(() => setChans([]));
-    api.get("/api/walkie/events?limit=60", token).then(setEvents).catch(() => setEvents([]));
   }, [token, isAdmin]);
-  useEffect(() => { if (tab === "setup") loadSetup(); }, [tab, loadSetup]);
+  /* History wale tab ko bhi member ki list chahiye (Person ka dropdown),
+     isliye dono par load karte hain -- warna seedha History kholne par
+     wo dropdown khali rehta tha. */
+  useEffect(() => { if (tab === "setup" || tab === "hist") loadSetup(); }, [tab, loadSetup]);
 
   const toggleMember = async (m) => {
     setBusy(true);
@@ -268,7 +341,11 @@ export default function WalkieTalkie() {
                      text-transform:uppercase; color:#64748b; border-bottom:1px solid #e2e8f0; }
         .wk-tbl td { padding:8px 9px; border-bottom:1px solid #f1f5f9; color:#334155; }
         .wk-in { border:1.5px solid #cbd5e1; border-radius:8px; padding:8px 11px; font-size:13px;
-                 font-family:inherit; outline:none; }
+                 font-family:inherit; outline:none; background:#fff; color:#0f172a; min-width:140px; }
+        .wk-in:disabled { background:#f1f5f9; color:#94a3b8; }
+        .wk-fld { display:flex; flex-direction:column; gap:5px; }
+        .wk-fld label { font-size:10.5px; font-weight:800; letter-spacing:.05em;
+                        text-transform:uppercase; color:#64748b; }
       `}</style>
 
       <div className="wk-root">
@@ -290,6 +367,7 @@ export default function WalkieTalkie() {
             <div className="wk-tabs">
               <button className={`wk-tab${tab === "talk" ? " on" : ""}`} onClick={() => setTab("talk")}>🎙 Talk</button>
               <button className={`wk-tab${tab === "setup" ? " on" : ""}`} onClick={() => setTab("setup")}>⚙ Setup</button>
+              <button className={`wk-tab${tab === "hist" ? " on" : ""}`} onClick={() => setTab("hist")}>🕘 History</button>
             </div>
           )}
 
@@ -391,6 +469,92 @@ export default function WalkieTalkie() {
             </>)}
           </>)}
 
+          {/* ══════════════ HISTORY (admin) ══════════════ */}
+          {tab === "hist" && isAdmin && (<>
+            <div className="wk-card">
+              <div className="wk-h">Who buzzed whom</div>
+              <div className="wk-row-sub" style={{ marginTop:3 }}>
+                Every buzz and every voice call, and whether the other side answered.
+              </div>
+              <div style={{ display:"flex", gap:10, flexWrap:"wrap", alignItems:"flex-end", marginTop:12 }}>
+                <div className="wk-fld">
+                  <label>Financial Year</label>
+                  <select className="wk-in" value={hFy} onChange={(e) => onHFy(e.target.value)}>
+                    <option value="">All Financial Years</option>
+                    {years.map((y) => <option key={y.fy} value={y.fy}>{y.fy}{y.is_current ? "  (current)" : ""}</option>)}
+                  </select>
+                </div>
+                <div className="wk-fld">
+                  <label>Month</label>
+                  <select className="wk-in" value={hMonth} onChange={(e) => onHMonth(e.target.value)} disabled={!hFy}>
+                    <option value="">All Months</option>
+                    {fyMonths(hFy).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                </div>
+                <div className="wk-fld">
+                  <label>Date</label>
+                  <input type="date" className="wk-in" value={hDate}
+                         min={hMonth ? `${hMonth}-01` : undefined}
+                         max={hMonth ? mahineKaAnt(hMonth) : undefined}
+                         onChange={(e) => setHDate(e.target.value)} />
+                </div>
+                <div className="wk-fld">
+                  <label>Person</label>
+                  <select className="wk-in" value={hWho} onChange={(e) => setHWho(e.target.value)}>
+                    <option value="">Everyone</option>
+                    {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select>
+                </div>
+                <div className="wk-fld">
+                  <label>Type</label>
+                  <select className="wk-in" value={hKind} onChange={(e) => setHKind(e.target.value)}>
+                    <option value="">Buzz and voice</option>
+                    <option value="buzz">Buzz only</option>
+                    <option value="voice">Voice only</option>
+                  </select>
+                </div>
+                <div className="wk-fld">
+                  <label>&nbsp;</label>
+                  <button className="wk-mini" style={{ padding:"9px 16px" }} onClick={histSaaf}>✕ Clear</button>
+                </div>
+              </div>
+            </div>
+
+            <div className="wk-card">
+              <div className="wk-h">
+                {hBusy ? "Loading…" : `${hRows.length} ${hRows.length === 1 ? "entry" : "entries"}`}
+              </div>
+              <div style={{ overflowX:"auto" }}>
+                <table className="wk-tbl">
+                  <thead><tr>
+                    <th>When</th><th>Who</th><th>What</th><th>To</th><th>Answered</th><th>Length</th>
+                  </tr></thead>
+                  <tbody>
+                    {!hBusy && !hRows.length && <tr><td colSpan={6} className="wk-empty">Nothing for this filter.</td></tr>}
+                    {hRows.map((e) => (
+                      <tr key={e.id}>
+                        <td style={{ whiteSpace:"nowrap" }}>{fmtWhen(e.at)}</td>
+                        <td style={{ fontWeight:700 }}>{e.from_name || "—"}</td>
+                        <td style={{ whiteSpace:"nowrap" }}>{e.kind === "buzz" ? "📳 Buzz" : "🎙 Voice"}</td>
+                        <td>{e.target_name || "—"}{e.target_type === "channel" ? " (channel)" : ""}</td>
+                        <td style={{ whiteSpace:"nowrap" }}>
+                          {e.kind !== "buzz"
+                            ? <span style={{ color:"#94a3b8" }}>—</span>
+                            : e.acked_at
+                              ? <span style={{ color:"#16a34a", fontWeight:700 }}>
+                                  ✓ {e.acked_name || "—"} · {fmtWhen(e.acked_at)}
+                                </span>
+                              : <span style={{ color:"#b45309", fontWeight:700 }}>No answer</span>}
+                        </td>
+                        <td>{e.secs == null ? "—" : `${e.secs}s`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>)}
+
           {/* ══════════════ SETUP (admin) ══════════════ */}
           {tab === "setup" && isAdmin && (<>
             <div className="wk-card">
@@ -446,24 +610,6 @@ export default function WalkieTalkie() {
               ))}
             </div>
 
-            <div className="wk-card">
-              <div className="wk-h">Recent activity</div>
-              <table className="wk-tbl">
-                <thead><tr><th>When</th><th>Who</th><th>What</th><th>To</th><th>Length</th></tr></thead>
-                <tbody>
-                  {!events.length && <tr><td colSpan={5} className="wk-empty">Nothing yet.</td></tr>}
-                  {events.map((e) => (
-                    <tr key={e.id}>
-                      <td style={{ whiteSpace:"nowrap" }}>{fmtWhen(e.at)}</td>
-                      <td style={{ fontWeight:700 }}>{e.from_name || "—"}</td>
-                      <td>{e.kind === "buzz" ? "📳 Buzz" : "🎙 Voice"}</td>
-                      <td>{e.target_name || "—"}</td>
-                      <td>{e.secs == null ? "—" : `${e.secs}s`}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
           </>)}
         </div>
       </div>

@@ -2,6 +2,7 @@ package com.toyotaboshoku.mes;
 
 import android.app.UiModeManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.os.Build;
@@ -240,6 +241,8 @@ public class MainActivity extends BridgeActivity {
         } catch (Throwable t) {
             // poori screen na lage to bhi app chalti rahe
         }
+        // Walkie ki notification se aaye ho to seedha us page par (neeche dekho)
+        khaanKholo(getIntent());
     }
 
     @Override
@@ -259,5 +262,46 @@ public class MainActivity extends BridgeActivity {
         } catch (Exception e) {
             // Kuch bhi ho to app pehle jaisi chalti rahe.
         }
+    }
+
+    /* ── Notification se seedha kisi page par ──────────────────────────
+     * Walkie ka buzz-notification `openPage` naam ka extra bhejta hai.  App
+     * pehle se khuli ho to `onNewIntent` aata hai, band ho to `onResume`.
+     * Dono jagah se ek hi jagah bhej dete hain.
+     *
+     * JS se page badalte hain (router ka apna raasta) -- `loadUrl` se poora
+     * app dobara load hota aur socket/service bekaar me toot-te.
+     * `postDelayed` isliye ki app abhi-abhi khuli ho to WebView ko thoda
+     * waqt chahiye; bina uske `eval` chup-chaap gir jaata hai. */
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        khaanKholo(intent);
+    }
+
+    private void khaanKholo(Intent i) {
+        if (i == null) return;
+        final String page = i.getStringExtra("openPage");
+        if (page == null || page.isEmpty()) return;
+        i.removeExtra("openPage");
+        /* Notification ki patti par tap se aaye hain -- ring/vibration abhi
+           baj rahi hogi.  Service ko bol do ki band kare aur server par
+           "jawab mil gaya" likh de.  (Service khud app nahi khol sakti --
+           Android 10+ background se activity start nahi hone deta -- isliye
+           kaam bant gaya hai: notification app kholti hai, app ring rokti
+           hai.) */
+        try {
+            Intent ack = new Intent(this, WalkieService.class);
+            ack.setAction(WalkieService.ACTION_ACK);
+            startService(ack);
+        } catch (Throwable ignored) { /* service chal hi nahi rahi */ }
+        final com.getcapacitor.Bridge b = getBridge();
+        if (b == null || b.getWebView() == null) return;
+        b.getWebView().postDelayed(() -> {
+            try {
+                b.eval("window.location.href = '" + page.replace("'", "\\'") + "';", null);
+            } catch (Throwable ignored) { /* WebView abhi taiyaar nahi */ }
+        }, 600);
     }
 }

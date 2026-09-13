@@ -114,24 +114,34 @@ def _ensure_tables():
                 secs        NUMERIC(6,1)
             );
             CREATE INDEX IF NOT EXISTS walkie_events_at_idx ON walkie_events (at DESC);
+            -- Kisne jawab diya aur kab.  Ek buzz ka jawab EK hi banda deta hai
+            -- (jisne pehle OK dabaya) -- isliye alag table ki zaroorat nahi.
+            ALTER TABLE walkie_events ADD COLUMN IF NOT EXISTS acked_at   TIMESTAMP;
+            ALTER TABLE walkie_events ADD COLUMN IF NOT EXISTS acked_by   INTEGER;
+            ALTER TABLE walkie_events ADD COLUMN IF NOT EXISTS acked_name TEXT;
         """)
         conn.commit()
     _DDL_DONE = True
 
 
 def _log_event(kind, frm, frm_name, t_type, t_id, t_name, secs=None):
-    """Aawaz NAHI, sirf "kisne kisko kab bulaya".  Fail ho to chhod do --
-    call ka kaam ek log ki wajah se nahi rukna chahiye."""
+    """Aawaz NAHI, sirf "kisne kisko kab bulaya".  Nayi qatar ka `id` lauta
+    deta hai -- buzz ke saath wahi id sunne walon ko jaati hai, taaki unke
+    "OK" dabate hi hum us qatar par jawab ka waqt likh sakein.
+    Fail ho to `None` -- call ka kaam ek log ki wajah se nahi rukna chahiye."""
     try:
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute(
                 "INSERT INTO walkie_events (kind, from_user, from_name, target_type,"
-                " target_id, target_name, secs) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                " target_id, target_name, secs) VALUES (%s,%s,%s,%s,%s,%s,%s)"
+                " RETURNING id",
                 (kind, frm, frm_name, t_type, t_id, t_name, secs))
+            eid = cur.fetchone()[0]
             conn.commit()
+            return eid
     except Exception:
-        pass
+        return None
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -298,12 +308,71 @@ def set_channel_members(cid: int, body: ChannelMembersIn, user=Depends(require_a
     return {"ok": True, "count": len(ids)}
 
 
-@router.get("/events")
-def events(limit: int = Query(100, ge=1, le=1000), user=Depends(get_current_user)):
+@router.post("/events/{eid}/ack")
+def ack_event(eid: int, user=Depends(get_current_user)):
+    """Buzz ka jawab.  Jo PEHLE "OK" dabata hai uska naam aur waqt lag jaata
+    hai; uske baad wale chup-chaap nazarandaaz (channel ke buzz me kai log
+    sun rahe hote hain, par "jawab mila ya nahi" ka matlab pehle wale se hi
+    hai)."""
     _ensure_tables()
     with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE walkie_events SET acked_at = NOW(), acked_by = %s, acked_name = %s"
+            " WHERE id = %s AND acked_at IS NULL",
+            (user["id"], _naam(user), eid))
+        conn.commit()
+        return {"ok": True, "first": cur.rowcount > 0}
+
+
+def _fy_window(fy: str):
+    """"2026-27" -> (2026-04-01, 2027-04-01).  Baaki app me bhi FY Apr->Mar hi
+    hai, isliye wahi yahan."""
+    try:
+        y = int(str(fy).split("-")[0])
+    except Exception:
+        return None
+    return (f"{y}-04-01", f"{y + 1}-04-01")
+
+
+@router.get("/events")
+def events(limit: int = Query(300, ge=1, le=2000),
+           fy: Optional[str] = Query(None),
+           month: Optional[str] = Query(None),     # "2026-09"
+           date: Optional[str] = Query(None),      # "2026-09-13"
+           user_id: Optional[int] = Query(None),   # kisne kiya YA kiske liye
+           kind: Optional[str] = Query(None),      # buzz | voice
+           user=Depends(get_current_user)):
+    _ensure_tables()
+    where, params = [], []
+    if fy:
+        w = _fy_window(fy)
+        if w:
+            where.append("at >= %s AND at < %s")
+            params += [w[0], w[1]]
+    if month:
+        where.append("to_char(at, 'YYYY-MM') = %s")
+        params.append(month)
+    if date:
+        where.append("at::date = %s")
+        params.append(date)
+    if user_id:
+        # "is bande se judi" har qatar: usne kiya, ya uske liye tha, ya usne
+        # jawab diya.
+        where.append("(from_user = %s OR (target_type = 'user' AND target_id = %s)"
+                     " OR acked_by = %s)")
+        params += [user_id, user_id, user_id]
+    if kind:
+        where.append("kind = %s")
+        params.append(kind)
+    sql = "SELECT * FROM walkie_events"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY at DESC LIMIT %s"
+    params.append(limit)
+    with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("SELECT * FROM walkie_events ORDER BY at DESC LIMIT %s", (limit,))
+        cur.execute(sql, tuple(params))
         return cur.fetchall() or []
 
 
@@ -496,15 +565,18 @@ class _Hub:
     # ── buzz (sirf vibrate) ──
     async def buzz(self, c: _Conn, target: dict):
         listeners = self._targets(c.uid, target)
-        msg = json.dumps({"t": "buzz", "from": {"id": c.uid, "name": c.name},
+        # Event PEHLE banate hain -- uska id message ke saath jaata hai, taaki
+        # sunne wale ka "OK" seedha usi qatar par jawab likh de.
+        eid = _log_event("buzz", c.uid, c.name, target.get("type"), target.get("id"),
+                         self._target_name(target))
+        msg = json.dumps({"t": "buzz", "ev": eid,
+                          "from": {"id": c.uid, "name": c.name},
                           "target": target})
         for l in listeners:
             try:
                 await l.ws.send_text(msg)
             except Exception:
                 pass
-        _log_event("buzz", c.uid, c.name, target.get("type"), target.get("id"),
-                   self._target_name(target))
         return len(listeners)
 
 

@@ -38,6 +38,13 @@ export const walkieNative = {
     try { return await P.requestPerms(); } catch { return { canNotify: false }; }
   },
 
+  /** Ring/vibration band + server par "jawab mil gaya". */
+  async ack() {
+    const P = pul();
+    if (!P?.ack) return false;
+    try { await P.ack(); return true; } catch { return false; }
+  },
+
   async stop() {
     const P = pul();
     if (!P?.stop) return { running: false };

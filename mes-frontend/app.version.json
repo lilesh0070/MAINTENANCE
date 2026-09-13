@@ -1,5 +1,5 @@
 {
-  "version": "1.4.58",
-  "notes": "Walkie-Talkie: a buzz now rings and vibrates until you tap OK on the notification, like a call. The Back button is gone from the Walkie-Talkie screen on phones.",
-  "released_at": "2026-09-13T15:20:00"
+  "version": "1.4.59",
+  "notes": "Walkie-Talkie: a buzz now pops up on whatever page you have open, tapping the notification opens the Walkie-Talkie page, and admins get a History tab showing who buzzed whom, when, and who answered",
+  "released_at": "2026-09-13T16:47:53"
 }

@@ -32,8 +32,11 @@ import org.json.JSONObject;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+import okhttp3.Call;
+import okhttp3.Callback;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
+import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
@@ -96,6 +99,9 @@ public class WalkieService extends Service {
     private AudioTrack track;
     private AudioFocusRequest focus;
     private MediaPlayer ring;
+    /** Aakhri buzz ka event-id -- "OK" dabte hi isi par server par jawab
+     *  likha jaata hai (history me "response diya" wahi se aata hai). */
+    private volatile int lastBuzzEv = 0;
     /* ⚠ Ring ki hadd ka apna Runnable.  Pehle yahan
        `main.removeCallbacksAndMessages(null)` likha tha -- wo is Handler ke
        SAARE pending kaam hata deta, jisme socket ka DOBARA-JUDNE wala timer
@@ -134,10 +140,14 @@ public class WalkieService extends Service {
            Service khud chalti rehti hai, sirf bulawa rukta hai. */
         if (ACTION_ACK.equals(act) || ACTION_ACK_OPEN.equals(act)) {
             ringBand();
+            jawabBhejo();                 // server par: "jawab mil gaya"
             if (ACTION_ACK_OPEN.equals(act)) {
                 try {
                     Intent open = new Intent(this, MainActivity.class);
-                    open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                    open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                                  | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    // Notification par tap = seedha walkie ka page khule.
+                    open.putExtra("openPage", "/walkie-talkie");
                     startActivity(open);
                 } catch (Throwable e) { Log.w(TAG, "open: " + e); }
             }
@@ -262,6 +272,7 @@ public class WalkieService extends Service {
                     if ("buzz".equals(t)) {
                         JSONObject f = d.optJSONObject("from");
                         String kisne = f != null ? f.optString("name", "Someone") : "Someone";
+                        lastBuzzEv = d.optInt("ev", 0);
                         bajao(kisne);     // phone ki apni ring — OK dabne tak
                         thartharao();     // + vibration, utni hi der
                         likho(kisne + " buzzed you");
@@ -528,7 +539,16 @@ public class WalkieService extends Service {
              .setAutoCancel(true)
              .setOngoing(false)
              .setCategory(Notification.CATEGORY_CALL)
-             .setContentIntent(kaamKaIntent(ACTION_ACK_OPEN, 2))
+             /* ⚠ Ye intent SEEDHA ACTIVITY ka hai, service ka nahi.
+                Pehle yahan service wala intent tha (ACTION_ACK_OPEN) jo
+                `startActivity` karta -- par Android 10+ me BACKGROUND SE
+                ACTIVITY START BLOCKED hai, aur wo chup-chaap fail hota hai.
+                Device par yahi dikha: ring band ho jaati thi, ACK bhi chala
+                jaata tha, par app khulti hi nahi thi.
+                Notification par tap ek "user gesture" hai, isliye seedha
+                `getActivity` chalta hai.  Ring rokne ka kaam ab MainActivity
+                karti hai (wo service ko ACTION_ACK bhejti hai). */
+             .setContentIntent(appKholo())
              // Notification swipe karke hatayi to bhi ring band ho
              .setDeleteIntent(kaamKaIntent(ACTION_ACK, 3))
              .addAction(android.R.drawable.ic_menu_close_clear_cancel, "OK",
@@ -540,6 +560,50 @@ public class WalkieService extends Service {
         } catch (Throwable e) {
             Log.w(TAG, "bulawa: " + e);
         }
+    }
+
+    /* "OK" dabne par server ko batao ki bulawe ka jawab mil gaya.
+     * Socket se nahi, seedha REST se -- kyunki jawab ek baar ka kaam hai aur
+     * socket us waqt toota bhi ho sakta hai.  Fail ho jaye to chhod dete
+     * hain: ring band ho chuki hai, aur ek log ki qatar ke liye user ko
+     * rokna galat hoga. */
+    private void jawabBhejo() {
+        final int ev = lastBuzzEv;
+        lastBuzzEv = 0;
+        if (ev <= 0 || token.isEmpty() || url.isEmpty()) return;
+        try {
+            String http = url.replaceFirst("^ws", "http")
+                             .replace("/api/walkie/ws", "/api/walkie/events/" + ev + "/ack");
+            Request req = new Request.Builder()
+                    .url(http)
+                    .addHeader("Authorization", "Bearer " + token)
+                    .post(RequestBody.create(new byte[0], null))
+                    .build();
+            http().newCall(req).enqueue(new Callback() {
+                @Override public void onFailure(Call call, java.io.IOException e) {
+                    Log.w(TAG, "ack: " + e);
+                }
+                @Override public void onResponse(Call call, Response r) {
+                    Log.i(TAG, "ACK bhej diya ev=" + ev + " -> " + r.code());
+                    r.close();
+                }
+            });
+        } catch (Throwable e) {
+            Log.w(TAG, "ack: " + e);
+        }
+    }
+
+    private OkHttpClient http() { return http; }
+
+    /** Notification par tap -> app khule aur seedha walkie ke page par. */
+    private PendingIntent appKholo() {
+        Intent i = new Intent(this, MainActivity.class);
+        i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                   | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        i.putExtra("openPage", "/walkie-talkie");
+        int f = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) f |= PendingIntent.FLAG_IMMUTABLE;
+        return PendingIntent.getActivity(this, 5, i, f);
     }
 
     private PendingIntent kaamKaIntent(String action, int code) {
