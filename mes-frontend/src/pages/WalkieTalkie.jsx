@@ -21,8 +21,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { API_BASE, isNativeApp } from "../constants/apiBase";
-import { micShuru, speakerBanao } from "../constants/walkieAudio";
+import { micShuru } from "../constants/walkieAudio";
+import { walkieLink } from "../constants/walkieLink";
 import { walkieNative } from "../constants/walkieNative";
 
 const api = {
@@ -41,17 +41,6 @@ const api = {
     return r.status === 204 ? null : r.json();
   },
 };
-
-/* `http://1.2.3.4:8892` -> `ws://1.2.3.4:8892`.  Website par API_BASE khali
-   hota hai, to page ka apna pata lete hain (https ho to wss). */
-function wsBase() {
-  const base = API_BASE || window.location.origin;
-  return base.replace(/^http/i, (m) => (m === "https" || m === "HTTPS" ? "wss" : "ws"))
-         + "/api/walkie/ws";
-}
-function wsUrl(token) {
-  return `${wsBase()}?role=rx&kind=web&token=${encodeURIComponent(token)}`;
-}
 
 const fmtWhen = (s) => {
   if (!s) return "—";
@@ -77,30 +66,10 @@ export default function WalkieTalkie() {
   const [kehna, setKehna] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const ws = useRef(null);
   const mic = useRef(null);
-  const spk = useRef(null);
-  const retry = useRef(0);
 
-  /* Service chal rahi ho to page aawaz NA bajaye — warna do baar sunayi
-     deti hai.  (Service abhi lagi na ho to `false` aata hai aur page khud
-     baja deta hai.) */
-  const [svcOn, setSvcOn] = useState(false);
-  /* ⚠ Ye faisla ek REF me rakhte hain, socket-effect ki dependency me NAHI.
-     Pehle `bajaoYahan` seedha effect ki list me tha -- aur `svcOn` false se
-     true hote hi (service ka haal aate hi, page khulne ke ~1s baad) poora
-     effect dobara chalta tha: purana socket band, naya khula.  Socket band
-     hote hi server FLOOR chhod deta hai, aur uske baad bheji hui saari aawaz
-     chup-chaap gir jaati thi.
-     Asar dikhta aisa tha: page kholne ke baad PEHLI baar bolne par aawaz
-     aadhe second me kat jaati thi.  Naapa: 7 second dabaya, doosri taraf
-     sirf 0.44s (11 frame) pahuncha aur beech me hi `rx_stop` aa gaya. */
-  const bajaoRef = useRef(true);
-  useEffect(() => { bajaoRef.current = !isNativeApp() || !svcOn; }, [svcOn]);
 
-  const bolo = useCallback((o) => {
-    try { ws.current?.readyState === 1 && ws.current.send(JSON.stringify(o)); } catch { /* socket gir gaya */ }
-  }, []);
+  const bolo = useCallback((o) => walkieLink.send(o), []);
 
   // ── roster ──────────────────────────────────────────────────────
   const loadRoster = useCallback(() => {
@@ -111,84 +80,41 @@ export default function WalkieTalkie() {
   }, [token]);
   useEffect(() => { loadRoster(); }, [loadRoster]);
 
-  // ── socket ──────────────────────────────────────────────────────
+  /* ── socket ─────────────────────────────────────────────────────
+     Page apna socket NAHI kholta.  Poori app ka ek hi socket
+     `walkieLink` me rehta hai aur use `WalkiePresence` (Layout me) app
+     khulte hi chala deta hai — isi wajah se banda har page par online
+     dikhta hai, sirf is page par nahi.  Yahan bas usi ko sunte hain. */
   useEffect(() => {
-    if (!token) return undefined;
-    /* ⚠ Ye jhanda EFFECT KE ANDAR hai, `useRef` me NAHI -- aur ye farak
-       bahut mehnga pada tha.  Ref saare mount me saajha hota hai, to purane
-       socket ka `onclose` NAYE mount ke baad chalta hai, `zinda.current`
-       tab tak dobara `true` ho chuka hota hai, aur wo ek AUR socket jod
-       deta hai.  Dev me StrictMode har effect do baar chalata hai, isliye
-       ye turant dikh gaya: server ne "2 listeners" bataya aur bheja hua
-       har frame DO BAAR aaya (25 bheje, 50 aaye -- naapa).  Production me
-       bhi jab bhi ye effect dobara chalta (token badla, service ka haal
-       badla) wahi zombie socket ban jaate.
-       Local jhande se har run apna hi socket sambhalta hai. */
-    let alive = true;
-    spk.current = speakerBanao();
-
-    const jodo = () => {
-      if (!alive) return;
-      let s;
-      try { s = new WebSocket(wsUrl(token)); } catch { setConn("off"); return; }
-      s.binaryType = "arraybuffer";
-      ws.current = s;
-
-      s.onopen = () => { retry.current = 0; setConn("on"); };
-
-      s.onmessage = (e) => {
-        if (typeof e.data !== "string") {
-          if (bajaoRef.current) spk.current?.push(e.data);
-          return;
-        }
-        let d; try { d = JSON.parse(e.data); } catch { return; }
-        if (d.t === "presence") setOnline(d.online || []);
-        else if (d.t === "ready") setOnline(d.online || []);
-        else if (d.t === "rx_start") { spk.current?.reset(); setRxFrom(d.from); }
-        else if (d.t === "rx_stop") setRxFrom(null);
-        else if (d.t === "buzz") {
-          setKehna(`${d.from?.name || "Someone"} is buzzing you`);
-          try { navigator.vibrate?.([260, 120, 260]); } catch { /* nahi hua to nahi */ }
-          setTimeout(() => setKehna(""), 4000);
-        } else if (d.t === "floor") {
-          if (d.ok) {
-            setKehna(d.listeners ? "" : "No one is listening right now");
-          } else if (d.why && d.why !== "stopped") {
-            setKehna(d.why);
-            rukJao(false);
-          }
-        } else if (d.t === "floor_lost") {
-          setKehna("Talk time limit reached");
-          rukJao(false);
-        } else if (d.t === "buzz_sent") {
-          setKehna(d.listeners ? "Buzz sent" : "Nobody is online to buzz");
-          setTimeout(() => setKehna(""), 3000);
-        }
-      };
-
-      s.onclose = (ev) => {
-        if (ws.current === s) ws.current = null;
-        if (!alive) return;
-        // 4403 = admin ne walkie se hata diya.  Dobara jodne ki koshish
-        // bekaar hai — user ko saaf batao.
-        if (ev.code === 4403) { setConn("denied"); return; }
-        setConn("off");
-        retry.current = Math.min(retry.current + 1, 6);
-        setTimeout(jodo, 500 * 2 ** (retry.current - 1));   // 0.5s → 16s
-      };
-      s.onerror = () => { try { s.close(); } catch { /* band ho hi raha hai */ } };
+    const lagao = () => {
+      const st = walkieLink.state;
+      setConn(st.conn);
+      setOnline(st.online || []);
+      setRxFrom(st.rxFrom);
     };
-
-    jodo();
-    return () => {
-      alive = false;
-      try { ws.current?.close(); } catch { /* pehle se band */ }
-      try { mic.current?.band(); } catch { /* chal hi nahi raha tha */ }
-      try { spk.current?.band(); } catch { /* chal hi nahi raha tha */ }
-      ws.current = null; mic.current = null; spk.current = null;
-    };
+    lagao();
+    return walkieLink.on((d) => {
+      lagao();
+      if (d.t === "buzz") {
+        setKehna(`${d.from?.name || "Someone"} is buzzing you`);
+        try { navigator.vibrate?.([260, 120, 260]); } catch { /* nahi hua to nahi */ }
+        setTimeout(() => setKehna(""), 4000);
+      } else if (d.t === "floor") {
+        if (d.ok) setKehna(d.listeners ? "" : "No one is listening right now");
+        else if (d.why && d.why !== "stopped") { setKehna(d.why); rukJao(false); }
+      } else if (d.t === "floor_lost") {
+        setKehna("Talk time limit reached");
+        rukJao(false);
+      } else if (d.t === "buzz_sent") {
+        setKehna(d.listeners ? "Buzz sent" : "Nobody is online to buzz");
+        setTimeout(() => setKehna(""), 3000);
+      }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, []);
+
+  // Page chhodte waqt mic khula na reh jaye
+  useEffect(() => () => { try { mic.current?.band(); } catch { /* chal hi nahi raha tha */ } mic.current = null; }, []);
 
   // presence badle to roster ka online dot bhi taaza ho
   useEffect(() => {
@@ -198,41 +124,31 @@ export default function WalkieTalkie() {
     }));
   }, [online]);
 
-  /* Native service: page khulte hi chalu kar dete hain.
-     Ye "chupke se" nahi hai — service apni permanent notification dikhati hai
-     ("Walkie-Talkie · Listening"), to user ko hamesha pata rehta hai.  Aur
-     yahi ek tareeqa hai jisse jeb me pade phone par call pahunche.
-     Page band karne par band NAHI karte — wahi to poora maqsad hai. */
+  /* Service ka haal — chalane ka kaam `WalkiePresence` karta hai (app
+     khulte hi, har page par).  Yahan sirf dikhane ke liye padhte hain. */
   const [svc, setSvc] = useState({ running: false, connected: false, error: "", ignoringBattery: false });
   useEffect(() => {
-    if (!token || !walkieNative.hai()) return undefined;
+    if (!walkieNative.hai()) return undefined;
     let stop = false;
     const taaza = () => walkieNative.status().then((x) => {
       if (stop) return;
-      setSvc(x || {}); setSvcOn(!!x?.running);
+      setSvc(x || {});
     }).catch(() => {});
-    // Pehle notification ki ijazat, PHIR service -- ulta karne par service
-    // chal to jaati hai par uski patti dikhti hi nahi, aur user ko lagta hai
-    // kuch hua hi nahi.
-    walkieNative.requestPerms()
-      .then(() => walkieNative.start(wsBase(), token))
-      .then(taaza).catch(taaza);
+    taaza();
     const t = setInterval(taaza, 4000);
     return () => { stop = true; clearInterval(t); };
-  }, [token]);
+  }, []);
 
   // ── bolna ───────────────────────────────────────────────────────
   const boloShuru = async () => {
     if (talking || !pick || conn !== "on") return;
     setKehna("");
-    spk.current?.jagao();
+    walkieLink.jagao();          // browser: bina user ke chhue aawaz nahi bajti
     setTalking(true);
     bolo({ t: "ptt_start", target: { type: pick.type, id: pick.id } });
     try {
       mic.current = await micShuru({
-        onFrame: (buf) => {
-          try { ws.current?.readyState === 1 && ws.current.send(buf); } catch { /* socket gir gaya */ }
-        },
+        onFrame: (buf) => walkieLink.sendAudio(buf),
         onLevel: setLevel,
       });
     } catch (e) {

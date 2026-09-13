@@ -4,6 +4,7 @@ import FullscreenButton from "./FullscreenButton";
 import DisplayToolbar from "./DisplayToolbar";
 import AIAssistant from "./AIAssistant";
 import AppSettings from "./AppSettings";
+import WalkiePresence from "./WalkiePresence";
 import ErrorBoundary from "./ErrorBoundary";
 import { isNativeApp } from "../constants/apiBase";
 
@@ -43,6 +44,10 @@ export default function Layout({ children }) {
           na button aata hai na koi request jaati hai.
           Andar: kaun logged in hai, app ka version + update, aur logout. */}
       <AppSettings />
+      {/* Koi UI nahi -- sirf walkie ka socket/service har page par zinda
+          rakhta hai, taaki banda tabhi "online" na dikhe jab wo walkie ka
+          page khole baitha ho. */}
+      <WalkiePresence />
 
       {/* Maintenance AI assistant — ek hi jagah lagi hai, isliye HAR page par
           milti hai: Breakdown, ANDON, CAPA, PM, Spare, KPI, wall-display, sab.
