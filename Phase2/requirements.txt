@@ -2,6 +2,8 @@
 fastapi==0.110.0
 uvicorn==0.27.0
 python-multipart==0.0.9
+websockets==12.0        # Walkie-Talkie ka live audio -- uvicorn bina iske
+                        # WebSocket handshake hi mana kar deta hai (naapa)
 pydantic==2.6.0
 
 # ── DB ────────────────────────────────────────────────────────

@@ -32,6 +32,11 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8892',
         changeOrigin: true,
+        // Walkie-Talkie ka live audio `/api/walkie/ws` par chalta hai.  Bina
+        // `ws: true` ke Vite WebSocket ka upgrade request aage bhejta hi nahi
+        // -- dev par socket chup-chaap fail hota hai (build/APK me proxy hai
+        // hi nahi, isliye wahan ye dikkat kabhi aati hi nahi).
+        ws: true,
       },
       '/cms-api': {
         target: 'http://localhost:5555',

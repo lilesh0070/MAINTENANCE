@@ -65,6 +65,17 @@
             </intent-filter>
         </receiver>
 
+        <!-- Walkie-Talkie ka sunne wala hissa.  `mediaPlayback` type isliye
+             ki Android 14+ par foreground service ko apna kism batana zaroori
+             hai, aur ye service sirf aane wali aawaz BAJATI hai (record page
+             karta hai, service nahi).  `exported=false` — ise sirf apni hi app
+             chalu karti hai. -->
+        <service
+            android:name=".WalkieService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -97,4 +108,34 @@
          permission hai — install ke waqt hi mil jaati hai, user se kuch
          poochha nahi jaata. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- ══ WALKIE-TALKIE ══════════════════════════════════════════════
+         RECORD_AUDIO + MODIFY_AUDIO_SETTINGS: page `getUserMedia()` bulata
+         hai aur Capacitor ka apna BridgeWebChromeClient in DONO ko runtime
+         par maang leta hai (dekh kar likha — capacitor-android ka
+         onPermissionRequest).  Yaani yahan likhna hi kaafi hai, alag se
+         permission-code likhne ki zaroorat nahi.
+
+         FOREGROUND_SERVICE (+ _MEDIA_PLAYBACK, Android 14 se alag se maanga
+         jaata hai): jeb me pade phone par call sunne ke liye.  WebView
+         background me ROK diya jaata hai — isi app me naapa ja chuka hai —
+         isliye socket Java ki service pakadti hai.
+
+         POST_NOTIFICATIONS: Android 13+ par foreground service ki notification
+         bhi isi ke bina nahi dikhti (service phir bhi chalti hai, par user ko
+         pata hi nahi chalta ki walkie sun raha hai — wo theek nahi).  -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Settings me "Allow this app to run in the background" wala button
+         Android ka apna parda kholta hai
+         (ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).  Android ke document ke
+         mutabik us parde ke liye ye permission chahiye.  Ye SIRF parda kholne
+         ki ijazat hai — chhoot khud user ko wahan "Allow" dabakar deni padti
+         hai, koi code use nahi de sakta.
+         (Play Store ise seemit karta hai; ye app sideload hoti hai.) -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 </manifest>

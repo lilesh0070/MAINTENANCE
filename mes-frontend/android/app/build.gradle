@@ -36,6 +36,11 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    // WalkieService ka WebSocket.  Android me WebSocket client built-in nahi
+    // hota (java.net.http Android par hai hi nahi), isliye ek library chahiye
+    // hi.  4.11.0 isliye ki wo pehle se gradle cache me maujood hai — build
+    // bina internet ke bhi chal jaati hai.
+    implementation "com.squareup.okhttp3:okhttp:4.11.0"
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

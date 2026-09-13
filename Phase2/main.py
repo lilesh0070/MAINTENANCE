@@ -61,6 +61,7 @@ from routers.breakdown_slips  import router as breakdown_slips_router
 from routers.breakdown_logbook import router as breakdown_logbook_router
 from routers.maintenance_spare import router as maintenance_spare_router
 from routers.andon           import router as andon_router
+from routers.walkie          import router as walkie_router
 from routers.dashboard_zones import router as dashboard_zones_router
 from routers.machine_running_hours import router as machine_running_hours_router
 from routers.kpi_ui_settings import router as kpi_ui_settings_router
@@ -156,6 +157,7 @@ app.include_router(breakdown_slips_router)      # Manual Break Down Slip → sta
 app.include_router(breakdown_logbook_router)    # Log Book + History Card (/combined merges slip + log book)
 app.include_router(maintenance_spare_router)    # Spare master (grows from slip + log-book spares)
 app.include_router(andon_router)                # ANDON Management module (standalone andon_* tables)
+app.include_router(walkie_router)               # Walkie-Talkie (push-to-talk) -- REST + /api/walkie/ws
 app.include_router(dashboard_zones_router)      # Dashboard Pending-Breakdown zone tiles (admin-curated whitelist)
 app.include_router(machine_running_hours_router) # Per-machine running hours → MTBF calculation (KPI Target)
 app.include_router(kpi_ui_settings_router)      # Admin-editable KPI page appearance (colors/axis)

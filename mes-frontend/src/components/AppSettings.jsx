@@ -8,6 +8,9 @@
  * ANDAR KYA HAI
  * -------------
  *   • Kaun logged in hai (naam + role)
+ *   • Kis raaste se juda hai (Ethernet / Wi-Fi) + dobara jodne ka button
+ *   • Background me chalne ki ijazat (Walkie-Talkie ki call jeb me pade
+ *     phone tak pahunchne ke liye)
  *   • App ka version, aur "naya version hai kya" ka check + download
  *   • Logout
  *
@@ -18,6 +21,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import qrcode from "qrcode-generator";
 import { useAuth } from "../context/AuthContext";
+import { walkieNative } from "../constants/walkieNative";
 import { isNativeApp, reprobeServer, serverKaNaam, serverMilaKya,
          API_BASE as PEHLA_BASE } from "../constants/apiBase";
 
@@ -183,6 +187,26 @@ export default function AppSettings() {
    * ⚠ APNE AAP KUCH NAHI HOTA -- user ne saaf kaha tha "auto refresh na
    * dalna".  Na koi polling, na background me dobara jodne ki koshish.
    * Sirf jab ye button daba. */
+  /* Background me chalne ki ijazat.  Ye WALKIE ki screen par nahi, YAHAN hai
+     — kyunki ye poori app ki property hai (Android ise app ke level par
+     dekhta hai), kisi ek page ki nahi.
+     ⚠ Ise code se DE NAHI sakte: Android ka niyam hai ki battery ki chhoot
+     hamesha user khud, apne parde par, "Allow" dabakar hi de sakta hai.
+     Install ke waqt apne aap dena mumkin hi nahi hai. */
+  const [bg, setBg] = useState(null);        // null = plugin hai hi nahi
+  useEffect(() => {
+    if (!walkieNative.hai()) return undefined;
+    let ruk = false;
+    const dekho = () => walkieNative.status().then((x) => { if (!ruk) setBg(x || {}); }).catch(() => {});
+    dekho();
+    // Android ka parda khol kar wapas aane par haal turant taaza ho jaye
+    const onFocus = () => dekho();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => { ruk = true; window.removeEventListener("focus", onFocus);
+                   document.removeEventListener("visibilitychange", onFocus); };
+  }, []);
+
   const [netBase, setNetBase] = useState(PEHLA_BASE);
   const [netBusy, setNetBusy] = useState(false);
   const [netMsg,  setNetMsg]  = useState("");
@@ -350,6 +374,35 @@ export default function AppSettings() {
                 checks the Ethernet and Wi-Fi addresses again and reloads the app.
               </div>
             </div>
+
+            {/* ── Background me chalna ─────────────────────────────────
+                Walkie-Talkie ki call tabhi pahunchti hai jab app ko background
+                me chalne diya jaye.  Xiaomi/Oppo/Vivo jaise phone default me
+                ise band kar dete hain — aur us soorat me call chup-chaap aana
+                band ho jaati hai, koi error kahin nahi dikhta. */}
+            {bg && (<>
+              <div style={row}>
+                <span style={lbl}>Run in background</span>
+                <b style={{ color: bg.ignoringBattery ? "#16a34a" : "#b45309" }}>
+                  {bg.ignoringBattery ? "Allowed" : "Restricted"}
+                </b>
+              </div>
+              <div style={{ margin: "8px 0 12px" }}>
+                <button onClick={() => walkieNative.batterySetting()}
+                        style={{ width: "100%", padding: "10px 0", borderRadius: 10,
+                                 border: "1px solid " + (bg.ignoringBattery ? "#cbd5e1" : "#b45309"),
+                                 background: bg.ignoringBattery ? "#f1f5f9" : "#f59e0b",
+                                 color: bg.ignoringBattery ? "#475569" : "#fff",
+                                 fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}>
+                  {bg.ignoringBattery ? "Battery settings" : "🔋 Allow this app to run in the background"}
+                </button>
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6, lineHeight: 1.5 }}>
+                  {bg.ignoringBattery
+                    ? "Walkie-talkie calls will reach this phone even when the app is closed."
+                    : "Without this, some phones stop the app in the background and walkie-talkie calls stop arriving. Tap and choose Allow."}
+                </div>
+              </div>
+            </>)}
 
             {/* version */}
             <div style={row}>

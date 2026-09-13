@@ -37,6 +37,9 @@ export const SUBPAGE_PARENT = {
   "andon-config":  "andon-system",
   "andon-callout": "andon-system",
   "andon-reports": "andon-system",
+  // Walkie-Talkie
+  "walkie-talk":  "walkie-talkie",
+  "walkie-setup": "walkie-talkie",
   // Historical Data (aathon section)
   "hist-bd":   "maintenance-historical",
   "hist-auto": "maintenance-historical",

@@ -78,6 +78,10 @@ export const PAGE_PERM_GROUPS = [
       { key: "andon-callout", label: "Call → Output" },
       { key: "andon-reports", label: "Reports" },
     ]},
+    { key: "walkie-talkie",              label: "Walkie-Talkie", children: [
+      { key: "walkie-talk",  label: "Talk (press to talk / buzz)" },
+      { key: "walkie-setup", label: "Setup (who can use it · channels)" },
+    ]},
     { key: "maintenance-update-plan",    label: "Update Plan", children: [
       { key: "maintenance-plan-yearly",     label: "Preventive Yearly Plan" },
       { key: "maintenance-plan-monthly",    label: "Preventive Monthly Plan" },

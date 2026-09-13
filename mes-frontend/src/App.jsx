@@ -38,6 +38,7 @@ const BDHistory             = lazy(() => import("./pages/BDHistory"));
 const BreakdownLogBook      = lazy(() => import("./pages/BreakdownLogBook"));
 const BDAnalysis            = lazy(() => import("./pages/BDAnalysis"));
 const HistoryCard           = lazy(() => import("./pages/HistoryCard"));
+const WalkieTalkie          = lazy(() => import("./pages/WalkieTalkie"));
 const QPRForm               = lazy(() => import("./pages/QPRForm"));
 const ParetoAnalysis        = lazy(() => import("./pages/ParetoAnalysis"));
 const TopBreakdowns         = lazy(() => import("./pages/TopBreakdowns"));
@@ -183,6 +184,11 @@ function AppRoutes() {
       <Route path="/maintenance-logbook" element={
         <Protected requiredAccess="maintenance-logbook"><BreakdownLogBook /></Protected>
       } />
+      {/* Walkie-Talkie — plant ke andar push-to-talk (apne hi server par). */}
+      <Route path="/walkie-talkie" element={
+        <Protected requiredAccess="walkie-talkie"><WalkieTalkie /></Protected>
+      } />
+
       {/* History Card — zone-wise machine history (now a top-level sidebar page). */}
       <Route path="/maintenance-history-card" element={
         <Protected requiredAccess="maintenance-history-card"><HistoryCard /></Protected>

@@ -247,6 +247,16 @@ const PICKED_KEY = "mes_last_server";
 /** Dono raaston ko EK SAATH tatolo; jo pehle jawab de wahi le lo. */
 async function pickServer() {
   if (!NATIVE || !realFetch) return API_BASE;
+  /* Build ne saaf-saaf ek server bataya ho (`VITE_API_BASE=...`) to use hi
+     rakho -- tatolna nahi.  Bina iske wo sirf SHURUAATI value banti thi aur
+     ye function use turant `SERVERS` me se kisi par badal deta tha, yaani
+     build ka bataya pata chup-chaap bekaar ho jaata tha.  (Device par jaanch
+     karte waqt ye pakda: app plant server par chali gayi thi aur naye
+     endpoint 404 de rahe the.)
+     Asli release me ye env var set hota hi nahi, isliye plant ka bartaav
+     bilkul pehle jaisa rehta hai. */
+  const thopa = import.meta.env && import.meta.env.VITE_API_BASE;
+  if (thopa) { API_BASE = thopa; serverMila = true; return API_BASE; }
   const tryOne = (base) => new Promise((resolve, reject) => {
     const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
     const t = setTimeout(() => { try { ctl && ctl.abort(); } catch { /* ignore */ } reject(new Error("timeout")); }, PROBE_MS);
