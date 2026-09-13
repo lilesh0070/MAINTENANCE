@@ -1,5 +1,5 @@
 {
-  "version": "1.4.57",
-  "notes": "Settings now scrolls when it is taller than the screen, so the buttons at the bottom can always be reached",
-  "released_at": "2026-09-13T15:05:04"
+  "version": "1.4.58",
+  "notes": "Walkie-Talkie: a buzz now rings and vibrates until you tap OK on the notification, like a call. The Back button is gone from the Walkie-Talkie screen on phones.",
+  "released_at": "2026-09-13T15:20:00"
 }

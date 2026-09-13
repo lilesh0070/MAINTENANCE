@@ -715,6 +715,13 @@ body.in-app .an-sub-toggle > input { margin-top: 2px !important; flex: 0 0 auto 
    to batti ko uske BEECH me rakhne ke bajaye UPAR rakhte hain. */
 body.in-app .an-writer-line { align-items: flex-start !important; }
 
+/* ── Walkie-Talkie ka "← Back" phone par nahi ────────────────────────
+ * User ki baat.  Nikalne ka raasta phir bhi do hain, isliye koi phansta
+ * nahi: phone ka APNA back button (apiBase.js me handle hai -- wo
+ * `history.back()` karta hai) aur baayein ka slide-nav.  Website/tablet/TV
+ * par button pehle jaisa hi rehta hai. */
+body.in-app .wk-back { display: none !important; }
+
 /* ── Maintenance KPI ──────────────────────────────────────────────────
  * 1) FILTER KA HISSA 238px ka tha -- screen ka chauthai hissa sirf filter me.
  *    Wajah: saal ka select 200px chaudha tha (jabki `2026-27` ko 70px chahiye)
