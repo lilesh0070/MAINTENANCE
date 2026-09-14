@@ -1,5 +1,5 @@
 {
-  "version": "1.4.61",
-  "notes": "Walkie-Talkie permissions: ticking Buzz now really means only Buzz, and there is a separate Groups permission for channels",
-  "released_at": "2026-09-13T17:28:50"
+  "version": "1.4.62",
+  "notes": "Walkie-Talkie voice is much clearer: the phone now buffers a little audio before playing, so brief network hiccups no longer break the sound",
+  "released_at": "2026-09-14T10:26:48"
 }

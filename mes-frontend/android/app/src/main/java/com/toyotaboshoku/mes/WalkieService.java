@@ -83,6 +83,26 @@ public class WalkieService extends Service {
     private static final int CALL_ID = 4712;
 
     private static final int RATE = 16000;
+    private static final int FRAME_BYTES = 640 * 2;     // 40ms ka ek frame
+
+    /* ⚠ JITTER-BUFFER -- AAWAZ SAAF HONE KI ASLI WAJAH.
+     *
+     * Naap kar dekha (end-to-end, 120 frame theek 40ms par bheje gaye):
+     * ek bhi frame gira NAHI, par pahunchte jhatkon me hain -- do frame ke
+     * beech median 46ms, p95 76ms, aur SABSE ZYADA 99ms.  Har frame me sirf
+     * 40ms ki aawaz hoti hai, yaani us 99ms wale jhatke par bajane wale ke
+     * paas ~59ms kuch tha hi nahi.
+     *
+     * Pehle yahan koi buffer tha hi nahi: pehla frame aate hi bajana shuru
+     * ho jaata tha, aur AudioTrack baar-baar sookh (underrun) kar "kat-kat"
+     * karta tha.  Isliye:
+     *   PREBUFFER -- itne frame jama hone tak bajana shuru mat karo
+     *   sookhne par KHAMOSHI likh do -- taaki dhaara tooti na rahe
+     *     (AudioTrack ko khali chhodne se wo ruk kar dobara chalta hai,
+     *      aur wahi "tik-tik" sunayi deti hai)
+     */
+    private static final int PREBUFFER_FRAMES = 7;      // ~280ms
+    private static final byte[] KHAMOSHI = new byte[FRAME_BYTES];
 
     /** Baahar se (plugin se) poochhne ke liye — service chal rahi hai ya nahi. */
     public static volatile boolean RUNNING = false;
@@ -110,6 +130,7 @@ public class WalkieService extends Service {
     private final Runnable ringRuko = this::ringBand;
     private Thread writer;
     private final ArrayBlockingQueue<byte[]> qatar = new ArrayBlockingQueue<>(64);
+    private volatile boolean bharRahe = true;           // abhi jitter-buffer bhar raha hai
     private PowerManager.WakeLock wake;
 
     @Nullable @Override public IBinder onBind(Intent i) { return null; }
@@ -283,9 +304,21 @@ public class WalkieService extends Service {
                         // nahi aata.
                         ringBand();
                         audioTaiyaar();
+                        // Nayi transmission -- buffer naye sire se bhare
+                        bharRahe = true;
+                        qatar.clear();
                         chirp();
                         likho((f != null ? f.optString("name", "Someone") : "Someone") + " is speaking…");
                     } else if ("rx_stop".equals(t)) {
+                        // Kitni baar sookha -- yahi batata hai ki aawaz saaf
+                        // rahi ya nahi.  0 matlab bilkul saaf.
+                        try {
+                            AudioTrack at = track;
+                            if (at != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                                Log.i(TAG, "SOOKHA (underrun) ab tak: " + at.getUnderrunCount());
+                            }
+                        } catch (Throwable ignored) { /* purana device */ }
+                        bharRahe = true;
                         likho("Listening");
                     }
                 } catch (Throwable e) {
@@ -299,7 +332,15 @@ public class WalkieService extends Service {
                 // rakhte hain.  Live baat me purani aawaz ka koi matlab nahi —
                 // aur bina iske qatar bharte hi socket ka thread ruk jaata.
                 byte[] b = bytes.toByteArray();
-                if (!qatar.offer(b)) { qatar.poll(); qatar.offer(b); }
+                if (!qatar.offer(b)) {
+                    /* Qatar bhar gayi -- matlab hum bahut peechhe chal rahe
+                       hain.  Ek frame girane se der wahi ki wahi rehti hai,
+                       isliye AADHI qatar gira dete hain aur taaza aawaz par
+                       aa jaate hain.  Live baat me purani aawaz ka koi
+                       matlab nahi hota. */
+                    for (int i = 0; i < 16; i++) { if (qatar.poll() == null) break; }
+                    qatar.offer(b);
+                }
             }
 
             @Override public void onClosed(WebSocket s, int code, String reason) {
@@ -388,9 +429,27 @@ public class WalkieService extends Service {
         writer = new Thread(() -> {
             while (chahiye) {
                 try {
-                    byte[] b = qatar.poll(400, TimeUnit.MILLISECONDS);
                     AudioTrack t = track;
-                    if (b != null && t != null) t.write(b, 0, b.length);
+                    if (t == null) { Thread.sleep(20); continue; }
+
+                    // 1) Buffer bharne do -- jab tak itne frame na ho jayein,
+                    //    kuch mat bajao.  Ek hi baar har transmission par.
+                    if (bharRahe) {
+                        if (qatar.size() < PREBUFFER_FRAMES) { Thread.sleep(10); continue; }
+                        bharRahe = false;
+                    }
+
+                    byte[] b = qatar.poll(25, TimeUnit.MILLISECONDS);
+                    if (b != null) {
+                        t.write(b, 0, b.length);
+                    } else {
+                        /* Kuch nahi aaya.  AudioTrack ko KHALI mat chhodo --
+                           wo sookh kar ruk jaata hai aur dobara chalne par
+                           "tik" karta hai.  40ms ki khamoshi likh dete hain:
+                           dhaara chalti rehti hai aur agla frame aate hi
+                           bina jhatke jud jaata hai. */
+                        t.write(KHAMOSHI, 0, KHAMOSHI.length);
+                    }
                 } catch (InterruptedException e) {
                     return;
                 } catch (Throwable e) {

@@ -133,7 +133,12 @@ export async function micShuru({ onFrame, onLevel }) {
  * (120ms) bharte hain, phir ek ke baad ek jodte jaate hain.  Bina iske LAN
  * ki halki si der bhi "kat-kat" ban kar sunayi deti hai.
  */
-const JITTER = 0.12;
+/* Naap kar (end-to-end, 120 frame theek 40ms par): do frame ke beech p95
+   76ms aur sabse zyada 99ms -- jabki ek frame me 40ms ki hi aawaz hai.
+   120ms ka buffer us 99ms ke jhatke ko mushkil se jhelta tha, aur sookhte
+   hi aawaz kat-kat karti thi.  220ms rakhne se wo jhatka aaram se sama
+   jaata hai; PTT me itni der ka koi farak mehsoos nahi hota. */
+const JITTER = 0.22;
 
 export function speakerBanao() {
   let ctx = null;
@@ -162,8 +167,17 @@ export function speakerBanao() {
       for (let i = 0; i < pcm.length; i++) f[i] = pcm[i] / 0x8000;
       const src = c.createBufferSource();
       src.buffer = buf;
-      src.connect(c.destination);
+      /* Har tukde ke dono siron par 2ms ka halka fade.  Beech me kabhi
+         khaalipan aa jaye to bina iske "tik" ki awaaz aati hai (aachanak
+         shuru/band hona kaan ko click jaisa lagta hai). */
+      const g = c.createGain();
       const ab = Math.max(c.currentTime + JITTER, cursor);
+      const FADE = 0.002;
+      g.gain.setValueAtTime(0, ab);
+      g.gain.linearRampToValueAtTime(1, ab + FADE);
+      g.gain.setValueAtTime(1, ab + Math.max(FADE, buf.duration - FADE));
+      g.gain.linearRampToValueAtTime(0, ab + buf.duration);
+      src.connect(g).connect(c.destination);
       src.start(ab);
       cursor = ab + buf.duration;
     },

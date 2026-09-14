@@ -119,7 +119,15 @@ export const walkieLink = {
   },
 
   sendAudio(buf) {
-    try { if (ws && ws.readyState === 1) ws.send(buf); } catch { /* socket gir gaya */ }
+    try {
+      if (!ws || ws.readyState !== 1) return;
+      /* Socket bhar gaya ho to NAYA frame gira do, bhejne ki qatar me mat
+         lagao.  Live baat me peechhe ki aawaz ka koi matlab nahi -- use
+         bhejte rahenge to der badhti hi jaayegi aur sunne wale ko sab kuch
+         peechhe sunayi dega.  Hadd ~4 frame (5 KB) rakhi hai. */
+      if (ws.bufferedAmount > 4 * 1280) return;
+      ws.send(buf);
+    } catch { /* socket gir gaya */ }
   },
 
   get state() { return state; },
