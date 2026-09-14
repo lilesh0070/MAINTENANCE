@@ -1,5 +1,5 @@
 {
-  "version": "1.4.70",
-  "notes": "All chats - admin can delete single messages or the whole conversation",
-  "released_at": "2026-09-14T14:40:51"
+  "version": "1.4.71",
+  "notes": "Chat - in-app alert on any page, chat rows in History, and admin decides who can chat with whom",
+  "released_at": "2026-09-14T15:06:55"
 }

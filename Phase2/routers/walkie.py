@@ -156,6 +156,18 @@ def _ensure_tables():
             -- "Kis baat-cheet me maine kahan tak padh liya."  Har message par
             -- har bande ki qatar rakhne se (group me wo N guna ho jaati) --
             -- yahan har baat-cheet par EK qatar hai, bas.
+            -- KAUN KISKE SAATH chat kar sakta hai.  Admin Setup me tay
+            -- karta hai.  Qatar hamesha (chhota, bada) me rakhte hain, isliye
+            -- rishta apne aap dono taraf ka hota hai -- ek hi jodi do baar
+            -- nahi ban sakti aur "A ne B ko allow kiya par B ne A ko nahi"
+            -- jaisi haalat mumkin hi nahi.
+            CREATE TABLE IF NOT EXISTS walkie_chat_pairs (
+                a_user   INTEGER NOT NULL,
+                b_user   INTEGER NOT NULL,
+                added_by TEXT,
+                added_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (a_user, b_user)
+            );
             CREATE TABLE IF NOT EXISTS walkie_reads (
                 user_id INTEGER NOT NULL,
                 convo   TEXT NOT NULL,
@@ -312,6 +324,30 @@ def _convo_key(uid: int, target: dict) -> str:
     return f"u:{a}:{b}"
 
 
+def _allowed_ids(user: dict) -> set:
+    """Ye banda kis-kis se chat kar sakta hai.
+
+    ADMIN ko dono taraf chhoot hai -- aur ye zaroori hai, bas suvidha nahi:
+    warna admin kisi ko message to kar leta par wo bechara JAWAB hi na de
+    pata (uski list me admin hota hi nahi).  Isliye admin har jodi me apne
+    aap shaamil hai.
+
+    Baaki sabke liye: jo Setup me jodi gayi hai, sirf wahi."""
+    me = int(user["id"])
+    chalu = _enabled_ids()
+    if (user.get("role") or "") == "admin":
+        return set(chalu) - {me}
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("SELECT a_user, b_user FROM walkie_chat_pairs"
+                    " WHERE a_user = %s OR b_user = %s", (me, me))
+        out = {(r["a_user"] if r["b_user"] == me else r["b_user"])
+               for r in (cur.fetchall() or [])}
+        cur.execute("SELECT id FROM maintenance_users WHERE role = 'admin'")
+        out |= {r["id"] for r in (cur.fetchall() or [])}
+    return (out & set(chalu)) - {me}
+
+
 def _chat_ok(user: dict, target: dict):
     """Ye banda is target ko chat kar sakta hai ya nahi.  (None = haan.)
 
@@ -338,6 +374,10 @@ def _chat_ok(user: dict, target: dict):
         return "You cannot message yourself"
     if tid not in _enabled_ids():
         return "That person is not on Walkie-Talkie"
+    # Setup me jodi banaye bina chat nahi -- aur ye jaanch YAHI hoti hai,
+    # sirf list chhupane se koi rok nahi lagti.
+    if tid not in _allowed_ids(user):
+        return "You are not allowed to chat with that person"
     return None
 
 
@@ -570,34 +610,88 @@ def events(limit: int = Query(300, ge=1, le=2000),
            month: Optional[str] = Query(None),     # "2026-09"
            date: Optional[str] = Query(None),      # "2026-09-13"
            user_id: Optional[int] = Query(None),   # kisne kiya YA kiske liye
-           kind: Optional[str] = Query(None),      # buzz | voice
+           kind: Optional[str] = Query(None),      # buzz | voice | chat
            user=Depends(get_current_user)):
+    """Walkie ka itihaas -- call, buzz, aur (admin ko) chat bhi.
+
+    CHAT KI QATAREIN PADHTE WAQT JODI JAATI HAIN (`UNION ALL`), likhte waqt
+    nahi.  Har message par `walkie_events` me ek aur qatar daalne se likhne
+    ka kaam dugna ho jaata aur do jagah ek hi baat rakhni padti -- yahan ek
+    bhi extra INSERT nahi hota.
+
+    ⚠ CHAT SIRF ADMIN KO DIKHTI HAI.  Baaki itihaas (kisne kisko bulaya)
+    har judey hue user ko dikhta hai -- wo pehle se aisa hi tha.  Par message
+    ka MATN niji baat hai, isliye wo sirf admin tak.
+
+    Har qatar par `src` hota hai (`event` ya `chat`) -- id dono tableon me
+    alag-alag chalti hain, isliye bina `src` ke dono ki id aapas me mil
+    jaati aur "delete" galat qatar utha leta.
+    """
     _ensure_tables()
-    where, params = [], []
-    if fy:
-        w = _fy_window(fy)
-        if w:
-            where.append("at >= %s AND at < %s")
-            params += [w[0], w[1]]
-    if month:
-        where.append("to_char(at, 'YYYY-MM') = %s")
-        params.append(month)
-    if date:
-        where.append("at::date = %s")
-        params.append(date)
-    if user_id:
-        # "is bande se judi" har qatar: usne kiya, ya uske liye tha, ya usne
-        # jawab diya.
-        where.append("(from_user = %s OR (target_type = 'user' AND target_id = %s)"
+    is_admin = (user.get("role") or "") == "admin"
+
+    def tareekh(col):
+        w, p = [], []
+        if fy:
+            win = _fy_window(fy)
+            if win:
+                w.append(f"{col} >= %s AND {col} < %s")
+                p += [win[0], win[1]]
+        if month:
+            w.append(f"to_char({col}, 'YYYY-MM') = %s")
+            p.append(month)
+        if date:
+            w.append(f"{col}::date = %s")
+            p.append(date)
+        return w, p
+
+    hisse, params = [], []
+
+    # ── call / buzz ──
+    if kind != "chat":
+        w, p = tareekh("at")
+        if user_id:
+            # "is bande se judi" har qatar: usne kiya, ya uske liye tha, ya
+            # usne jawab diya.
+            w.append("(from_user = %s OR (target_type = 'user' AND target_id = %s)"
                      " OR acked_by = %s)")
-        params += [user_id, user_id, user_id]
-    if kind:
-        where.append("kind = %s")
-        params.append(kind)
-    sql = "SELECT * FROM walkie_events"
-    if where:
-        sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY at DESC LIMIT %s"
+            p += [user_id, user_id, user_id]
+        if kind:
+            w.append("kind = %s")
+            p.append(kind)
+        q = ("SELECT 'event' AS src, id, at, kind, from_user, from_name, target_type,"
+             " target_id, target_name, secs, acked_at, acked_by, acked_name,"
+             " NULL::text AS body FROM walkie_events")
+        if w:
+            q += " WHERE " + " AND ".join(w)
+        hisse.append(q)
+        params += p
+
+    # ── chat (sirf admin) ──
+    if is_admin and kind in (None, "", "chat"):
+        w, p = tareekh("m.at")
+        if user_id:
+            w.append("(m.from_user = %s OR (m.target_type = 'user' AND m.target_id = %s))")
+            p += [user_id, user_id]
+        q = ("SELECT 'chat' AS src, m.id, m.at, 'chat' AS kind, m.from_user, m.from_name,"
+             " m.target_type, m.target_id,"
+             " COALESCE(NULLIF(TRIM(u.full_name), ''), u.username, ch.name,"
+             "          '#' || m.target_id) AS target_name,"
+             " NULL::numeric(6,1) AS secs, NULL::timestamp AS acked_at,"
+             " NULL::integer AS acked_by, NULL::text AS acked_name, m.body"
+             " FROM walkie_messages m"
+             " LEFT JOIN maintenance_users u"
+             "   ON m.target_type = 'user' AND u.id = m.target_id"
+             " LEFT JOIN walkie_channels ch"
+             "   ON m.target_type = 'channel' AND ch.id = m.target_id")
+        if w:
+            q += " WHERE " + " AND ".join(w)
+        hisse.append(q)
+        params += p
+
+    if not hisse:
+        return []
+    sql = " UNION ALL ".join(f"({x})" for x in hisse) + " ORDER BY at DESC LIMIT %s"
     params.append(limit)
     with get_conn() as conn:
         cur = dict_cursor(conn)
@@ -685,8 +779,11 @@ def _mere_convo(user: dict):
     karti hai -- koi OR-scan nahi."""
     me = int(user["id"])
     keys = {}
+    mil_sakte = _allowed_ids(user)
     for r in _members_rows():
-        if not r["enabled"] or r["id"] == me:
+        # Sirf wahi log dikhte hain jinse chat ki ijazat hai -- "allow karne
+        # ke baad hi uski id dikhegi".
+        if not r["enabled"] or r["id"] == me or r["id"] not in mil_sakte:
             continue
         a, b = sorted((me, int(r["id"])))
         keys[f"u:{a}:{b}"] = {"type": "user", "id": r["id"], "name": _naam(r)}
@@ -736,6 +833,46 @@ def chat_threads(user=Depends(get_current_user)):
     # Jisme baat hui ho wo upar, aur usme bhi nayi baat sabse upar
     out.sort(key=lambda x: (x["last"]["id"] if x["last"] else 0), reverse=True)
     return {"threads": out}
+
+
+@router.get("/chat/pairs")
+def chat_pairs(user=Depends(require_admin)):
+    """Kaun kis-kis se chat kar sakta hai -- {user_id: [ids]}.
+    Dono taraf se bharte hain, taaki UI ko jodne ka hisaab na karna pade."""
+    _ensure_tables()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("SELECT a_user, b_user FROM walkie_chat_pairs")
+        rows = cur.fetchall() or []
+    m = {}
+    for r in rows:
+        m.setdefault(r["a_user"], set()).add(r["b_user"])
+        m.setdefault(r["b_user"], set()).add(r["a_user"])
+    return {"pairs": {str(k): sorted(v) for k, v in m.items()}}
+
+
+class PairsIn(BaseModel):
+    user_ids: List[int] = []
+
+
+@router.put("/chat/pairs/{user_id}")
+def set_chat_pairs(user_id: int, body: PairsIn, user=Depends(require_admin)):
+    """Is bande ki POORI list set karo -- jo list me nahi, wo jodi tooti.
+
+    Pehle sab hata kar dobara daalte hain: "kya jodo, kya hatao" ka hisaab
+    karne se ek din dono taraf alag-alag ho jaate hain."""
+    _ensure_tables()
+    me = int(user_id)
+    doosre = {int(i) for i in (body.user_ids or []) if int(i) != me}
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM walkie_chat_pairs WHERE a_user = %s OR b_user = %s", (me, me))
+        for o in sorted(doosre):
+            cur.execute("INSERT INTO walkie_chat_pairs (a_user, b_user, added_by)"
+                        " VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
+                        (min(me, o), max(me, o), user.get("username")))
+        conn.commit()
+    return {"ok": True, "count": len(doosre)}
 
 
 class ChatReadIn(BaseModel):

@@ -29,6 +29,12 @@ export default function WalkiePresence() {
   const [canChat, setCanChat] = useState(false);
   const [jawab, setJawab]     = useState("");
   const [bhejRahe, setBhejRahe] = useState(false);
+  /* Aayi hui chat ki chhoti patti.
+     Phone par jab app BAND ho to Java ki service notification dikha deti
+     hai -- par app KHULI ho aur banda kisi aur page par ho, to use kuch
+     pata hi nahi chalta (buzz ka to poore screen par parda aata hai).
+     Wahi khaali jagah ye patti bharti hai. */
+  const [aayi, setAayi] = useState(null);   // { from, body, convo }
 
   // ── socket + service, har page par ─────────────────────────────
   useEffect(() => {
@@ -71,6 +77,17 @@ export default function WalkiePresence() {
 
   // ── buzz ka parda ──────────────────────────────────────────────
   useEffect(() => walkieLink.on((d) => {
+    if (d.t === "chat") {
+      /* Apna hi bheja hua wapas aata hai (doosre device ke liye) -- uspar
+         apne aap ko khabar dena bemtlab hai.  Aur walkie ka page khud khula
+         ho to bhi nahi: wahan baat pehle se saamne hai.  (Native
+         notification ka bhi yahi niyam hai -- `APP_FOREGROUND`.) */
+      const mera = walkieLink.state?.me?.id;
+      if (mera && Number(d.from?.id) === Number(mera)) return;
+      if (window.location.pathname.startsWith("/walkie-talkie")) return;
+      setAayi({ from: d.from?.name || "Someone", body: d.body || "", convo: d.convo });
+      return;
+    }
     if (d.t === "buzz") {
       setBuzz(d);
       setJawab("");
@@ -130,7 +147,34 @@ export default function WalkiePresence() {
     theekHai(false);
   };
 
-  if (!buzz) return null;
+  if (!buzz) {
+    if (!aayi) return null;
+    /* Sirf patti -- buzz jaisa poora parda NAHI.  Message aana kaam rokne
+       ki wajah nahi hai; buzz hai. */
+    return (
+      <div style={{ position:"fixed", left:12, right:12, bottom:16, zIndex:19000,
+                    display:"flex", justifyContent:"center", pointerEvents:"none" }}>
+        <div onClick={() => { setAayi(null); nav("/walkie-talkie"); }}
+             style={{ pointerEvents:"auto", cursor:"pointer", maxWidth:420, width:"100%",
+                      background:"#0f172a", color:"#fff", borderRadius:12,
+                      padding:"11px 13px", display:"flex", gap:10, alignItems:"flex-start",
+                      boxShadow:"0 10px 30px rgba(0,0,0,.35)",
+                      fontFamily:"'Barlow',sans-serif" }}>
+          <span style={{ fontSize:18, lineHeight:1.1 }}>💬</span>
+          <span style={{ minWidth:0, flex:1 }}>
+            <span style={{ display:"block", fontSize:13, fontWeight:800 }}>{aayi.from}</span>
+            <span style={{ display:"block", fontSize:12.5, opacity:.9,
+                           overflow:"hidden", textOverflow:"ellipsis",
+                           whiteSpace:"nowrap" }}>{aayi.body}</span>
+          </span>
+          <button onClick={(e) => { e.stopPropagation(); setAayi(null); }}
+                  style={{ background:"none", border:"none", color:"#94a3b8",
+                           fontSize:16, cursor:"pointer", padding:"0 2px",
+                           fontFamily:"inherit" }}>✕</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 20000,

@@ -89,6 +89,12 @@ export default function WalkieTalkie() {
   const canBuzz    = roster?.me?.can_buzz    !== false;
   const canChannel = roster?.me?.can_channel !== false;
   const canChat    = roster?.me?.can_chat    !== false;
+
+  /* Kaun kiske saath chat kar sakta hai (Setup).  `pairs` me dono taraf
+     bhari hui hai, isliye UI ko jodne ka koi hisaab nahi karna padta. */
+  const [pairs, setPairs]     = useState({});     // { "4": [17, 18], ... }
+  const [pairWho, setPairWho] = useState("");     // kiski list khuli hai
+  const [pairSel, setPairSel] = useState(() => new Set());
   const [online, setOnline] = useState([]);
   const [conn, setConn] = useState("connecting");      // connecting | on | off | denied
   const [pick, setPick] = useState(null);              // {type:"user"|"channel", id, name}
@@ -261,21 +267,33 @@ export default function WalkieTalkie() {
   const onHMonth = (v) => { setHMonth(v); if (hDate && v && hDate.slice(0, 7) !== v) setHDate(""); };
   const onHFy = (v) => { setHFy(v); setHMonth(""); setHDate(""); };
 
-  const histChuno = (id) => setHSel((s) => {
+  /* Chaabi me `src` bhi -- `walkie_events` aur `walkie_messages` ki id
+     alag-alag chalti hain, yaani dono me #7 ho sakta hai.  Sirf id rakhne
+     par ek chunne se doosri table ki qatar hat jaati. */
+  const histKey = (e) => `${e.src || "event"}:${e.id}`;
+  const histChuno = (k) => setHSel((s) => {
     const n = new Set(s);
-    if (n.has(id)) n.delete(id); else n.add(id);
+    if (n.has(k)) n.delete(k); else n.add(k);
     return n;
   });
 
   /* Mitana wapas nahi aata, isliye ek baar poochh lete hain -- aur ginti
      saath me dikhate hain taaki galti se poori list na chali jaye. */
   const histMitao = async () => {
-    const ids = [...hSel];
-    if (!ids.length) return;
-    if (!window.confirm(`Delete ${ids.length} ${ids.length === 1 ? "entry" : "entries"} from the history? This cannot be undone.`)) return;
+    const keys = [...hSel];
+    if (!keys.length) return;
+    // Do alag table, do alag endpoint.
+    const evIds = keys.filter((k) => k.startsWith("event:")).map((k) => Number(k.slice(6)));
+    const chIds = keys.filter((k) => k.startsWith("chat:")).map((k) => Number(k.slice(5)));
+    if (!window.confirm(
+      `Delete ${keys.length} ${keys.length === 1 ? "entry" : "entries"} from the history?` +
+      (chIds.length ? `\n\n${chIds.length} of them ${chIds.length === 1 ? "is a chat message" : "are chat messages"} \u2014 ` +
+                      "deleting those leaves one line in Delete History." : "") +
+      "\n\nThis cannot be undone.")) return;
     setHBusy(true);
     try {
-      await api.send("POST", "/api/walkie/events/delete", { ids }, token);
+      if (evIds.length) await api.send("POST", "/api/walkie/events/delete", { ids: evIds }, token);
+      if (chIds.length) await api.send("POST", "/api/walkie/chat/delete", { ids: chIds }, token);
       setHSel(new Set());
       loadHist();
     } catch (e) { setKehna(e?.message || "Could not delete"); }
@@ -286,6 +304,8 @@ export default function WalkieTalkie() {
     if (!token || !isAdmin) return;
     api.get("/api/walkie/members", token).then(setMembers).catch(() => setMembers([]));
     api.get("/api/walkie/channels", token).then(setChans).catch(() => setChans([]));
+    api.get("/api/walkie/chat/pairs", token)
+       .then((d) => setPairs(d?.pairs || {})).catch(() => setPairs({}));
   }, [token, isAdmin]);
   /* History wale tab ko bhi member ki list chahiye (Person ka dropdown),
      isliye dono par load karte hain -- warna seedha History kholne par
@@ -293,6 +313,33 @@ export default function WalkieTalkie() {
   useEffect(() => {
     if (tab === "setup" || tab === "hist" || tab === "chats") loadSetup();
   }, [tab, loadSetup]);
+
+  /* Kisi ek bande ki list kholo.  `pairs` dono taraf bhari hai, isliye
+     seedha uthai ja sakti hai. */
+  const pairKholo = (id) => {
+    const k = String(id);
+    setPairWho(k);
+    setPairSel(new Set((pairs[k] || []).map(Number)));
+  };
+
+  const pairPalto = (id) => setPairSel((p) => {
+    const n = new Set(p);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  });
+
+  const pairSambhalo = async () => {
+    if (!pairWho) return;
+    setBusy(true);
+    try {
+      await api.send("PUT", `/api/walkie/chat/pairs/${pairWho}`,
+                     { user_ids: [...pairSel] }, token);
+      const d = await api.get("/api/walkie/chat/pairs", token);
+      setPairs(d?.pairs || {});
+      setKehna("Saved.");
+    } catch (e) { setKehna(e?.message || "Could not save"); }
+    finally { setBusy(false); }
+  };
 
   const toggleMember = async (m) => {
     setBusy(true);
@@ -566,9 +613,10 @@ export default function WalkieTalkie() {
           {/* ══════════════ HISTORY (admin) ══════════════ */}
           {tab === "hist" && isAdmin && (<>
             <div className="wk-card">
-              <div className="wk-h">Who buzzed whom</div>
+              <div className="wk-h">Who contacted whom</div>
               <div className="wk-row-sub" style={{ marginTop:3 }}>
-                Every buzz and every voice call, and whether the other side answered.
+                Every buzz, voice call and chat message — whether the other side
+                answered, and what was said.
               </div>
               <div style={{ display:"flex", gap:10, flexWrap:"wrap", alignItems:"flex-end", marginTop:12 }}>
                 <div className="wk-fld">
@@ -602,9 +650,10 @@ export default function WalkieTalkie() {
                 <div className="wk-fld">
                   <label>Type</label>
                   <select className="wk-in" value={hKind} onChange={(e) => setHKind(e.target.value)}>
-                    <option value="">Buzz and voice</option>
+                    <option value="">Everything</option>
                     <option value="buzz">Buzz only</option>
                     <option value="voice">Voice only</option>
+                    <option value="chat">Chat only</option>
                   </select>
                 </div>
                 <div className="wk-fld">
@@ -637,32 +686,47 @@ export default function WalkieTalkie() {
                       <input type="checkbox" title="Select all shown"
                              checked={!!hRows.length && hSel.size === hRows.length}
                              onChange={(e) => setHSel(e.target.checked
-                               ? new Set(hRows.map((r) => r.id)) : new Set())} />
+                               ? new Set(hRows.map(histKey)) : new Set())} />
                     </th>
                     <th>When</th><th>Who</th><th>What</th><th>To</th><th>Answered</th><th>Length</th>
                   </tr></thead>
                   <tbody>
                     {!hBusy && !hRows.length && <tr><td colSpan={7} className="wk-empty">Nothing for this filter.</td></tr>}
-                    {hRows.map((e) => (
-                      <tr key={e.id} style={{ background: hSel.has(e.id) ? "#fef2f2" : undefined }}>
-                        <td><input type="checkbox" checked={hSel.has(e.id)}
-                                   onChange={() => histChuno(e.id)} /></td>
+                    {hRows.map((e) => {
+                      const k = histKey(e);
+                      const chat = e.src === "chat";
+                      return (
+                      <tr key={k} style={{ background: hSel.has(k) ? "#fef2f2" : undefined }}>
+                        <td><input type="checkbox" checked={hSel.has(k)}
+                                   onChange={() => histChuno(k)} /></td>
                         <td style={{ whiteSpace:"nowrap" }}>{fmtWhen(e.at)}</td>
                         <td style={{ fontWeight:700 }}>{e.from_name || "—"}</td>
-                        <td style={{ whiteSpace:"nowrap" }}>{e.kind === "buzz" ? "📳 Buzz" : "🎙 Voice"}</td>
-                        <td>{e.target_name || "—"}{e.target_type === "channel" ? " (channel)" : ""}</td>
                         <td style={{ whiteSpace:"nowrap" }}>
-                          {e.kind !== "buzz"
-                            ? <span style={{ color:"#94a3b8" }}>—</span>
-                            : e.acked_at
-                              ? <span style={{ color:"#16a34a", fontWeight:700 }}>
-                                  ✓ {e.acked_name || "—"} · {fmtWhen(e.acked_at)}
-                                </span>
-                              : <span style={{ color:"#b45309", fontWeight:700 }}>No answer</span>}
+                          {chat ? "💬 Chat" : e.kind === "buzz" ? "📳 Buzz" : "🎙 Voice"}
                         </td>
-                        <td>{e.secs == null ? "—" : `${e.secs}s`}</td>
+                        <td>{e.target_name || "—"}{e.target_type === "channel" ? " (channel)" : ""}</td>
+                        {/* Chat par "Answered" aur "Length" dono bemtlab hain --
+                            un do khaanon me seedha message dikha dete hain,
+                            taaki "us waqt kya baat hui thi" wahin dikh jaye. */}
+                        {chat ? (
+                          <td colSpan={2} style={{ color:"#334155", overflowWrap:"anywhere" }}>
+                            {e.body || <span style={{ color:"#94a3b8" }}>—</span>}
+                          </td>
+                        ) : (<>
+                          <td style={{ whiteSpace:"nowrap" }}>
+                            {e.kind !== "buzz"
+                              ? <span style={{ color:"#94a3b8" }}>—</span>
+                              : e.acked_at
+                                ? <span style={{ color:"#16a34a", fontWeight:700 }}>
+                                    ✓ {e.acked_name || "—"} · {fmtWhen(e.acked_at)}
+                                  </span>
+                                : <span style={{ color:"#b45309", fontWeight:700 }}>No answer</span>}
+                          </td>
+                          <td>{e.secs == null ? "—" : `${e.secs}s`}</td>
+                        </>)}
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -685,6 +749,58 @@ export default function WalkieTalkie() {
                   </span>
                 </div>
               ))}
+            </div>
+
+            {/* ── kaun kiske saath chat kar sakta hai ────────────
+                Jodi banne ke BAAD hi wo banda doosre ki Chat list me dikhta
+                hai.  Rok server par bhi lagti hai -- sirf list chhupane se
+                koi rukawat nahi hoti.
+                Admin har jodi me apne aap shaamil hai, warna admin message
+                to kar leta par saamne wala JAWAB hi na de pata. */}
+            <div className="wk-card">
+              <div className="wk-h">Who can chat with whom</div>
+              <div className="wk-row-sub" style={{ marginTop:2 }}>
+                Pick a person, then tick everyone they are allowed to chat with.
+                Until you do, nobody shows up in their Chat list. An administrator
+                can always chat with everyone.
+              </div>
+              <div style={{ display:"flex", gap:8, marginTop:10, flexWrap:"wrap" }}>
+                <select className="wk-in" style={{ flex:"1 1 180px" }}
+                        value={pairWho} onChange={(e) => pairKholo(e.target.value)}>
+                  <option value="">— pick a person —</option>
+                  {enabledMembers.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} ({(pairs[String(m.id)] || []).length})
+                    </option>
+                  ))}
+                </select>
+                {!!pairWho && (
+                  <button className="wk-mini" style={{ padding:"8px 16px" }}
+                          disabled={busy} onClick={pairSambhalo}>Save</button>
+                )}
+              </div>
+              {!!pairWho && (
+                <div style={{ marginTop:10 }}>
+                  <div className="wk-row-sub" style={{ marginBottom:6 }}>
+                    Allowed to chat with{pairSel.size ? ` — ${pairSel.size} selected` : " — nobody yet"}
+                  </div>
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                    {enabledMembers.filter((m) => String(m.id) !== String(pairWho)).map((m) => {
+                      const on = pairSel.has(m.id);
+                      return (
+                        <button key={m.id} className="wk-mini"
+                                style={on ? { background:theme.soft, borderColor:theme.accent, color:"#0f172a" } : undefined}
+                                onClick={() => pairPalto(m.id)}>
+                          {on ? "✓ " : ""}{m.name}
+                        </button>
+                      );
+                    })}
+                    {enabledMembers.length < 2 && (
+                      <span className="wk-row-sub">Add at least two people above first.</span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="wk-card">
