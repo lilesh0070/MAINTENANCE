@@ -1,5 +1,5 @@
 {
-  "version": "1.4.64",
-  "notes": "Deviation form now picks Zone, Line and Machine No. from the machine master and fills in the Machine Name; the Maintenance Panel fits properly on a phone",
-  "released_at": "2026-09-14T11:35:58"
+  "version": "1.4.65",
+  "notes": "Login History and Delete History now fit properly on a phone - each entry is its own card instead of a wide table you had to scroll sideways",
+  "released_at": "2026-09-14T11:55:24"
 }

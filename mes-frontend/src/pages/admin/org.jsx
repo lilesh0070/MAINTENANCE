@@ -209,7 +209,7 @@ export function UsersPage({ toast, readOnly = false }) {
               (responsive.css dekho).  Chhe column 640px maangte hain aur
               phone ke card me ~260px hi hote hain -- sirf daayein-baayein
               khiskana kaafi nahi tha. */}
-          <table className="ap-users" style={{ width:"100%", minWidth:640, borderCollapse:"collapse", fontSize:13 }}>
+          <table className="ap-stack" style={{ width:"100%", minWidth:640, borderCollapse:"collapse", fontSize:13 }}>
             <thead>
               <tr>{["ID","Username","Role","Password","Last Login","Actions"].map(h=>(
                 <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:10, fontWeight:700, letterSpacing:".08em", textTransform:"uppercase", color:"#64748b", borderBottom:"2px solid #e2e8f0" }}>{h}</th>

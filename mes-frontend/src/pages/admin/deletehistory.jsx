@@ -171,7 +171,10 @@ export function DeleteHistoryPage() {
 
       {/* ── table ── */}
       <div style={{ ...card, padding: 0, overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 820 }}>
+        {/* `ap-stack` -- phone par har qatar ek chhota card.  `minWidth: 820`
+            desktop ke liye hai; stack wale niyam use `min-width: 0` kar dete
+            hain, warna phone par 820px ki table kabhi fit hi nahi hoti. */}
+        <table className="ap-stack" style={{ width: "100%", borderCollapse: "collapse", minWidth: 820 }}>
           <thead style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
             <tr>
               <th style={th}>When</th>
@@ -185,14 +188,14 @@ export function DeleteHistoryPage() {
               const L = look(r.action);
               return (
                 <tr key={r.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                  <td style={{ ...td, whiteSpace: "nowrap", color: "#0f172a", fontWeight: 600 }}>{fmtDT(r.created_at)}</td>
-                  <td style={{ ...td, whiteSpace: "nowrap" }}>
+                  <td data-lbl="When" style={{ ...td, whiteSpace: "nowrap", color: "#0f172a", fontWeight: 600 }}>{fmtDT(r.created_at)}</td>
+                  <td className="an-stk-hdr" style={{ ...td, whiteSpace: "nowrap" }}>
                     <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: 99,
                                    background: L.bg, color: L.c, fontSize: 11.5, fontWeight: 800 }}>{L.t}</span>
                     <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3, fontFamily: "monospace" }}>{r.action}</div>
                   </td>
-                  <td style={{ ...td, whiteSpace: "nowrap", fontWeight: 700 }}>{r.username || "—"}</td>
-                  <td style={td}>{r.details || <span style={{ color: "#94a3b8" }}>—</span>}</td>
+                  <td data-lbl="By" style={{ ...td, whiteSpace: "nowrap", fontWeight: 700 }}>{r.username || "—"}</td>
+                  <td data-lbl="Details" style={td}>{r.details || <span style={{ color: "#94a3b8" }}>—</span>}</td>
                 </tr>
               );
             })}

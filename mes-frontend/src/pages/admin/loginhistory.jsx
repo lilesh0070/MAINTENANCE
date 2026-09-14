@@ -152,7 +152,10 @@ export function LoginHistoryPage() {
             <span style={{ fontSize: 11.5, color: "#94a3b8", fontWeight: 600 }}>· {active.length} active · refreshes every 30s</span>
           </div>
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            {/* `ap-stack` -- phone par har qatar ek chhota card.  Chhe column
+                540px maangte hain aur phone me ~387px hote hain, yaani har
+                qatar ke liye daayein-baayein khiskana padta tha. */}
+            <table className="ap-stack" style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead><tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
                 <th style={{ ...th, width: 44 }}>#</th><th style={th}>User</th><th style={th}>Role</th>
                 <th style={th}>Login</th><th style={th}>Since</th><th style={{ ...th, width: 110 }}>Action</th>
@@ -160,15 +163,15 @@ export function LoginHistoryPage() {
               <tbody>
                 {active.map((r, i) => (
                   <tr key={i} style={{ borderTop: "1px solid #f1f5f9" }}>
-                    <td style={{ ...td, color: "#94a3b8" }}>{i + 1}</td>
-                    <td style={{ ...td, fontWeight: 700, color: "#0f172a" }}>
+                    <td data-lbl="#" style={{ ...td, color: "#94a3b8" }}>{i + 1}</td>
+                    <td className="an-stk-hdr" style={{ ...td, fontWeight: 700, color: "#0f172a" }}>
                       <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#22c55e", marginRight: 8, boxShadow: "0 0 0 3px rgba(34,197,94,.18)" }} />
                       {r.username}
                     </td>
-                    <td style={{ ...td, color: "#64748b" }}>{r.role || "—"}</td>
-                    <td style={{ ...td, whiteSpace: "nowrap" }}>{fmtDT(r.login_at) || "—"}</td>
-                    <td style={{ ...td, color: "#16a34a", fontWeight: 600 }}>{sinceNow(r.login_at) || "—"}</td>
-                    <td style={td}>
+                    <td data-lbl="Role" style={{ ...td, color: "#64748b" }}>{r.role || "—"}</td>
+                    <td data-lbl="Login" style={{ ...td, whiteSpace: "nowrap" }}>{fmtDT(r.login_at) || "—"}</td>
+                    <td data-lbl="Since" style={{ ...td, color: "#16a34a", fontWeight: 600 }}>{sinceNow(r.login_at) || "—"}</td>
+                    <td className="ap-act" style={td}>
                       <button onClick={() => forceLogout(r.user_id, r.username)}
                               style={{ padding: "5px 12px", border: "1px solid #fecaca", borderRadius: 7, background: "#fef2f2", color: "#dc2626", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
                         ⏻ Logout
@@ -229,7 +232,7 @@ export function LoginHistoryPage() {
           {/* Table */}
           <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, overflow: "hidden" }}>
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <table className="ap-stack" style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead><tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
                   <th style={{ ...th, width: 44 }}>#</th><th style={th}>User</th><th style={th}>Role</th>
                   <th style={th}>Login</th><th style={th}>Logout</th><th style={th}>Duration</th>
@@ -237,14 +240,14 @@ export function LoginHistoryPage() {
                 <tbody>
                   {rows.map((r, i) => (
                     <tr key={i} style={{ borderTop: "1px solid #f1f5f9" }}>
-                      <td style={{ ...td, color: "#94a3b8" }}>{i + 1}</td>
-                      <td style={{ ...td, fontWeight: 700, color: "#0f172a" }}>{r.username}</td>
-                      <td style={{ ...td, color: "#64748b" }}>{r.role || "—"}</td>
-                      <td style={{ ...td, color: "#16a34a", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtDT(r.login_at) || "—"}</td>
-                      <td style={{ ...td, color: r.logout_at ? "#b45309" : "#94a3b8", fontWeight: 600, whiteSpace: "nowrap" }}>
+                      <td data-lbl="#" style={{ ...td, color: "#94a3b8" }}>{i + 1}</td>
+                      <td className="an-stk-hdr" style={{ ...td, fontWeight: 700, color: "#0f172a" }}>{r.username}</td>
+                      <td data-lbl="Role" style={{ ...td, color: "#64748b" }}>{r.role || "—"}</td>
+                      <td data-lbl="Login" style={{ ...td, color: "#16a34a", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtDT(r.login_at) || "—"}</td>
+                      <td data-lbl="Logout" style={{ ...td, color: r.logout_at ? "#b45309" : "#94a3b8", fontWeight: 600, whiteSpace: "nowrap" }}>
                         {fmtDT(r.logout_at) || "— (no logout)"}
                       </td>
-                      <td style={{ ...td, color: "#64748b" }}>{dur(r.login_at, r.logout_at) || "—"}</td>
+                      <td data-lbl="Duration" style={{ ...td, color: "#64748b" }}>{dur(r.login_at, r.logout_at) || "—"}</td>
                     </tr>
                   ))}
                   {!loading && !rows.length && <tr><td colSpan={6} style={{ padding: "22px 14px", color: "#94a3b8", textAlign: "center" }}>No login records in this range.</td></tr>}
