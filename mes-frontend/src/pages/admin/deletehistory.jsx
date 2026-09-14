@@ -210,7 +210,7 @@ export function DeleteHistoryPage() {
             Clear old entries
           </div>
           <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.55, marginBottom: 12 }}>
-            This is the audit trail \u2014 once an entry is gone there is no other record
+            This is the audit trail — once an entry is gone there is no other record
             of what was deleted. Only whole date ranges can be cleared, and one line
             always stays behind saying who cleared what.
           </div>
