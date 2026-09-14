@@ -1,5 +1,5 @@
 {
-  "version": "1.4.69",
-  "notes": "Walkie-Talkie chat - reply from the buzz notification; admin can read any conversation",
-  "released_at": "2026-09-14T14:17:07"
+  "version": "1.4.70",
+  "notes": "All chats - admin can delete single messages or the whole conversation",
+  "released_at": "2026-09-14T14:40:51"
 }

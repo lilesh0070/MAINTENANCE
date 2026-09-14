@@ -56,6 +56,7 @@ Endpoints:
   POST   /api/walkie/chat/read                      "yahan tak padh liya"
   GET    /api/walkie/chat/admin?a=&b=|channel=      (admin) kisi ki bhi
   POST   /api/walkie/chat/clear                     (admin) range se saaf
+  POST   /api/walkie/chat/delete                    (admin) chune hue / poori chat
   WS     /api/walkie/ws?token=..&role=rx|tx&kind=web|native
 """
 from __future__ import annotations
@@ -358,6 +359,25 @@ def _save_msg(uid: int, name: str, target: dict, body: str):
             "at": r["at"].isoformat(timespec="seconds"),
             "convo": convo, "from": {"id": uid, "name": name},
             "target": {"type": t, "id": tid}, "body": body}
+
+
+def _convo_naam(convo: str) -> str:
+    """"u:1:4" -> "Administrator <-> maint", "c:2" -> group ka naam.
+    Nishaan me raw key likhne se koi baad me samajh hi nahi paata."""
+    try:
+        p = (convo or "").split(":")
+        with get_conn() as conn:
+            cur = dict_cursor(conn)
+            if p[0] == "c":
+                cur.execute("SELECT name FROM walkie_channels WHERE id = %s", (int(p[1]),))
+                r = cur.fetchone()
+                return f"group {r['name']}" if r else convo
+            cur.execute("SELECT id, username, full_name FROM maintenance_users"
+                        " WHERE id = ANY(%s)", ([int(p[1]), int(p[2])],))
+            naam = {r["id"]: _naam(r) for r in (cur.fetchall() or [])}
+        return f"{naam.get(int(p[1]), p[1])} \u2194 {naam.get(int(p[2]), p[2])}"
+    except Exception:
+        return convo
 
 
 def _clean_body(x) -> str:
@@ -763,6 +783,11 @@ def chat_admin(a: int = 0, b: int = 0, channel: int = 0,
     return {"convo": convo, "messages": _thread_rows(convo, limit, before)}
 
 
+# Ek baar me itne se jyada message nahi.  Page par 200 hi aate hain; ye bas
+# had hai, taaki galti se (ya jaan-boojh kar) hazaron ek saath na chale jayen.
+MAX_AUDIT_PICK_CHAT = 200
+
+
 class ChatClearIn(BaseModel):
     date_from: str = ""
     date_to: str = ""
@@ -809,6 +834,80 @@ def chat_clear(body: ChatClearIn, user=Depends(require_admin)):
                  user.get("id"), user.get("username")))
         conn.commit()
     return {"ok": True, "deleted": kitni}
+
+
+class ChatDeleteIn(BaseModel):
+    ids: List[int] = []      # chune hue message
+    convo: str = ""          # ...ya poori baat-cheet
+
+
+@router.post("/chat/delete")
+def chat_delete(body: ChatDeleteIn, user=Depends(require_admin)):
+    """(admin) Chune hue message hatao, ya poori baat-cheet.
+
+    Dono raaste ek hi jagah, kyunki dono ka nishaan ek jaisa hi banta hai.
+
+    ⚠ NISHAAN ME MESSAGE KA MATN NAHI JAATA -- jaan-boojh kar.
+    Delete History me hatayi gayi qatar ka byora nishaan me likha jaata hai,
+    par wahan wo khud ek AUDIT record tha.  Yahan matn kisi ki niji baat hai:
+    use audit-log me rakh dena "delete" ko bemaani kar deta, aur jo baat
+    sabse zyada sambhal kar hatai jaati hai wahi kahin aur pad jaati.
+    Isliye nishaan me utna hi hai jitna JAWABDEHI ke liye chahiye --
+    kaunsa message (#id), kisne likha tha, kab, aur kis baat-cheet me.
+    """
+    _ensure_tables()
+    ids = sorted({int(i) for i in (body.ids or [])})
+    convo = (body.convo or "").strip()
+    if bool(ids) == bool(convo):
+        raise HTTPException(status_code=400,
+                            detail="Send either ids or convo, not both")
+    if len(ids) > MAX_AUDIT_PICK_CHAT:
+        raise HTTPException(status_code=400,
+                            detail=f"At most {MAX_AUDIT_PICK_CHAT} messages at a time")
+
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        # PEHLE padho -- delete ke baad ye byora kahin se nahi milega.
+        if ids:
+            cur.execute("SELECT id, convo, from_user, from_name, at"
+                        "  FROM walkie_messages WHERE id = ANY(%s)"
+                        " ORDER BY id", (ids,))
+        else:
+            cur.execute("SELECT id, convo, from_user, from_name, at"
+                        "  FROM walkie_messages WHERE convo = %s"
+                        " ORDER BY id", (convo,))
+        rows = cur.fetchall() or []
+        if not rows:
+            return {"ok": True, "deleted": 0, "skipped": len(ids)}
+
+        mile = [r["id"] for r in rows]
+        cur.execute("DELETE FROM walkie_messages WHERE id = ANY(%s)", (mile,))
+        kitni = cur.rowcount or 0
+
+        n = len(rows)
+        if convo:
+            byora = (f"Deleted the whole chat \u2014 {_convo_naam(convo)} ({convo})"
+                     f" \u2014 {n} {'message' if n == 1 else 'messages'}")
+        else:
+            kis = sorted({r["convo"] for r in rows})
+            tukde = [f"#{r['id']} by {r['from_name'] or '-'}"
+                     f" {r['at'].strftime('%Y-%m-%d %H:%M:%S') if r['at'] else '?'}"
+                     for r in rows]
+            byora = (f"Deleted {n} selected {'message' if n == 1 else 'messages'}"
+                     f" in {', '.join(_convo_naam(k) for k in kis)}"
+                     f" \u2014 " + " | ".join(tukde))
+        cur.execute(
+            "INSERT INTO maintenance_audit_log (action, details, user_id, username)"
+            " VALUES (%s,%s,%s,%s)",
+            (CHAT_CLEAR_ACTION, byora, user.get("id"), user.get("username")))
+        conn.commit()
+
+    # Jinke paas wo baat-cheet khuli hai, unke parde se message ab hi hat jaye
+    # -- warna wo page refresh hone tak hatayi hui baat dekhte rehte.
+    for k in sorted({r["convo"] for r in rows}):
+        _hub.del_later(k, [r["id"] for r in rows if r["convo"] == k])
+
+    return {"ok": True, "deleted": kitni, "skipped": len(ids) - len(mile) if ids else 0}
 
 
 class _Conn:
@@ -1010,6 +1109,45 @@ class _Hub:
                 await l.ws.send_text(msg)
             except Exception:
                 pass
+
+    def _convo_ke_log(self, convo: str) -> list:
+        """Is baat-cheet me kaun-kaun hai -- unke khule socket."""
+        try:
+            p = (convo or "").split(":")
+            if p[0] == "c":
+                with get_conn() as conn:
+                    cur = dict_cursor(conn)
+                    cur.execute("SELECT user_id FROM walkie_channel_members"
+                                " WHERE channel_id = %s", (int(p[1]),))
+                    ids = [r["user_id"] for r in (cur.fetchall() or [])]
+            else:
+                ids = [int(p[1]), int(p[2])]
+        except Exception:
+            return []
+        out = []
+        for uid in ids:
+            out += self._rx_of(uid)
+        return out
+
+    async def _del_push(self, convo: str, ids: list):
+        msg = json.dumps({"t": "chat_del", "convo": convo, "ids": ids})
+        for l in self._convo_ke_log(convo):
+            try:
+                await l.ws.send_text(msg)
+            except Exception:
+                pass
+
+    def del_later(self, convo: str, ids: list):
+        """Admin ne message hataye -- jinke paas wo baat-cheet khuli hai unhe
+        abhi bata do.  REST wale thread se aata hai, isliye `push_later`
+        ki tarah event-loop par bhejte hain."""
+        loop = self._loop
+        if loop is None:
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(self._del_push(convo, ids), loop)
+        except Exception:
+            pass
 
     def push_later(self, payload: dict, sender_uid: int, target: dict):
         """REST se aaya message socket par aage badha do.

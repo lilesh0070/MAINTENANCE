@@ -51,10 +51,16 @@ const S = {
            textTransform:"uppercase", letterSpacing:".04em" },
 };
 
-/** Ek message ka gubbara.  Apna message daayein, doosre ka baayein. */
-function Bubble({ m, mera, group }) {
+/** Ek message ka gubbara.  Apna message daayein, doosre ka baayein.
+ *  `palto` diya ho to baayein ek tick ka dabba bhi (sirf admin ke parde me). */
+function Bubble({ m, mera, group, chuna, palto }) {
   return (
-    <div style={{ display:"flex", justifyContent: mera ? "flex-end" : "flex-start", marginBottom:8 }}>
+    <div style={{ display:"flex", alignItems:"flex-start", gap:8,
+                  justifyContent: mera ? "flex-end" : "flex-start", marginBottom:8 }}>
+      {palto && (
+        <input type="checkbox" checked={!!chuna} onChange={() => palto(m.id)}
+               style={{ marginTop:10, flex:"0 0 auto" }} />
+      )}
       <div style={{ maxWidth:"78%", padding:"8px 11px", borderRadius:12,
                     background: mera ? "#1e40af" : "#f1f5f9",
                     color: mera ? "#fff" : "#0f172a",
@@ -70,7 +76,7 @@ function Bubble({ m, mera, group }) {
                       overflowWrap:"anywhere" }}>{m.body}</div>
         <div style={{ fontSize:10, marginTop:3, textAlign:"right",
                       color: mera ? "rgba(255,255,255,.75)" : "#94a3b8" }}>
-          {fmtT(m.at)}
+          {palto ? `#${m.id} \u00b7 ` : ""}{fmtT(m.at)}
         </div>
       </div>
     </div>
@@ -78,7 +84,7 @@ function Bubble({ m, mera, group }) {
 }
 
 /** Sirf padhne wali baat-cheet (admin ke parde me `send` nahi hota). */
-function Thread({ msgs, meId, group, khali }) {
+function Thread({ msgs, meId, group, khali, chune, palto }) {
   const neeche = useRef(null);
   useEffect(() => { neeche.current?.scrollIntoView({ block:"nearest" }); }, [msgs]);
   if (!msgs.length) {
@@ -87,7 +93,8 @@ function Thread({ msgs, meId, group, khali }) {
   return (
     <div style={{ maxHeight:"52vh", overflowY:"auto", padding:"12px 13px" }}>
       {msgs.map((m) => (
-        <Bubble key={m.id} m={m} mera={Number(m.from?.id) === Number(meId)} group={group} />
+        <Bubble key={m.id} m={m} mera={Number(m.from?.id) === Number(meId)} group={group}
+                chuna={chune ? chune.has(m.id) : false} palto={palto} />
       ))}
       <div ref={neeche} />
     </div>
@@ -142,6 +149,13 @@ export function WalkieChatTab({ token, meId }) {
      qatar banane ki zaroorat hi nahi, aur do baar dikhne ka sawaal nahi. */
   useEffect(() => {
     return walkieLink.on((d) => {
+      // Admin ne kuch hataya -- khuli hui baat-cheet se abhi nikal do, warna
+      // page refresh hone tak hatayi hui baat saamne padi rehti hai.
+      if (d?.t === "chat_del") {
+        const gaye = new Set(d.ids || []);
+        if (khula && d.convo === khula.convo) setMsgs((old) => old.filter((m) => !gaye.has(m.id)));
+        return;
+      }
       if (d?.t !== "chat") return;
       if (khula && d.convo === khula.convo) {
         setMsgs((old) => (old.some((m) => m.id === d.id) ? old : [...old, d]));
@@ -246,6 +260,10 @@ export function WalkieAdminChatTab({ token, people, channels }) {
   const [msgs, setMsgs] = useState(null);     // null = abhi kuch poochha hi nahi
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [convo, setConvo] = useState("");
+  const [chune, setChune] = useState(() => new Set());
+  const [dBusy, setDBusy] = useState(false);
+  const [kehna, setKehna] = useState("");
 
   const sab = useMemo(() => [...people].sort((x, y) => x.name.localeCompare(y.name)), [people]);
 
@@ -255,9 +273,46 @@ export function WalkieAdminChatTab({ token, people, channels }) {
       const q = ch ? `channel=${ch}` : `a=${a}&b=${b}`;
       const d = await api.get(`/api/walkie/chat/admin?${q}`, token);
       setMsgs(Array.isArray(d?.messages) ? d.messages : []);
+      setConvo(d?.convo || "");
+      setChune(new Set());
+      setKehna("");
     } catch (e) {
       setErr(String(e?.message || e));
     } finally { setBusy(false); }
+  };
+
+  const palto = (id) => setChune((purana) => {
+    const naya = new Set(purana);
+    if (naya.has(id)) naya.delete(id); else naya.add(id);
+    return naya;
+  });
+
+  /* Mitana wapas nahi aata, isliye dono jagah ek baar poochh lete hain --
+     aur ginti saath me, taaki "kitna ja raha hai" saaf rahe. */
+  const mitao = async (poori) => {
+    const ids = [...chune];
+    if (!poori && !ids.length) return;
+    const kitne = poori ? (msgs || []).length : ids.length;
+    if (!kitne) return;
+    const ok = window.confirm(poori
+      ? `Delete this entire conversation \u2014 all ${kitne} ${kitne === 1 ? "message" : "messages"}?\n\n` +
+        "This cannot be undone. One line will stay in Delete History saying who deleted what."
+      : `Delete ${kitne} selected ${kitne === 1 ? "message" : "messages"}?\n\n` +
+        "This cannot be undone. One line will stay in Delete History saying who deleted what.");
+    if (!ok) return;
+    setDBusy(true); setKehna("");
+    try {
+      const r = await api.post("/api/walkie/chat/delete",
+        poori ? { convo } : { ids }, token);
+      setKehna(`${r?.deleted ?? 0} deleted.`);
+      setChune(new Set());
+      // dobara padh lo -- list wahi dikhe jo ab sach me bachi hai
+      const q = ch ? `channel=${ch}` : `a=${a}&b=${b}`;
+      const d = await api.get(`/api/walkie/chat/admin?${q}`, token);
+      setMsgs(Array.isArray(d?.messages) ? d.messages : []);
+    } catch (e) {
+      setKehna(String(e?.message || e).slice(0, 140));
+    } finally { setDBusy(false); }
   };
 
   const taiyaar = ch ? true : (a && b && a !== b);
@@ -302,18 +357,57 @@ export function WalkieAdminChatTab({ token, people, channels }) {
       {err && <div style={{ ...S.card, padding:"10px 13px", fontSize:12.5, color:"#b91c1c",
                             fontWeight:700, borderColor:"#fecaca" }}>{err}</div>}
 
+      {/* ── hatane ki patti ─────────────────────────────
+          Do alag kaam, isliye do alag button -- "chune hue" wala tabhi
+          jagta hai jab kuch tick ho, aur "poori chat" hamesha alag rehta
+          hai taaki ek galat tap me poori baat-cheet na chali jaye. */}
+      {msgs !== null && !!msgs.length && (
+        <div style={{ ...S.card, padding:"9px 12px", display:"flex", gap:10,
+                      alignItems:"center", flexWrap:"wrap",
+                      borderColor:"#fecaca", background:"#fffbfb" }}>
+          <b style={{ fontSize:12.5, color: chune.size ? "#b91c1c" : "#94a3b8" }}>
+            {chune.size} selected
+          </b>
+          <button onClick={() => mitao(false)} disabled={!chune.size || dBusy}
+                  style={{ padding:"7px 13px", borderRadius:8, border:"none",
+                           background: chune.size && !dBusy ? "#dc2626" : "#e2e8f0",
+                           color: chune.size && !dBusy ? "#fff" : "#94a3b8",
+                           fontWeight:800, fontSize:12.5,
+                           cursor: chune.size && !dBusy ? "pointer" : "default" }}>
+            🗑 Delete selected
+          </button>
+          {!!chune.size && (
+            <button onClick={() => setChune(new Set())}
+                    style={{ padding:"7px 11px", borderRadius:8, border:"1px solid #cbd5e1",
+                             background:"#fff", color:"#475569", fontWeight:700,
+                             fontSize:12.5, cursor:"pointer" }}>Clear</button>
+          )}
+          <button onClick={() => mitao(true)} disabled={dBusy}
+                  style={{ marginLeft:"auto", padding:"7px 13px", borderRadius:8,
+                           border:"1px solid #dc2626", background:"#fff", color:"#b91c1c",
+                           fontWeight:800, fontSize:12.5,
+                           cursor: dBusy ? "default" : "pointer" }}>
+            Delete whole chat
+          </button>
+        </div>
+      )}
+      {kehna && (
+        <div style={{ fontSize:12.5, fontWeight:700, color:"#b91c1c" }}>{kehna}</div>
+      )}
+
       {msgs !== null && (
         <div style={{ ...S.card, overflow:"hidden" }}>
           {/* Admin doosron ki baat padh raha hai -- yahan "mera/uska" ka koi
               matlab nahi, isliye har message par naam dikhate hain (meId = 0). */}
-          <Thread msgs={msgs} meId={0} group
+          <Thread msgs={msgs} meId={0} group chune={chune} palto={palto}
                   khali="Nothing has been said between them yet." />
         </div>
       )}
 
       <div style={{ fontSize:11.5, color:"#94a3b8", lineHeight:1.6 }}>
         Only an administrator can open this. Messages are kept until an administrator
-        clears them, and clearing leaves one line in Delete History saying who cleared what.
+        deletes them. Every deletion leaves one line in Delete History saying who did it,
+        which messages went and who had written them — the text itself is not kept there.
       </div>
     </div>
   );
