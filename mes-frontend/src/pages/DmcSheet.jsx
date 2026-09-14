@@ -193,6 +193,13 @@ export function DmcSheet({ hdr = {}, groups = [], footer = null,
       {/* Button chhapne wale node ke BAHAR hai -- andar hota to print
           me uski khaali jagah bhi chali jaati. */}
       {printable && <SheetPrintBtn boxRef={boxRef} naam={hdr.title || "Machine DMC"} />}
+    {/* ⚠ Ye dabba `boxRef` ke BAHAR hai -- jaan-boojh kar.  Phone par ise
+        `overflow-x: auto` milta hai taaki poora sheet khiskaya ja sake, par
+        wahi niyam `boxRef` par lagta to PRINT/PDF bigad sakta tha
+        (html2canvas khiske hue dabbe ka sirf dikhta hissa uthata hai).
+        Chhapne wala node jyon ka tyon hai.
+        Website par is div par koi niyam hai hi nahi. */}
+    <div className="dmc-scroll">
     <div ref={boxRef} style={{ background: "#fff", boxShadow: "0 4px 16px rgba(0,0,0,.12)", padding: 10, color: "#111827" }}>
       {/* title band */}
       <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}><tbody><tr>
@@ -522,6 +529,7 @@ export function DmcSheet({ hdr = {}, groups = [], footer = null,
           </div>
         </>
       )}
+    </div>
     </div>
     </>
   );

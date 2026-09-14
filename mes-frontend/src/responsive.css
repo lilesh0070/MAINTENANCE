@@ -2247,3 +2247,74 @@ body.in-app-tv  .admin-body {
   padding-left: 24px !important;
   padding-right: 24px !important;
 }
+
+
+/* ═══════════════════════════════════════════════════════════════
+ * Daily DMC Fill — PHONE (sirf `in-app`, yaani APK)
+ * ═══════════════════════════════════════════════════════════════
+ *
+ * 1) UPAR KA PICKER.  Paanch khaane `flex-wrap` par the, aur har `select`
+ *    par apna `minWidth` (190/240/160) tha — 412px par har khaana apni ALAG
+ *    line le leta tha, yaani pehle hi parde par sirf dropdown hi dikhte the.
+ *    Ab DO KHAANON KI GRID: ZONE|LINE, phir MACHINE NO|MACHINE NAME, phir
+ *    DATE.  `minWidth` ko yahin 0 karna padta hai — wo inline hai, aur
+ *    grid ka khaana uske aage nahi jhukta.
+ *
+ * 2) CHECK SHEET.  Naapa (412px par): sheet ki tables 477px ki hain aur
+ *    daayein se KAT rahi thin (`bodyOverflow: 0`, yaani wo hissa pahunch se
+ *    hi bahar tha — MACHINE_NO wala khaana dikhta hi nahi tha).
+ *
+ *    ⚠ SHEET KO NICHODA NAHI HAI.  Wo chhapne wala format hai; usme naap
+ *    badalna yaani format badalna, aur wahi mana hai.  Isliye sheet apni
+ *    ASLI CHAUDAI par rehti hai aur POORA sheet ek saath daayein-baayein
+ *    khisakta hai.
+ *
+ *    Ye niyam `.dmc-scroll` par hai, chhapne wale node (`boxRef`) par NAHI —
+ *    khiske hue dabbe par html2canvas sirf dikhta hissa uthata, aur PDF
+ *    aadha aata.
+ */
+body.in-app .ddf-body { padding: 12px !important; }
+
+body.in-app .ddf-pick {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px !important;
+  align-items: end;
+}
+body.in-app .ddf-pick > div { min-width: 0; }
+body.in-app .ddf-pick select,
+body.in-app .ddf-pick input {
+  width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box;
+}
+/* Ginti + Save poori chaudai par.  Aadhe khaane me button aur "0/7 due
+   today" ek doosre ke upar chadh jaate hain. */
+body.in-app .ddf-act {
+  grid-column: 1 / -1;
+  margin-left: 0 !important;
+  flex-wrap: wrap;
+  gap: 10px !important;
+}
+body.in-app .ddf-act button { flex: 1 1 auto; }
+
+/* Sheet -- format waisa ka waisa, bas poora pahunch me. */
+body.in-app .dmc-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+/* ⚠ Chhapne wala node (`boxRef`) KHUD na khiske.
+   Is file me upar ek aam niyam pehle se hai --
+       body.in-app div:has(> table) { overflow-x: auto !important }
+   -- aur sheet ka node seedha table rakhta hai, isliye wo bhi scroller ban
+   jaata tha.  Do nateeje:
+     • do scroller ek ke andar ek — ungli kabhi andar wale ko khiskati,
+       kabhi bahar wale ko
+     • html2canvas khiske hue dabbe ka sirf DIKHTA hissa uthata hai, yaani
+       PDF aadha aa sakta tha
+   Khiskane ka kaam ab sirf `.dmc-scroll` karta hai. */
+body.in-app .dmc-scroll > div {
+  min-width: 520px;
+  overflow: visible !important;
+  overflow-x: visible !important;
+}

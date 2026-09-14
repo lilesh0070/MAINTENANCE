@@ -264,7 +264,12 @@ export default function DailyDMCFill() {
             style={{ marginBottom: 14, padding: "8px 16px", borderRadius: 8, border: "1px solid #cbd5e1",
                      background: "#fff", cursor: "pointer", fontWeight: 800, fontSize: 13, color: "#334155" }}>← Machine DMC</button>
           {/* picker */}
-          <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: 16, marginBottom: 14,
+          {/* `ddf-pick` -- phone par ye do khaanon ki grid ban jaati hai
+              (ZONE|LINE, phir MACHINE NO|MACHINE NAME).  Niyam
+              `responsive.css` me `body.in-app` ke andar hai, isliye
+              website par kuch nahi badalta. */}
+          <div className="ddf-pick"
+               style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: 16, marginBottom: 14,
                         display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
             <div><div style={lab}>ZONE</div>
               <select style={sel} value={zone} onChange={(e) => onZone(e.target.value)}>
@@ -285,7 +290,7 @@ export default function DailyDMCFill() {
             <div><div style={lab}>DATE</div>
               <input type="date" style={{ ...sel, minWidth: 160 }} value={fillDate} onChange={(e) => setFillDate(e.target.value)} /></div>
             {mno && (
-              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 14 }}>
+              <div className="ddf-act" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 14 }}>
                 {dayLocked ? (
                   dayStatus === "VERIFIED" ? (
                     <span style={{ fontSize: 13, fontWeight: 800, color: "#16a34a" }}>✅ Verified by supervisor — submitted</span>
