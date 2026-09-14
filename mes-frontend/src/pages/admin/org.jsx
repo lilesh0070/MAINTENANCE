@@ -205,7 +205,11 @@ export function UsersPage({ toast, readOnly = false }) {
              raasta hi nahi tha.  Ab table apni chaudai le sakti hai aur
              card ke andar hi daayein-baayein khisakti hai. */
           <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
-          <table style={{ width:"100%", minWidth:640, borderCollapse:"collapse", fontSize:13 }}>
+          {/* `ap-users` = phone par har qatar ek chhota card ban jaati hai
+              (responsive.css dekho).  Chhe column 640px maangte hain aur
+              phone ke card me ~260px hi hote hain -- sirf daayein-baayein
+              khiskana kaafi nahi tha. */}
+          <table className="ap-users" style={{ width:"100%", minWidth:640, borderCollapse:"collapse", fontSize:13 }}>
             <thead>
               <tr>{["ID","Username","Role","Password","Last Login","Actions"].map(h=>(
                 <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:10, fontWeight:700, letterSpacing:".08em", textTransform:"uppercase", color:"#64748b", borderBottom:"2px solid #e2e8f0" }}>{h}</th>
@@ -216,9 +220,9 @@ export function UsersPage({ toast, readOnly = false }) {
                 const rp = ROLE_PILL[u.role] || {};
                 return (
                 <tr key={u.id} style={{ borderBottom:"1px solid #f1f5f9" }}>
-                  <td style={{ padding:"12px 14px", fontFamily:"monospace", color:"#64748b" }}>{u.id}</td>
-                  <td style={{ padding:"12px 14px", fontWeight:600, color:"#0f172a" }}>{u.username}</td>
-                  <td style={{ padding:"12px 14px" }}>
+                  <td data-lbl="ID" style={{ padding:"12px 14px", fontFamily:"monospace", color:"#64748b" }}>{u.id}</td>
+                  <td className="an-stk-hdr" style={{ padding:"12px 14px", fontWeight:600, color:"#0f172a" }}>{u.username}</td>
+                  <td data-lbl="Role" style={{ padding:"12px 14px" }}>
                     {u.username==="admin"
                       ? <span style={{ padding:"3px 9px", borderRadius:99, fontSize:10, fontWeight:700, background:rp.bg||"#f1f5f9", color:rp.fg||"#475569", textTransform:"uppercase", letterSpacing:".05em" }}>admin</span>
                       : (
@@ -230,7 +234,7 @@ export function UsersPage({ toast, readOnly = false }) {
                       )
                     }
                   </td>
-                  <td style={{ padding:"12px 14px" }}>
+                  <td data-lbl="Password" style={{ padding:"12px 14px" }}>
                     {u.password_plain ? (
                       <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                         <span style={{ fontFamily:"monospace", fontSize:13, color:"#0f172a",
@@ -246,9 +250,9 @@ export function UsersPage({ toast, readOnly = false }) {
                       <span style={{ color:"#cbd5e1", fontStyle:"italic", fontSize:12 }}>Set via Reset PW</span>
                     )}
                   </td>
-                  <td style={{ padding:"12px 14px", fontFamily:"monospace", fontSize:11, color:"#64748b" }}>{u.last_login?new Date(u.last_login).toLocaleString("en-IN"):"Never"}</td>
+                  <td data-lbl="Last Login" style={{ padding:"12px 14px", fontFamily:"monospace", fontSize:11, color:"#64748b" }}>{u.last_login?new Date(u.last_login).toLocaleString("en-IN"):"Never"}</td>
                   <td style={{ padding:"12px 14px" }}>
-                    <div style={{ display:"flex", gap:8 }}>
+                    <div className="ap-act" style={{ display:"flex", gap:8 }}>
                       <Btn size="sm" onClick={()=>resetPassword(u)}>Reset PW</Btn>
                       {u.username!=="admin" && <Btn size="sm" onClick={()=>openPerms(u)}>Permissions</Btn>}
                       {u.username!=="admin" && <Btn size="sm" variant="danger" onClick={()=>deleteUser(u)}>Delete</Btn>}
@@ -349,7 +353,7 @@ export function UsersPage({ toast, readOnly = false }) {
                 {flatItems(g.items).map(it => {
                   const cur = permMap[it.key] || "none";
                   return (
-                    <div key={it.key} style={{
+                    <div key={it.key} className="perm-row" style={{
                       display:"grid",
                       gridTemplateColumns:"1fr auto auto auto",
                       gap:8, alignItems:"center",
@@ -369,6 +373,10 @@ export function UsersPage({ toast, readOnly = false }) {
                           {it.key}
                         </div>
                       </div>
+                      {/* Teeno button ek dabbe me -- phone par qatar ek hi
+                          column ki ho jaati hai, aur bina iske teeno alag-alag
+                          line par chale jaate (ek permission = chaar line). */}
+                      <div className="perm-btns" style={{ display:"contents" }}>
                       {PERM_LEVELS.map(p => {
                         const sel = cur === p.key;
                         return (
@@ -386,6 +394,7 @@ export function UsersPage({ toast, readOnly = false }) {
                           </button>
                         );
                       })}
+                      </div>
                     </div>
                   );
                 })}

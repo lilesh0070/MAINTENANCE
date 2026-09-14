@@ -669,40 +669,93 @@ body.in-app .an-card .an-lbl { font-size: 9px !important; margin-bottom: 2px !im
 
 /* har row = ek card.  `!important` isliye ki upar `body.in-app table` ko
    `display: table` par majboor karta hai (wo 21 page ka aam niyam hai). */
-body.in-app .an-stack        { display: block !important; width: 100% !important;
+body.in-app .an-stack        ,
+body.in-app .ap-users        { display: block !important; width: 100% !important;
                                min-width: 0 !important; font-size: 12px !important; }
-body.in-app .an-stack thead  { display: none !important; }
-body.in-app .an-stack tbody  { display: block !important; }
+body.in-app .an-stack thead,
+body.in-app .ap-users thead  { display: none !important; }
+body.in-app .an-stack tbody,
+body.in-app .ap-users tbody  { display: block !important; }
 /* `flex` (block nahi) isliye ki naam wala khaana `order: -1` se UPAR aa jaye --
    Call History me wo teesre number par hai (checkbox, ID, phir Department). */
-body.in-app .an-stack tr     { display: flex !important; flex-direction: column;
+body.in-app .an-stack tr,
+body.in-app .ap-users tr     { display: flex !important; flex-direction: column;
                                background: #fff; border: 1px solid #e2e8f0;
                                border-radius: 10px; padding: 9px 11px; margin-bottom: 8px; }
-body.in-app .an-stack td     { display: block !important; border: 0 !important;
+body.in-app .an-stack td,
+body.in-app .ap-users td     { display: block !important; border: 0 !important;
                                padding: 3px 0 !important; white-space: normal !important;
                                overflow-wrap: anywhere;
                                /* table me kuch khaane beech me the (Response/Total).
                                   Stack me sab baayein se shuru hone chahiye, warna
                                   ek-do line akeli beech me latakti dikhti hai. */
                                text-align: left !important; }
-body.in-app .an-stack td:empty { display: none !important; }
+body.in-app .an-stack td:empty,
+body.in-app .ap-users td:empty { display: none !important; }
 /* row ka naam -- uspar label nahi, bas bada text, aur hamesha sabse upar */
-body.in-app .an-stack .an-stk-hdr { order: -1; font-size: 13px !important; font-weight: 700 !important;
+body.in-app .an-stack .an-stk-hdr,
+body.in-app .ap-users .an-stk-hdr { order: -1; font-size: 13px !important; font-weight: 700 !important;
                                     color: #0f172a !important; padding-bottom: 5px !important; }
-body.in-app .an-stack td[data-lbl]::before {
+body.in-app .an-stack td[data-lbl]::before,
+body.in-app .ap-users td[data-lbl]::before {
   content: attr(data-lbl); display: block;
   font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
   color: #94a3b8; margin-bottom: 1px;
 }
 /* poll-error wala chip `nowrap` + 230px par hai -- stack me use poori line
    mil jaati hai, to use wahin tod dete hain warna wo akela scroll banata hai. */
-body.in-app .an-stack td span[title] { max-width: 100% !important; white-space: normal !important; }
+body.in-app .an-stack td span[title],
+body.in-app .ap-users td span[title] { max-width: 100% !important; white-space: normal !important; }
 /* Stack me bharne wale khaane (Assign wali do table).  Table me inpar
    `width: 100%` likha hai -- wo table ke tang column ka 100% tha, yaani
    select sirf ~36px ka bachta tha aur chuni hui "D" teer ke peechhe chhup
    jaati thi.  Stack me poori chaudai milti hai, to yahan naap khud dete hain. */
-body.in-app .an-stack td select.an-in { width: 140px !important; }
-body.in-app .an-stack td input.an-in  { width: 100% !important; max-width: 230px; }
+body.in-app .an-stack td select.an-in,
+body.in-app .ap-users td select.an-in { width: 140px !important; }
+body.in-app .an-stack td input.an-in,
+body.in-app .ap-users td input.an-in  { width: 100% !important; max-width: 230px; }
+
+/* ── Maintenance Panel — phone (SIRF `in-app`) ──────────────────
+ *
+ * 1) TAB KI PATTI BAHAR NIKAL RAHI THI.  `.admin-tabs` par
+ *    `padding: 0 40px 0 88px` hai -- wo 88px baayein slide-nav ke logo ke
+ *    liye tha.  412px ki screen par 128px sirf padding me chala jaata tha,
+ *    tab 284px me thuns jaate the aur aakhri wala (kooda-daani) kat jaata
+ *    tha.  Naapa: aakhri button ka `right` 504px, screen 412px ki.
+ *    Patti khud `overflow-x: auto` par hai, isliye sirf padding kam karna
+ *    kaafi hai.
+ *
+ * 2) USERS KI TABLE ka kram wahi jo ANDON me hai -- har qatar ek chhota
+ *    card (upar `.ap-users` ko `an-stack` wale niyam me jod diya gaya hai).
+ *    Chhe column (ID/Username/Role/Password/Last Login/Actions) 640px
+ *    maangte hain aur card me sirf ~260px hote hain.
+ *
+ * 3) PERMISSIONS ke parde ki har qatar `1fr auto auto auto` ki grid hai
+ *    (naam + teen button).  Naapa: qatar 332px ki jagah 356px maangti thi.
+ *    Phone par naam apni line par, teen button uske neeche.
+ */
+body.in-app .admin-tabs { padding-left: 12px !important; padding-right: 12px !important; }
+/* Tab ke apne kinare bhi kam -- 88px padding hatane ke baad bhi aakhri tab
+   12px bahar reh jaata tha (naapa: right 424 vs screen 412).  Teen tab par
+   6px x 2 x 3 = 36px bachte hain, yaani ab poore aa jaate hain. */
+body.in-app .admin-tab { padding-left: 12px !important; padding-right: 12px !important; }
+
+body.in-app .ap-users .ap-act { display: flex; flex-wrap: wrap; gap: 8px; }
+
+body.in-app .perm-row {
+  grid-template-columns: 1fr !important;
+  row-gap: 6px !important;
+}
+/* `!important` ZAROORI hai: JSX me is dabbe par inline `display: contents`
+   likha hai (desktop par teeno button grid ke apne khaane me baithte hain),
+   aur inline style saadi CSS ko hamesha haraa deta hai.  Bina iske phone par
+   teeno button poori chaudai le kar alag-alag line par chale jaate the --
+   yaani ek permission = CHAAR line, aur 72 permission ki list na-khatam
+   hone wali ho jaati thi.  (Device par dekh kar pakda.) */
+body.in-app .perm-row .perm-btns {
+  display: flex !important; gap: 6px; flex-wrap: wrap;
+}
+body.in-app .perm-row .perm-btns > button { flex: 1 1 auto; min-width: 0 !important; }
 
 /* Sub-PLC wala checkbox: likhawat phone par teen line leti hai, to tick ko
    uske BEECH me rakhne ke bajaye UPAR rakhte hain -- warna wo doosri line ke

@@ -21,7 +21,8 @@
  *
  * Field names below mirror the DeviationCreate pydantic model 1:1.
  */
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { onlyProdZones } from "../constants/zones";
 
 const API = "";
 
@@ -44,10 +45,17 @@ const SECTIONS = [
   {
     title: "Location",
     fields: [
-      ["line_name",    "Line",         "text"],
-      ["zone_name",    "Zone",         "text"],
-      ["machine_no",   "Machine No.",  "text"],
-      ["machine_name", "Machine Name", "text"],
+      /* Kram aur kism dono user ke kehne par badle:
+         pehle Zone -> Line -> Machine No., phir Machine Name.
+         Teeno MACHINE MASTER (`maintenance_machines`, `/api/machines/`) se
+         aate hain -- jaise baaki poori app me aate hain -- taaki haath se
+         likhne par naam/number aapas me na bigdein.
+         Machine Name khud bhar jaata hai (master me machine no. ke saath
+         1:1 juda hai), isliye wo likha nahi jaata. */
+      ["zone_name",    "Zone",         "zone"],
+      ["line_name",    "Line",         "line"],
+      ["machine_no",   "Machine No.",  "mno"],
+      ["machine_name", "Machine Name", "mname"],
       ["process_name", "Process",      "text"],
       ["process_no",   "Process No.",  "text"],
       ["category",     "Category",     "text"],
@@ -94,6 +102,54 @@ export default function DeviationForm({ deviation = {}, token, mode = "raise", o
   const [err, setErr] = useState("");
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  /* ── Machine master ─────────────────────────────────────────────
+     Wahi ek jagah jahan se poori app ke zone/line/machine aate hain.
+     View mode me lane ki zaroorat nahi -- wahan sab saada text hai. */
+  const [master, setMaster] = useState([]);
+  useEffect(() => {
+    if (readOnly || !token) return;
+    let ruk = false;
+    fetch("/api/machines/", { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((m) => { if (!ruk) setMaster(Array.isArray(m) ? m : []); })
+      .catch(() => {});
+    return () => { ruk = true; };
+  }, [readOnly, token]);
+
+  const zoneOpts = useMemo(
+    () => onlyProdZones([...new Set(master.map((m) => m.zone_name).filter(Boolean))]),
+    [master]);
+  const lineOpts = useMemo(
+    () => (form.zone_name
+      ? [...new Set(master.filter((m) => m.zone_name === form.zone_name)
+                          .map((m) => m.line_name).filter(Boolean))].sort()
+      : []), [master, form.zone_name]);
+  const mnoOpts = useMemo(
+    () => (form.zone_name && form.line_name
+      ? [...new Set(master.filter((m) => m.zone_name === form.zone_name
+                                      && m.line_name === form.line_name)
+                          .map((m) => m.machine_no).filter(Boolean))].sort()
+      : []), [master, form.zone_name, form.line_name]);
+
+  /* Zone badla to line/machine dono bekaar ho gaye -- warna purani line
+     nayi zone ke saath chipki reh jaati hai aur galat jodi ban jaati. */
+  const setZone = (v) => setForm((f) => ({ ...f, zone_name: v, line_name: "",
+                                           machine_no: "", machine_name: "" }));
+  const setLine = (v) => setForm((f) => ({ ...f, line_name: v,
+                                           machine_no: "", machine_name: "" }));
+  /* Machine no. chunte hi naam KHUD bhar jaata hai (master me 1:1 hai). */
+  const setMno = (v) => {
+    const hit = master.find((m) => m.zone_name === form.zone_name
+                                && m.line_name === form.line_name
+                                && String(m.machine_no) === String(v));
+    setForm((f) => ({ ...f, machine_no: v, machine_name: hit?.machine_name || "" }));
+  };
+
+  /* Purani deviation me jo value padi ho wo master me na mile to bhi list me
+     dikhni chahiye -- warna kholte hi khaali dikhega aur lagega data ud gaya. */
+  const withCur = (opts, cur) =>
+    (cur && !opts.includes(cur)) ? [cur, ...opts] : opts;
 
   const submit = async () => {
     setErr("");
@@ -170,7 +226,36 @@ export default function DeviationForm({ deviation = {}, token, mode = "raise", o
                 {sec.fields.map(([k, label, type]) => (
                   <div key={k} style={type === "area" ? { gridColumn: "1 / -1" } : null}>
                     <label style={lbl}>{label}</label>
-                    {type === "area" ? (
+                    {/* View mode me sab saada text -- neeche wale select sirf
+                        naya banate/badalte waqt aate hain. */}
+                    {!readOnly && (type === "zone" || type === "line" || type === "mno") ? (
+                      <select
+                        value={form[k] ?? ""}
+                        onChange={(e) => (type === "zone" ? setZone(e.target.value)
+                                        : type === "line" ? setLine(e.target.value)
+                                        : setMno(e.target.value))}
+                        disabled={type === "line" ? !form.zone_name
+                                : type === "mno" ? !form.line_name : false}
+                        style={{ ...inp,
+                                 background: (type === "line" && !form.zone_name)
+                                          || (type === "mno" && !form.line_name)
+                                   ? "#f1f5f9" : "#fff" }}>
+                        <option value="">— select —</option>
+                        {(type === "zone" ? withCur(zoneOpts, form.zone_name)
+                        : type === "line" ? withCur(lineOpts, form.line_name)
+                        : withCur(mnoOpts, form.machine_no)
+                        ).map((o) => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    ) : type === "mname" ? (
+                      /* Machine no. ke saath KHUD bhar jaata hai -- haath se
+                         likhne ki jagah nahi, warna naam aur number aapas me
+                         alag ho jaate hain. */
+                      <input
+                        value={form[k] ?? ""} readOnly disabled
+                        placeholder={readOnly ? "" : "Machine No. chunte hi aa jayega"}
+                        style={{ ...inp, background: "#f1f5f9", color: "#334155" }}
+                      />
+                    ) : type === "area" ? (
                       <textarea
                         value={form[k] ?? ""} onChange={set(k)} disabled={readOnly}
                         rows={2} style={{ ...inp, resize: "vertical",

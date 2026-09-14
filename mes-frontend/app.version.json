@@ -1,5 +1,5 @@
 {
-  "version": "1.4.63",
-  "notes": "Users and Access: the table no longer runs off the screen, and there is a search box to find a user by username, role or ID",
-  "released_at": "2026-09-14T10:44:40"
+  "version": "1.4.64",
+  "notes": "Deviation form now picks Zone, Line and Machine No. from the machine master and fills in the Machine Name; the Maintenance Panel fits properly on a phone",
+  "released_at": "2026-09-14T11:35:58"
 }
