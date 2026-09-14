@@ -95,6 +95,10 @@ export default function WalkieTalkie() {
   const [pairs, setPairs]     = useState({});     // { "4": [17, 18], ... }
   const [pairWho, setPairWho] = useState("");     // kiski list khuli hai
   const [pairSel, setPairSel] = useState(() => new Set());
+
+  /* "Kaun walkie use karega" -- ab Save wala.  `chaluSel` sirf parde ki haalat
+     hai; server tab tak nahi badalta jab tak Save na daba. */
+  const [chaluSel, setChaluSel] = useState(() => new Set());
   const [online, setOnline] = useState([]);
   const [conn, setConn] = useState("connecting");      // connecting | on | off | denied
   const [pick, setPick] = useState(null);              // {type:"user"|"channel", id, name}
@@ -341,11 +345,37 @@ export default function WalkieTalkie() {
     finally { setBusy(false); }
   };
 
-  const toggleMember = async (m) => {
+  /* Server se nayi list aate hi parde ki haalat usi par set kar do.
+     (Save ke baad bhi yahi chalta hai, isliye "kya badla" apne aap mit
+     jaata hai aur do jagah do alag jawab nahi rehte.) */
+  useEffect(() => {
+    setChaluSel(new Set((members || []).filter((m) => m.enabled).map((m) => m.id)));
+  }, [members]);
+
+  const chaluPalto = (id) => setChaluSel((p) => {
+    const n = new Set(p);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  });
+
+  /* Kya badla -- sirf wahi server par bhejte hain.  Har naam par ek PUT
+     bhejna bekaar hai aur uske log bhi bhar jaate hain. */
+  const chaluBadle = (members || []).filter((m) => !!m.enabled !== chaluSel.has(m.id));
+
+  const chaluSambhalo = async () => {
+    if (!chaluBadle.length) return;
+    const hate = chaluBadle.filter((m) => m.enabled).map((m) => m.name);
+    if (hate.length && !window.confirm(
+      `${hate.join(", ")} \u2014 ${hate.length === 1 ? "this person" : "these people"} ` +
+      "will no longer be able to use the walkie-talkie. Continue?")) return;
     setBusy(true);
     try {
-      await api.send("PUT", `/api/walkie/members/${m.id}`, { enabled: !m.enabled }, token);
+      for (const m of chaluBadle) {
+        await api.send("PUT", `/api/walkie/members/${m.id}`,
+                       { enabled: chaluSel.has(m.id) }, token);
+      }
       loadSetup(); loadRoster();
+      setKehna("Saved.");
     } catch (e) { setKehna(e?.message || "Could not save"); }
     finally { setBusy(false); }
   };
@@ -688,10 +718,11 @@ export default function WalkieTalkie() {
                              onChange={(e) => setHSel(e.target.checked
                                ? new Set(hRows.map(histKey)) : new Set())} />
                     </th>
-                    <th>When</th><th>Who</th><th>What</th><th>To</th><th>Answered</th><th>Length</th>
+                    <th>When</th><th>Who</th><th>Buzzer</th><th>To</th>
+                    <th>Chat</th><th>Answered</th><th>Length</th>
                   </tr></thead>
                   <tbody>
-                    {!hBusy && !hRows.length && <tr><td colSpan={7} className="wk-empty">Nothing for this filter.</td></tr>}
+                    {!hBusy && !hRows.length && <tr><td colSpan={8} className="wk-empty">Nothing for this filter.</td></tr>}
                     {hRows.map((e) => {
                       const k = histKey(e);
                       const chat = e.src === "chat";
@@ -701,29 +732,34 @@ export default function WalkieTalkie() {
                                    onChange={() => histChuno(k)} /></td>
                         <td style={{ whiteSpace:"nowrap" }}>{fmtWhen(e.at)}</td>
                         <td style={{ fontWeight:700 }}>{e.from_name || "—"}</td>
+                        {/* Buzzer -- sirf bulawa/aawaz.  Chat ka apna khaana
+                            aage hai, isliye yahan use "—" hi rehne dete hain. */}
                         <td style={{ whiteSpace:"nowrap" }}>
-                          {chat ? "💬 Chat" : e.kind === "buzz" ? "📳 Buzz" : "🎙 Voice"}
+                          {chat
+                            ? <span style={{ color:"#94a3b8" }}>—</span>
+                            : e.kind === "buzz" ? "📳 Buzz" : "🎙 Voice"}
                         </td>
                         <td>{e.target_name || "—"}{e.target_type === "channel" ? " (channel)" : ""}</td>
-                        {/* Chat par "Answered" aur "Length" dono bemtlab hain --
-                            un do khaanon me seedha message dikha dete hain,
-                            taaki "us waqt kya baat hui thi" wahin dikh jaye. */}
-                        {chat ? (
-                          <td colSpan={2} style={{ color:"#334155", overflowWrap:"anywhere" }}>
-                            {e.body || <span style={{ color:"#94a3b8" }}>—</span>}
-                          </td>
-                        ) : (<>
-                          <td style={{ whiteSpace:"nowrap" }}>
-                            {e.kind !== "buzz"
-                              ? <span style={{ color:"#94a3b8" }}>—</span>
-                              : e.acked_at
-                                ? <span style={{ color:"#16a34a", fontWeight:700 }}>
-                                    ✓ {e.acked_name || "—"} · {fmtWhen(e.acked_at)}
-                                  </span>
-                                : <span style={{ color:"#b45309", fontWeight:700 }}>No answer</span>}
-                          </td>
-                          <td>{e.secs == null ? "—" : `${e.secs}s`}</td>
-                        </>)}
+                        {/* Chat -- "hui ya nahi" aur "kya likha", dono ek jagah. */}
+                        <td style={{ overflowWrap:"anywhere", minWidth:160 }}>
+                          {chat
+                            ? <span style={{ color:"#334155" }}>
+                                💬 {e.body || <i style={{ color:"#94a3b8" }}>(empty)</i>}
+                              </span>
+                            : <span style={{ color:"#94a3b8" }}>—</span>}
+                        </td>
+                        {/* "Answered" sirf buzz ka matlab rakhta hai, aur
+                            "Length" sirf aawaz ka -- baaki par "—". */}
+                        <td style={{ whiteSpace:"nowrap" }}>
+                          {chat || e.kind !== "buzz"
+                            ? <span style={{ color:"#94a3b8" }}>—</span>
+                            : e.acked_at
+                              ? <span style={{ color:"#16a34a", fontWeight:700 }}>
+                                  ✓ {e.acked_name || "—"} · {fmtWhen(e.acked_at)}
+                                </span>
+                              : <span style={{ color:"#b45309", fontWeight:700 }}>No answer</span>}
+                        </td>
+                        <td>{e.secs == null ? "—" : `${e.secs}s`}</td>
                       </tr>
                       );
                     })}
@@ -738,17 +774,56 @@ export default function WalkieTalkie() {
             <div className="wk-card">
               <div className="wk-h">Who can use the walkie-talkie</div>
               <div className="wk-row-sub" style={{ marginTop:2 }}>
-                Only the people you tick here can talk or be called.
+                Tap a name to move it across, then press Save. Nothing changes
+                until you save.
               </div>
-              {members.map((m) => (
-                <div key={m.id} className="wk-row" onClick={() => !busy && toggleMember(m)}>
-                  <input type="checkbox" checked={!!m.enabled} readOnly />
-                  <span style={{ flex:1, minWidth:0 }}>
-                    <div className="wk-row-name">{m.name}</div>
-                    <div className="wk-row-sub">{m.username} · {m.role}{m.online ? " · online" : ""}</div>
+              {/* Do khaane: baayein jinke paas ijazat hai, daayein baaki.
+                  Naam par tap karo to wo doosri taraf chala jaata hai. */}
+              <div style={{ display:"flex", gap:10, marginTop:10, alignItems:"flex-start" }}>
+                {[true, false].map((andar) => {
+                  const log = (members || []).filter((m) => chaluSel.has(m.id) === andar);
+                  return (
+                    <div key={String(andar)} style={{ flex:"1 1 0", minWidth:0 }}>
+                      <div className="wk-row-sub" style={{ fontWeight:800, marginBottom:5 }}>
+                        {andar ? "✓ Can use it" : "Not allowed"} ({log.length})
+                      </div>
+                      <div style={{ border:"1px solid #e2e8f0", borderRadius:9,
+                                    minHeight:56, padding:5,
+                                    background: andar ? "#f0fdf4" : "#f8fafc" }}>
+                        {!log.length && (
+                          <div className="wk-row-sub" style={{ padding:"8px 4px" }}>
+                            {andar ? "Nobody yet" : "Everyone is allowed"}
+                          </div>
+                        )}
+                        {log.map((m) => (
+                          <button key={m.id} onClick={() => !busy && chaluPalto(m.id)}
+                                  style={{ display:"block", width:"100%", textAlign:"left",
+                                           background:"#fff", border:"1px solid #e2e8f0",
+                                           borderRadius:7, padding:"6px 8px", marginBottom:5,
+                                           cursor:"pointer", font:"inherit" }}>
+                            <div className="wk-row-name" style={{ fontSize:12.5 }}>{m.name}</div>
+                            <div className="wk-row-sub" style={{ fontSize:10.5 }}>
+                              {m.username}{m.online ? " · online" : ""}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ display:"flex", gap:10, alignItems:"center", marginTop:10,
+                            flexWrap:"wrap" }}>
+                <button className="wk-mini" style={{ padding:"8px 18px" }}
+                        disabled={busy || !chaluBadle.length} onClick={chaluSambhalo}>
+                  Save
+                </button>
+                {!!chaluBadle.length && (
+                  <span className="wk-row-sub" style={{ color:"#b45309", fontWeight:700 }}>
+                    {chaluBadle.length} not saved yet
                   </span>
-                </div>
-              ))}
+                )}
+              </div>
             </div>
 
             {/* ── kaun kiske saath chat kar sakta hai ────────────

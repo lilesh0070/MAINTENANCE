@@ -1,5 +1,5 @@
 {
-  "version": "1.4.71",
-  "notes": "Chat - in-app alert on any page, chat rows in History, and admin decides who can chat with whom",
-  "released_at": "2026-09-14T15:06:55"
+  "version": "1.4.72",
+  "notes": "Walkie history - separate Buzzer and Chat columns; Setup lets you move people and press Save",
+  "released_at": "2026-09-14T15:43:55"
 }
