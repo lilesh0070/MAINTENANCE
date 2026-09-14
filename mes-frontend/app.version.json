@@ -1,5 +1,5 @@
 {
-  "version": "1.4.65",
-  "notes": "Login History and Delete History now fit properly on a phone - each entry is its own card instead of a wide table you had to scroll sideways",
-  "released_at": "2026-09-14T11:55:24"
+  "version": "1.4.66",
+  "notes": "Delete History can now be cleared by date range (admin only) - one line always stays behind recording who cleared what",
+  "released_at": "2026-09-14T12:16:43"
 }

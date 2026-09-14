@@ -69,6 +69,17 @@ export function DeleteHistoryPage() {
   const [busy, setBusy]   = useState(false);
   const [err, setErr]     = useState("");
 
+  /* ── Purani qatarein hatane ka intezaam ─────────────────────────
+     Default 6 mahine se 3 mahine purana -- jaan-boojh kar AAJ tak nahi.
+     Safai purane record ki hoti hai; abhi-abhi hua kaam mitana hi nahi
+     chahiye, aur default me "aaj" rakhne se ek galat tap me wo bhi chala
+     jaata. */
+  const [safai, setSafai]       = useState(false);
+  const [sFrom, setSFrom]       = useState(daysAgo(180));
+  const [sTo,   setSTo]         = useState(daysAgo(90));
+  const [sBusy, setSBusy]       = useState(false);
+  const [sKehna, setSKehna]     = useState("");
+
   useEffect(() => {
     if (!token) return;
     api.get("/api/audit/actions", token).then((a) => setAllActions(Array.isArray(a) ? a : [])).catch(() => setAllActions([]));
@@ -113,6 +124,31 @@ export function DeleteHistoryPage() {
   const sel  = { padding: "8px 10px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13, fontWeight: 600, background: "#fff", fontFamily: "inherit" };
   const th   = { padding: "10px 14px", textAlign: "left", fontSize: 11, textTransform: "uppercase", letterSpacing: ".04em", color: "#64748b", fontWeight: 700, whiteSpace: "nowrap" };
   const td   = { padding: "9px 14px", fontSize: 12.5, color: "#334155", verticalAlign: "top" };
+  /* Mitane se pehle GINTI dikhate hain -- "kitni jaayengi" jaane bina
+     haan kehna theek nahi, aur ye wapas nahi aata. */
+  const safaiKaro = async () => {
+    setSKehna("");
+    if (sTo < sFrom) { setSKehna("\u201cTo\u201d date cannot be before \u201cFrom\u201d."); return; }
+    setSBusy(true);
+    try {
+      const q = new URLSearchParams({ date_from: sFrom, date_to: sTo, limit: "1" });
+      const peek = await api.get(`/api/audit?${q.toString()}`, token);
+      const kitni = peek?.total ?? 0;
+      if (!kitni) { setSKehna("Nothing to clear in that range."); setSBusy(false); return; }
+      const ok = window.confirm(
+        `Permanently remove ${kitni} ${kitni === 1 ? "entry" : "entries"} ` +
+        `from ${sFrom} to ${sTo}?\n\n` +
+        "This cannot be undone. One line will stay behind recording that you cleared them.");
+      if (!ok) { setSBusy(false); return; }
+      const r = await api.delete(`/api/audit?date_from=${sFrom}&date_to=${sTo}`, token);
+      setSKehna(`${r?.deleted ?? 0} removed.`);
+      setPage(0);
+      load();
+    } catch (e) {
+      setSKehna(String(e?.message || e).slice(0, 140));
+    } finally { setSBusy(false); }
+  };
+
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -155,7 +191,55 @@ export function DeleteHistoryPage() {
                          background: "#fff", color: "#475569", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>
           Reset filters
         </button>
+        <button onClick={() => { setSafai((v) => !v); setSKehna(""); }}
+                style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid #fecaca",
+                         background: "#fff", color: "#b91c1c", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>
+          {safai ? "Close" : "\u{1F9F9} Clear old entries"}
+        </button>
       </div>
+
+      {/* ── purani qatarein hatao ───────────────────────────────────
+          SIRF tareekh ki range se -- ek-ek qatar par delete ka button
+          jaan-boojh kar nahi hai.  Warna koi apna hi ek khaas record chun
+          kar hata sakta tha aur baaki sab waisa dikhta rehta.
+          Safai ke baad EK PANKTI ruk jaati hai (kisne, kaunsi range,
+          kitni qatarein) -- aur wo pankti khud kabhi nahi mitti. */}
+      {safai && (
+        <div style={{ ...card, padding: 16, borderColor: "#fecaca", background: "#fffbfb" }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "#b91c1c", marginBottom: 4 }}>
+            Clear old entries
+          </div>
+          <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.55, marginBottom: 12 }}>
+            This is the audit trail \u2014 once an entry is gone there is no other record
+            of what was deleted. Only whole date ranges can be cleared, and one line
+            always stays behind saying who cleared what.
+          </div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div>
+              <div style={lbl}>From date</div>
+              <input type="date" style={sel} value={sFrom} max={sTo}
+                     onChange={(e) => setSFrom(e.target.value)} />
+            </div>
+            <div>
+              <div style={lbl}>To date</div>
+              <input type="date" style={sel} value={sTo} min={sFrom} max={today()}
+                     onChange={(e) => setSTo(e.target.value)} />
+            </div>
+            <button onClick={safaiKaro} disabled={sBusy}
+                    style={{ padding: "9px 18px", borderRadius: 8, border: "none",
+                             background: sBusy ? "#fca5a5" : "#dc2626", color: "#fff",
+                             fontWeight: 800, fontSize: 12.5,
+                             cursor: sBusy ? "default" : "pointer" }}>
+              {sBusy ? "Working\u2026" : "Delete permanently"}
+            </button>
+          </div>
+          {sKehna && (
+            <div style={{ marginTop: 10, fontSize: 12.5, fontWeight: 700, color: "#b91c1c" }}>
+              {sKehna}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── ginti ── */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>

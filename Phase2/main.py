@@ -587,6 +587,52 @@ def audit_log(
         }
 
 
+# Safai wali pankti ka apna action.  Ye qatarein KABHI nahi mitti -- neeche
+# `audit_clear` me saaf-saaf chhod di jaati hain.
+AUDIT_CLEAR_ACTION = "AUDIT_CLEAR"
+
+
+@app.delete("/api/audit")
+def audit_clear(date_from: str, date_to: str, user=Depends(require_admin)):
+    """Purani audit qatarein hatao -- SIRF tareekh ki range se, SIRF admin.
+
+    ⚠ YE AUDIT LOG HAI.  Jo cheez delete ho chuki hai uska bas yahi ek record
+    bachta hai, isliye ise bina soche mitana theek nahi hota.  User ne
+    jaan-boojh kar ye tareeqa chuna:
+
+      • sirf RANGE se -- ek-ek qatar chun kar nahi.  Warna koi apna hi ek
+        khaas record chun kar hata sakta tha, aur baaki sab waisa ka waisa
+        dikhta rehta -- yaani kuch hua hi nahi lagta.
+      • safai ke baad EK PANKTI CHHOD JAATI HAI (`AUDIT_CLEAR`): kisne,
+        kaunsi range, aur kitni qatarein hatayin.  Isse safai bhi ho jaati
+        hai aur audit me jawab dene laayak kuch bacha rehta hai.
+      • wo nishaan DELETE ke BAAD likha jaata hai, isliye wo khud kabhi us
+        range me nahi aata.
+      • aur purane nishaan bhi nahi mitte (`action <> AUDIT_CLEAR`) --
+        warna do baar safai karke poora itihaas gayab kiya ja sakta tha.
+    """
+    df = (date_from or "").strip()
+    dt = (date_to or "").strip()
+    if not df or not dt:
+        raise HTTPException(status_code=400, detail="date_from and date_to are required")
+    if dt < df:
+        raise HTTPException(status_code=400, detail="date_to cannot be before date_from")
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM maintenance_audit_log"
+            " WHERE created_at >= %s AND created_at <= %s AND action <> %s",
+            (df + " 00:00:00", dt + " 23:59:59", AUDIT_CLEAR_ACTION))
+        kitni = cur.rowcount or 0
+        if kitni:
+            write_audit(conn, action=AUDIT_CLEAR_ACTION, user=user,
+                        details=f"Cleared delete history {df} to {dt} \u2014 {kitni} "
+                                f"{'entry' if kitni == 1 else 'entries'} removed")
+        conn.commit()
+    return {"ok": True, "deleted": kitni}
+
+
 @app.get("/api/audit/actions")
 def audit_actions(user=Depends(require_admin)):
     with get_conn() as conn:
