@@ -587,6 +587,22 @@ def audit_log(
         }
 
 
+def _audit_nishaan(conn, user, details):
+    """AUDIT_CLEAR ki pankti likho -- aur na likh paye to CHILLAO.
+
+    `write_audit` jaan-boojh kar kabhi raise nahi karta (audit kisi asli
+    kaam ko rokna nahi chahiye).  Par yahan ulta chahiye: nishaan hi wo
+    ikloti cheez hai jo safai ke baad bachti hai.  Agar wo na likha jaye
+    to DELETE bhi nahi hona chahiye -- isliye ye raise karta hai aur
+    poora transaction saath me girta hai.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO maintenance_audit_log (action, details, user_id, username)"
+        " VALUES (%s, %s, %s, %s)",
+        (AUDIT_CLEAR_ACTION, details, (user or {}).get("id"), (user or {}).get("username")))
+
+
 # Safai wali pankti ka apna action.  Ye qatarein KABHI nahi mitti -- neeche
 # `audit_clear` me saaf-saaf chhod di jaati hain.
 AUDIT_CLEAR_ACTION = "AUDIT_CLEAR"
@@ -626,11 +642,87 @@ def audit_clear(date_from: str, date_to: str, user=Depends(require_admin)):
             (df + " 00:00:00", dt + " 23:59:59", AUDIT_CLEAR_ACTION))
         kitni = cur.rowcount or 0
         if kitni:
-            write_audit(conn, action=AUDIT_CLEAR_ACTION, user=user,
-                        details=f"Cleared delete history {df} to {dt} \u2014 {kitni} "
-                                f"{'entry' if kitni == 1 else 'entries'} removed")
+            _audit_nishaan(conn, user,
+                           f"Cleared delete history {df} to {dt} \u2014 {kitni} "
+                           f"{'entry' if kitni == 1 else 'entries'} removed")
         conn.commit()
     return {"ok": True, "deleted": kitni}
+
+
+class AuditDeleteIn(BaseModel):
+    ids: List[int] = []
+
+
+# Ek baar me itni se jyada nahi.  Page par 50 hi dikhti hain, ye bas
+# had hai -- galti se (ya jaan-boojh kar) hazaron ek saath na chali jayen.
+MAX_AUDIT_PICK = 200
+
+
+@app.post("/api/audit/delete")
+def audit_delete_picked(body: AuditDeleteIn, user=Depends(require_admin)):
+    """Chuni hui audit qatarein hatao -- SIRF admin.
+
+    Range wali safai (`DELETE /api/audit`) ke saath ye doosra raasta hai:
+    list me se tick karke hatana.  User ne khud maanga.
+
+    ⚠ Isme ek khatra hai jo range me nahi tha: koi APNA HI ek khaas record
+    chun kar hata sakta hai aur baaki sab waisa ka waisa dikhta rahega.
+    Isliye yahan nishaan me sirf GINTI nahi likhte -- HAR HATAYI GAYI QATAR
+    ka byora likhte hain (#id, kaunsa kaam, kab hua, kisne kiya, aur uske
+    details ka shuruaati hissa).  Yaani chun kar hatana chhupta nahi:
+    "kya-kya chuna gaya tha" nishaan me darj rehta hai.
+
+    Baaki pabandiyan wahi:
+      * purane nishaan (`AUDIT_CLEAR`) kabhi nahi mitte
+      * nishaan DELETE ke BAAD likha jaata hai
+      * nishaan na likh paye to DELETE bhi roll back ho jaata hai
+        (`_audit_nishaan` raise karta hai) -- warna qatarein chali jatin
+        aur record kuch bhi na bachta.
+    """
+    ids = sorted({int(i) for i in (body.ids or [])})
+    if not ids:
+        return {"ok": True, "deleted": 0, "skipped": 0}
+    if len(ids) > MAX_AUDIT_PICK:
+        raise HTTPException(status_code=400,
+                            detail=f"At most {MAX_AUDIT_PICK} entries at a time")
+
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        # PEHLE padho -- delete ke baad ye byora kahin se nahi milega.
+        cur.execute(
+            "SELECT id, action, username, created_at, details"
+            "  FROM maintenance_audit_log"
+            " WHERE id = ANY(%s) AND action <> %s"
+            " ORDER BY created_at DESC",
+            (ids, AUDIT_CLEAR_ACTION))
+        rows = cur.fetchall()
+        if not rows:
+            return {"ok": True, "deleted": 0, "skipped": len(ids)}
+
+        mile = [r["id"] for r in rows]
+        cur.execute("DELETE FROM maintenance_audit_log WHERE id = ANY(%s)", (mile,))
+        kitni = cur.rowcount or 0
+        _audit_nishaan(conn, user, _picked_byora(rows))
+        conn.commit()
+    return {"ok": True, "deleted": kitni, "skipped": len(ids) - len(mile)}
+
+
+def _picked_byora(rows):
+    """Nishaan ki pankti ka matn -- kaun si qatarein hatayi gayin.
+
+    Har qatar ka details poora nahi likhte (kuch kaafi lambe hote hain);
+    shuruaati 70 akshar se hi pata chal jaata hai ki kya tha."""
+    tukde = []
+    for r in rows:
+        kab = r["created_at"].strftime("%Y-%m-%d %H:%M:%S") if r.get("created_at") else "?"
+        d = (r.get("details") or "").strip().replace("\n", " ")
+        if len(d) > 70:
+            d = d[:70] + "\u2026"
+        tukde.append(f"#{r['id']} {r['action']} {kab} by {r.get('username') or '-'}"
+                     + (f" :: {d}" if d else ""))
+    n = len(rows)
+    return (f"Removed {n} selected {'entry' if n == 1 else 'entries'} \u2014 "
+            + " | ".join(tukde))
 
 
 @app.get("/api/audit/actions")

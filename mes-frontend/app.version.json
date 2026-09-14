@@ -1,5 +1,5 @@
 {
-  "version": "1.4.67",
-  "notes": "Delete History clear panel - warning text now reads correctly",
-  "released_at": "2026-09-14T12:35:40"
+  "version": "1.4.68",
+  "notes": "Delete History - tick rows to delete them; the trail line now lists exactly what was removed",
+  "released_at": "2026-09-14T13:32:14"
 }

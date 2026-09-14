@@ -8,9 +8,11 @@
  * backend ka `/api/audit` bhi maujood tha, par koi page use bulata hi nahi tha —
  * dekhne ka ek hi raasta tha, seedha database.
  *
- * Backend: GET /api/audit  (date_from · date_to · action | actions · username · q · limit · offset)
- *          GET /api/audit/actions   — kaunse kaam darj hue hain
- *          GET /api/audit/users     — kaun-kaun users hain
+ * Backend: GET  /api/audit  (date_from · date_to · action | actions · username · q · limit · offset)
+ *          GET  /api/audit/actions  — kaunse kaam darj hue hain
+ *          GET  /api/audit/users    — kaun-kaun users hain
+ *          DEL  /api/audit          — poori tareekh ki range saaf karo (admin)
+ *          POST /api/audit/delete   — tick ki hui qatarein hatao (admin)
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
@@ -44,9 +46,18 @@ const LOOK = {
   DMC_REV_RENUMBER:     { c: "#b45309", bg: "#fef3c7", t: "DMC revisions renumbered" },
   AUTH_LOGIN:           { c: "#15803d", bg: "#dcfce7", t: "Login" },
   AUTH_LOGOUT:          { c: "#475569", bg: "#f1f5f9", t: "Logout" },
+  AUDIT_CLEAR:          { c: "#6d28d9", bg: "#ede9fe", t: "History cleared" },
 };
 const look = (a) => LOOK[a] || { c: "#334155", bg: "#e2e8f0", t: a };
-const isDelete = (a) => /DELETE|STEPDOWN/.test(String(a || ""));
+
+// Wo pankti jo safai ke baad peechhe chhodi jaati hai.  Ye kabhi nahi
+// hatti -- na range se, na tick karke (backend bhi rokta hai).
+const CLEAR_ACTION = "AUDIT_CLEAR";
+
+// `AUDIT_CLEAR` bhi isi list me hai -- warna default "Deletions only" me
+// nishaan CHHUP JAATA, aur safai ke baad page bilkul khaali dikhta jaise
+// kuch hua hi na ho.  Nishaan ka poora matlab hi dikhte rehne me hai.
+const isDelete = (a) => /DELETE|STEPDOWN|AUDIT_CLEAR/.test(String(a || ""));
 
 const PAGE = 50;
 
@@ -80,6 +91,17 @@ export function DeleteHistoryPage() {
   const [sBusy, setSBusy]       = useState(false);
   const [sKehna, setSKehna]     = useState("");
 
+  /* ── Tick karke hatana ────────────────────────────────────────────
+     User ne maanga: "select karke bhi delete kar sake."
+     Range wali safai se ek farak hai -- ismein koi APNA HI ek khaas
+     record chun kar hata sakta hai aur baaki sab waisa dikhta rahega.
+     Isliye backend nishaan me sirf ginti nahi, HAR HATAYI GAYI QATAR ka
+     byora likhta hai (#id, kaam, kab, kisne).  Chun-kar hatana chhupta
+     nahi. */
+  const [chune, setChune]   = useState(() => new Set());
+  const [cBusy, setCBusy]   = useState(false);
+  const [cKehna, setCKehna] = useState("");
+
   useEffect(() => {
     if (!token) return;
     api.get("/api/audit/actions", token).then((a) => setAllActions(Array.isArray(a) ? a : [])).catch(() => setAllActions([]));
@@ -105,6 +127,10 @@ export function DeleteHistoryPage() {
       const d = await api.get(`/api/audit?${p.toString()}`, token);
       setRows(Array.isArray(d?.logs) ? d.logs : []);
       setTotal(Number(d?.total) || 0);
+      // Nayi list aayi -- purana chunaav saaf.  Warna doosre page/filter ki
+      // wo id chuni rehti jo ab dikh bhi nahi rahi, aur "Delete selected"
+      // chup-chaap kuch aur hata deta.
+      setChune(new Set());
     } catch (e) {
       setErr(String(e?.message || e)); setRows([]); setTotal(0);
     } finally { setBusy(false); }
@@ -124,6 +150,33 @@ export function DeleteHistoryPage() {
   const sel  = { padding: "8px 10px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13, fontWeight: 600, background: "#fff", fontFamily: "inherit" };
   const th   = { padding: "10px 14px", textAlign: "left", fontSize: 11, textTransform: "uppercase", letterSpacing: ".04em", color: "#64748b", fontWeight: 700, whiteSpace: "nowrap" };
   const td   = { padding: "9px 14px", fontSize: 12.5, color: "#334155", verticalAlign: "top" };
+  // AUDIT_CLEAR ki pankti chuni hi nahi ja sakti -- wo nishaan hai.
+  const chunneYogya = useMemo(() => rows.filter((r) => r.action !== CLEAR_ACTION), [rows]);
+  const sabChune = !!chunneYogya.length && chunneYogya.every((r) => chune.has(r.id));
+
+  const palto = (id) => setChune((purana) => {
+    const naya = new Set(purana);
+    if (naya.has(id)) naya.delete(id); else naya.add(id);
+    return naya;
+  });
+
+  const mitaoChune = async () => {
+    const ids = [...chune];
+    if (!ids.length) return;
+    const ok = window.confirm(
+      `Permanently remove ${ids.length} selected ${ids.length === 1 ? "entry" : "entries"}?\n\n` +
+      "This cannot be undone. One line will stay behind listing exactly what was removed.");
+    if (!ok) return;
+    setCBusy(true); setCKehna("");
+    try {
+      const r = await api.post("/api/audit/delete", { ids }, token);
+      setCKehna(`${r?.deleted ?? 0} removed.`);
+      load();
+    } catch (e) {
+      setCKehna(String(e?.message || e).slice(0, 140));
+    } finally { setCBusy(false); }
+  };
+
   /* Mitane se pehle GINTI dikhate hain -- "kitni jaayengi" jaane bina
      haan kehna theek nahi, aur ye wapas nahi aata. */
   const safaiKaro = async () => {
@@ -199,11 +252,12 @@ export function DeleteHistoryPage() {
       </div>
 
       {/* ── purani qatarein hatao ───────────────────────────────────
-          SIRF tareekh ki range se -- ek-ek qatar par delete ka button
-          jaan-boojh kar nahi hai.  Warna koi apna hi ek khaas record chun
-          kar hata sakta tha aur baaki sab waisa dikhta rehta.
-          Safai ke baad EK PANKTI ruk jaati hai (kisne, kaunsi range,
-          kitni qatarein) -- aur wo pankti khud kabhi nahi mitti. */}
+          Ek saath bahut si purani qatarein hatane ka raasta.  Tick karke
+          hatana alag hai (neeche table me) -- wo thodi-si chuni hui ke liye.
+          Dono me EK PANKTI ruk jaati hai aur wo khud kabhi nahi mitti:
+            • range se    → kisne, kaunsi range, kitni qatarein
+            • tick karke  → kisne, aur POORI SOOCHI kya-kya hataya
+          Tick wale me soochi isliye, kyunki wahan cherry-pick mumkin hai. */}
       {safai && (
         <div style={{ ...card, padding: 16, borderColor: "#fecaca", background: "#fffbfb" }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: "#b91c1c", marginBottom: 4 }}>
@@ -249,6 +303,26 @@ export function DeleteHistoryPage() {
             {mode === "delete" ? "deletions" : mode === "all" ? "total entries" : "entry"} — in this filter
           </span>
         </div>
+        {!!chune.size && (
+          <div style={{ ...card, padding: "8px 12px", display: "flex", gap: 10, alignItems: "center",
+                        flexWrap: "wrap", borderColor: "#fecaca", background: "#fffbfb" }}>
+            <b style={{ fontSize: 13, color: "#b91c1c" }}>{chune.size} selected</b>
+            <button onClick={mitaoChune} disabled={cBusy}
+                    style={{ padding: "7px 14px", borderRadius: 8, border: "none",
+                             background: cBusy ? "#fca5a5" : "#dc2626", color: "#fff",
+                             fontWeight: 800, fontSize: 12.5,
+                             cursor: cBusy ? "default" : "pointer" }}>
+              {cBusy ? "Working\u2026" : "\u{1F5D1} Delete selected"}
+            </button>
+            <button onClick={() => setChune(new Set())}
+                    style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid #cbd5e1",
+                             background: "#fff", color: "#475569", fontWeight: 700,
+                             fontSize: 12.5, cursor: "pointer" }}>
+              Clear selection
+            </button>
+          </div>
+        )}
+        {cKehna && <span style={{ fontSize: 12.5, color: "#b91c1c", fontWeight: 700 }}>{cKehna}</span>}
         {busy && <span style={{ fontSize: 12, color: "#64748b" }}>Loading…</span>}
         {err && <span style={{ fontSize: 12, color: "#b91c1c", fontWeight: 700 }}>{err}</span>}
       </div>
@@ -258,9 +332,15 @@ export function DeleteHistoryPage() {
         {/* `ap-stack` -- phone par har qatar ek chhota card.  `minWidth: 820`
             desktop ke liye hai; stack wale niyam use `min-width: 0` kar dete
             hain, warna phone par 820px ki table kabhi fit hi nahi hoti. */}
-        <table className="ap-stack" style={{ width: "100%", borderCollapse: "collapse", minWidth: 820 }}>
+        <table className="ap-stack" style={{ width: "100%", borderCollapse: "collapse", minWidth: 860 }}>
           <thead style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
             <tr>
+              <th style={{ ...th, width: 34 }}>
+                <input type="checkbox" title="Select all on this page"
+                       checked={sabChune}
+                       onChange={(e) => setChune(e.target.checked
+                         ? new Set(chunneYogya.map((r) => r.id)) : new Set())} />
+              </th>
               <th style={th}>When</th>
               <th style={th}>Action</th>
               <th style={th}>By</th>
@@ -271,7 +351,15 @@ export function DeleteHistoryPage() {
             {rows.map((r) => {
               const L = look(r.action);
               return (
-                <tr key={r.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                <tr key={r.id} style={{ borderBottom: "1px solid #f1f5f9",
+                                        background: chune.has(r.id) ? "#fef2f2" : undefined }}>
+                  <td data-lbl="Select" style={{ ...td, width: 34 }}>
+                    {r.action === CLEAR_ACTION
+                      ? <span title="This is the trail line — it can never be removed"
+                              style={{ color: "#cbd5e1" }}>—</span>
+                      : <input type="checkbox" checked={chune.has(r.id)}
+                               onChange={() => palto(r.id)} />}
+                  </td>
                   <td data-lbl="When" style={{ ...td, whiteSpace: "nowrap", color: "#0f172a", fontWeight: 600 }}>{fmtDT(r.created_at)}</td>
                   <td className="an-stk-hdr" style={{ ...td, whiteSpace: "nowrap" }}>
                     <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: 99,
@@ -284,7 +372,7 @@ export function DeleteHistoryPage() {
               );
             })}
             {!rows.length && !busy && (
-              <tr><td colSpan={4} style={{ padding: "26px 14px", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+              <tr><td colSpan={5} style={{ padding: "26px 14px", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
                 {waiting ? "Loading…" : "Nothing found for this filter."}
               </td></tr>
             )}
@@ -308,8 +396,10 @@ export function DeleteHistoryPage() {
       )}
 
       <div style={{ fontSize: 11.5, color: "#94a3b8", lineHeight: 1.6 }}>
-        This log is written automatically and cannot be deleted from here — deleted data
-        never comes back, so a record of who deleted what and when must remain.
+        This log is written automatically. An admin can remove entries — a whole date
+        range, or just the rows ticked above — but every removal leaves one line behind
+        saying who did it, and the ticked-row version lists exactly what was taken out.
+        Those lines can never be removed.
       </div>
     </div>
   );
