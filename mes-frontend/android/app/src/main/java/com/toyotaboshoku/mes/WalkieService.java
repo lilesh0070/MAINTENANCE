@@ -27,6 +27,8 @@ import android.util.Log;
 
 import androidx.annotation.Nullable;
 
+import android.app.RemoteInput;
+
 import org.json.JSONObject;
 
 import java.util.concurrent.ArrayBlockingQueue;
@@ -34,6 +36,7 @@ import java.util.concurrent.TimeUnit;
 
 import okhttp3.Call;
 import okhttp3.Callback;
+import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
@@ -76,11 +79,24 @@ public class WalkieService extends Service {
     public static final String ACTION_ACK   = "com.toyotaboshoku.mes.WALKIE_ACK";
     /** Notification ki patti par tap — band bhi karo aur app bhi kholo. */
     public static final String ACTION_ACK_OPEN = "com.toyotaboshoku.mes.WALKIE_ACK_OPEN";
+    /** Notification ke likhne wale dabbe se aaya jawab. */
+    public static final String ACTION_REPLY = "com.toyotaboshoku.mes.WALKIE_REPLY";
+    /** RemoteInput ka khaana — isi naam se likha hua text nikalta hai. */
+    private static final String KEY_REPLY = "walkie_reply_text";
+    /** App abhi saamne khuli hai kya — MainActivity set karti hai.
+     *  Khuli ho to chat ki notification NAHI dikhate: wo baat page par pehle
+     *  hi dikh rahi hoti hai, aur do jagah ek hi cheez dikhana pareshan karta
+     *  hai.  (Buzz ki ring par ye laagu NAHI — wo dikhni hi chahiye.) */
+    public static volatile boolean APP_FOREGROUND = false;
     private static final String TAG = "Walkie";
     private static final String CH_ID = "walkie";           // chupchaap chalti service
     private static final String CH_CALL = "walkie_call";    // buzz aane par — awaaz ke saath
+    private static final String CH_CHAT = "walkie_chat";    // likha hua message
     private static final int NOTIF_ID = 4711;
     private static final int CALL_ID = 4712;
+    /* Har baat-cheet ki apni notification -- warna ek hi dabba baar-baar
+       badalta rehta aur pichhla message gum ho jaata. */
+    private static final int CHAT_ID_BASE = 5000;
 
     private static final int RATE = 16000;
     private static final int FRAME_BYTES = 640 * 2;     // 40ms ka ek frame
@@ -122,6 +138,15 @@ public class WalkieService extends Service {
     /** Aakhri buzz ka event-id -- "OK" dabte hi isi par server par jawab
      *  likha jaata hai (history me "response diya" wahi se aata hai). */
     private volatile int lastBuzzEv = 0;
+    /* Buzz ka jawab KISKO jaye.  Group par buzz aaya tha to usi group me
+       (taaki sabko pata chale); seedha aaya tha to BULANE WALE ko -- us
+       soorat me `target` "main" hoon, isliye wo kaam nahi aata. */
+    /** Apni user id (`ready` message se).  Apna hi bheja hua message wapas
+     *  aata hai (doosre device ke liye) -- uspar notification nahi dikhani. */
+    private volatile int MERI_ID = 0;
+    private volatile int lastBuzzFrom = 0;
+    private volatile String lastBuzzTType = "user";
+    private volatile int lastBuzzTId = 0;
     /* ⚠ Ring ki hadd ka apna Runnable.  Pehle yahan
        `main.removeCallbacksAndMessages(null)` likha tha -- wo is Handler ke
        SAARE pending kaam hata deta, jisme socket ka DOBARA-JUDNE wala timer
@@ -159,6 +184,29 @@ public class WalkieService extends Service {
         }
         /* "OK" daba diya (ya notification hata di) — ring aur vibration band.
            Service khud chalti rehti hai, sirf bulawa rukta hai. */
+        if (ACTION_REPLY.equals(act)) {
+            /* Notification ke dabbe me likha hua jawab.  App KHULI HI NAHI
+               hoti -- isliye ye poora kaam yahin hota hai: text nikalo,
+               server par bhejo, ring band karo.  Jawab dena = bulawe ka
+               jawab dena, isliye ack bhi saath me jaata hai. */
+            CharSequence likha = null;
+            try {
+                android.os.Bundle b = RemoteInput.getResultsFromIntent(intent);
+                if (b != null) likha = b.getCharSequence(KEY_REPLY);
+            } catch (Throwable e) { Log.w(TAG, "reply padha nahi gaya: " + e); }
+            String txt = likha == null ? "" : likha.toString().trim();
+            int nid = intent.getIntExtra("nid", CALL_ID);
+            if (!txt.isEmpty()) {
+                chatBhejo(intent.getStringExtra("ttype"), intent.getIntExtra("tid", 0), txt, nid);
+            } else {
+                try {
+                    NotificationManager nm = getSystemService(NotificationManager.class);
+                    if (nm != null) nm.cancel(nid);
+                } catch (Throwable ignored) { /* kuch nahi */ }
+            }
+            if (nid == CALL_ID) { ringBand(); jawabBhejo(); }
+            return START_STICKY;
+        }
         if (ACTION_ACK.equals(act) || ACTION_ACK_OPEN.equals(act)) {
             ringBand();
             jawabBhejo();                 // server par: "jawab mil gaya"
@@ -221,6 +269,16 @@ public class WalkieService extends Service {
             cc.enableVibration(false);
             cc.setShowBadge(true);
             nm.createNotificationChannel(cc);
+
+            /* Chat ka apna channel.  IMPORTANCE_HIGH isliye ki jawab DIKHNA
+               chahiye -- aadmi ne buzz kiya hai aur wo jawab ka intezaar kar
+               raha hai.  Yahan sound band NAHI karte (buzz wale channel me
+               karte hain, kyunki wahan ring hum khud bajate hain). */
+            NotificationChannel ct = new NotificationChannel(
+                    CH_CHAT, "Walkie-Talkie messages", NotificationManager.IMPORTANCE_HIGH);
+            ct.setDescription("Written messages from Walkie-Talkie");
+            ct.setShowBadge(true);
+            nm.createNotificationChannel(ct);
         }
     }
 
@@ -294,6 +352,10 @@ public class WalkieService extends Service {
                         JSONObject f = d.optJSONObject("from");
                         String kisne = f != null ? f.optString("name", "Someone") : "Someone";
                         lastBuzzEv = d.optInt("ev", 0);
+                        lastBuzzFrom = f != null ? f.optInt("id", 0) : 0;
+                        JSONObject tg = d.optJSONObject("target");
+                        lastBuzzTType = tg != null ? tg.optString("type", "user") : "user";
+                        lastBuzzTId = tg != null ? tg.optInt("id", 0) : 0;
                         bajao(kisne);     // phone ki apni ring — OK dabne tak
                         thartharao();     // + vibration, utni hi der
                         likho(kisne + " buzzed you");
@@ -309,6 +371,28 @@ public class WalkieService extends Service {
                         qatar.clear();
                         chirp();
                         likho((f != null ? f.optString("name", "Someone") : "Someone") + " is speaking…");
+                    } else if ("chat".equals(t)) {
+                        /* Likha hua message.  App khuli ho to kuch nahi karte --
+                           page wahi baat pehle se dikha raha hai. */
+                        if (!APP_FOREGROUND) {
+                            JSONObject f2 = d.optJSONObject("from");
+                            JSONObject tg2 = d.optJSONObject("target");
+                            int fid = f2 != null ? f2.optInt("id", 0) : 0;
+                            // Apna hi bheja hua wapas aata hai (doosre device ke
+                            // liye) -- uspar notification dikhana bemtlab hai.
+                            if (fid != 0 && fid != MERI_ID) {
+                                chatDikhao(
+                                    f2 != null ? f2.optString("name", "Someone") : "Someone",
+                                    d.optString("body", ""),
+                                    d.optString("convo", ""),
+                                    tg2 != null ? tg2.optString("type", "user") : "user",
+                                    tg2 != null ? tg2.optInt("id", 0) : 0,
+                                    fid);
+                            }
+                        }
+                    } else if ("ready".equals(t)) {
+                        JSONObject me = d.optJSONObject("me");
+                        if (me != null) MERI_ID = me.optInt("id", 0);
                     } else if ("rx_stop".equals(t)) {
                         // Kitni baar sookha -- yahi batata hai ki aawaz saaf
                         // rahi ya nahi.  0 matlab bilkul saaf.
@@ -612,6 +696,13 @@ public class WalkieService extends Service {
              .setDeleteIntent(kaamKaIntent(ACTION_ACK, 3))
              .addAction(android.R.drawable.ic_menu_close_clear_cancel, "OK",
                         kaamKaIntent(ACTION_ACK, 4));
+            /* ← YAHI WO CHEEZ HAI JO USER NE MAANGI: notification me hi
+               likh kar jawab.  App kholne ki zaroorat nahi -- bulane wale ko
+               turant pata chal jaata hai ki kya ho raha hai. */
+            Notification.Action jab = replyAction(
+                    lastBuzzTType, "channel".equals(lastBuzzTType) ? lastBuzzTId : lastBuzzFrom,
+                    CALL_ID, "Reply to " + (kisne == null || kisne.isEmpty() ? "them" : kisne));
+            if (jab != null) b.addAction(jab);
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
                 b.setPriority(Notification.PRIORITY_HIGH);
             }
@@ -650,6 +741,130 @@ public class WalkieService extends Service {
         } catch (Throwable e) {
             Log.w(TAG, "ack: " + e);
         }
+    }
+
+    /** Notification ka "Reply" wala dabba.
+     *
+     * ⚠ PendingIntent MUTABLE hona ZAROORI hai.  Android 12 (S) se default
+     * immutable hai, aur immutable PendingIntent me system likha hua text daal
+     * hi nahi sakta -- jawab hamesha khali aata.  Baaki sab jagah is file me
+     * IMMUTABLE hi rakha hai; sirf yahan ulta chahiye.
+     */
+    private Notification.Action replyAction(String ttype, int tid, int nid, String label) {
+        try {
+            if (tid <= 0) return null;
+            Intent i = new Intent(this, WalkieService.class);
+            i.setAction(ACTION_REPLY);
+            i.putExtra("ttype", ttype == null ? "user" : ttype);
+            i.putExtra("tid", tid);
+            i.putExtra("nid", nid);
+            int f = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) f |= PendingIntent.FLAG_MUTABLE;
+            // requestCode har baat-cheet ka alag -- warna FLAG_UPDATE_CURRENT
+            // pehle wale ke extras hi dobara istemal kar leta hai.
+            PendingIntent pi = PendingIntent.getService(this, 9000 + nid, i, f);
+            RemoteInput ri = new RemoteInput.Builder(KEY_REPLY).setLabel(label).build();
+            return new Notification.Action.Builder(
+                    android.R.drawable.ic_menu_send, "Reply", pi)
+                    .addRemoteInput(ri).build();
+        } catch (Throwable e) {
+            Log.w(TAG, "replyAction: " + e);
+            return null;   // dabba na bana to notification phir bhi dikhe
+        }
+    }
+
+    /** Aaya hua message notification me. */
+    private void chatDikhao(String kisne, String matn, String convo,
+                            String ttype, int tid, int fromId) {
+        try {
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            if (nm == null) return;
+            int nid = CHAT_ID_BASE + Math.abs((convo == null ? "" : convo).hashCode() % 900);
+            Notification.Builder b = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                    ? new Notification.Builder(this, CH_CHAT)
+                    : new Notification.Builder(this);
+            b.setContentTitle(kisne == null || kisne.isEmpty() ? "Message" : kisne)
+             .setContentText(matn)
+             .setStyle(new Notification.BigTextStyle().bigText(matn))
+             .setSmallIcon(android.R.drawable.stat_notify_chat)
+             .setAutoCancel(true)
+             .setCategory(Notification.CATEGORY_MESSAGE)
+             .setContentIntent(appKholo());
+            // Jawab wahin bhejo jahan se aaya: group me group, warna bhejne wale ko.
+            Notification.Action jab = replyAction(
+                    ttype, "channel".equals(ttype) ? tid : fromId, nid,
+                    "Reply to " + (kisne == null || kisne.isEmpty() ? "them" : kisne));
+            if (jab != null) b.addAction(jab);
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                b.setPriority(Notification.PRIORITY_HIGH);
+            }
+            nm.notify(nid, b.build());
+        } catch (Throwable e) {
+            Log.w(TAG, "chatDikhao: " + e);
+        }
+    }
+
+    /** Notification se aaya jawab server par bhejo.
+     *
+     * Socket se nahi, REST se -- wahi wajah jo `jawabBhejo()` me likhi hai:
+     * ye ek baar ka kaam hai aur us waqt socket toota bhi ho sakta hai.
+     * Server message ko un sabke socket par aage bhej deta hai jinko milna
+     * chahiye, isliye saamne wale ki khuli app me wo TURANT dikh jaata hai. */
+    private void chatBhejo(String ttype, int tid, String matn, int nid) {
+        if (tid <= 0 || token.isEmpty() || url.isEmpty()) return;
+        try {
+            String http = url.replaceFirst("^ws", "http")
+                             .replace("/api/walkie/ws", "/api/walkie/chat");
+            JSONObject j = new JSONObject();
+            j.put("target_type", ttype == null ? "user" : ttype);
+            j.put("target_id", tid);
+            j.put("body", matn);
+            Request req = new Request.Builder()
+                    .url(http)
+                    .addHeader("Authorization", "Bearer " + token)
+                    .post(RequestBody.create(j.toString(),
+                            MediaType.parse("application/json; charset=utf-8")))
+                    .build();
+            http().newCall(req).enqueue(new Callback() {
+                @Override public void onFailure(Call call, java.io.IOException e) {
+                    Log.w(TAG, "chat bheja nahi gaya: " + e);
+                    bataoAurHatao(nid, "Could not send — no network");
+                }
+                @Override public void onResponse(Call call, Response r) {
+                    Log.i(TAG, "chat bhej diya -> " + r.code());
+                    bataoAurHatao(nid, r.isSuccessful() ? "Reply sent" : "Could not send");
+                    r.close();
+                }
+            });
+        } catch (Throwable e) {
+            Log.w(TAG, "chatBhejo: " + e);
+        }
+    }
+
+    /** Notification par chhota sa jawab dikhao, phir apne aap hata do.
+     *  Bina iske jawab bhejne par dabba chup-chaap gayab hota hai aur pata
+     *  hi nahi chalta ki gaya bhi ya nahi. */
+    private void bataoAurHatao(int nid, String kya) {
+        main.post(() -> {
+            try {
+                NotificationManager nm = getSystemService(NotificationManager.class);
+                if (nm == null) return;
+                Notification.Builder b = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                        ? new Notification.Builder(this, CH_CHAT)
+                        : new Notification.Builder(this);
+                b.setContentTitle(kya)
+                 .setSmallIcon(android.R.drawable.stat_notify_chat)
+                 .setAutoCancel(true)
+                 .setTimeoutAfter(3000);
+                nm.notify(nid, b.build());
+            } catch (Throwable ignored) { /* kuch nahi */ }
+            main.postDelayed(() -> {
+                try {
+                    NotificationManager nm2 = getSystemService(NotificationManager.class);
+                    if (nm2 != null) nm2.cancel(nid);
+                } catch (Throwable ignored) { /* kuch nahi */ }
+            }, 3200);
+        });
     }
 
     private OkHttpClient http() { return http; }

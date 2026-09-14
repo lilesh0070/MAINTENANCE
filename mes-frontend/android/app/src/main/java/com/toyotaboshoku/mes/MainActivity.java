@@ -241,8 +241,19 @@ public class MainActivity extends BridgeActivity {
         } catch (Throwable t) {
             // poori screen na lage to bhi app chalti rahe
         }
+        /* Service ko bata do ki app saamne hai.  Wo is par chat ki
+           notification dikhana band kar deti hai -- wahi baat page par pehle
+           se dikh rahi hoti hai, aur do jagah ek hi cheez dikhana pareshan
+           karta hai.  Buzz ki ring par iska koi asar NAHI. */
+        WalkieService.APP_FOREGROUND = true;
         // Walkie ki notification se aaye ho to seedha us page par (neeche dekho)
         khaanKholo(getIntent());
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        WalkieService.APP_FOREGROUND = false;
     }
 
     @Override

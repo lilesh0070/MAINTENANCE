@@ -38,6 +38,8 @@ Tables (sab `walkie_` se shuru):
   walkie_channels         id · name · color · created_at
   walkie_channel_members  channel_id · user_id
   walkie_events           id · at · kind(voice|buzz) · from_user · target · secs
+  walkie_messages         id · at · from_user · target(user|channel) · convo · body
+  walkie_reads            user_id · convo · last_id   (kitna padh liya)
 
 Endpoints:
   GET    /api/walkie/roster                 kaun-kaun hai + kaun online
@@ -48,6 +50,12 @@ Endpoints:
   DELETE /api/walkie/channels/{id}          (admin)
   PUT    /api/walkie/channels/{id}/members  (admin) channel ke log set karo
   GET    /api/walkie/events                 haal ki call ka log
+  GET    /api/walkie/chat?with=<uid>|channel=<id>   ek baat-cheet
+  POST   /api/walkie/chat                           message bhejo (REST bhi)
+  GET    /api/walkie/chat/threads                   meri saari baat-cheet
+  POST   /api/walkie/chat/read                      "yahan tak padh liya"
+  GET    /api/walkie/chat/admin?a=&b=|channel=      (admin) kisi ki bhi
+  POST   /api/walkie/chat/clear                     (admin) range se saaf
   WS     /api/walkie/ws?token=..&role=rx|tx&kind=web|native
 """
 from __future__ import annotations
@@ -119,6 +127,40 @@ def _ensure_tables():
             ALTER TABLE walkie_events ADD COLUMN IF NOT EXISTS acked_at   TIMESTAMP;
             ALTER TABLE walkie_events ADD COLUMN IF NOT EXISTS acked_by   INTEGER;
             ALTER TABLE walkie_events ADD COLUMN IF NOT EXISTS acked_name TEXT;
+
+            -- ── CHAT ───────────────────────────────────────────────
+            -- Aawaz DB me nahi jaati, par chat ko TIKNA hai -- warna na
+            -- baad me padh sakte hain, na admin dekh sakta.
+            --
+            -- `convo` ek hi khaana hai jo dono kism ki baat-cheet ka pata
+            -- deta hai: do bande -> "u:3:7" (hamesha chhota:bada, isliye
+            -- dono taraf se EK hi key banti hai), group -> "c:2".  Isi par
+            -- index hai, isliye thread kholna aur admin ka "A ke saath B"
+            -- dono ek hi seedhi query hain -- koi OR-scan nahi.
+            CREATE TABLE IF NOT EXISTS walkie_messages (
+                id          SERIAL PRIMARY KEY,
+                at          TIMESTAMP NOT NULL DEFAULT NOW(),
+                from_user   INTEGER NOT NULL,
+                from_name   TEXT,
+                target_type TEXT NOT NULL,
+                target_id   INTEGER NOT NULL,
+                convo       TEXT NOT NULL,
+                body        TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS walkie_msgs_convo_idx
+                ON walkie_messages (convo, id DESC);
+            CREATE INDEX IF NOT EXISTS walkie_msgs_at_idx
+                ON walkie_messages (at DESC);
+
+            -- "Kis baat-cheet me maine kahan tak padh liya."  Har message par
+            -- har bande ki qatar rakhne se (group me wo N guna ho jaati) --
+            -- yahan har baat-cheet par EK qatar hai, bas.
+            CREATE TABLE IF NOT EXISTS walkie_reads (
+                user_id INTEGER NOT NULL,
+                convo   TEXT NOT NULL,
+                last_id INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (user_id, convo)
+            );
         """)
         conn.commit()
     _DDL_DONE = True
@@ -190,9 +232,14 @@ def _naam(u: dict) -> str:
 # Walkie ke sab sub-key isi page se latakte hain.
 _PARENT = "walkie-talkie"
 
-# Ye TEEN "kaam" hain (page nahi).  Inka niyam baaki sub-page se ALAG hai --
+# Ye CHAAR "kaam" hain (page nahi).  Inka niyam baaki sub-page se ALAG hai --
 # neeche `_can` me wajah likhi hai.
-_CAPS = ("walkie-buzz", "walkie-voice", "walkie-channel")
+#
+# ⚠ `walkie-chat` yahan jodne ka ek aur asar hai: jis user ke liye in me se
+# koi bhi khaana pehle se saaf-saaf set hai (jaise sirf Buzz di thi), use chat
+# TAB TAK NAHI milegi jab tak admin use bhi tick na kare.  Ye jaan-boojh kar
+# hai -- niyam wahi hai jo user ne chuna tha: "jo tick kiya, wahi milega".
+_CAPS = ("walkie-buzz", "walkie-voice", "walkie-channel", "walkie-chat")
 
 
 def _can(user: dict, key: str) -> bool:
@@ -246,6 +293,81 @@ def _can(user: dict, key: str) -> bool:
 # ══════════════════════════════════════════════════════════════════
 #  REST
 # ══════════════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════════
+#  Chat -- chhoti madad
+# ══════════════════════════════════════════════════════════════════
+MAX_CHAT_LEN = 1000
+
+
+def _convo_key(uid: int, target: dict) -> str:
+    """Ek baat-cheet ka pata.  Do bande -> "u:chhota:bada" (isliye A->B aur
+    B->A dono EK hi key banate hain), group -> "c:id"."""
+    t = (target or {}).get("type")
+    tid = int((target or {}).get("id") or 0)
+    if t == "channel":
+        return f"c:{tid}"
+    a, b = sorted((int(uid), tid))
+    return f"u:{a}:{b}"
+
+
+def _chat_ok(user: dict, target: dict):
+    """Ye banda is target ko chat kar sakta hai ya nahi.  (None = haan.)
+
+    ⚠ Sirf button chhupana kaafi nahi -- socket aur REST dono seedha bulaye
+    ja sakte hain, isliye jaanch YAHI hoti hai."""
+    t = (target or {}).get("type")
+    tid = int((target or {}).get("id") or 0)
+    if not _can(user, "walkie-chat"):
+        return "You are not allowed to send messages"
+    if t == "channel":
+        if not _can(user, "walkie-channel"):
+            return "You are not allowed to use groups"
+        # apne hi group me bhej sakta hai, kisi bhi group me nahi
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT 1 FROM walkie_channel_members"
+                        " WHERE channel_id = %s AND user_id = %s", (tid, user["id"]))
+            if not cur.fetchone():
+                return "You are not in that group"
+        return None
+    if t != "user" or tid <= 0:
+        return "Bad target"
+    if tid == int(user["id"]):
+        return "You cannot message yourself"
+    if tid not in _enabled_ids():
+        return "That person is not on Walkie-Talkie"
+    return None
+
+
+def _save_msg(uid: int, name: str, target: dict, body: str):
+    """Ek message DB me daalo aur wahi payload lauta do jo socket par jaata
+    hai -- dono jagah ek hi shakal rahe, isliye ek hi jagah banti hai."""
+    t = (target or {}).get("type")
+    tid = int((target or {}).get("id") or 0)
+    convo = _convo_key(uid, target)
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute(
+            "INSERT INTO walkie_messages (from_user, from_name, target_type,"
+            " target_id, convo, body) VALUES (%s,%s,%s,%s,%s,%s)"
+            " RETURNING id, at", (uid, name, t, tid, convo, body))
+        r = cur.fetchone()
+        conn.commit()
+    return {"t": "chat", "id": r["id"],
+            "at": r["at"].isoformat(timespec="seconds"),
+            "convo": convo, "from": {"id": uid, "name": name},
+            "target": {"type": t, "id": tid}, "body": body}
+
+
+def _clean_body(x) -> str:
+    b = (x or "")
+    if not isinstance(b, str):
+        return ""
+    b = b.strip()
+    return b[:MAX_CHAT_LEN]
+
+
 @router.get("/roster")
 def roster(user=Depends(get_current_user)):
     """App ki main list: kaun-kaun walkie par hai, kaun abhi online hai, aur
@@ -261,7 +383,8 @@ def roster(user=Depends(get_current_user)):
                # jawab rahe (frontend ka `canAccess` sirf dikhane ke liye).
                "can_voice": _can(user, "walkie-voice"),
                "can_buzz": _can(user, "walkie-buzz"),
-               "can_channel": _can(user, "walkie-channel")},
+               "can_channel": _can(user, "walkie-channel"),
+               "can_chat": _can(user, "walkie-chat")},
         "people": [{"id": r["id"], "name": _naam(r), "username": r["username"],
                     "online": r["id"] in online}
                    for r in rows if r["id"] != user["id"]],
@@ -465,6 +588,229 @@ def events(limit: int = Query(300, ge=1, le=2000),
 # ══════════════════════════════════════════════════════════════════
 #  WebSocket hub
 # ══════════════════════════════════════════════════════════════════
+class ChatIn(BaseModel):
+    target_type: str = "user"
+    target_id: int = 0
+    body: str = ""
+
+
+@router.post("/chat")
+def chat_send(body: ChatIn, user=Depends(get_current_user)):
+    """Message bhejo -- REST se.
+
+    Socket rehte hue REST kyun: PHONE KE NOTIFICATION SE JAWAB dete waqt app
+    khuli hoti hi nahi.  Wahan sirf Java ki service zinda hai, aur uske liye
+    ek POST bhejna socket ki haalat sambhalne se kahin saaf hai.  (Yahi soch
+    `events/{id}/ack` me bhi hai.)
+
+    Bhejne ke baad message UN SABKE khule socket par bhi chala jaata hai jinko
+    milna chahiye -- yaani notification se bheja hua jawab saamne wale ki
+    khuli app me TURANT dikh jaata hai."""
+    _ensure_tables()
+    target = {"type": (body.target_type or "user"), "id": int(body.target_id or 0)}
+    txt = _clean_body(body.body)
+    if not txt:
+        raise HTTPException(status_code=400, detail="Message is empty")
+    why = _chat_ok(user, target)
+    if why:
+        raise HTTPException(status_code=403, detail=why)
+    payload = _save_msg(user["id"], _naam(user), target, txt)
+    _hub.push_later(payload, user["id"], target)
+    return payload
+
+
+@router.get("/chat")
+def chat_thread(with_user: int = Query(0, alias="with"),
+                channel: int = Query(0),
+                limit: int = Query(50, ge=1, le=200),
+                before: int = Query(0),
+                user=Depends(get_current_user)):
+    """Ek baat-cheet -- nayi se purani.  `before` se aur peeche jao."""
+    _ensure_tables()
+    target = ({"type": "channel", "id": channel} if channel
+              else {"type": "user", "id": with_user})
+    why = _chat_ok(user, target)
+    if why:
+        raise HTTPException(status_code=403, detail=why)
+    return {"convo": _convo_key(user["id"], target),
+            "messages": _thread_rows(_convo_key(user["id"], target), limit, before)}
+
+
+def _thread_rows(convo: str, limit: int, before: int = 0):
+    """Ek hi indexed query -- `(convo, id DESC)` par.  Kram ULTA karke
+    lautate hain taaki page par purani upar aur nayi neeche dikhe."""
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        if before:
+            cur.execute(
+                "SELECT id, at, from_user, from_name, body FROM walkie_messages"
+                " WHERE convo = %s AND id < %s ORDER BY id DESC LIMIT %s",
+                (convo, before, limit))
+        else:
+            cur.execute(
+                "SELECT id, at, from_user, from_name, body FROM walkie_messages"
+                " WHERE convo = %s ORDER BY id DESC LIMIT %s", (convo, limit))
+        rows = cur.fetchall() or []
+    out = []
+    for r in reversed(rows):
+        out.append({"id": r["id"], "at": r["at"].isoformat(timespec="seconds"),
+                    "from": {"id": r["from_user"], "name": r["from_name"]},
+                    "body": r["body"]})
+    return out
+
+
+def _mere_convo(user: dict):
+    """Meri saari mumkin baat-cheet ki key.  Roster jitni hi hain, isliye
+    list chhoti rehti hai aur neeche ki query `= ANY(...)` par index use
+    karti hai -- koi OR-scan nahi."""
+    me = int(user["id"])
+    keys = {}
+    for r in _members_rows():
+        if not r["enabled"] or r["id"] == me:
+            continue
+        a, b = sorted((me, int(r["id"])))
+        keys[f"u:{a}:{b}"] = {"type": "user", "id": r["id"], "name": _naam(r)}
+    if _can(user, "walkie-channel"):
+        for c in _channels_rows():
+            if me in c["members"]:
+                keys[f"c:{c['id']}"] = {"type": "channel", "id": c["id"], "name": c["name"]}
+    return keys
+
+
+@router.get("/chat/threads")
+def chat_threads(user=Depends(get_current_user)):
+    """Meri saari baat-cheet: aakhri message + kitne bina padhe.
+
+    DO query, dono indexed -- ek har baat-cheet ka aakhri message uthati hai
+    (`DISTINCT ON`), doosri bina padhe ki ginti.  Har message par qatar nahi
+    ginte, isliye ye list badi hone par bhi bhaari nahi hoti."""
+    _ensure_tables()
+    keys = _mere_convo(user)
+    if not keys:
+        return {"threads": []}
+    kl = list(keys.keys())
+    me = int(user["id"])
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute(
+            "SELECT DISTINCT ON (convo) convo, id, at, from_user, from_name, body"
+            "  FROM walkie_messages WHERE convo = ANY(%s)"
+            " ORDER BY convo, id DESC", (kl,))
+        last = {r["convo"]: r for r in (cur.fetchall() or [])}
+        cur.execute(
+            "SELECT m.convo, COUNT(*) AS n FROM walkie_messages m"
+            "  LEFT JOIN walkie_reads r ON r.user_id = %s AND r.convo = m.convo"
+            " WHERE m.convo = ANY(%s) AND m.from_user <> %s"
+            "   AND m.id > COALESCE(r.last_id, 0) GROUP BY m.convo", (me, kl, me))
+        anpadhe = {r["convo"]: r["n"] for r in (cur.fetchall() or [])}
+    out = []
+    for k, who in keys.items():
+        l = last.get(k)
+        out.append({
+            "convo": k, "with": who,
+            "unread": anpadhe.get(k, 0),
+            "last": ({"id": l["id"], "at": l["at"].isoformat(timespec="seconds"),
+                      "from": {"id": l["from_user"], "name": l["from_name"]},
+                      "body": l["body"]} if l else None),
+        })
+    # Jisme baat hui ho wo upar, aur usme bhi nayi baat sabse upar
+    out.sort(key=lambda x: (x["last"]["id"] if x["last"] else 0), reverse=True)
+    return {"threads": out}
+
+
+class ChatReadIn(BaseModel):
+    convo: str = ""
+    last_id: int = 0
+
+
+@router.post("/chat/read")
+def chat_read(body: ChatReadIn, user=Depends(get_current_user)):
+    """"Yahan tak padh liya."  Har baat-cheet par EK hi qatar banti hai."""
+    _ensure_tables()
+    convo = (body.convo or "").strip()
+    if not convo:
+        raise HTTPException(status_code=400, detail="convo is required")
+    if convo not in _mere_convo(user):
+        raise HTTPException(status_code=403, detail="Not your conversation")
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO walkie_reads (user_id, convo, last_id) VALUES (%s,%s,%s)"
+            " ON CONFLICT (user_id, convo) DO UPDATE SET last_id ="
+            " GREATEST(walkie_reads.last_id, EXCLUDED.last_id)",
+            (user["id"], convo, int(body.last_id or 0)))
+        conn.commit()
+    return {"ok": True}
+
+
+@router.get("/chat/admin")
+def chat_admin(a: int = 0, b: int = 0, channel: int = 0,
+               limit: int = Query(200, ge=1, le=1000),
+               before: int = Query(0),
+               user=Depends(require_admin)):
+    """(admin) Kisi ke bhi do bande ki, ya kisi bhi group ki baat-cheet.
+
+    Yahan `_chat_ok` nahi lagta -- admin ka kaam hi doosron ki baat dekhna
+    hai.  `require_admin` hi poori rok hai."""
+    _ensure_tables()
+    if channel:
+        convo = f"c:{int(channel)}"
+    else:
+        if not a or not b or int(a) == int(b):
+            raise HTTPException(status_code=400, detail="Pick two different people")
+        x, y = sorted((int(a), int(b)))
+        convo = f"u:{x}:{y}"
+    return {"convo": convo, "messages": _thread_rows(convo, limit, before)}
+
+
+class ChatClearIn(BaseModel):
+    date_from: str = ""
+    date_to: str = ""
+    convo: str = ""          # khali = us range ki saari baat-cheet
+
+
+# Safai ka nishaan audit-log me jaata hai.  Naam me DELETE isliye hai ki wo
+# Maintenance Panel ke "Delete History" me default view me hi dikh jaye.
+CHAT_CLEAR_ACTION = "WALKIE_CHAT_DELETE"
+
+
+@router.post("/chat/clear")
+def chat_clear(body: ChatClearIn, user=Depends(require_admin)):
+    """(admin) Purani chat hatao -- tareekh ki range se, nishaan chhod kar.
+
+    Wahi soch jo Delete History ki safai me hai: mitana to de rahe hain, par
+    ek pankti audit-log me ruk jaati hai (kisne, kaunsi range, kitni qatarein)
+    -- warna baat-cheet chup-chaap gayab ki ja sakti thi."""
+    _ensure_tables()
+    df = (body.date_from or "").strip()
+    dt = (body.date_to or "").strip()
+    if not df or not dt:
+        raise HTTPException(status_code=400, detail="date_from and date_to are required")
+    if dt < df:
+        raise HTTPException(status_code=400, detail="date_to cannot be before date_from")
+    convo = (body.convo or "").strip()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        if convo:
+            cur.execute("DELETE FROM walkie_messages WHERE at >= %s AND at <= %s"
+                        " AND convo = %s", (df + " 00:00:00", dt + " 23:59:59", convo))
+        else:
+            cur.execute("DELETE FROM walkie_messages WHERE at >= %s AND at <= %s",
+                        (df + " 00:00:00", dt + " 23:59:59"))
+        kitni = cur.rowcount or 0
+        if kitni:
+            kya = f" in {convo}" if convo else ""
+            cur.execute(
+                "INSERT INTO maintenance_audit_log (action, details, user_id, username)"
+                " VALUES (%s,%s,%s,%s)",
+                (CHAT_CLEAR_ACTION,
+                 f"Cleared Walkie chat {df} to {dt}{kya} \u2014 {kitni} "
+                 f"{'message' if kitni == 1 else 'messages'} removed",
+                 user.get("id"), user.get("username")))
+        conn.commit()
+    return {"ok": True, "deleted": kitni}
+
+
 class _Conn:
     """Ek juda hua socket.  `role`:
          rx = sunne wala (Java service, ya browser ka khula page)
@@ -648,6 +994,38 @@ class _Hub:
             except Exception:
                 pass
 
+    # ── chat ──
+    def _chat_targets(self, sender_uid: int, target: dict) -> list:
+        """Jinko message milna chahiye + KHUD BHEJNE WALE ke apne socket.
+
+        Apne aap ko bhi bhejte hain taaki bande ke doosre device (phone ki
+        service + khula hua page) dono par wahi baat-cheet ek jaisi dikhe --
+        chahe usne notification se bheja ho ya page se."""
+        return self._targets(sender_uid, target) + self._rx_of(int(sender_uid))
+
+    async def chat_push(self, payload: dict, sender_uid: int, target: dict):
+        msg = json.dumps(payload)
+        for l in self._chat_targets(sender_uid, target):
+            try:
+                await l.ws.send_text(msg)
+            except Exception:
+                pass
+
+    def push_later(self, payload: dict, sender_uid: int, target: dict):
+        """REST se aaya message socket par aage badha do.
+
+        REST wale handler DOOSRE THREAD me chalte hain (FastAPI sync endpoint
+        ko threadpool me daalta hai), isliye seedha `await` nahi kar sakte --
+        event-loop par bhejte hain, bilkul `kick_later` ki tarah."""
+        loop = self._loop
+        if loop is None:
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(
+                self.chat_push(payload, sender_uid, target), loop)
+        except Exception:
+            pass
+
     # ── buzz (sirf vibrate) ──
     async def buzz(self, c: _Conn, target: dict):
         listeners = self._targets(c.uid, target)
@@ -775,6 +1153,20 @@ async def walkie_ws(ws: WebSocket,
                     continue
                 n = await _hub.buzz(c, d.get("target") or {})
                 await ws.send_text(json.dumps({"t": "buzz_sent", "listeners": n}))
+            elif t == "chat":
+                # Text usi socket par jo pehle se khula hai -- ~200 byte, jabki
+                # bolte waqt yahi socket 256 kbps dhoti hai.  Isliye chat ka
+                # apna koi connection ya polling nahi hai.
+                target = d.get("target") or {}
+                why = _chat_ok(user, target)
+                if why:
+                    await ws.send_text(json.dumps({"t": "chat_err", "why": why}))
+                    continue
+                txt = _clean_body(d.get("body"))
+                if not txt:
+                    continue
+                payload = _save_msg(c.uid, c.name, target, txt)
+                await _hub.chat_push(payload, c.uid, target)
     except WebSocketDisconnect:
         pass
     except Exception:

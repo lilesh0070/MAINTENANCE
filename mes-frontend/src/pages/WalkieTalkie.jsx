@@ -24,6 +24,7 @@ import { useAuth } from "../context/AuthContext";
 import { micShuru } from "../constants/walkieAudio";
 import { walkieLink } from "../constants/walkieLink";
 import { walkieNative } from "../constants/walkieNative";
+import { WalkieChatTab, WalkieAdminChatTab } from "../components/WalkieChat";
 
 const api = {
   async get(path, token) {
@@ -87,6 +88,7 @@ export default function WalkieTalkie() {
   const canVoice   = roster?.me?.can_voice   !== false;
   const canBuzz    = roster?.me?.can_buzz    !== false;
   const canChannel = roster?.me?.can_channel !== false;
+  const canChat    = roster?.me?.can_chat    !== false;
   const [online, setOnline] = useState([]);
   const [conn, setConn] = useState("connecting");      // connecting | on | off | denied
   const [pick, setPick] = useState(null);              // {type:"user"|"channel", id, name}
@@ -288,7 +290,9 @@ export default function WalkieTalkie() {
   /* History wale tab ko bhi member ki list chahiye (Person ka dropdown),
      isliye dono par load karte hain -- warna seedha History kholne par
      wo dropdown khali rehta tha. */
-  useEffect(() => { if (tab === "setup" || tab === "hist") loadSetup(); }, [tab, loadSetup]);
+  useEffect(() => {
+    if (tab === "setup" || tab === "hist" || tab === "chats") loadSetup();
+  }, [tab, loadSetup]);
 
   const toggleMember = async (m) => {
     setBusy(true);
@@ -407,11 +411,22 @@ export default function WalkieTalkie() {
         </div>
 
         <div className="wk-body">
-          {isAdmin && (
+          {/* Pehle ye patti SIRF admin ko dikhti thi.  Ab chat bhi yahin se
+              khulti hai, isliye jise chat ki ijazat hai use bhi chahiye --
+              warna uske paas chat tak pahunchne ka koi raasta hi na hota. */}
+          {(isAdmin || canChat) && (
             <div className="wk-tabs">
               <button className={`wk-tab${tab === "talk" ? " on" : ""}`} onClick={() => setTab("talk")}>🎙 Talk</button>
-              <button className={`wk-tab${tab === "setup" ? " on" : ""}`} onClick={() => setTab("setup")}>⚙ Setup</button>
-              <button className={`wk-tab${tab === "hist" ? " on" : ""}`} onClick={() => setTab("hist")}>🕘 History</button>
+              {canChat && (
+                <button className={`wk-tab${tab === "chat" ? " on" : ""}`} onClick={() => setTab("chat")}>💬 Chat</button>
+              )}
+              {isAdmin && (<>
+                <button className={`wk-tab${tab === "setup" ? " on" : ""}`} onClick={() => setTab("setup")}>⚙ Setup</button>
+                {/* Setup ke BILKUL paas -- yahin se admin kisi ke bhi do
+                    bande (ya group) ki baat-cheet padh sakta hai. */}
+                <button className={`wk-tab${tab === "chats" ? " on" : ""}`} onClick={() => setTab("chats")}>👁 All chats</button>
+                <button className={`wk-tab${tab === "hist" ? " on" : ""}`} onClick={() => setTab("hist")}>🕘 History</button>
+              </>)}
             </div>
           )}
 
@@ -419,6 +434,25 @@ export default function WalkieTalkie() {
             <div className="wk-card" style={{ padding:"10px 14px", borderColor:"#fde68a", background:"#fffbeb" }}>
               <b style={{ fontSize:12.5, color:"#92400e" }}>{kehna}</b>
             </div>
+          )}
+
+          {/* ══════════════ CHAT ══════════════ */}
+          {tab === "chat" && canChat && (
+            <WalkieChatTab token={token} meId={roster?.me?.id} />
+          )}
+
+          {/* ═══════════ ALL CHATS (admin) ═══════════ */}
+          {tab === "chats" && isAdmin && (
+            <WalkieAdminChatTab
+              token={token}
+              /* Yahan `roster.people` nahi -- wo apne aap ko chhod deta hai,
+                 aur admin ko apni baat-cheet bhi dekhni ho sakti hai.  Setup
+                 wali poori list (`members`) me sab hain; sirf wahi lete hain
+                 jo walkie par hain. */
+              people={(members || []).filter((m) => m.enabled).map((m) => ({
+                id: m.id, name: m.full_name || m.name || m.username,
+              }))}
+              channels={chans || []} />
           )}
 
           {/* ══════════════ TALK ══════════════ */}

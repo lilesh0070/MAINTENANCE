@@ -89,6 +89,7 @@ export const PAGE_PERM_GROUPS = [
       { key: "walkie-buzz",    label: "Buzz — ring someone's phone" },
       { key: "walkie-voice",   label: "Voice — press and hold to talk" },
       { key: "walkie-channel", label: "Groups — talk/buzz a whole channel" },
+      { key: "walkie-chat",    label: "Chat — send written messages" },
       { key: "walkie-setup",   label: "Setup (who can use it · channels)" },
       { key: "walkie-history", label: "History (who buzzed whom)" },
     ]},

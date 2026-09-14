@@ -44,6 +44,7 @@ export const SUBPAGE_PARENT = {
   "walkie-buzz":    "walkie-talkie",
   "walkie-voice":   "walkie-talkie",
   "walkie-channel": "walkie-talkie",
+  "walkie-chat":    "walkie-talkie",
   "walkie-setup":   "walkie-talkie",
   "walkie-history": "walkie-talkie",
   // Historical Data (aathon section)

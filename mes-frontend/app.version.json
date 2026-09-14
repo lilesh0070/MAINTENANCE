@@ -1,5 +1,5 @@
 {
-  "version": "1.4.68",
-  "notes": "Delete History - tick rows to delete them; the trail line now lists exactly what was removed",
-  "released_at": "2026-09-14T13:32:14"
+  "version": "1.4.69",
+  "notes": "Walkie-Talkie chat - reply from the buzz notification; admin can read any conversation",
+  "released_at": "2026-09-14T14:17:07"
 }

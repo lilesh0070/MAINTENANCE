@@ -24,6 +24,11 @@ export default function WalkiePresence() {
   const { token } = useAuth();
   const nav = useNavigate();
   const [buzz, setBuzz] = useState(null);      // { ev, from:{id,name}, target }
+  /* Chat ki ijazat USI roster wale jawab se aati hai jo neeche pehle se
+     maanga jaata hai -- iske liye ek bhi extra request nahi jaati. */
+  const [canChat, setCanChat] = useState(false);
+  const [jawab, setJawab]     = useState("");
+  const [bhejRahe, setBhejRahe] = useState(false);
 
   // ── socket + service, har page par ─────────────────────────────
   useEffect(() => {
@@ -37,7 +42,11 @@ export default function WalkiePresence() {
       let mera = false;
       try {
         const r = await fetch("/api/walkie/roster", { headers: { Authorization: `Bearer ${token}` } });
-        if (r.ok) mera = !!(await r.json())?.me?.enabled;
+        if (r.ok) {
+          const me = (await r.json())?.me;
+          mera = !!me?.enabled;
+          if (!ruk) setCanChat(me?.can_chat !== false);
+        }
       } catch { /* server band ho to chup rah jao — baaki app chalti rahe */ }
       if (ruk || !mera) return;
 
@@ -64,6 +73,7 @@ export default function WalkiePresence() {
   useEffect(() => walkieLink.on((d) => {
     if (d.t === "buzz") {
       setBuzz(d);
+      setJawab("");
       try { navigator.vibrate?.([260, 120, 260, 120, 260]); } catch { /* nahi hua to nahi */ }
     } else if (d.t === "rx_start") {
       // Koi bolne laga — bulawa apne aap poora ho gaya.
@@ -88,6 +98,37 @@ export default function WalkiePresence() {
     }
     if (kholo) nav("/walkie-talkie");
   }, [buzz, token, nav]);
+
+  /* Jawab bhejna = jawab dena.  Isliye bhejte hi wahi teen kaam ho jaate
+     hain jo "OK" karta hai (ring band, server par ack, parda hatao) --
+     bande ko do baar tap karne ki zaroorat nahi.
+
+     Kahan jaata hai: buzz agar GROUP par tha to usi group me (taaki sabko
+     pata chale), aur seedha buzz tha to BULANE WALE ko -- `buzz.target`
+     us soorat me "main" hoon, isliye wo nahi chalega. */
+  const jawabDo = async () => {
+    const b = jawab.trim();
+    if (!b || bhejRahe) return;
+    const target = buzz?.target?.type === "channel"
+      ? { type: "channel", id: buzz.target.id }
+      : { type: "user", id: buzz?.from?.id };
+    if (!target.id) return;
+    setBhejRahe(true);
+    try {
+      // Socket khula ho to wahi -- ek bhi HTTP request nahi.
+      if (!(walkieLink.state.conn === "on" && walkieLink.send({ t: "chat", target, body: b }))) {
+        await fetch("/api/walkie/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json",
+                     Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ target_type: target.type, target_id: target.id, body: b }),
+        });
+      }
+    } catch { /* net gaya -- parda phir bhi hat jayega, ring band ho jayegi */ }
+    setBhejRahe(false);
+    setJawab("");
+    theekHai(false);
+  };
 
   if (!buzz) return null;
 
@@ -115,6 +156,27 @@ export default function WalkiePresence() {
                          fontFamily: "inherit" }}>
           OK
         </button>
+        {/* Likh kar jawab -- taaki bulane wale ko TURANT pata chal jaye
+            ("5 min me aata hoon"), bina walkie ka page khole. */}
+        {canChat && (
+          <div style={{ display: "flex", gap: 7, marginTop: 10 }}>
+            <input value={jawab} maxLength={1000} autoComplete="off"
+                   placeholder="Reply…"
+                   onChange={(e) => setJawab(e.target.value)}
+                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); jawabDo(); } }}
+                   style={{ flex: 1, minWidth: 0, padding: "11px 12px", borderRadius: 11,
+                            border: "1px solid #cbd5e1", fontSize: 14,
+                            fontFamily: "inherit", background: "#fff" }} />
+            <button onClick={jawabDo} disabled={!jawab.trim() || bhejRahe}
+                    style={{ padding: "11px 15px", borderRadius: 11, border: "none",
+                             background: jawab.trim() ? "#1e40af" : "#cbd5e1",
+                             color: "#fff", fontWeight: 800, fontSize: 13.5,
+                             cursor: jawab.trim() ? "pointer" : "default",
+                             fontFamily: "inherit", flex: "0 0 auto" }}>
+              {bhejRahe ? "…" : "Send"}
+            </button>
+          </div>
+        )}
         <button onClick={() => theekHai(true)}
                 style={{ width: "100%", marginTop: 9, padding: "11px 0", borderRadius: 11,
                          border: "1px solid #cbd5e1", background: "#f8fafc", color: "#334155",
