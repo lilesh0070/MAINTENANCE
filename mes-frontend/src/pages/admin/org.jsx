@@ -12,6 +12,7 @@ import { PAGE_PERM_GROUPS, PERM_LEVELS, ROLE_PILL, ROLE_OPTIONS } from "./mailco
 export function UsersPage({ toast, readOnly = false }) {
   const { token } = useAuth();
   const [users,       setUsers]       = useState([]);
+  const [khoj,        setKhoj]        = useState("");   // username se dhoondho
   const [lines,       setLines]       = useState([]);
   const [departments, setDepartments] = useState([]);
   const [loading,     setLoading]     = useState(true);
@@ -151,6 +152,16 @@ export function UsersPage({ toast, readOnly = false }) {
     });
   };
 
+  /* Search: username, role ya ID -- teeno se.  Sirf username se karte to
+     "supervisor" dhoondhne par kuch na milta, aur admin ko aksar role se hi
+     dhoondhna hota hai. */
+  const dikhneWale = users.filter(u => {
+    const q = khoj.trim().toLowerCase();
+    if (!q) return true;
+    return [u.username, u.role, String(u.id)]
+      .some(v => String(v ?? "").toLowerCase().includes(q));
+  });
+
   const savePerms = async () => {
     if (!permModal) return;
     setPermSaving(true);
@@ -169,19 +180,39 @@ export function UsersPage({ toast, readOnly = false }) {
 
   return (
     <div>
-      <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:20 }}>
+      {/* Search baayein, "+ Add User" daayein.  `flexWrap` isliye ki tang
+          screen par dono ek doosre par na chadhein -- neeche chale jayein. */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
+                    gap:12, flexWrap:"wrap", marginBottom:20 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8, flex:"1 1 220px", minWidth:0 }}>
+          <input value={khoj} onChange={e=>setKhoj(e.target.value)}
+                 placeholder="Search by username, role or ID…"
+                 style={{ ...inputStyle, flex:"1 1 auto", minWidth:0, maxWidth:340 }} />
+          {khoj && (
+            <Btn onClick={()=>setKhoj("")}>Clear</Btn>
+          )}
+        </div>
         <Btn variant="primary" onClick={()=>setModal(true)}>+ Add User</Btn>
       </div>
       <Card>
-        {loading ? <Spinner /> : users.length===0 ? <EmptyState text="No users" /> : (
-          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+        {loading ? <Spinner /> : dikhneWale.length===0 ? (
+          <EmptyState text={users.length ? `No user matches \u201c${khoj}\u201d` : "No users"} />
+        ) : (
+          /* ⚠ Ye scroll wala dabba ZAROORI hai.  Table me chhe column hain
+             (ID / Username / Role / Password / Last Login / Actions) aur ye
+             card ke bahar nikal jaati thi -- Password aur uske aage ka hissa
+             screen se BAHAR chala jaata tha aur wahan pahunchne ka koi
+             raasta hi nahi tha.  Ab table apni chaudai le sakti hai aur
+             card ke andar hi daayein-baayein khisakti hai. */
+          <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
+          <table style={{ width:"100%", minWidth:640, borderCollapse:"collapse", fontSize:13 }}>
             <thead>
               <tr>{["ID","Username","Role","Password","Last Login","Actions"].map(h=>(
                 <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:10, fontWeight:700, letterSpacing:".08em", textTransform:"uppercase", color:"#64748b", borderBottom:"2px solid #e2e8f0" }}>{h}</th>
               ))}</tr>
             </thead>
             <tbody>
-              {users.map(u=>{
+              {dikhneWale.map(u=>{
                 const rp = ROLE_PILL[u.role] || {};
                 return (
                 <tr key={u.id} style={{ borderBottom:"1px solid #f1f5f9" }}>
@@ -227,6 +258,7 @@ export function UsersPage({ toast, readOnly = false }) {
               );})}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
 

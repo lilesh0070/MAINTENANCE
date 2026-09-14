@@ -1,5 +1,5 @@
 {
-  "version": "1.4.62",
-  "notes": "Walkie-Talkie voice is much clearer: the phone now buffers a little audio before playing, so brief network hiccups no longer break the sound",
-  "released_at": "2026-09-14T10:26:48"
+  "version": "1.4.63",
+  "notes": "Users and Access: the table no longer runs off the screen, and there is a search box to find a user by username, role or ID",
+  "released_at": "2026-09-14T10:44:40"
 }
