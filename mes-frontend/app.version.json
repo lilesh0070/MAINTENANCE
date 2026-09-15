@@ -1,5 +1,5 @@
 {
-  "version": "1.4.73",
-  "notes": "Daily DMC Fill fits the phone - zone/line and machine no/name paired, and the check sheet scrolls without changing its format",
-  "released_at": "2026-09-14T16:11:15"
+  "version": "1.4.74",
+  "notes": "Chat now alerts you on any screen, and admin decides who can buzz whom",
+  "released_at": "2026-09-15T09:30:05"
 }

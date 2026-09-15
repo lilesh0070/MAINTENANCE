@@ -84,7 +84,11 @@ export default function WalkiePresence() {
          notification ka bhi yahi niyam hai -- `APP_FOREGROUND`.) */
       const mera = walkieLink.state?.me?.id;
       if (mera && Number(d.from?.id) === Number(mera)) return;
-      if (window.location.pathname.startsWith("/walkie-talkie")) return;
+      /* Patti SIRF tab nahi dikhti jab WAHI baat-cheet saamne khuli ho.
+         Pehle yahan "walkie ka page khula hai kya" dekha jaata tha -- us
+         wajah se Talk / Setup / History tab par baithe bande ko message ki
+         koi khabar hi nahi milti thi (device par naapa gaya). */
+      if (d.convo && walkieLink.khulaConvo === d.convo) return;
       setAayi({ from: d.from?.name || "Someone", body: d.body || "", convo: d.convo });
       return;
     }
@@ -154,7 +158,13 @@ export default function WalkiePresence() {
     return (
       <div style={{ position:"fixed", left:12, right:12, bottom:16, zIndex:19000,
                     display:"flex", justifyContent:"center", pointerEvents:"none" }}>
-        <div onClick={() => { setAayi(null); nav("/walkie-talkie"); }}
+        <div onClick={() => {
+               /* Tap -> wahi baat-cheet kholni hai.  Walkie ka page ise
+                  uthata hai (chahe wo pehle se khula ho). */
+               walkieLink.jaoConvo = aayi.convo || null;
+               setAayi(null);
+               nav("/walkie-talkie");
+             }}
              style={{ pointerEvents:"auto", cursor:"pointer", maxWidth:420, width:"100%",
                       background:"#0f172a", color:"#fff", borderRadius:12,
                       padding:"11px 13px", display:"flex", gap:10, alignItems:"flex-start",

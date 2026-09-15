@@ -87,6 +87,17 @@ function jodo() {
 }
 
 export const walkieLink = {
+  /* Kaunsi baat-cheet is waqt PARDE PAR khuli hai (`u:1:4` / `c:2`).
+     Chat ka page ise set karta hai aur band karte waqt null kar deta hai.
+     `WalkiePresence` isi se tay karta hai ki patti dikhani hai ya nahi --
+     pehle wo "walkie ka page khula hai kya" dekhta tha, aur isi wajah se
+     us page par baithe bande ko message ki KOI khabar nahi milti thi. */
+  khulaConvo: null,
+
+  /* Patti par tap hone par yahan baat-cheet rakh dete hain; walkie ka page
+     khulte hi use kholkar saaf kar deta hai. */
+  jaoConvo: null,
+
   /** Idempotent — dobara bulane par kuch nahi hota (jab tak token wahi hai). */
   start(token) {
     if (!token) return;

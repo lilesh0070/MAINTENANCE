@@ -112,14 +112,14 @@ export function WalkieChatTab({ token, meId }) {
   const [busy, setBusy]       = useState(false);
   const [err, setErr]         = useState("");
 
-  const loadThreads = useCallback(() => {
-    if (!token) return;
-    api.get("/api/walkie/chat/threads", token)
-      .then((d) => setThreads(Array.isArray(d?.threads) ? d.threads : []))
-      .catch((e) => setErr(String(e?.message || e)));
-  }, [token]);
-
-  useEffect(() => { loadThreads(); }, [loadThreads]);
+  /* Poori app ko batao ki kaunsi baat-cheet saamne khuli hai -- `WalkiePresence`
+     isi se tay karta hai ki chat ki patti dikhani hai ya nahi.  Page chhodte
+     waqt saaf karna ZAROORI hai, warna doosre page par jaakar bhi us
+     baat-cheet ki patti dabi rehti. */
+  useEffect(() => {
+    walkieLink.khulaConvo = khula ? khula.convo : null;
+    return () => { walkieLink.khulaConvo = null; };
+  }, [khula]);
 
   /* "Yahan tak padh liya" — sirf tab likhte hain jab sach me kuch naya
      aaya ho.  Warna har baar thread kholne par ek bekaar POST jaata. */
@@ -142,6 +142,28 @@ export function WalkieChatTab({ token, meId }) {
       .catch((e) => setErr(String(e?.message || e)))
       .finally(() => setBusy(false));
   }, [token, padhLiya]);
+
+  /* `kholo` ke BAAD hona zaroori hai -- list aate hi, agar patti par tap hua
+     tha, to wahi baat-cheet khol dete hain.  Ye kaam pehle ek alag effect
+     karta tha, par effect ke andar seedha setState karne se React cascading
+     render karta hai; callback me karna seedha bhi hai aur saaf bhi. */
+  const loadThreads = useCallback(() => {
+    if (!token) return;
+    api.get("/api/walkie/chat/threads", token)
+      .then((d) => {
+        const list = Array.isArray(d?.threads) ? d.threads : [];
+        setThreads(list);
+        const c = walkieLink.jaoConvo;
+        if (c) {
+          walkieLink.jaoConvo = null;
+          const t = list.find((x) => x.convo === c);
+          if (t) kholo(t);
+        }
+      })
+      .catch((e) => setErr(String(e?.message || e)));
+  }, [token, kholo]);
+
+  useEffect(() => { loadThreads(); }, [loadThreads]);
 
   /* ── Naya message: usi socket se jo pehle se khula hai ──────────
      Server har aane wale message ko BHEJNE WALE ko bhi lautata hai, isliye

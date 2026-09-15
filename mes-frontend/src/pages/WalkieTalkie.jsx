@@ -89,12 +89,24 @@ export default function WalkieTalkie() {
   const canBuzz    = roster?.me?.can_buzz    !== false;
   const canChannel = roster?.me?.can_channel !== false;
   const canChat    = roster?.me?.can_chat    !== false;
+  /* Kis-kis ko buzz kar sakte hain (Setup ki jodi se).  Server bhi yahi
+     jaanchta hai -- button chhupana akele koi rok nahi hoti. */
+  const buzzKinko = useMemo(
+    () => new Set((roster?.can_buzz_ids || []).map(Number)),
+    [roster]);
 
   /* Kaun kiske saath chat kar sakta hai (Setup).  `pairs` me dono taraf
      bhari hui hai, isliye UI ko jodne ka koi hisaab nahi karna padta. */
   const [pairs, setPairs]     = useState({});     // { "4": [17, 18], ... }
   const [pairWho, setPairWho] = useState("");     // kiski list khuli hai
   const [pairSel, setPairSel] = useState(() => new Set());
+
+  /* Buzz ki apni alag jodi -- chat jaisi hi, par alag list.  Ek hi list
+     rakhna galat hota: kisi se likh kar baat karne dena aur uska phone
+     bajane dena do alag cheezein hain. */
+  const [bPairs, setBPairs]     = useState({});
+  const [bPairWho, setBPairWho] = useState("");
+  const [bPairSel, setBPairSel] = useState(() => new Set());
 
   /* "Kaun walkie use karega" -- ab Save wala.  `chaluSel` sirf parde ki haalat
      hai; server tab tak nahi badalta jab tak Save na daba. */
@@ -310,6 +322,8 @@ export default function WalkieTalkie() {
     api.get("/api/walkie/channels", token).then(setChans).catch(() => setChans([]));
     api.get("/api/walkie/chat/pairs", token)
        .then((d) => setPairs(d?.pairs || {})).catch(() => setPairs({}));
+    api.get("/api/walkie/buzz/pairs", token)
+       .then((d) => setBPairs(d?.pairs || {})).catch(() => setBPairs({}));
   }, [token, isAdmin]);
   /* History wale tab ko bhi member ki list chahiye (Person ka dropdown),
      isliye dono par load karte hain -- warna seedha History kholne par
@@ -375,6 +389,32 @@ export default function WalkieTalkie() {
                        { enabled: chaluSel.has(m.id) }, token);
       }
       loadSetup(); loadRoster();
+      setKehna("Saved.");
+    } catch (e) { setKehna(e?.message || "Could not save"); }
+    finally { setBusy(false); }
+  };
+
+  const bPairKholo = (id) => {
+    const k = String(id);
+    setBPairWho(k);
+    setBPairSel(new Set((bPairs[k] || []).map(Number)));
+  };
+
+  const bPairPalto = (id) => setBPairSel((p) => {
+    const n = new Set(p);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  });
+
+  const bPairSambhalo = async () => {
+    if (!bPairWho) return;
+    setBusy(true);
+    try {
+      await api.send("PUT", `/api/walkie/buzz/pairs/${bPairWho}`,
+                     { user_ids: [...bPairSel] }, token);
+      const d = await api.get("/api/walkie/buzz/pairs", token);
+      setBPairs(d?.pairs || {});
+      loadRoster();
       setKehna("Saved.");
     } catch (e) { setKehna(e?.message || "Could not save"); }
     finally { setBusy(false); }
@@ -588,7 +628,10 @@ export default function WalkieTalkie() {
                         <div className="wk-row-name">{p.name}</div>
                         <div className="wk-row-sub">{p.online ? "Online" : "Offline"}</div>
                       </span>
-                      {canBuzz && (
+                      {/* Buzz sirf us bande par jiske saath Setup me jodi bani ho.
+                          Naam list me phir bhi rehta hai -- voice alag cheez hai
+                          aur wo band nahi honi chahiye. */}
+                      {canBuzz && buzzKinko.has(Number(p.id)) && (
                         <button className="wk-mini" disabled={!p.online}
                                 onClick={(e) => { e.stopPropagation(); buzz({ type:"user", id:p.id }); }}>
                           📳 Buzz
@@ -866,6 +909,59 @@ export default function WalkieTalkie() {
                         <button key={m.id} className="wk-mini"
                                 style={on ? { background:theme.soft, borderColor:theme.accent, color:"#0f172a" } : undefined}
                                 onClick={() => pairPalto(m.id)}>
+                          {on ? "✓ " : ""}{m.name}
+                        </button>
+                      );
+                    })}
+                    {enabledMembers.length < 2 && (
+                      <span className="wk-row-sub">Add at least two people above first.</span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── kaun kisko buzz kar sakta hai ───────────────
+                Chat ki jodi se BILKUL ALAG list.  Jodi bane bina us bande
+                par Buzz ka button dikhta hi nahi, aur server bhi mana kar
+                deta hai.
+                Naam list se HATATE nahi -- warna uspar voice bhi band ho
+                jaati, aur wo alag cheez hai.
+                Admin har jodi me apne aap shaamil hai. */}
+            <div className="wk-card">
+              <div className="wk-h">Who can buzz whom</div>
+              <div className="wk-row-sub" style={{ marginTop:2 }}>
+                Pick a person, then tick everyone whose phone they are allowed to
+                ring. Until you do, the Buzz button does not show for them.
+                An administrator can always buzz everyone.
+              </div>
+              <div style={{ display:"flex", gap:8, marginTop:10, flexWrap:"wrap" }}>
+                <select className="wk-in" style={{ flex:"1 1 180px" }}
+                        value={bPairWho} onChange={(e) => bPairKholo(e.target.value)}>
+                  <option value="">— pick a person —</option>
+                  {enabledMembers.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} ({(bPairs[String(m.id)] || []).length})
+                    </option>
+                  ))}
+                </select>
+                {!!bPairWho && (
+                  <button className="wk-mini" style={{ padding:"8px 16px" }}
+                          disabled={busy} onClick={bPairSambhalo}>Save</button>
+                )}
+              </div>
+              {!!bPairWho && (
+                <div style={{ marginTop:10 }}>
+                  <div className="wk-row-sub" style={{ marginBottom:6 }}>
+                    Allowed to buzz{bPairSel.size ? ` — ${bPairSel.size} selected` : " — nobody yet"}
+                  </div>
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                    {enabledMembers.filter((m) => String(m.id) !== String(bPairWho)).map((m) => {
+                      const on = bPairSel.has(m.id);
+                      return (
+                        <button key={m.id} className="wk-mini"
+                                style={on ? { background:theme.soft, borderColor:theme.accent, color:"#0f172a" } : undefined}
+                                onClick={() => bPairPalto(m.id)}>
                           {on ? "✓ " : ""}{m.name}
                         </button>
                       );

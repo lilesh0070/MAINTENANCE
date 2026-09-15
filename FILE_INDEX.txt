@@ -1,0 +1,275 @@
+========================================================================================================
+  TBDI MAINTENANCE MES  --  FILE INDEX
+  Har file ka naam, uski lambai (lines), aur wo KIS LIYE hai.
+========================================================================================================
+
+  Matlab kahan se aaya:
+    - Zyadatar files ka matlab UNKE APNE header comment se jyon ka tyon
+      uthaya gaya hai.  Yaani jo code me likha hai, wahi yahan hai.
+    - Sirf 10 files me header hai hi nahi.  Unka matlab file padh kar
+      likha gaya hai aur uspar saaf-saaf  [padh kar likha]  laga hai.
+
+  Banaya gaya: 15 September 2026   (app v1.4.73)
+  Dobara banana ho to bataiye -- file badalne par ye list apne aap nahi badalti.
+
+========================================================================================================
+  FRONTEND -- Pages (screens the user opens)   (42 files)
+  folder: mes-frontend/src/pages
+========================================================================================================
+AdminPanel.jsx                       333  Maintenance Panel ka dhaancha -- upar section ki patti, uske neeche tab ki patti, aur har tab ka panna.  [padh kar likha]
+AndonMonitor.jsx                     185  ─────────────────────────────────────────────────────────────────── AndonMonitor.jsx — "ANDON Monitor"
+AndonSystem.jsx                     2403  ───────────────────────────────────────────────────────────────────
+BDAnalysis.jsx                       351  ───────────────────────────────────────────────────────────────────
+BDHistory.jsx                        394  ───────────────────────────────────────────────────────────────────
+BreakdownLogBook.jsx                 697  ─────────────────────────────────────────────────────────────────── BreakdownLogBook.jsx — Maintenance Log Book (rebuilt 2026-07-07)
+DMCMaintenanceVerify.jsx             398  ─────────────────────────────────────────────────────────────────── DMCMaintenanceVerify.jsx — "Maintenance Weekly" (Machine DMC)
+DMCNgPoint.jsx                       240  ─────────────────────────────────────────────────────────────────── DMCNgPoint.jsx — "DMC NG Point" (Machine DMC)
+DMCSupervisorVerify.jsx              471  ─────────────────────────────────────────────────────────────────── DMCSupervisorVerify.jsx — "Supervisor Verify" (Machine DMC)
+DailyDMCFill.jsx                     351  ─────────────────────────────────────────────────────────────────── DailyDMCFill.jsx — "Daily DMC Fill" (Maintenance)
+DeviationForm.jsx                    321  ───────────────────────────────────────────────────────────────────
+DmcSheet.jsx                         538  ─────────────────────────────────────────────────────────────────── DmcSheet.jsx — TBDI Daily Machine Check Sheet (DMC) FORMAT renderer.
+HistoryCard.jsx                      445  ───────────────────────────────────────────────────────────────────
+Login.jsx                            535  Sign-in ka screen.  Har user login ke baad /dashboard par hi jaata hai; wahan se uska apna dashboard khulta hai.  [padh kar likha]
+MachineDMC.jsx                       171  ─────────────────────────────────────────────────────────────────── MachineDMC.jsx — "Machine DMC" (Maintenance)
+MachineDMCAdmin.jsx                  831  ─────────────────────────────────────────────────────────────────── MachineDMCAdmin.jsx — Maintenance Panel → Machine DMC
+MachineManual.jsx                    313  ─────────────────────────────────────────────────────────────────── MachineManual.jsx — "Machine Manual" (sidebar, Maintenance section)
+MachineMaster.jsx                    446  ─────────────────────────────────────────────────────────────────── MachineMaster.jsx — Machine Master (sidebar → Machine Master)
+MaintenanceAnnualIndex.jsx           188  MaintenanceAnnualIndex.jsx — "Global Maintenance Index" annual report.
+MaintenanceBreakdown.jsx             143  ───────────────────────────────────────────────────────────────────
+MaintenanceCAPA.jsx                  727  ─────────────────────────────────────────────────────────────────── MaintenanceCAPA.jsx — CAPA / Quality Problem Report (QPR)
+MaintenanceDashboard.jsx             578  ───────────────────────────────────────────────────────────────────
+MaintenanceDeviations.jsx            360  ───────────────────────────────────────────────────────────────────
+MaintenanceHistorical.jsx           1559  ───────────────────────────────────────────────────────────────────
+MaintenanceKPI.jsx                   927  ───────────────────────────────────────────────────────────────────
+MaintenanceOverview.jsx              403  ───────────────────────────────────────────────────────────────────
+OJT.jsx                              299  ─────────────────────────────────────────────────────────────────── OJT.jsx — Skill & Training → OJT (On-the-Job Training)
+OrganisationChart.jsx                472  ─────────────────────────────────────────────────────────────────── OrganisationChart.jsx — Skill & Training → Organisation Chart
+PMCheckSheetAdmin.jsx                787  ─────────────────────────────────────────────────────────────────── PMCheckSheetAdmin.jsx — Maintenance Panel → PM Check Sheet
+PMPanel.jsx                         1500  ─────────────────────────────────────────────────────────────────── PMPanel.jsx — Preventive Maintenance (schedule + dashboard)
+ParetoAnalysis.jsx                   406  ─────────────────────────────────────────────────────────────────── ParetoAnalysis.jsx — Breakdown → Pareto Analysis
+ProductionBreakdownSlip.jsx          435  ProductionBreakdownSlip.jsx — 2-stage breakdown slip (Production → Maintenance).
+QPRForm.jsx                          625  ─────────────────────────────────────────────────────────────────── QPRForm.jsx — CAPA → one QPR sheet (opened by "Start CAPA" / "View"; the standalone QPR...
+SkillMatrix.jsx                      648  ─────────────────────────────────────────────────────────────────── SkillMatrix.jsx — Skill & Training → Skill Matrix (Skill Evaluation)
+SkillTraining.jsx                    119  ───────────────────────────────────────────────────────────────────
+SkillUpgradation.jsx                 294  ─────────────────────────────────────────────────────────────────── SkillUpgradation.jsx — Skill & Training → Skill Upgradation Plan
+Spare.jsx                            632  ─────────────────────────────────────────────────────────────────── Spare.jsx — "Spare" (Maintenance)
+StudyMaterial.jsx                    437  ─────────────────────────────────────────────────────────────────── StudyMaterial.jsx — "Study Material" (sidebar, Maintenance section)
+TopBreakdowns.jsx                    399  ─────────────────────────────────────────────────────────────────── TopBreakdowns.jsx — Breakdown → Top 10 BD
+UpdatePlan.jsx                       900  ─────────────────────────────────────────────────────────────────── UpdatePlan.jsx — "Update Plan" (sidebar, first entry in Maintenance)
+WalkieTalkie.jsx                     944  ─────────────────────────────────────────────────────────────────── WalkieTalkie.jsx — plant ke andar push-to-talk.
+capaGrid.js                            4  AUTO-GENERATED from capa.xlsx by gen_capa_html.py — QPR form grid. Exact merged-cell layout; empty/example cells are fillable <input>/<textarea> named f_<r...
+
+========================================================================================================
+  FRONTEND -- Breakdown sub-screens   (8 files)
+  folder: mes-frontend/src/pages/breakdown
+========================================================================================================
+AndonTable.jsx                       235  ════════════════════════════════════════════════════════════════════ 1) ANDON Live Table
+ClosureFormModal.jsx                1635  Break Down Slip band karne ka form (modal) -- spare ki qatarein, aur print / PDF nikalne ka intezaam.  [padh kar likha]
+DmcNgPanel.jsx                       106  ─────────────────────────────────────────────────────────────────── DmcNgPanel.jsx — Maintenance Dashboard → "DMC NG Points (Open)"
+KpiPanel.jsx                         419  ════════════════════════════════════════════════════════════════════ 2.5) Maintenance KPI panel (auto-computed + target compare + CSV download). Sits betwe...
+NewBreakdownSlip.jsx                  48  ─────────────────────────────────────────────────────────────────── NewBreakdownSlip.jsx — open a BLANK Break Down Slip and fill it from scratch (sidebar →...
+PmThisMonth.jsx                      345  ════════════════════════════════════════════════════════════════════ 1.5) PM This Month — is mahine kis machine ka Preventive Maintenance due hai, kaunse h...
+shared.jsx                           173  ───────────────────────────────────────────────────────────────────
+slipPayload.js                        56  ─────────────────────────────────────────────────────────────────── slipPayload.js — ClosureFormModal ke form-fields se maintenance_breakdown_data ki flat...
+
+========================================================================================================
+  FRONTEND -- Maintenance Panel tabs (admin)   (10 files)
+  folder: mes-frontend/src/pages/admin
+========================================================================================================
+MtbfRunningHours.jsx                 185  admin/MtbfRunningHours.jsx — MTBF Calculation (minimal).
+breakdownmail.jsx                    312  admin/breakdownmail.jsx — Breakdown Escalation Mail.
+deletehistory.jsx                    406  admin/deletehistory.jsx — "Delete History" tab (Maintenance Panel).
+loginhistory.jsx                     265  admin/loginhistory.jsx — "Login History" tab (Maintenance Panel, User & Access ke aage). Do view: • Currently Logged In — abhi kaun-kaun active hai (latest...
+mail-kpi.jsx                         459  admin/mail-kpi.jsx — KPI Targets page.
+mailconfig.jsx                       180  admin/mailconfig.jsx — Users page ke saanjhe constants.
+org.jsx                              437  admin/org.jsx — Users · Machines · Cameras · Departments.
+slipthreshold.jsx                    105  ── Slip Threshold ────────────────────────────────────────────────── AUTO breakdown slip tabhi banti hai jab maintenance ANDON call itne minute se ZYADA kh...
+system.jsx                            44  admin/system.jsx — Admin Panel ka tab-dhancha (sirf constant, koi component nahi).
+ui.jsx                               320  admin/ui.jsx — shared visual primitives for every Admin page (headings, cards, buttons, form fields, modal, toast, excel importer). Extracted from AdminPan...
+
+========================================================================================================
+  FRONTEND -- Shared components   (14 files)
+  folder: mes-frontend/src/components
+========================================================================================================
+AIAssistant.jsx                      740  App ke andar AI se sawaal poochhne wali chhoti khidki.  [padh kar likha]
+AndonAlert.jsx                       189  ─────────────────────────────────────────────────────────────────── AndonAlert.jsx — global "MAINTENANCE ANDON call aayi" popup.
+AppSettings.jsx                      547  AppSettings.jsx — app ke andar upar-daayen ⚙ Settings.
+DisplayToolbar.jsx                   111  ─────────────────────────────────────────────────────────────────── DisplayToolbar.jsx — top-right "display controls" pill for the wall dashboard pages (Ov...
+ErrorBoundary.jsx                     90  ─── KHAALI SCREEN KI JAGAH KUCH TO DIKHE ────────────────────────────
+ExcelBtn.jsx                          77  ExcelBtn.jsx — "Excel" ka button jo table ko .xlsx bana kar de deta hai.
+FullscreenButton.jsx                  70  ─────────────────────────────────────────────────────────────────── FullscreenButton.jsx — floating "full screen" toggle, on every page.
+Layout.jsx                            74  The wall-dashboard pages get the full display toolbar (Light/Dark + aspect + fullscreen); every other page keeps just the plain full-screen button.
+RowDelete.jsx                        137  RowDelete.jsx — Historical Data ki har table me "🗑 Delete" ka button, apni pushti (confirm) ke saath.
+SheetPrintBtn.jsx                    144  SheetPrintBtn.jsx — sheet ke kone me baithne wale "Print" aur "PDF" button.
+SlideNav.jsx                         389  Static nav structure. The Department Panel item is injected dynamically below because its label depends on the logged-in department user's department name.
+TvFit.jsx                             86  ─────────────────────────────────────────────────────────────────── TvFit.jsx — "fit to page" for a big display (65" 4K TV).
+WalkieChat.jsx                       414  WalkieChat.jsx — Walkie-Talkie ki likhi hui baat-cheet.
+WalkiePresence.jsx                   234  WalkiePresence.jsx — walkie ka "hamesha chalne wala" hissa.
+
+========================================================================================================
+  FRONTEND -- Helpers / constants   (7 files)
+  folder: mes-frontend/src/constants
+========================================================================================================
+apiBase.js                           371  apiBase.js — APK ke liye server ka pata jodne wala ek hi jagah ka intezaam.
+sheetTools.js                        939  sheetTools.js — SHEET KA PRINT AUR EXCEL DOWNLOAD, EK HI JAGAH.
+upperCaret.js                         81  upperCaret.js — "type karte hi BADE AKSHAR" wali dikkat ka hal.
+walkieAudio.js                       193  walkieAudio.js — Walkie-Talkie ka aawaz wala hissa (mic + speaker).
+walkieLink.js                        138  walkieLink.js — Walkie ka EK socket, poori app ke liye.
+walkieNative.js                       61  walkieNative.js — Android ki Walkie service se baat karne ka ek hi darwaza.
+zones.js                              17  The six PRODUCTION zones shown in every Zone selection across the app. (Only the Preventive Maintenance pages keep the full master zone list.) Order fixed...
+
+========================================================================================================
+  FRONTEND -- Login & permissions   (2 files)
+  folder: mes-frontend/src/context
+========================================================================================================
+AuthContext.jsx                      306  Login, token aur permission ek hi jagah.  APK me token localStorage me rehta hai, website par sessionStorage me.  [padh kar likha]
+DisplayContext.jsx                    41  ─────────────────────────────────────────────────────────────────── DisplayContext.jsx — display controls for the wall-dashboard pages.
+
+========================================================================================================
+  FRONTEND -- API client   (1 files)
+  folder: mes-frontend/src/api
+========================================================================================================
+client.jsx                           107  Central API client — wraps fetch with auth headers Usage: import { api } from "../api/client" Then: api.get("/api/plants/", token) or api.post("/api/plants...
+
+========================================================================================================
+  FRONTEND -- Root   (3 files)
+  folder: mes-frontend/src
+========================================================================================================
+App.jsx                              358  ─── Pages — MAINTENANCE-ONLY SLICE ───────────────────────────────────────── This is a standalone copy of the Maintenance department UI extracted from the...
+main.jsx                              61  APK me API ka pura pata jodta hai. WEBSITE PAR KUCH NAHI KARTA — wahan API_BASE khali rehta hai aur `/api/...` bilkul pehle jaisa proxy se jaata hai.
+responsive.css                      2320  ─────────────────────────────────────────────────────────────────── responsive.css — global mobile/tablet layer
+
+========================================================================================================
+  BACKEND -- Routers (the API)   (35 files)
+  folder: Phase2/routers
+========================================================================================================
+__init__.py                            0  Khali file -- sirf isliye ki `routers` ek Python package ban jaye.
+andon.py                            3362  Standalone Industrial **ANDON Management** module — configured entirely from the UI (no source changes to add a PLC or a department).
+app_update.py                        115  routers/app_update.py — Android app ka apna update check.
+breakdown_logbook.py                 300  Breakdown Log Book — one row per breakdown entry (the "BREAKDOWN LOG BOOK — NEW ENTRY" form). Self-contained table `maintenance_logbook_db_history` created...
+breakdown_mail.py                    457  BREAKDOWN ESCALATION MAIL — breakdown jitna lamba khichta jaayega, utne upar tak apne aap mail chala jaayega.
+breakdown_slips.py                  1236  Standalone storage for the MANUAL "Break Down Slip" (raised from the sidebar
+breakdowns.py                        309  BREAKDOWN LOG — bhari hui Break Down Slips ka reader (`maintenance_breakdown_data`).
+capa_logbook.py                      424  CAPA driven directly by the Break Down Slip table (`maintenance_breakdown_data`) — the SAME source the Maintenance-KPI / BD-History / BD-Analysis pages com...
+daily_plan.py                        268  Daily Work Assign — Update Plan → "Daily Work Assign" section.
+dashboard_zones.py                   118  Which zones show as tiles on the Maintenance Dashboard "Pending Breakdown" panel (KpiPanel). This is an admin-curated whitelist that *defaults* to the six...
+deviations.py                        298  routers/deviations.py — Online Deviation Form.
+kpi_ui_settings.py                    67  Admin-editable APPEARANCE settings for the Maintenance KPI page — so colours, chart bar colours and axis limits can be changed from inside the page (no cod...
+logbook.py                           213  Maintenance Log Book (rebuilt 2026-07-07) — one row per breakdown entry, matching the physical TBDI/MAINT log-book format with these changes: • Machine ide...
+machine_dmc.py                      1767  Machine DMC (Daily Machine Check Sheet) — check-point master + editor.
+machine_running_hours.py             179  Per-machine RUNNING HOURS for a financial year — a simple manual entry that is the operating-time input for MTBF. Admin picks a machine, types its running...
+machines.py                          374  Machine master list (zone × line × machine_no → machine_name).
+mailer.py                             46  routers/mailer.py — SMTP bhejne ka saada helper.
+maintenance_kpi.py                   771  Maintenance KPI dashboard — auto-computed from the filled slips over a selectable period (today / last 7d / 30d / custom range). Compares each KPI to its a...
+maintenance_kpi_target.py            197  Maintenance KPI targets — one target value per row, at one of three levels set by how deep the selection goes:
+maintenance_logbook.py               144  Maintenance Daily Log Book (TBDI / MAINT. / F / 008) — DB-backed.
+maintenance_spare.py                 145  `maintenance_spare` — the SINGLE source for spare data, fed ONLY by the Manual Break Down Slip and the Maintenance Log Book. One row per spare occurrence,...
+org_chart.py                         126  Organization Chart with monthly version history. One record per month (YYYY-MM); saving upserts the given month so previous months are never overwritten. T...
+pm.py                               2049  Preventive Maintenance (PM) — schedule / planner + reminder-mail config.
+pm_mail.py                           166  PM (Preventive Maintenance) reminder mail — SERVER-SIDE (2026-06-17).
+qpr.py                                98  The QPR (Quality Problem Report) sheet store — now used ONLY by the CAPA workflow (the standalone "QPR register" page and its list/create/delete endpoints...
+shutdown_plan.py                     190  Shutdown Plan Work — Update Plan → "Shutdown Plan Work" section.
+skill_eval.py                        238  Skill Matrix — Skill Evaluation. One record per (employee, zone, machine, process, assessment-cycle). A cycle is a 3-month calendar quarter (Jan-Mar / Apr-...
+skill_training.py                    157  Maintenance Skill & Training — backing store for the "Skill & Training" section of the Maintenance panel (OJT, Skill Matrix, Organisation Chart, Skill Upgr...
+spares.py                            175  routers/spares.py — Spare consumption, consolidated
+study_material.py                    341  Study Material — maintenance ki padhai ka saamaan.
+study_seed_core.py                   343  Study Material ka SEED content — part 1: maintenance ke core concepts (Basics, KPI, CAPA, Preventive, ANDON).
+study_seed_tech.py                  1073  Study Material ka SEED content — part 2: machine ke parts aur systems (Sensors, Pneumatic, Hydraulic, Electrical, Control/PLC-HMI, Mechanical, Safety).
+sunday_plan.py                       273  Sunday Plan Work — Update Plan → "Sunday Plan Work" section.
+users.py                             322  User management (admin only).
+walkie.py                           1450  Walkie-Talkie** — plant ke andar aapas me baat karne ka push-to-talk system. Poora aapke APNE server par: koi Firebase/FCM nahi, koi internet nahi.
+
+========================================================================================================
+  BACKEND -- Core   (5 files)
+  folder: Phase2
+========================================================================================================
+_clear_db_locks.py                    36  One-off cleanup — maintenance_db ki purani/atki (zombie) connections band karo.
+auth.py                              451  JWT-based authentication. Roles = ek designation ladder — admin · supervisor · engineer · senior_engineer · assistant_manager · deputy_manager · senior_man...
+check_db_hosts.py                     50  check_db_hosts.py — .env me jo DB raaste likhe hain, wo mil rahe hain ya nahi.
+database.py                          153  database.py — lazy connection pool + canonical DB config. Pool startup pe nahi banta, pehli request pe banta hai. DB down ho toh app start hoti rehti hai.
+main.py                             1139  Platform — FastAPI Backend Toyota Boshoku Device India Pvt. Ltd., Bawal, Haryana
+
+========================================================================================================
+  BACKEND -- Tools   (2 files)
+  folder: Phase2/tools
+========================================================================================================
+check_deps.py                        133  requirements.txt ki koi library install hone se reh gayi ho to shuru me hi uska naam le kar chetavni deta hai.  [padh kar likha]
+schema_guard.py                      185  schema_guard.py — DB ke dhanche ka pehra.
+
+========================================================================================================
+  BACKEND -- Scripts   (2 files)
+  folder: Phase2/scripts
+========================================================================================================
+push_apk.py                          125  Bani hui APK ko alag `apk` branch par chadha deta hai -- APK kabhi `main` par nahi jaati.  [padh kar likha]
+release_app.py                       180  Version +1 karta hai, website ka bundle banata hai, phir APK banakar Phase2/app me rakh deta hai.  [padh kar likha]
+
+========================================================================================================
+  ANDROID -- Java (APK only)   (7 files)
+  folder: mes-frontend/android/app/src/main/java/com/toyotaboshoku/mes
+========================================================================================================
+ApkUpdate.java                       206  APK KO APP KE ANDAR HI UTAARO AUR INSTALL KHOL DO.
+BootReceiver.java                     54  TV/DEVICE ON HOTE HI APP KHUD KHUL JAYE.
+MainActivity.java                    318  App ka pehla parda -- device phone / tablet / TV kaunsa hai ye tay karta hai, aur walkie ke notification par tap hone par seedha us page par le jaata hai.  [padh kar likha]
+ScreenMode.java                       79  TV PAR POORI SCREEN -- upar ki kaali patti (status bar) aur neeche ka navigation bar hata do.
+SheetTools.java                      242  SHEET KA PRINT AUR EXCEL FILE — APP KE ANDAR.
+Walkie.java                          152  WALKIE — JS aur {@link WalkieService} ke beech ka patla pul.
+WalkieService.java                   927  WALKIE-TALKIE KA SUNNE WALA HISSA — FOREGROUND SERVICE.
+
+========================================================================================================
+  DATABASE -- tables   (52 tables, 713 columns)   db: maintenance_db
+  snapshot: 2026-09-12T11:37:49
+========================================================================================================
+andon_call_output                             22 columns
+andon_departments                              4 columns
+andon_fault_map                                7 columns
+andon_history                                 18 columns
+andon_model_map                                7 columns
+andon_output_lock                              4 columns
+andon_plc_devices                             28 columns
+andon_plc_output_mapping                       9 columns
+andon_system                                  17 columns
+breakdown_status                              18 columns
+machine_dmc                                   17 columns
+machine_dmc_fill_ng_point                     23 columns
+machine_dmc_filled                            16 columns
+machine_dmc_format                             5 columns
+machine_dmc_rev                               18 columns
+maintenance_audit_log                          8 columns
+maintenance_auto_breakdown_slip               39 columns
+maintenance_breakdown_data                    34 columns
+maintenance_capa_sheet                        13 columns
+maintenance_daily_plan_work                   18 columns
+maintenance_dashboard_zones                    3 columns
+maintenance_deviations                        41 columns
+maintenance_escalation_config                  4 columns
+maintenance_escalation_level                   7 columns
+maintenance_escalation_log                    12 columns
+maintenance_kpi_target                        13 columns
+maintenance_kpi_ui_settings                    3 columns
+maintenance_logbook                           11 columns
+maintenance_logbook_db_history                19 columns
+maintenance_machine_running_hours             10 columns
+maintenance_machines                          11 columns
+maintenance_org_chart                          7 columns
+maintenance_pm_check_point                    13 columns
+maintenance_pm_check_point_rev                13 columns
+maintenance_pm_check_sheet_filled             28 columns
+maintenance_pm_check_sheet_format              5 columns
+maintenance_qpr                                9 columns
+maintenance_shutdown_plan                     14 columns
+maintenance_skill_eval                        15 columns
+maintenance_skill_training                     7 columns
+maintenance_slip_config                        5 columns
+maintenance_spare                             13 columns
+maintenance_study_material                    11 columns
+maintenance_sunday_plan                       18 columns
+maintenance_user_permissions                   4 columns
+maintenance_users                             10 columns
+maintenance_yearly_pm_shedule                 14 columns
+maintenance_yearly_pm_signoff                  4 columns
+pm_mail_config                                 5 columns
+pm_mail_log                                    5 columns
+pm_schedule                                   15 columns
+toolroom_auto_breakdown_slip                  39 columns
+
+KUL CODE FILES: 138

@@ -57,6 +57,8 @@ Endpoints:
   GET    /api/walkie/chat/admin?a=&b=|channel=      (admin) kisi ki bhi
   POST   /api/walkie/chat/clear                     (admin) range se saaf
   POST   /api/walkie/chat/delete                    (admin) chune hue / poori chat
+  GET    /api/walkie/buzz/pairs                     (admin) kaun kisko buzz kar sakta hai
+  PUT    /api/walkie/buzz/pairs/{user_id}           (admin) ek bande ki list set karo
   WS     /api/walkie/ws?token=..&role=rx|tx&kind=web|native
 """
 from __future__ import annotations
@@ -93,6 +95,10 @@ def _ensure_tables():
         return
     with get_conn() as conn:
         cur = conn.cursor()
+        # Buzz ki jodi PEHLI BAAR ban rahi hai kya?  (Neeche CREATE se PEHLE
+        # poochhna zaroori hai -- baad me to wo hamesha maujood milegi.)
+        cur.execute("SELECT to_regclass('public.walkie_buzz_pairs') IS NULL")
+        buzz_nayi = bool(cur.fetchone()[0])
         cur.execute("""
             CREATE TABLE IF NOT EXISTS walkie_members (
                 user_id   INTEGER PRIMARY KEY,
@@ -168,6 +174,15 @@ def _ensure_tables():
                 added_at TIMESTAMP NOT NULL DEFAULT NOW(),
                 PRIMARY KEY (a_user, b_user)
             );
+            -- KAUN KISKO BUZZ kar sakta hai.  Bilkul chat ki jodi jaisa --
+            -- qatar hamesha (chhota, bada) me, isliye rishta dono taraf ka.
+            CREATE TABLE IF NOT EXISTS walkie_buzz_pairs (
+                a_user   INTEGER NOT NULL,
+                b_user   INTEGER NOT NULL,
+                added_by TEXT,
+                added_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (a_user, b_user)
+            );
             CREATE TABLE IF NOT EXISTS walkie_reads (
                 user_id INTEGER NOT NULL,
                 convo   TEXT NOT NULL,
@@ -175,6 +190,23 @@ def _ensure_tables():
                 PRIMARY KEY (user_id, convo)
             );
         """)
+        # ⚠ PEHLI BAAR: aaj buzz sab kar sakte hain.  Jodi ka niyam lagate hi
+        # wo sab band ho jaata aur update ke din shift ke beech kisi ka buzz na
+        # chalta -- buzz wahi cheez hai jisse maintenance ko bulaya jaata hai.
+        # Isliye shuruaat me abhi jude hue logon ki saari jodiyan bhar dete
+        # hain: bartaav bilkul pehle jaisa.  Admin Setup me jaakar ghata sakta
+        # hai.  Ye sirf table banne ke waqt hota hai -- baad me kabhi nahi,
+        # warna admin ka hataya hua wapas aa jaata.
+        if buzz_nayi:
+            cur.execute("""
+                INSERT INTO walkie_buzz_pairs (a_user, b_user, added_by)
+                SELECT a.user_id, b.user_id, 'auto: pehle jaisa'
+                  FROM walkie_members a
+                  JOIN walkie_members b ON a.user_id < b.user_id
+                 WHERE a.enabled AND b.enabled
+                ON CONFLICT DO NOTHING
+            """)
+            print(f"[WALKIE] buzz ki jodi pehli baar bhari: {cur.rowcount} jodi")
         conn.commit()
     _DDL_DONE = True
 
@@ -325,27 +357,47 @@ def _convo_key(uid: int, target: dict) -> str:
 
 
 def _allowed_ids(user: dict) -> set:
-    """Ye banda kis-kis se chat kar sakta hai.
+    """Ye banda kis-kis se CHAT kar sakta hai.  (Buzz ki apni alag jodi hai.)"""
+    return _jodi_ids(user, "walkie_chat_pairs")
 
-    ADMIN ko dono taraf chhoot hai -- aur ye zaroori hai, bas suvidha nahi:
-    warna admin kisi ko message to kar leta par wo bechara JAWAB hi na de
-    pata (uski list me admin hota hi nahi).  Isliye admin har jodi me apne
-    aap shaamil hai.
 
-    Baaki sabke liye: jo Setup me jodi gayi hai, sirf wahi."""
+def _jodi_ids(user: dict, table: str) -> set:
+    """`table` ki jodi ke hisaab se ye banda kis-kis tak pahunch sakta hai.
+
+    Do jagah ek hi soch chahiye thi -- chat ki jodi aur buzz ki jodi -- isliye
+    ek hi function, table ka naam badal kar.
+
+    ADMIN ko dono taraf chhoot hai, aur ye zaroori hai (suvidha nahi): warna
+    admin kisi ko bula to leta par wo bechara jawab hi na de pata, kyunki uski
+    list me admin hota hi nahi."""
     me = int(user["id"])
     chalu = _enabled_ids()
     if (user.get("role") or "") == "admin":
         return set(chalu) - {me}
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("SELECT a_user, b_user FROM walkie_chat_pairs"
+        cur.execute(f"SELECT a_user, b_user FROM {table}"
                     " WHERE a_user = %s OR b_user = %s", (me, me))
         out = {(r["a_user"] if r["b_user"] == me else r["b_user"])
                for r in (cur.fetchall() or [])}
         cur.execute("SELECT id FROM maintenance_users WHERE role = 'admin'")
         out |= {r["id"] for r in (cur.fetchall() or [])}
     return (out & set(chalu)) - {me}
+
+
+def _buzz_ok(user: dict, target: dict):
+    """Ye banda is target ko buzz kar sakta hai ya nahi.  (None = haan.)"""
+    t = (target or {}).get("type")
+    tid = int((target or {}).get("id") or 0)
+    if t == "channel":
+        # Group par buzz ka niyam wahi purana hai -- channel ki membership.
+        # Jodi sirf ek-se-ek par lagti hai.
+        return None
+    if t != "user" or tid <= 0:
+        return "Bad target"
+    if tid not in _jodi_ids(user, "walkie_buzz_pairs"):
+        return "You are not allowed to buzz that person"
+    return None
 
 
 def _chat_ok(user: dict, target: dict):
@@ -445,6 +497,10 @@ def roster(user=Depends(get_current_user)):
                "can_buzz": _can(user, "walkie-buzz"),
                "can_channel": _can(user, "walkie-channel"),
                "can_chat": _can(user, "walkie-chat")},
+        # `can_buzz_ids` -- in me se kis-kis ko ye banda buzz kar sakta hai.
+        # Page list se naam HATATA nahi (warna voice bhi chala jaata, aur wo
+        # alag cheez hai) -- sirf Buzz ka button chhupa deta hai.
+        "can_buzz_ids": sorted(_jodi_ids(user, "walkie_buzz_pairs")),
         "people": [{"id": r["id"], "name": _naam(r), "username": r["username"],
                     "online": r["id"] in online}
                    for r in rows if r["id"] != user["id"]],
@@ -835,14 +891,28 @@ def chat_threads(user=Depends(get_current_user)):
     return {"threads": out}
 
 
-@router.get("/chat/pairs")
-def chat_pairs(user=Depends(require_admin)):
-    """Kaun kis-kis se chat kar sakta hai -- {user_id: [ids]}.
-    Dono taraf se bharte hain, taaki UI ko jodne ka hisaab na karna pade."""
+class PairsIn(BaseModel):
+    user_ids: List[int] = []
+
+
+@router.get("/buzz/pairs")
+def buzz_pairs(user=Depends(require_admin)):
+    """Kaun kisko buzz kar sakta hai -- {user_id: [ids]}."""
     _ensure_tables()
+    return _jodi_padho("walkie_buzz_pairs")
+
+
+@router.put("/buzz/pairs/{user_id}")
+def set_buzz_pairs(user_id: int, body: PairsIn, user=Depends(require_admin)):
+    """Is bande ki POORI buzz-list set karo -- jo list me nahi, wo jodi tooti."""
+    _ensure_tables()
+    return _jodi_likho("walkie_buzz_pairs", user_id, body.user_ids, user)
+
+
+def _jodi_padho(table: str):
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("SELECT a_user, b_user FROM walkie_chat_pairs")
+        cur.execute(f"SELECT a_user, b_user FROM {table}")
         rows = cur.fetchall() or []
     m = {}
     for r in rows:
@@ -851,8 +921,28 @@ def chat_pairs(user=Depends(require_admin)):
     return {"pairs": {str(k): sorted(v) for k, v in m.items()}}
 
 
-class PairsIn(BaseModel):
-    user_ids: List[int] = []
+def _jodi_likho(table: str, user_id: int, ids, kisne):
+    """Pehle sab hata kar dobara daalte hain -- "kya jodo, kya hatao" ka
+    hisaab karne se ek din dono taraf alag-alag ho jaate hain."""
+    me = int(user_id)
+    doosre = {int(i) for i in (ids or []) if int(i) != me}
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(f"DELETE FROM {table} WHERE a_user = %s OR b_user = %s", (me, me))
+        for o in sorted(doosre):
+            cur.execute(f"INSERT INTO {table} (a_user, b_user, added_by)"
+                        " VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
+                        (min(me, o), max(me, o), kisne.get("username")))
+        conn.commit()
+    return {"ok": True, "count": len(doosre)}
+
+
+@router.get("/chat/pairs")
+def chat_pairs(user=Depends(require_admin)):
+    """Kaun kis-kis se chat kar sakta hai -- {user_id: [ids]}.
+    Dono taraf se bharte hain, taaki UI ko jodne ka hisaab na karna pade."""
+    _ensure_tables()
+    return _jodi_padho("walkie_chat_pairs")
 
 
 @router.put("/chat/pairs/{user_id}")
@@ -862,17 +952,7 @@ def set_chat_pairs(user_id: int, body: PairsIn, user=Depends(require_admin)):
     Pehle sab hata kar dobara daalte hain: "kya jodo, kya hatao" ka hisaab
     karne se ek din dono taraf alag-alag ho jaate hain."""
     _ensure_tables()
-    me = int(user_id)
-    doosre = {int(i) for i in (body.user_ids or []) if int(i) != me}
-    with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("DELETE FROM walkie_chat_pairs WHERE a_user = %s OR b_user = %s", (me, me))
-        for o in sorted(doosre):
-            cur.execute("INSERT INTO walkie_chat_pairs (a_user, b_user, added_by)"
-                        " VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
-                        (min(me, o), max(me, o), user.get("username")))
-        conn.commit()
-    return {"ok": True, "count": len(doosre)}
+    return _jodi_likho("walkie_chat_pairs", user_id, body.user_ids, user)
 
 
 class ChatReadIn(BaseModel):
@@ -1425,6 +1505,15 @@ async def walkie_ws(ws: WebSocket,
                     await ws.send_text(json.dumps(
                         {"t": "buzz_sent", "listeners": 0,
                          "why": "You are not allowed to buzz"}))
+                    continue
+                # Setup me jodi bane bina kisi ek bande ko buzz nahi.
+                # (Group par ye laagu nahi -- wahan channel ki membership
+                #  hi niyam hai.)  Jaanch YAHI hoti hai: button chhupa dena
+                #  koi rok nahi hoti, socket seedha bhi khola ja sakta hai.
+                _kyun = _buzz_ok(user, d.get("target") or {})
+                if _kyun:
+                    await ws.send_text(json.dumps(
+                        {"t": "buzz_sent", "listeners": 0, "why": _kyun}))
                     continue
                 n = await _hub.buzz(c, d.get("target") or {})
                 await ws.send_text(json.dumps({"t": "buzz_sent", "listeners": n}))
