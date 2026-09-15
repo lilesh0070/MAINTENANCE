@@ -324,6 +324,51 @@ export function UsersPage({ toast, readOnly = false }) {
 
         {permLoading ? <Spinner/> : (
           <div style={{ maxHeight:"60vh", overflowY:"auto" }}>
+
+            {/* ── SABSE UPAR: ANDON ki khabar ──────────────────
+                Ye page ki permission NAHI hai -- ye "is bande ke phone par
+                ANDON call ka popup/beep aayega ya nahi" hai.  Isliye groups
+                se alag, aur sabse upar.
+
+                ⚠ Khali chhodne ka matlab yahan ON hai (baaki permissions me
+                khali = band).  ANDON madad bulane ka system hai; agar khali
+                ka matlab band hota to is update ke baad sabki khabar chup-chaap
+                band ho jaati. */}
+            <div style={{ border:"1px solid #fcd34d", background:"#fffbeb",
+                          borderRadius:10, padding:"12px 14px", marginBottom:18 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+                <div style={{ flex:"1 1 260px", minWidth:0 }}>
+                  <div style={{ fontSize:13, fontWeight:800, color:"#92400e" }}>
+                    ANDON call notification
+                  </div>
+                  <div style={{ fontSize:11.5, color:"#78350f", lineHeight:1.5, marginTop:2 }}>
+                    When a maintenance ANDON call comes in, this user gets the red
+                    popup, the beep, and (in the phone app) a vibration — on
+                    whatever screen they are on. Turn it off for people who should
+                    not be called.
+                  </div>
+                </div>
+                <div style={{ display:"flex", gap:6, flex:"0 0 auto" }}>
+                  {[{ k:"full", t:"Gets it",     bg:"#dcfce7", fg:"#15803d", br:"#86efac" },
+                    { k:"none", t:"No notification", bg:"#fee2e2", fg:"#b91c1c", br:"#fca5a5" }].map(o => {
+                    const abhi = permMap["andon-alert"] === "none" ? "none" : "full";
+                    const on = abhi === o.k;
+                    return (
+                      <button key={o.k}
+                              onClick={() => setPermMap(m => ({ ...m, "andon-alert": o.k }))}
+                              style={{ fontSize:11.5, fontWeight:800, padding:"7px 14px",
+                                       borderRadius:99, cursor:"pointer",
+                                       border:`1px solid ${on ? o.br : "#e2e8f0"}`,
+                                       background: on ? o.bg : "#fff",
+                                       color: on ? o.fg : "#94a3b8" }}>
+                        {on ? "✓ " : ""}{o.t}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
             {PAGE_PERM_GROUPS.map(g => (
               <div key={g.group} style={{ marginBottom:18 }}>
                 <div style={{

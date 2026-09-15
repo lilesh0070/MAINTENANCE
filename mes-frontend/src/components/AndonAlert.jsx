@@ -74,9 +74,25 @@ function beep() {
 }
 
 export default function AndonAlert() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { pathname } = useLocation();
-  const muted = !token || pathname.startsWith("/admin");   // admin panel → alert band
+
+  /* ANDON ki khabar kise milegi -- Users & Access ke permission parde me
+     sabse upar wala switch (`andon-alert`).
+
+     ⚠ NIYAM YAHAN ULTA HAI, aur jaan-boojh kar.  Baaki har permission me
+     "set nahi = band" hota hai.  Par ANDON madad bulane ka system hai:
+     agar yahan bhi "set nahi = band" hota, to is update ke turant baad
+     SABKI khabar band ho jaati aur kisi ko pata bhi na chalta.  Isliye
+     sirf saaf-saaf "none" hi band karta hai; baaki sab par pehle jaisa.
+
+     `canAccess` YAHAN NAHI chalega -- wo top-level key set na ho to false
+     deta hai, yaani wahi galti dobara ho jaati. */
+  const andonBand = user?.permissions?.["andon-alert"] === "none";
+
+  // Band ho to poll bhi nahi hota -- server par har 2.5s wali call bhi
+  // us user ke liye poori band ho jaati hai.
+  const muted = !token || andonBand || pathname.startsWith("/admin");
 
   const [alerts, setAlerts] = useState([]);   // [{id, zone, line, started_at}]
   const seen   = useRef(new Set());           // maintenance call-ids already handled
