@@ -22,6 +22,12 @@
  * Zone / Line / Machine No. -- Machine Master (`GET /api/machines/`) se, zone
  * me sirf 6 production zone -- baaki breakdown page jaisa.
  *
+ * Filter ki line me Machine No. ke THEEK aage "View" (user ne yahi jagah
+ * batayi -- table ki har row me nahi) -> BreakdownQprMachine.jsx: chuni hui
+ * machine ki WAHI slips jo yahan gini gayi.  Chhaanne ka niyam dono ka ek
+ * (`constants/qpr.js`).  Filter URL me rehte hain, isliye wahan se lautne par
+ * yahi filter wapas.
+ *
  * Styling: page ki patti/filter BD History ki `bh-` class se (responsive.css
  * me unke phone/tablet/TV niyam pehle se hain); sheet ki apni `bq-` class.
  *
@@ -29,13 +35,17 @@
  * Permission: maintenance-breakdown-qpr (set na ho to Breakdown se milti hai)
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, LabelList,
 } from "recharts";
 import { useAuth } from "../context/AuthContext";
 import { onlyProdZones } from "../constants/zones";
+import {
+  QPR_DEFAULT_MIN, QPR_MACHINE_PATH, pad2, mahineKaAnt, fyMonths, fyWindow,
+  kabLabel, qprSlips, qprQuery, qprFromQuery,
+} from "../constants/qpr";
 
 const api = {
   async req(method, path, token, body) {
@@ -52,35 +62,6 @@ const api = {
   put(path, token, body) { return this.req("PUT", path, token, body); },
 };
 
-const QPR_DEFAULT_MIN = 55;      // server par kuch save na ho / na mile to
-
-const pad2 = (n) => String(n).padStart(2, "0");
-/* "2026-09" -> "2026-09-30" (us mahine ka aakhri din) */
-const mahineKaAnt = (ym) => {
-  const [y, m] = String(ym).split("-").map(Number);
-  return y && m ? `${ym}-${pad2(new Date(y, m, 0).getDate())}` : "";
-};
-const MON = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-/* FY Apr -> Mar ke 12 mahine -- BD History / History Card jaisa hi. */
-function fyMonths(fy) {
-  const y = parseInt(String(fy).split("-")[0], 10);
-  if (isNaN(y)) return [];
-  const out = [];
-  for (let i = 0; i < 12; i++) {
-    const mo = ((3 + i) % 12) + 1;
-    const yr = mo >= 4 ? y : y + 1;
-    out.push({ value: `${yr}-${pad2(mo)}`, label: `${MON[mo]} ${yr}` });
-  }
-  return out;
-}
-/* FY ki khidki: start (shamil), end (agle FY ka pehla din, shamil NAHI),
-   last (31 March -- API ka date_to shamil hota hai). */
-function fyWindow(fy) {
-  const y = parseInt(String(fy).split("-")[0], 10);
-  if (isNaN(y)) return null;
-  return { start: `${y}-04-01`, end: `${y + 1}-04-01`, last: `${y + 1}-03-31` };
-}
-
 // Rang wahi jo Pareto Analysis page par hain (Excel jaise).
 const BAR_T = "#1f4e79", LINE_T = "#c0392b";     // down time
 const BAR_F = "#5b9bd5", LINE_F = "#70ad47";     // frequency
@@ -88,19 +69,57 @@ const BAR_F = "#5b9bd5", LINE_F = "#70ad47";     // frequency
    sort karta hai, to "CUMM%" "LOSSES (MIN.)" se pehle aa jaata tha. */
 const barPehle = (it) => (it.value === "CUMM%" ? 1 : 0);
 
+/* Bar wali (baayen) axis: upar ~25% khaali, aur GOL ginti par.
+   Khaali jagah isliye ki sabse bada bar CUMM% ki 100 wali line tak na
+   pahunche -- warna dono ke number ek-doosre par chadh jaate (ek machine par
+   "195" aur "100" ek hi jagah).  Kaagaz par bhi bar line se neeche the.
+   Ticks khud dete hain: recharts ko sirf max dene par axis 0/65/130/195/244
+   jaisa ajeeb banta tha.  ~5 khaane; 2.5 wala kadam sirf 10 se upar (ginti
+   wali axis par 2.5 bemaani hai). */
+function barAxis(data) {
+  const m = Math.max(0, ...data.map((d) => Number(d.val) || 0));
+  const v = Math.max(1, m * 1.25);
+  const kachcha = v / 5;
+  const p = Math.pow(10, Math.floor(Math.log10(kachcha)));
+  const kram = p >= 10 ? [1, 2, 2.5, 5, 10] : [1, 2, 5, 10];
+  const step = Math.max(1, kram.map((x) => x * p).find((s) => s >= kachcha) || 10 * p);
+  const max = step * Math.ceil(v / step);
+  const ticks = [];
+  for (let t = 0; t <= max + 1e-9; t += step) ticks.push(Math.round(t * 100) / 100);
+  return { max, ticks };
+}
+
 /* Ek Pareto chart -- bar = value (baayen), tooti line = CUMM% (daayen 0-100). */
 function ParetoChart({ title, data, barName, yLabel, barColor, lineColor, unit }) {
   const tircha = data.length > 6;      // zyada machine ho to naam tirchhe
+  const ax = barAxis(data);
+  // Tirchhe (35°) naam ke liye neeche kitni jagah -- sabse LAMBE naam se.
+  // 72px pakka rakha tha to SA_4W_YSD_PWM_24 jaisa naam legend par 4px
+  // chadh jaata tha (naapa); ~7.5px har akshar (TV ke 11px tak), sin 35° = 0.574.
+  const lamba = Math.max(4, ...data.map((d) => String(d.mc).length));
+  const xH = tircha ? Math.min(140, Math.ceil(lamba * 7.5 * 0.574) + 22) : 28;
+  // Oonchai CSS se (`.bq-plot`) -- number wali height recharts CSS se badalne
+  // nahi deta, aur TV par graph bada chahiye (responsive.css).  Tirchhe naam
+  // neeche ~44px zyada lete hain, isliye `tircha` par 344, warna plot chhota
+  // ho kar baayen ka "FREQUENCY NUMBER" kat jaata tha.
+  // `--bq-min`: har machine ko ~26px.  Sirf PHONE ka CSS ise lagata hai
+  // (responsive.css) -- 368px me 26 machine ke naam/number ek-doosre par
+  // chadh jaate the, isliye wahan graph apne dabbe me side me khisakta hai.
+  // Website aur TV par ye khaali naap hai, kuch nahi badalta.
   return (
     <div className="bq-chart">
       <div className="bq-chart-title">{title}</div>
-      <ResponsiveContainer width="100%" height={300}>
+      <div className="bq-plot-scroll">
+      <div className={`bq-plot${tircha ? " tircha" : ""}`}
+           style={{ "--bq-min": `${data.length * 26 + 90}px` }}>
+      <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={data} margin={{ top: 26, right: 8, left: 6, bottom: 2 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
           <XAxis dataKey="mc" interval={0} angle={tircha ? -35 : 0}
-                 textAnchor={tircha ? "end" : "middle"} height={tircha ? 72 : 28}
+                 textAnchor={tircha ? "end" : "middle"} height={xH}
                  tick={{ fontSize: 10.5, fontWeight: 700, fill: "#334155" }} />
           <YAxis yAxisId="v" allowDecimals={false} tick={{ fontSize: 11, fill: "#475569" }}
+                 domain={[0, ax.max]} ticks={ax.ticks}
                  label={{ value: yLabel, angle: -90, position: "insideLeft",
                           style: { fontSize: 10.5, fontWeight: 800, fill: "#334155" } }} />
           <YAxis yAxisId="pct" orientation="right" domain={[0, 100]}
@@ -124,6 +143,8 @@ function ParetoChart({ title, data, barName, yLabel, barColor, lineColor, unit }
           </Line>
         </ComposedChart>
       </ResponsiveContainer>
+      </div>
+      </div>
     </div>
   );
 }
@@ -145,18 +166,22 @@ function ParetoTable({ head, rows }) {
 export default function BreakdownQPR() {
   const { token, theme, user, isAdmin } = useAuth();
   const nav = useNavigate();
+  // Filter URL se shuru hote hain -- machine ke page se (ya phone ke back se)
+  // lautne par wahi filter wapas.  URL khaali ho to neeche wala default.
+  const [sp, setSp] = useSearchParams();
+  const [shuru] = useState(() => qprFromQuery(sp));
   const [years, setYears]   = useState([]);
-  const [fFy, setFFy]       = useState("");
-  const [fMonth, setFMonth] = useState("");
+  const [fFy, setFFy]       = useState(shuru.fy);
+  const [fMonth, setFMonth] = useState(shuru.month);
   // Date khaali -- Pareto MAHINE ka banta hai (kaagaz: "... OF Dec-2025").
   // Aaj ka din default rakhte to zyadatar din sheet khaali khulti.
-  const [fDate, setFDate]   = useState("");
-  const [fZone, setFZone]   = useState("");
-  const [fLine, setFLine]   = useState("");
-  const [fMachineNo, setFMachineNo] = useState("");
+  const [fDate, setFDate]   = useState(shuru.date);
+  const [fZone, setFZone]   = useState(shuru.zone);
+  const [fLine, setFLine]   = useState(shuru.line);
+  const [fMachineNo, setFMachineNo] = useState(shuru.mc);
   const [master, setMaster] = useState([]);
   const [ready, setReady]   = useState(false);   // FY/Month tay hone ke BAAD hi data maango
-  const booted = useRef(false);                   // FY/Month ka default sirf EK baar
+  const booted = useRef(shuru.fromUrl);           // FY/Month ka default sirf EK baar (URL ho to bilkul nahi)
 
   // QPR ki hadd (minute) -- server se.  `null` = abhi aayi nahi.
   const [minDown, setMinDown] = useState(null);
@@ -223,20 +248,32 @@ export default function BreakdownQPR() {
   const onZone = (v) => { setFZone(v); setFLine(""); setFMachineNo(""); };
   const onLine = (v) => { setFLine(v); setFMachineNo(""); };
 
+  const filters = { fy: fFy, month: fMonth, date: fDate, zone: fZone, line: fLine, mc: fMachineNo };
+  const query = qprQuery(filters).toString();
+  // Filter badle to URL bhi (`replace` -- har chuni cheez ki history me alag
+  // entry nahi chahiye).  Boot se PEHLE nahi, warna default FY aane se pehle
+  // khaali `fy=` likh jaata aur page "All Financial Years" par atak jaata.
+  // Barabar ho to kuch nahi -- warna har render par naya navigate.
+  useEffect(() => {
+    if (ready && query !== sp.toString()) setSp(query, { replace: true });
+  }, [ready, query, sp, setSp]);
+
+  /* Machine ka page -- QPR ke filter saath jaate hain (wahi slips dikhen jo
+     yahan gini gayi, aur wapas aane par yahi filter lautein). */
+  const kholo = (mc) => {
+    const q = qprQuery(filters);
+    q.set("machine", mc);
+    nav(`${QPR_MACHINE_PATH}?${q.toString()}`);
+  };
+
   // Filter + hadd ke baad machine-wise Pareto (dono -- minute aur ginti).
+  // Chhaanna `qprSlips` karta hai -- machine wala page bhi wahi, taaki jod
+  // dono jagah ek hi aaye.
   const { timeRows, freqRows } = useMemo(() => {
-    const w = fFy ? fyWindow(fFy) : null;
     const by = new Map();
-    for (const r of got.rows) {
-      const d = String(r.bd_date).slice(0, 10);
-      if (w && !(d >= w.start && d < w.end)) continue;
-      if (fMonth && d.slice(0, 7) !== fMonth) continue;
-      if (fDate && d !== fDate) continue;
-      if (fZone && r.zone_code !== fZone) continue;
-      if (fLine && r.line_code !== fLine) continue;
-      if (fMachineNo && r.machine_no !== fMachineNo) continue;
+    const chhan = { fy: fFy, month: fMonth, date: fDate, zone: fZone, line: fLine, mc: fMachineNo };
+    for (const r of qprSlips(got.rows, chhan, hadd)) {
       const mins = Number(r.solve_time_min) || 0;
-      if (mins < hadd) continue;                      // hadd ke BARABAR ya upar hi
       const k = r.machine_no || "—";
       const o = by.get(k) || { mc: k, min: 0, freq: 0 };
       o.min += mins; o.freq += 1;
@@ -257,9 +294,7 @@ export default function BreakdownQPR() {
   }, [got.rows, fFy, fMonth, fDate, fZone, fLine, fMachineNo, hadd]);
 
   /* Sheet ke naam me samay -- kaagaz par "OF Dec -2025" tha. */
-  const kab = fDate ? (() => { const [y, m, d] = fDate.split("-"); return `${d}-${MON[Number(m)]}-${y}`; })()
-            : fMonth ? (() => { const [y, m] = fMonth.split("-"); return `${MON[Number(m)]}-${y}`; })()
-            : fFy ? `FY ${fFy}` : "All Years";
+  const kab = kabLabel({ fy: fFy, month: fMonth, date: fDate });
 
   const badla = draft.trim() !== String(minDown ?? "");
   const haddSambhalo = async () => {
@@ -314,6 +349,11 @@ export default function BreakdownQPR() {
         .bq-save { border:1px solid #1d4ed8; background:#2563eb; color:#fff; border-radius:9px; padding:9px 16px;
                    font-size:13px; font-weight:800; cursor:pointer; font-family:'Barlow',sans-serif; }
         .bq-save:disabled { background:#93c5fd; border-color:#93c5fd; cursor:default; }
+        /* Machine No. ke aage "View" -- select jitna hi ooncha */
+        .bq-viewbtn { border:1.5px solid #1d4ed8; background:#2563eb; color:#fff; border-radius:9px;
+                      padding:9px 18px; font-size:13px; font-weight:800; cursor:pointer;
+                      font-family:'Barlow',sans-serif; }
+        .bq-viewbtn:disabled { background:#e2e8f0; border-color:#cbd5e1; color:#94a3b8; cursor:not-allowed; }
         .bq-kehna { font-size:11.5px; font-weight:800; }
 
         /* kaagaz jaisa sheet */
@@ -329,6 +369,8 @@ export default function BreakdownQPR() {
         .bq-table td:first-child { font-weight:700; }
         .bq-chart { flex:1 1 440px; min-width:0; border:1.5px solid #111827; padding:6px 8px 0; }
         .bq-chart-title { text-align:center; font-size:14px; font-weight:700; color:#111827; }
+        .bq-plot { height:300px; }
+        .bq-plot.tircha { height:344px; }
         .bq-empty { padding:50px 16px; text-align:center; color:#64748b; font-size:13.5px; font-weight:600; }
       `}</style>
 
@@ -338,13 +380,15 @@ export default function BreakdownQPR() {
             <button className="bh-back" onClick={() => nav("/maintenance-breakdown")}>← Back</button>
             <div className="bh-title">Breakdown <span>QPR</span></div>
           </div>
-          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+          <div className="bq-topright" style={{ display:"flex", alignItems:"center", gap:12 }}>
             {user?.username && <span className="app-user" style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
           </div>
         </div>
 
-        <div className="bh-body">
-          <div className="bh-filters">
+        <div className="bh-body bq-body">
+          {/* `bq-filters` -- phone par isi page ki grid (responsive.css); BD
+              History ki `bh-filters` par koi asar nahi. */}
+          <div className="bh-filters bq-filters">
             <div className="bh-fld">
               <label>Financial Year</label>
               <select className="bh-sel" value={fFy} onChange={(e) => onFy(e.target.value)}>
@@ -387,6 +431,17 @@ export default function BreakdownQPR() {
                 <option value="">All Machine No.</option>
                 {machineNoOpts.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
+            </div>
+            {/* Machine No. ke THEEK aage -- chuni hui machine ki wahi slips
+                kholta hai jo is QPR me gini gayi.  Machine chune bina band. */}
+            <div className="bh-fld bq-viewfld">
+              <label>&nbsp;</label>
+              <button type="button" className="bq-viewbtn" disabled={!fMachineNo}
+                      onClick={() => kholo(fMachineNo)}
+                      title={fMachineNo ? `Show the breakdowns of ${fMachineNo}`
+                                        : "Choose Zone → Line → Machine No. first"}>
+                View
+              </button>
             </div>
 
             {/* Hadd -- sirf admin badalta hai; baaki ko sirf dikhti hai. */}

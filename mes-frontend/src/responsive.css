@@ -1746,6 +1746,120 @@ body.in-app .pbs-back { display: none !important; }
 
 
 /* ==================================================================
+   BREAKDOWN QPR + MACHINE BREAKDOWNS -- PHONE (sirf `in-app`)
+   ------------------------------------------------------------------
+   Dono page ki patti/filter BD History ki `bh-` class par hai, par yahan
+   ke niyam SIRF in do page par lagte hain -- `bq-filters`, `bq-body`,
+   `bq-topright` naam inhi par hain.  BD History jyon ka tyon.
+
+   Filter: chhah khaane + View + hadd.  `min-width: 150px` + flex-wrap par
+   ye 412px me alag-alag chaudai ki teen-chaar line bante.  Ab 2-2 ki GRID
+   (FY|Month, Date|Zone, Line|Machine No.), phir View aur hadd apni-apni
+   poori line par.
+   Font 16px hi -- usse chhota hote hi tap par WebView zoom karta hai
+   (upar ka niyam).  Padding kam ki taaki "All Financial Years" poora aaye.
+
+   Sheet: table aur graph ek ke neeche ek (412px me paas-paas nahi aate),
+   naam ki patti 22 -> 15px.  Machine page ki 12 column wali table apne
+   dabbe me side me khisakti hai (format nichoda NAHI), bas padding/font
+   chhote.
+   ================================================================== */
+/* daayen sirf username tha, jo app me waise bhi chhupa hai -- khaali
+   dabba topbar me ek khaali line bana deta */
+body.in-app .bq-topright { display: none !important; }
+body.in-app .bq-body { padding: 0 10px !important; margin-top: 12px !important; }
+
+body.in-app .bq-filters {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 9px !important;
+  align-items: end;
+  margin-bottom: 12px !important;
+}
+body.in-app .bq-filters .bh-fld { min-width: 0; }
+body.in-app .bq-filters .bh-sel {
+  width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box;
+  padding: 7px 6px !important;
+}
+/* Machine No. ke aage wala "View" -- phone par apni poori line, poori
+   chaudai (aadhe khaane me akela chhota button ajeeb lagta); khaali label
+   ki jagah bhi nahi chahiye. */
+body.in-app .bq-viewfld { grid-column: 1 / -1; }
+body.in-app .bq-viewfld label { display: none !important; }
+body.in-app .bq-viewbtn { width: 100% !important; }
+body.in-app .bq-hadd { grid-column: 1 / -1; margin-left: 0 !important; }
+body.in-app .bq-hadd .bh-sel { width: 110px !important; }
+
+body.in-app .bq-title,
+body.in-app .bqm-title { font-size: 15px !important; padding: 8px 10px !important; }
+body.in-app .bq-row { padding: 10px !important; gap: 10px !important; }
+body.in-app .bq-tbl,
+body.in-app .bq-chart { flex: 1 1 100% !important; min-width: 0 !important; }
+body.in-app .bq-chart { padding: 4px 2px 0 !important; }
+/* Zyada machine par graph apne dabbe me side me khiske -- har machine ko
+   ~26px (`--bq-min` JSX se).  Poore FY (26 machine) par 368px me naam aur
+   number ek-doosre par chadh kar padhne layak nahi rahe the (naapa). */
+body.in-app .bq-plot-scroll { overflow-x: auto; }
+body.in-app .bq-plot { min-width: var(--bq-min, 0px); }
+body.in-app .bq-table { font-size: 12px !important; }
+body.in-app .bq-table th,
+body.in-app .bq-table td { padding: 5px 5px !important; }
+body.in-app .bq-table th { font-size: 10.5px !important; }
+
+body.in-app .bqm-sub { font-size: 12px !important; gap: 4px 12px !important; padding: 6px 10px !important; }
+body.in-app .bqm-table { font-size: 11.5px !important; }
+body.in-app .bqm-table th,
+body.in-app .bqm-table td { padding: 5px 6px !important; }
+body.in-app .bqm-table th { font-size: 10px !important; }
+body.in-app .bqm-table td.txt { min-width: 150px !important; }
+
+/* ==================================================================
+   BREAKDOWN QPR + MACHINE BREAKDOWNS -- TV (sirf `in-app-tv`)
+   ------------------------------------------------------------------
+   TV khadi (9:16) hai; page 1350px chaudai par banta hai (index.html) aur
+   804dp ki screen par simat jaata hai -- website ka 13px wahan ~7.7dp.
+   Poora QPR screen ke upar ke ek-tihai me simat kar neeche badi khaali
+   jagah chhod deta tha (emulator par naapa: sheet 545 / 1428dp).
+   Isliye SIRF in do page ki sheet badi ki: graph 300 -> 640px, table /
+   naam / graph ke akshar bade.  Patti aur filter baaki page jaise hi.
+   Graph ki oonchai `.bq-plot` par hai (recharts ko number wali height
+   dene par wo CSS maanta hi nahi -- isliye JSX me `height="100%"`).
+   ================================================================== */
+body.in-app-tv .bq-title,
+body.in-app-tv .bqm-title { font-size: 30px !important; padding: 14px 16px !important; }
+body.in-app-tv .bq-row { padding: 18px !important; gap: 20px !important; }
+body.in-app-tv .bq-tbl { flex: 0 1 520px !important; }
+body.in-app-tv .bq-table { font-size: 17px !important; }
+body.in-app-tv .bq-table th { font-size: 15px !important; }
+body.in-app-tv .bq-table th,
+body.in-app-tv .bq-table td { padding: 7px 10px !important; }
+body.in-app-tv .bq-chart-title { font-size: 19px !important; }
+body.in-app-tv .bq-plot { height: 640px !important; }
+body.in-app-tv .bq-plot.tircha { height: 684px !important; }
+/* ⚠ recharts 3 tick ke akshar axis ke `g` ke andar NAHI rakhta -- alag
+   z-parat me `.recharts-xAxis-tick-labels` / `.recharts-yAxis-tick-labels`
+   ke neeche.  `.recharts-xAxis .recharts-text` kuch nahi pakadta (naapa). */
+body.in-app-tv .bq-chart .recharts-label,
+body.in-app-tv .bq-chart .recharts-yAxis-tick-labels .recharts-text { font-size: 14px !important; }
+/* Neeche machine ke naam: kam machine (seedhe naam, jagah bahut) par 14px;
+   zyada machine (`tircha`, tirchhe naam) par 11px -- 26 machine (poora FY)
+   par 14px wale naam ek-doosre par aur legend par chadh jaate the, aur 12px
+   par bhi sabse lamba (SA_4W_YSD_PWM_22) legend ko chhoota tha (naapa). */
+body.in-app-tv .bq-plot .recharts-xAxis-tick-labels .recharts-text { font-size: 14px !important; }
+body.in-app-tv .bq-plot.tircha .recharts-xAxis-tick-labels .recharts-text { font-size: 11px !important; }
+body.in-app-tv .bq-chart .recharts-legend-item-text { font-size: 16px !important; }
+
+body.in-app-tv .bqm-sub { font-size: 17px !important; }
+body.in-app-tv .bqm-table { font-size: 15px !important; }
+body.in-app-tv .bqm-table th { font-size: 14px !important; }
+/* 15px akshar par 180px ke farsh se table 1px chaudi padti thi (1273 me
+   1272) -- TV par remote se side-scroll nahi hota, isliye thodi dheel. */
+body.in-app-tv .bqm-table td.txt { min-width: 160px !important; }
+
+
+/* ==================================================================
    TABLET  (`in-app-tab`)  --  Android tablet ke liye
    ------------------------------------------------------------------
    PEHLE KYA HO RAHA THA: tablet ko app TV samajh rahi thi.  Faisla UA

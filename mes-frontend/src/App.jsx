@@ -43,6 +43,7 @@ const QPRForm               = lazy(() => import("./pages/QPRForm"));
 const ParetoAnalysis        = lazy(() => import("./pages/ParetoAnalysis"));
 const TopBreakdowns         = lazy(() => import("./pages/TopBreakdowns"));
 const BreakdownQPR          = lazy(() => import("./pages/BreakdownQPR"));
+const BreakdownQprMachine   = lazy(() => import("./pages/BreakdownQprMachine"));
 const UpdatePlan            = lazy(() => import("./pages/UpdatePlan"));
 const SkillTraining         = lazy(() => import("./pages/SkillTraining"));
 const OJT                   = lazy(() => import("./pages/OJT"));
@@ -253,6 +254,11 @@ function AppRoutes() {
           Machine No.).  Neeche wala `qpr/:id` CAPA ka QPR sheet hai, ye alag. */}
       <Route path="/maintenance-breakdown/breakdown-qpr" element={
         <Protected requiredAccess="maintenance-breakdown-qpr"><BreakdownQPR /></Protected>
+      } />
+      {/* QPR sheet par machine_no ke aage "View" -- us machine ki wahi slips jo
+          QPR me gini gayi.  Alag permission nahi: QPR ka hi hissa hai. */}
+      <Route path="/maintenance-breakdown/breakdown-qpr/machine" element={
+        <Protected requiredAccess="maintenance-breakdown-qpr"><BreakdownQprMachine /></Protected>
       } />
       {/* CAPA → QPR sheet (full fillable format) — opened by "Start CAPA" /
           "View" on the CAPA page; the standalone QPR register was removed. */}
