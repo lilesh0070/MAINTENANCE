@@ -1,8 +1,9 @@
 /* ───────────────────────────────────────────────────────────────────
  * BreakdownQprMachine.jsx  —  Breakdown QPR → ek machine ke breakdown
  * ───────────────────────────────────────────────────────────────────
- * QPR sheet par machine_no ke aage "View" dabane se khulta hai.  Us machine
- * ki WAHI slips dikhti hain jo QPR ke jod me gini gayi -- wahi table
+ * QPR ke filter me Machine No. ke aage "View" dabane se khulta hai.  Machine
+ * chuni ho to uski, warna us Zone / Line / sab ki -- WAHI slips jo QPR ke jod
+ * me gini gayi (har slip apne mahine ki hadd se) -- wahi table
  * (`maintenance_breakdown_data`, GET /api/breakdowns/log), wahi filter
  * (FY / Month / Date / Zone / Line), wahi hadd (M/C DOWN TIME >= admin ki
  * hadd).  Chhaanna `constants/qpr.js` ka `qprSlips` karta hai -- QPR bhi
@@ -27,7 +28,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import {
-  QPR_PATH, QPR_DEFAULT_MIN, kabLabel, apiWindow, qprSlips, qprQuery, qprFromQuery,
+  QPR_PATH, kabLabel, apiWindow, qprSlips, qprQuery, qprFromQuery,
+  haddCfg, haddOf, haddBayan,
 } from "../constants/qpr";
 
 const api = {
@@ -64,15 +66,17 @@ export default function BreakdownQprMachine() {
   // QPR ke filter + kaunsi machine.  `sp` badle (naya link) to naya hisaab.
   const q = sp.toString();
   const f = useMemo(() => qprFromQuery(new URLSearchParams(q)), [q]);
-  const machine = new URLSearchParams(q).get("machine") || "";
+  // Machine QPR ke filter (`mc`) se; purane link me `machine` bhi chalta hai.
+  // Khaali ho to us Zone / Line / sab ki slips (View ab bina machine ke bhi).
+  const machine = new URLSearchParams(q).get("machine") || f.mc || "";
 
-  // Hadd -- QPR wali hi (server se); na mile to 55.
-  const [minDown, setMinDown] = useState(null);
+  // Hadd -- QPR wali hi (server se, mahine-wise); na mile to 55.
+  const [cfg, setCfg] = useState(null);
   useEffect(() => {
     if (!token) return;
     api.get("/api/breakdowns/qpr-config", token)
-      .then((c) => setMinDown(Number.isFinite(Number(c?.min_down_time_min)) ? Number(c.min_down_time_min) : QPR_DEFAULT_MIN))
-      .catch(() => setMinDown(QPR_DEFAULT_MIN));
+      .then((c) => setCfg(haddCfg(c)))
+      .catch(() => setCfg(haddCfg(null)));
   }, [token]);
 
   // Slips -- sirf samay ki khidki server se; baaki `qprSlips` yahin.
@@ -90,12 +94,17 @@ export default function BreakdownQprMachine() {
       .catch((e) => { if (!band) setGot({ key: reqKey, rows: [], err: e?.message || "Could not load breakdowns" }); });
     return () => { band = true; };
   }, [token, reqKey, win.from, win.to]);
-  const loading = minDown === null || got.key !== reqKey;
-  const hadd = minDown ?? QPR_DEFAULT_MIN;
+  const loading = cfg === null || got.key !== reqKey;
+  const hadd = useMemo(() => haddOf(cfg || haddCfg(null)), [cfg]);   // (ym) => minute
+  const bayan = cfg ? haddBayan(cfg, f) : null;
 
   const rows = useMemo(() => qprSlips(got.rows, { ...f, mc: machine }, hadd), [got.rows, f, machine, hadd]);
   const kulMin = rows.reduce((s, r) => s + (Number(r.solve_time_min) || 0), 0);
-  const naam = rows.find((r) => r.machine_name)?.machine_name || "";
+  // Machine ka naam sirf jab EK machine ho
+  const naam = machine ? (rows.find((r) => r.machine_name)?.machine_name || "") : "";
+  // Sheet kiski hai: machine, warna Zone / Line, warna sab
+  const kiski = machine || [f.zone || "ALL ZONES", f.line].filter(Boolean).join(" / ");
+  const haddText = !bayan ? "…" : bayan.ek ? `${bayan.min} min` : `month-wise limit (default ${bayan.min} min)`;
 
   // Wapas QPR par -- app ke andar se aaye the to history ka back (URL me
   // filter hain, wahi lautenge); seedha link se khula ho to QPR ka URL.
@@ -150,11 +159,11 @@ export default function BreakdownQprMachine() {
         <div className="bh-body bq-body">
           <div className="bqm-sheet">
             <div className="bqm-title">
-              BREAKDOWNS OF {machine || "—"} — {kabLabel(f)}
+              BREAKDOWNS OF {kiski} — {kabLabel(f)}
             </div>
             <div className="bqm-sub">
               {naam && <span>{naam}</span>}
-              <span>Down time ≥ <b>{hadd} min</b></span>
+              <span>Down time ≥ <b>{haddText}</b></span>
               {!loading && !got.err && (
                 <span><b>{rows.length}</b> breakdown{rows.length === 1 ? "" : "s"} · <b>{minute(kulMin)}</b> min total</span>
               )}
@@ -165,7 +174,7 @@ export default function BreakdownQprMachine() {
             ) : got.err ? (
               <div className="bqm-empty" style={{ color:"#b91c1c" }}>Could not load breakdowns — {got.err}</div>
             ) : rows.length === 0 ? (
-              <div className="bqm-empty">No breakdown of {hadd} min or more for this machine in this period.</div>
+              <div className="bqm-empty">No breakdown of {haddText} or more in this period.</div>
             ) : (
               <div className="bqm-scroll">
                 <table className="bqm-table">

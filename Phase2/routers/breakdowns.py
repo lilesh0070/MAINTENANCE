@@ -15,14 +15,16 @@ GET  /api/breakdowns/log            saari slips (zone / line / machine / date
 GET  /api/breakdowns/log/master     zone -> line -> machine ka universe
                                     (dropdown isi se bharte hain)
 GET  /api/breakdowns/log/stats      ginti + kul ghante
-GET  /api/breakdowns/qpr-config     Breakdown QPR ki hadd (kitne minute ya zyada)
-PUT  /api/breakdowns/qpr-config     wahi hadd badlo -- SIRF admin
+GET    /api/breakdowns/qpr-config          Breakdown QPR ki hadd -- default + mahine-wise
+PUT    /api/breakdowns/qpr-config          hadd badlo (month diya to sirf us mahine ki) -- SIRF admin
+DELETE /api/breakdowns/qpr-config/{month}  us mahine ko wapas default par -- SIRF admin
 """
 
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from database import get_conn, dict_cursor
@@ -318,8 +320,15 @@ def breakdown_log_stats(
 # badalta hai (user: "ye bas admin decide") -- baaki sab sirf dekhte hain.
 # Ek hi qatar (id=1) wali chhoti table; pehli baar padhne par khud banti hai
 # (kpi_ui_settings wala hi tareeqa).  Jab tak admin kuch save na kare, 55.
+#
+# MAHINE-WISE (user: "default 55 rahegi sab month ke liye, lekin koi aur
+# month select karke set kar sakta hoon"): `maintenance_breakdown_qpr_month`
+# me sirf un mahino ki qatar jinki hadd ALAG rakhi gayi ho ('YYYY-MM').
+# Jis mahine ki qatar nahi, us par default.  Har slip APNE mahine ki hadd se
+# parkhi jaati hai -- poore saal ka Pareto bhi isi tarah banta hai.
 QPR_DEFAULT_MIN = 55
 QPR_MAX_MIN = 1440          # ek din -- isse upar ki hadd ka koi matlab nahi
+_QPR_MONTH = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 _qpr_table_ready = False
 
 
@@ -334,14 +343,39 @@ def _qpr_ensure(conn):
             min_down_time_min  INTEGER NOT NULL DEFAULT {QPR_DEFAULT_MIN},
             updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )""")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS maintenance_breakdown_qpr_month (
+            month              VARCHAR(7) PRIMARY KEY,
+            min_down_time_min  INTEGER NOT NULL,
+            updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""")
     conn.commit()
     _qpr_table_ready = True
+
+
+def _qpr_config(cur):
+    """Poori hadd ek saath: default + jin mahino ki alag rakhi hai."""
+    cur.execute("SELECT min_down_time_min, updated_at "
+                "FROM maintenance_breakdown_qpr_config WHERE id = 1")
+    r = cur.fetchone()
+    cur.execute("SELECT month, min_down_time_min FROM maintenance_breakdown_qpr_month ORDER BY month")
+    months = {m["month"]: int(m["min_down_time_min"]) for m in (cur.fetchall() or [])}
+    return {"min_down_time_min": int(r["min_down_time_min"]) if r else QPR_DEFAULT_MIN,
+            "months": months,
+            "updated_at": r["updated_at"].isoformat() if r and r["updated_at"] else None}
+
+
+def _qpr_month_ok(month):
+    if not month or not _QPR_MONTH.match(month):
+        raise HTTPException(status_code=400, detail="Month must be YYYY-MM")
+    return month
 
 
 # ⚠ Model endpoint se PEHLE -- FastAPI decorator lagte hi body ka type
 # padh leta hai; neeche likhne par import par hi phat-ta hai.
 class QprConfigIn(BaseModel):
     min_down_time_min: int
+    month: Optional[str] = None      # 'YYYY-MM' -> sirf us mahine ki; khaali -> default
 
 
 @router.get("/qpr-config")
@@ -349,31 +383,47 @@ def get_qpr_config(user=Depends(get_current_user)):
     """QPR ki hadd (minute) -- har signed-in user padh sakta hai."""
     with get_conn() as conn:
         _qpr_ensure(conn)
-        cur = dict_cursor(conn)
-        cur.execute("SELECT min_down_time_min, updated_at "
-                    "FROM maintenance_breakdown_qpr_config WHERE id = 1")
-        r = cur.fetchone()
-    return {"min_down_time_min": int(r["min_down_time_min"]) if r else QPR_DEFAULT_MIN,
-            "updated_at": r["updated_at"].isoformat() if r and r["updated_at"] else None}
+        return _qpr_config(dict_cursor(conn))
 
 
 @router.put("/qpr-config")
 def set_qpr_config(body: QprConfigIn, admin=Depends(require_admin)):
-    """Hadd badlo -- SIRF admin.  0 se 1440 ke bahar ka number kinare par
-    le aate hain; jawab me wahi lautta hai jo SACH ME save hua."""
+    """Hadd badlo -- SIRF admin.  `month` diya to sirf us mahine ki, warna
+    default (sab mahine jinki alag nahi rakhi).  0 se 1440 ke bahar ka number
+    kinare par le aate hain; jawab me poori hadd jo SACH ME save hui."""
     mins = max(0, min(QPR_MAX_MIN, int(body.min_down_time_min)))
+    month = (body.month or "").strip()
     with get_conn() as conn:
         _qpr_ensure(conn)
         cur = dict_cursor(conn)
-        cur.execute("""
-            INSERT INTO maintenance_breakdown_qpr_config (id, min_down_time_min, updated_at)
-            VALUES (1, %s, NOW())
-            ON CONFLICT (id) DO UPDATE
-               SET min_down_time_min = EXCLUDED.min_down_time_min, updated_at = NOW()
-            RETURNING min_down_time_min, updated_at""", (mins,))
-        r = cur.fetchone()
+        if month:
+            _qpr_month_ok(month)
+            cur.execute("""
+                INSERT INTO maintenance_breakdown_qpr_month (month, min_down_time_min, updated_at)
+                VALUES (%s, %s, NOW())
+                ON CONFLICT (month) DO UPDATE
+                   SET min_down_time_min = EXCLUDED.min_down_time_min, updated_at = NOW()""",
+                        (month, mins))
+        else:
+            cur.execute("""
+                INSERT INTO maintenance_breakdown_qpr_config (id, min_down_time_min, updated_at)
+                VALUES (1, %s, NOW())
+                ON CONFLICT (id) DO UPDATE
+                   SET min_down_time_min = EXCLUDED.min_down_time_min, updated_at = NOW()""",
+                        (mins,))
         conn.commit()
-    return {"min_down_time_min": int(r["min_down_time_min"]),
-            "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None}
+        return _qpr_config(cur)
+
+
+@router.delete("/qpr-config/{month}")
+def reset_qpr_month(month: str, admin=Depends(require_admin)):
+    """Us mahine ki alag hadd hatao -- wo mahina wapas default par.  SIRF admin."""
+    _qpr_month_ok(month)
+    with get_conn() as conn:
+        _qpr_ensure(conn)
+        cur = dict_cursor(conn)
+        cur.execute("DELETE FROM maintenance_breakdown_qpr_month WHERE month = %s", (month,))
+        conn.commit()
+        return _qpr_config(cur)
 
 

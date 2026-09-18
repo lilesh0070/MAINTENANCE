@@ -63,11 +63,50 @@ export function apiWindow({ fy, month, date }) {
   return w ? { from: w.start, to: w.last } : { from: "", to: "" };
 }
 
+/* ── HADD (minute) -- default + MAHINE-WISE ──────────────────────────────
+   User: "default 55 rahegi sab month ke liye, lekin koi aur month select
+   karke set kar sakta hoon."  Server se { min_down_time_min, months:
+   {"2026-10": 60} } aata hai.  Har slip APNE mahine ki hadd se parkhi jaati
+   hai -- isliye poore saal ka Pareto bhi sahi banta hai. */
+
+/* Server ka jawab -> { def, months }.  Na mile to 55, koi mahina alag nahi. */
+export function haddCfg(c) {
+  const def = Number.isFinite(Number(c?.min_down_time_min)) ? Number(c.min_down_time_min) : QPR_DEFAULT_MIN;
+  const months = {};
+  for (const [k, v] of Object.entries(c?.months || {})) {
+    if (Number.isFinite(Number(v))) months[k] = Number(v);
+  }
+  return { def, months };
+}
+
+/* Kisi mahine ('YYYY-MM') ki hadd: alag rakhi ho to wo, warna default. */
+export const haddOf = (cfg) => (ym) => (cfg.months[ym] ?? cfg.def);
+
+/* Admin kis mahine ki hadd badal raha hai -- chuna hua mahina (ya date ka).
+   Khaali = default (sab mahine jinki alag nahi rakhi). */
+export const haddMahina = (f) => f.month || (f.date ? String(f.date).slice(0, 7) : "");
+
+/* "2026-09" -> "Sep 2026" */
+export const mahinaNaam = (ym) => { const [y, m] = String(ym).split("-"); return `${MON[Number(m)]} ${y}`; };
+
+/* Is filter ki slips par kaunsi hadd lagi -- ek number (`ek`), ya mahine-wise
+   (jab dikh rahe samay me kisi mahine ki alag hadd ho). */
+export function haddBayan(cfg, f) {
+  const m = haddMahina(f);
+  if (m) return { ek: true, min: haddOf(cfg)(m) };
+  const w = f.fy ? fyWindow(f.fy) : null;
+  const alag = Object.keys(cfg.months)
+    .filter((k) => !w || (k >= w.start.slice(0, 7) && k < w.end.slice(0, 7)));
+  return alag.length ? { ek: false, min: cfg.def, alag } : { ek: true, min: cfg.def };
+}
+
 /* Wo slips jo QPR me GINI jaati hain: filter + M/C DOWN TIME >= hadd.
    `f` = { fy, month, date, zone, line, mc } -- khaali ho to wo filter nahi.
+   `hadd` = number, ya (ym) => number (mahine-wise; `haddOf(cfg)`).
    Machine khaali ho (DB me abhi ek bhi nahi) to wo "—" ke naam se chalti hai,
    jaise Pareto me. */
 export function qprSlips(rows, f, hadd) {
+  const h = typeof hadd === "function" ? hadd : () => hadd;
   const w = f.fy ? fyWindow(f.fy) : null;
   return (rows || []).filter((r) => {
     const d = String(r.bd_date || "").slice(0, 10);
@@ -78,7 +117,7 @@ export function qprSlips(rows, f, hadd) {
     if (f.zone && r.zone_code !== f.zone) return false;
     if (f.line && r.line_code !== f.line) return false;
     if (f.mc && (r.machine_no || "—") !== f.mc) return false;
-    return (Number(r.solve_time_min) || 0) >= hadd;
+    return (Number(r.solve_time_min) || 0) >= h(d.slice(0, 7));
   });
 }
 

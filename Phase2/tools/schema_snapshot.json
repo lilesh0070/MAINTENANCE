@@ -1,5 +1,5 @@
 {
- "columns": 757,
+ "columns": 760,
  "db": "maintenance_db",
  "schema": {
   "andon_call_output": {
@@ -1814,6 +1814,26 @@
     "nullable": false,
     "pos": 2,
     "type": "integer"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 3,
+    "type": "timestamp with time zone"
+   }
+  },
+  "maintenance_breakdown_qpr_month": {
+   "min_down_time_min": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "integer"
+   },
+   "month": {
+    "default": null,
+    "nullable": false,
+    "pos": 1,
+    "type": "character varying"
    },
    "updated_at": {
     "default": "now()",
@@ -4667,6 +4687,6 @@
    }
   }
  },
- "tables": 61,
- "taken_at": "2026-09-18T11:01:08"
+ "tables": 62,
+ "taken_at": "2026-09-18T12:54:24"
 }

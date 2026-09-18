@@ -14,6 +14,9 @@
  * use SIRF ADMIN badalta hai (filter ki line me daayen) -- baaki sab sirf
  * dekhte hain.  Hadd server par rehti hai (GET/PUT /api/breakdowns/qpr-config),
  * isliye admin ka badla hua number sabke liye ek saath lagta hai.
+ * MAHINE-WISE: Month chuna ho to Save SIRF us mahine ki hadd rakhta hai
+ * ("Use default" se wapas default par); Month khaali ho to default badalta
+ * hai.  Har slip APNE mahine ki hadd se parkhi jaati hai (`qpr.js`).
  *
  * Pareto: machine-wise jod (minute / ginti), bade se chhota; CUM = chalta
  * jod, CUMM% = chalta jod / kul * 100 (gol).  Ginti ke barabar hone par jiske
@@ -43,8 +46,9 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { onlyProdZones } from "../constants/zones";
 import {
-  QPR_DEFAULT_MIN, QPR_MACHINE_PATH, pad2, mahineKaAnt, fyMonths, fyWindow,
+  QPR_MACHINE_PATH, pad2, mahineKaAnt, fyMonths, fyWindow,
   kabLabel, qprSlips, qprQuery, qprFromQuery,
+  haddCfg, haddOf, haddMahina, haddBayan, mahinaNaam,
 } from "../constants/qpr";
 
 const api = {
@@ -60,6 +64,7 @@ const api = {
   },
   get(path, token)       { return this.req("GET", path, token); },
   put(path, token, body) { return this.req("PUT", path, token, body); },
+  del(path, token)       { return this.req("DELETE", path, token); },
 };
 
 // Rang wahi jo Pareto Analysis page par hain (Excel jaise).
@@ -183,9 +188,13 @@ export default function BreakdownQPR() {
   const [ready, setReady]   = useState(false);   // FY/Month tay hone ke BAAD hi data maango
   const booted = useRef(shuru.fromUrl);           // FY/Month ka default sirf EK baar (URL ho to bilkul nahi)
 
-  // QPR ki hadd (minute) -- server se.  `null` = abhi aayi nahi.
-  const [minDown, setMinDown] = useState(null);
-  const [draft, setDraft]     = useState("");     // admin ka likha hua (save se pehle)
+  // QPR ki hadd (minute) -- server se: { def, months } (mahine-wise, qpr.js).
+  // `null` = abhi aayi nahi.
+  const [cfg, setCfg]         = useState(null);
+  // Admin ka likha hua (save se pehle).  `k` = kis mahine/hadd ke liye likha
+  // -- mahina badalte hi box apne aap us mahine ki hadd dikhata hai (effect
+  // me setState kiye bina).
+  const [draft, setDraft]     = useState({ k: "", t: "" });
   const [saving, setSaving]   = useState(false);
   const [kehna, setKehna]     = useState(null);   // { text, ok }
 
@@ -208,11 +217,8 @@ export default function BreakdownQPR() {
     api.get("/api/machines/", token).then((m) => setMaster(Array.isArray(m) ? m : [])).catch(() => setMaster([]));
     // Hadd na mile (jaise purana backend) to 55 -- page phir bhi sahi chale.
     api.get("/api/breakdowns/qpr-config", token)
-      .then((c) => {
-        const v = Number.isFinite(Number(c?.min_down_time_min)) ? Number(c.min_down_time_min) : QPR_DEFAULT_MIN;
-        setMinDown(v); setDraft(String(v));
-      })
-      .catch(() => { setMinDown(QPR_DEFAULT_MIN); setDraft(String(QPR_DEFAULT_MIN)); });
+      .then((c) => setCfg(haddCfg(c)))
+      .catch(() => setCfg(haddCfg(null)));
   }, [token]);
 
   // Slips FY ki khidki ke hisaab se aati hain (BD History jaisa); baaki
@@ -231,8 +237,9 @@ export default function BreakdownQPR() {
       .catch((e) => { if (!band) setGot({ key: reqKey, rows: [], err: e?.message || "Could not load breakdowns" }); });
     return () => { band = true; };
   }, [token, reqKey, fFy]);
-  const loading = minDown === null || !reqKey || got.key !== reqKey;
-  const hadd = minDown ?? QPR_DEFAULT_MIN;
+  const loading = cfg === null || !reqKey || got.key !== reqKey;
+  // Har slip APNE mahine ki hadd se -- (ym) => minute
+  const hadd = useMemo(() => haddOf(cfg || haddCfg(null)), [cfg]);
 
   const monthOpts = useMemo(() => (fFy ? fyMonths(fFy) : []), [fFy]);
   const zoneOpts = useMemo(() => onlyProdZones([...new Set(master.map((m) => m.zone_name).filter(Boolean))]), [master]);
@@ -258,13 +265,11 @@ export default function BreakdownQPR() {
     if (ready && query !== sp.toString()) setSp(query, { replace: true });
   }, [ready, query, sp, setSp]);
 
-  /* Machine ka page -- QPR ke filter saath jaate hain (wahi slips dikhen jo
-     yahan gini gayi, aur wapas aane par yahi filter lautein). */
-  const kholo = (mc) => {
-    const q = qprQuery(filters);
-    q.set("machine", mc);
-    nav(`${QPR_MACHINE_PATH}?${q.toString()}`);
-  };
+  /* Breakdown ka page -- QPR ke filter saath jaate hain (wahi slips dikhen jo
+     yahan gini gayi, aur wapas aane par yahi filter lautein).  Machine na
+     chuni ho to us Zone / Line / sab ki -- user: "All Zone, Line par bhi
+     enable hona chahiye". */
+  const kholo = () => nav(`${QPR_MACHINE_PATH}?${qprQuery(filters).toString()}`);
 
   // Filter + hadd ke baad machine-wise Pareto (dono -- minute aur ginti).
   // Chhaanna `qprSlips` karta hai -- machine wala page bhi wahi, taaki jod
@@ -296,22 +301,46 @@ export default function BreakdownQPR() {
   /* Sheet ke naam me samay -- kaagaz par "OF Dec -2025" tha. */
   const kab = kabLabel({ fy: fFy, month: fMonth, date: fDate });
 
-  const badla = draft.trim() !== String(minDown ?? "");
+  // Kis mahine ki hadd dikh/badal rahi hai: chuna hua mahina (ya date ka);
+  // khaali = default (sab mahine jinki alag nahi rakhi).
+  const haddM   = haddMahina({ month: fMonth, date: fDate });
+  const haddVal = cfg ? (haddM ? hadd(haddM) : cfg.def) : null;
+  const apni    = !!(cfg && haddM && cfg.months[haddM] != null);   // is mahine ki ALAG hadd hai?
+  const bayan   = cfg ? haddBayan(cfg, { fy: fFy, month: fMonth, date: fDate }) : null;
+  const draftK  = `${haddM}|${haddVal}`;
+  const draftT  = draft.k === draftK ? draft.t : String(haddVal ?? "");
+  const badla   = draftT.trim() !== String(haddVal ?? "");
+
+  // Jawab me poori hadd lautti hai -- wahi rakh lo, box apne aap naya dikhayega.
+  const haddLaga = (r, text) => { setCfg(haddCfg(r)); setDraft({ k: "", t: "" }); setKehna({ text, ok: true }); };
   const haddSambhalo = async () => {
     if (saving) return;
-    const n = Number(draft);
-    if (draft.trim() === "" || !Number.isInteger(n) || n < 0) {
+    const n = Number(draftT);
+    if (draftT.trim() === "" || !Number.isInteger(n) || n < 0) {
       setKehna({ text: "Enter whole minutes (0 or more)", ok: false });
       return;
     }
     setSaving(true); setKehna(null);
     try {
-      const r = await api.put("/api/breakdowns/qpr-config", token, { min_down_time_min: n });
-      const v = Number(r?.min_down_time_min);
-      setMinDown(v); setDraft(String(v));
-      setKehna({ text: "Saved", ok: true });
+      const r = await api.put("/api/breakdowns/qpr-config", token,
+                              { min_down_time_min: n, month: haddM || null });
+      haddLaga(r, "Saved");
     } catch {
       setKehna({ text: "Could not save", ok: false });
+    } finally {
+      setSaving(false);
+      setTimeout(() => setKehna(null), 4000);
+    }
+  };
+  // Is mahine ki alag hadd hatao -- wapas default par.
+  const defaultPar = async () => {
+    if (saving || !haddM) return;
+    setSaving(true); setKehna(null);
+    try {
+      const r = await api.del(`/api/breakdowns/qpr-config/${haddM}`, token);
+      haddLaga(r, "Back to default");
+    } catch {
+      setKehna({ text: "Could not reset", ok: false });
     } finally {
       setSaving(false);
       setTimeout(() => setKehna(null), 4000);
@@ -343,7 +372,7 @@ export default function BreakdownQPR() {
 
         /* hadd -- filter ki line me SABSE DAAYEN */
         .bq-hadd { margin-left:auto; }
-        .bq-hadd-row { display:flex; align-items:center; gap:8px; }
+        .bq-hadd-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
         .bq-hadd-in { min-width:0; width:92px; }
         .bq-hadd-ro { min-width:0; width:92px; background:#f8fafc; color:#0f172a; }
         .bq-save { border:1px solid #1d4ed8; background:#2563eb; color:#fff; border-radius:9px; padding:9px 16px;
@@ -355,6 +384,9 @@ export default function BreakdownQPR() {
                       font-family:'Barlow',sans-serif; }
         .bq-viewbtn:disabled { background:#e2e8f0; border-color:#cbd5e1; color:#94a3b8; cursor:not-allowed; }
         .bq-kehna { font-size:11.5px; font-weight:800; }
+        .bq-reset { border:1px solid #cbd5e1; background:#fff; color:#475569; border-radius:9px; padding:9px 12px;
+                    font-size:12px; font-weight:800; cursor:pointer; font-family:'Barlow',sans-serif; white-space:nowrap; }
+        .bq-reset:hover { border-color:#2563eb; color:#1d4ed8; }
 
         /* kaagaz jaisa sheet */
         .bq-sheet { background:#fff; border:2px solid #111827; }
@@ -432,31 +464,41 @@ export default function BreakdownQPR() {
                 {machineNoOpts.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
-            {/* Machine No. ke THEEK aage -- chuni hui machine ki wahi slips
-                kholta hai jo is QPR me gini gayi.  Machine chune bina band. */}
+            {/* Machine No. ke THEEK aage -- is QPR me gini gayi slips kholta
+                hai: machine chuni ho to uski, warna us Zone / Line / sab ki
+                (user: "All Zone, Line par bhi enable hona chahiye"). */}
             <div className="bh-fld bq-viewfld">
               <label>&nbsp;</label>
-              <button type="button" className="bq-viewbtn" disabled={!fMachineNo}
-                      onClick={() => kholo(fMachineNo)}
+              <button type="button" className="bq-viewbtn" onClick={kholo}
                       title={fMachineNo ? `Show the breakdowns of ${fMachineNo}`
-                                        : "Choose Zone → Line → Machine No. first"}>
+                                        : "Show all breakdowns counted in this QPR"}>
                 View
               </button>
             </div>
 
-            {/* Hadd -- sirf admin badalta hai; baaki ko sirf dikhti hai. */}
+            {/* Hadd -- sirf admin badalta hai; baaki ko sirf dikhti hai.
+                Mahina chuna ho to SIRF us mahine ki; warna default (sab mahine
+                jinki alag nahi rakhi). */}
             <div className="bh-fld bq-hadd">
-              <label>Down time ≥ (min)</label>
+              <label>Down time ≥ (min) · {haddM ? mahinaNaam(haddM) : "Default"}</label>
               {isAdmin ? (
                 <div className="bq-hadd-row">
                   <input type="number" min={0} max={1440} step={1} className="bh-sel bq-hadd-in"
-                         value={draft} disabled={minDown === null}
-                         onChange={(e) => setDraft(e.target.value)}
+                         value={draftT} disabled={cfg === null}
+                         onChange={(e) => setDraft({ k: draftK, t: e.target.value })}
                          onKeyDown={(e) => { if (e.key === "Enter") haddSambhalo(); }} />
                   <button type="button" className="bq-save" onClick={haddSambhalo}
-                          disabled={saving || minDown === null || !badla}>
+                          disabled={saving || cfg === null || !badla}>
                     {saving ? "Saving…" : "Save"}
                   </button>
+                  {/* Is mahine ki alag hadd rakhi ho to wapas default par laane
+                      ka raasta -- warna ek baar alag rakhi hadd kabhi hatti hi nahi. */}
+                  {apni && (
+                    <button type="button" className="bq-reset" onClick={defaultPar} disabled={saving}
+                            title={`Remove the ${mahinaNaam(haddM)} limit -- use the default (${cfg.def} min)`}>
+                      Use default ({cfg.def})
+                    </button>
+                  )}
                   {kehna && (
                     <span className="bq-kehna" style={{ color: kehna.ok ? "#15803d" : "#b91c1c" }}>
                       {kehna.ok ? "✓ " : ""}{kehna.text}
@@ -465,7 +507,7 @@ export default function BreakdownQPR() {
                 </div>
               ) : (
                 <div className="bh-sel bq-hadd-ro" title="Set by admin">
-                  {minDown === null ? "…" : `${minDown} min`}
+                  {haddVal === null ? "…" : `${haddVal} min`}
                 </div>
               )}
             </div>
@@ -478,7 +520,9 @@ export default function BreakdownQPR() {
             ) : got.err ? (
               <div className="bq-empty" style={{ color: "#b91c1c" }}>Could not load breakdowns — {got.err}</div>
             ) : timeRows.length === 0 ? (
-              <div className="bq-empty">No breakdown of {hadd} min or more for this filter.</div>
+              <div className="bq-empty">
+                No breakdown of {bayan?.ek ? `${bayan.min} min` : "the month-wise limit"} or more for this filter.
+              </div>
             ) : (
               <>
                 {/* upar -- down time (minute) */}

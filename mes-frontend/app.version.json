@@ -1,5 +1,5 @@
 {
-  "version": "1.4.76",
-  "notes": "Breakdown QPR: Pareto of breakdowns over the admin's limit, with each machine's breakdown list - sized for phone and TV. PDFs now include the full sheet.",
-  "released_at": "2026-09-18T12:26:31"
+  "version": "1.4.77",
+  "notes": "Breakdown QPR: View now works for any zone or line, and the admin can set the down-time limit month by month (default 55 min).",
+  "released_at": "2026-09-18T12:55:24"
 }
