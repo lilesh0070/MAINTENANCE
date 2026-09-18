@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { DmcSheet, groupDmcPoints, RESP_STAGE, isPointDue } from "./DmcSheet";
+import { DmcSheet, groupDmcPoints, RESP_STAGE, isPointDue, isPointRequired } from "./DmcSheet";
 import { upperCaret } from "../constants/upperCaret";
 
 const monthNow = () => new Date().toISOString().slice(0, 7);
@@ -110,12 +110,20 @@ export default function DMCSupervisorVerify() {
       // still DUE (same W / 2W / M rule the operator screen uses).  Any already
       // saved on this sheet are skipped — they're in `pts` already.
       const have = new Set(pts.map((e) => String(e.id)));
+      const valueAt = (pid, x) => v[`${pid}_${x}`];
       const llPts = ((live?.points) || [])
         .filter((p) => RESP_STAGE(p.resp) === "supervisor")
         .filter((p) => !have.has(String(p.id)))
-        .filter((p) => isPointDue(p, Number(d0), row.sheet_month, (pid, x) => v[`${pid}_${x}`]));
+        .filter((p) => isPointDue(p, Number(d0), row.sheet_month, valueAt));
+      // Dikhte SAB due points hain (bhar sakte hain), par verify ROKTE sirf wo
+      // jo aaj ZAROORI hain: daily, aur W / 2W / M jinka period AAJ khatam ho
+      // raha hai.  Pehle har due point zaroori tha -- hafte ke pehle din weekly
+      // na bhara to verify ruk jaata (user ki shikayat).
+      const mustIds = new Set(llPts
+        .filter((p) => isPointRequired(p, Number(d0), row.sheet_month, valueAt))
+        .map((p) => String(p.id)));
       setSheet({
-        points: [...pts, ...llPts], ownIds: new Set(llPts.map((p) => String(p.id))),
+        points: [...pts, ...llPts], ownIds: new Set(llPts.map((p) => String(p.id))), mustIds,
         header: { rev_no: fill?.rev_no, rev_date: fill?.rev_date },
         values: v, reasons: r, meta,
         footer: (fmt && fmt.format && fmt.format.doc_footer) || null,
@@ -151,10 +159,12 @@ export default function DMCSupervisorVerify() {
       }))
       .filter((e) => Object.keys(e.days).length);
   };
+  // sirf ZAROORI (mustIds) jo khaali hain -- weekly / monthly period ke beech
+  // ke din khaali chhod sakte hain
   const ownPending = () => {
     if (!sheet || !sel) return [];
     const d0 = String(sel.day);
-    return sheet.points.filter((p) => sheet.ownIds.has(String(p.id)) && !sheet.values[`${p.id}_${d0}`]);
+    return sheet.points.filter((p) => sheet.mustIds.has(String(p.id)) && !sheet.values[`${p.id}_${d0}`]);
   };
   // OPERATOR ke ✗ (NG) points is date par — operator ab reason bina ✗ chhod deta,
   // Line Leader yahin unka reason bharega.  (ownIds = Line Leader ke apne points;
@@ -170,7 +180,8 @@ export default function DMCSupervisorVerify() {
     if (!supCode.trim()) { alert("Enter your supervisor code before verifying."); return; }
     const missing = ownPending();
     if (missing.length) {
-      alert(`Fill your own (Line Leader) points first — ${missing.length} still empty.`);
+      alert(`Fill your own (Line Leader) points first — ${missing.length} required today still empty ` +
+            `(daily points, and weekly / monthly points whose period ends today).`);
       return;
     }
     const d0 = String(sel.day);

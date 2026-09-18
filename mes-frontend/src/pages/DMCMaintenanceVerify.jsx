@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { DmcSheet, groupDmcPoints, monthDays, RESP_STAGE, isPointDue } from "./DmcSheet";
+import { DmcSheet, groupDmcPoints, monthDays, RESP_STAGE, isPointDue, isPointRequired } from "./DmcSheet";
 import { upperCaret } from "../constants/upperCaret";
 
 const monthNow = () => new Date().toISOString().slice(0, 7);
@@ -110,10 +110,20 @@ export default function DMCMaintenanceVerify() {
       ]);
       const wk = new Set(WEEK_DAYS(row.week, row.sheet_month).map(String));
       const v = {}, r = {};
+      // `vAll` -- POORE mahine ke marks, sirf "due / zaroori" ki jaanch ke liye.
+      // `v` sirf is hafte ka hai (sheet wahi dikhati hai).  Pehle due ki
+      // jaanch bhi `v` se hoti thi, to WK1 me bhara monthly (M) point WK3 me
+      // phir "due" dikhta aur har hafte maanga jaata tha.
+      const vAll = {};
       (fill?.entries || []).forEach((e) => {
-        Object.entries(e.days || {}).forEach(([d, val]) => { if (val && wk.has(String(d))) v[`${e.id}_${d}`] = val; });
+        Object.entries(e.days || {}).forEach(([d, val]) => {
+          if (!val) return;
+          vAll[`${e.id}_${d}`] = val;
+          if (wk.has(String(d))) v[`${e.id}_${d}`] = val;
+        });
         Object.entries(e.reasons || {}).forEach(([d, val]) => { if (val && wk.has(String(d))) r[`${e.id}_${d}`] = val; });
       });
+      const valueAt = (pid, x) => vAll[`${pid}_${x}`];
       const dmeta = fill?.day_meta || {};
       // codes across the week (operator/supervisor may differ per day — show the last)
       let opCode = "", supCode = "";
@@ -136,8 +146,15 @@ export default function DMCMaintenanceVerify() {
       const mtPts = fillDay == null ? [] : ((live?.points) || [])
         .filter((p) => RESP_STAGE(p.resp) === "maintenance")
         .filter((p) => !have.has(String(p.id)))
-        .filter((p) => isPointDue(p, Number(fillDay), row.sheet_month, (pid, x) => v[`${pid}_${x}`]));
-      setSheet({ points: [...pts, ...mtPts], ownIds: new Set(mtPts.map((p) => String(p.id))),
+        .filter((p) => isPointDue(p, Number(fillDay), row.sheet_month, valueAt));
+      // Sign ROKTE sirf wo jinka period IS HAFTE khatam hota hai (W: har
+      // hafte; 2W: 14 / 28 / aakhri din wale hafte; M: mahine ke aakhri din
+      // wale hafte).  Baaki dikhte hain, bhar sakte hain, par zaroori nahi.
+      const weekLast = WEEK_DAYS(row.week, row.sheet_month).slice(-1)[0];
+      const mustIds = new Set(mtPts
+        .filter((p) => isPointRequired(p, Number(fillDay), row.sheet_month, valueAt, weekLast))
+        .map((p) => String(p.id)));
+      setSheet({ points: [...pts, ...mtPts], ownIds: new Set(mtPts.map((p) => String(p.id))), mustIds,
                  fillDay,
                  header: { rev_no: fill?.rev_no, rev_date: fill?.rev_date },
                  values: v, reasons: r,
@@ -170,17 +187,19 @@ export default function DMCMaintenanceVerify() {
       }))
       .filter((e) => Object.keys(e.days).length);
   };
+  // sirf ZAROORI (mustIds) jo khaali hain
   const ownPending = () => {
     if (!sheet || sheet.fillDay == null) return [];
     const d0 = String(sheet.fillDay);
-    return sheet.points.filter((p) => sheet.ownIds.has(String(p.id)) && !sheet.values[`${p.id}_${d0}`]);
+    return sheet.points.filter((p) => sheet.mustIds.has(String(p.id)) && !sheet.values[`${p.id}_${d0}`]);
   };
 
   const signWeek = async () => {
     if (!maintCode.trim()) { alert("Enter your maintenance code before signing the week."); return; }
     const missing = ownPending();
     if (missing.length) {
-      alert(`Fill your own (Maintenance) points first — ${missing.length} still empty.`);
+      alert(`Fill your own (Maintenance) points first — ${missing.length} required this week still empty ` +
+            `(points whose week / 2-week / month period ends in this week).`);
       return;
     }
     const d0 = String(sheet?.fillDay);

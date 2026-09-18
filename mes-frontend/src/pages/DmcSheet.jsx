@@ -81,6 +81,34 @@ export const isPointDue = (p, d, ym, valueAt) => {
   return !periodDays(fc, d, ym).some((x) => x < d && satisfiedMark(valueAt(p.id, x)));
 };
 
+// Period ka AAKHRI din -- W: hafte ka (7/14/21/28/L), 2W: pakhwade ka
+// (14/28/L), M: mahine ka (L).
+export const periodEnd = (fc, d, ym) => {
+  const pd = periodDays(fc, d, ym);
+  return pd[pd.length - 1];
+};
+
+// ── ZAROORI KAB (submit rokne ke liye) ────────────────────────────────
+// User (2026-09-18): "weekly point us week me kabhi bhi fill kar sakte hain,
+// zaroori nahi week ke pehle din -- same 2W aur month ke liye.  Aur agar
+// week / 2W / month ke END me fill na ho to submit na ho."
+//   D           -> har din zaroori.
+//   W / 2W / M  -> period me kabhi bhi bhar sakte hain (dikhta rehta hai jab
+//                  tak OK na ho -- `isPointDue`), par ZAROORI sirf tab jab
+//                  period `lastDay` tak khatam ho jaata ho.
+// `lastDay` = is submit me aakhri kaunsa din aata hai:
+//   Supervisor Verify  -> wahi ek date (default)
+//   Maintenance Weekly -> hafte ka aakhri din -- jin points ka period is
+//                         hafte me khatam hota hai, wahi zaroori.
+// ⚠ Period ka aakhri din chhutti ho (koi fill hi na ho) to us period ke liye
+//   rok lagti hi nahi -- us din koi submit hota hi nahi.
+export const isPointRequired = (p, d, ym, valueAt, lastDay = d) => {
+  const fc = freqClass(p && p.freq);
+  if (fc === "D") return true;
+  if (!isPointDue(p, d, ym, valueAt)) return false;        // is period me pehle hi OK
+  return periodEnd(fc, d, ym) <= lastDay;
+};
+
 // Which STAGE of the chain owns a check point, from its RESP column.
 // SINGLE SOURCE — the fill page, the supervisor page and the maintenance page
 // all import this, so a point can never be fillable in two places at once.
