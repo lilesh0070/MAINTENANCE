@@ -109,6 +109,7 @@ export const PAGE_PERM_GROUPS = [
       { key: "maintenance-breakdown-analysis", label: "BD Analysis" },
       { key: "maintenance-breakdown-pareto",   label: "Pareto Analysis" },
       { key: "maintenance-breakdown-top10",    label: "Top 10 BD" },
+      { key: "maintenance-breakdown-qpr",      label: "Breakdown QPR" },
     ]},
     { key: "production-breakdown-slip",  label: "Production Breakdown Slip", children: [
       /* Chaaron tab alag grant ho sakte hain — production wale ko sirf apna

@@ -42,6 +42,7 @@ const WalkieTalkie          = lazy(() => import("./pages/WalkieTalkie"));
 const QPRForm               = lazy(() => import("./pages/QPRForm"));
 const ParetoAnalysis        = lazy(() => import("./pages/ParetoAnalysis"));
 const TopBreakdowns         = lazy(() => import("./pages/TopBreakdowns"));
+const BreakdownQPR          = lazy(() => import("./pages/BreakdownQPR"));
 const UpdatePlan            = lazy(() => import("./pages/UpdatePlan"));
 const SkillTraining         = lazy(() => import("./pages/SkillTraining"));
 const OJT                   = lazy(() => import("./pages/OJT"));
@@ -247,6 +248,11 @@ function AppRoutes() {
       {/* Breakdown → Top 10 BD — ranked worst offenders (same filter bar). */}
       <Route path="/maintenance-breakdown/top-10" element={
         <Protected requiredAccess="maintenance-breakdown-top10"><TopBreakdowns /></Protected>
+      } />
+      {/* Breakdown → Breakdown QPR — abhi sirf filter (FY/Month/Date/Zone/Line/
+          Machine No.).  Neeche wala `qpr/:id` CAPA ka QPR sheet hai, ye alag. */}
+      <Route path="/maintenance-breakdown/breakdown-qpr" element={
+        <Protected requiredAccess="maintenance-breakdown-qpr"><BreakdownQPR /></Protected>
       } />
       {/* CAPA → QPR sheet (full fillable format) — opened by "Start CAPA" /
           "View" on the CAPA page; the standalone QPR register was removed. */}

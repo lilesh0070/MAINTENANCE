@@ -22,6 +22,7 @@ export const SUBPAGE_PARENT = {
   "maintenance-breakdown-analysis": "maintenance-breakdown",
   "maintenance-breakdown-pareto":   "maintenance-breakdown",
   "maintenance-breakdown-top10":    "maintenance-breakdown",
+  "maintenance-breakdown-qpr":      "maintenance-breakdown",
   // Update Plan
   "maintenance-plan-yearly":     "maintenance-update-plan",
   "maintenance-plan-monthly":    "maintenance-update-plan",

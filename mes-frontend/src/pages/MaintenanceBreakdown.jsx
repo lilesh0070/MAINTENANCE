@@ -20,6 +20,7 @@ const BUTTONS = [
   { key: "bd-analysis",  permKey: "maintenance-breakdown-analysis", label: "BD Analysis",           icon: "📊", path: "/maintenance-breakdown/bd-analysis" },
   { key: "pareto",       permKey: "maintenance-breakdown-pareto",   label: "Pareto Analysis",       icon: "📈", path: "/maintenance-breakdown/pareto-analysis" },
   { key: "top-10",       permKey: "maintenance-breakdown-top10",    label: "Top 10 BD",             icon: "🏆", path: "/maintenance-breakdown/top-10" },
+  { key: "bd-qpr",       permKey: "maintenance-breakdown-qpr",      label: "Breakdown QPR",         icon: "📋", path: "/maintenance-breakdown/breakdown-qpr" },
 ];
 
 export default function MaintenanceBreakdown() {
