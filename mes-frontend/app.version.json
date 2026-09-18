@@ -1,5 +1,5 @@
 {
-  "version": "1.4.79",
-  "notes": "DMC: supervisor and maintenance weekly / 2-week / monthly points can be filled on any day of their period; submit is blocked only when the period ends and the point is still empty.",
-  "released_at": "2026-09-18T13:54:22"
+  "version": "1.4.80",
+  "notes": "CAPA QPR: Reported Problem now sits beside its label; What?, Where?, Who?, Interim Containment Action and ISSUE fill in from the breakdown slip; big boxes can be tapped anywhere to type.",
+  "released_at": "2026-09-18T14:30:55"
 }
