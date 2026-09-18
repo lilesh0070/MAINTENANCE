@@ -175,7 +175,7 @@ spares.py                            175  routers/spares.py — Spare consumptio
 study_material.py                    341  Study Material — maintenance ki padhai ka saamaan.
 study_seed_core.py                   343  Study Material ka SEED content — part 1: maintenance ke core concepts (Basics, KPI, CAPA, Preventive, ANDON).
 study_seed_tech.py                  1073  Study Material ka SEED content — part 2: machine ke parts aur systems (Sensors, Pneumatic, Hydraulic, Electrical, Control/PLC-HMI, Mechanical, Safety).
-sunday_plan.py                       273  Sunday Plan Work — Update Plan → "Sunday Plan Work" section.
+sunday_plan.py                       273  Holiday Plan Work (pehle "Sunday Plan Work") — Update Plan ka section.
 users.py                             322  User management (admin only).
 walkie.py                           1450  Walkie-Talkie** — plant ke andar aapas me baat karne ka push-to-talk system. Poora aapke APNE server par: koi Firebase/FCM nahi, koi internet nahi.
 

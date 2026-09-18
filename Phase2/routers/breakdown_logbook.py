@@ -176,9 +176,11 @@ _COMBINED_SLIP = """
 """
 
 
-# Sunday / Daily plan → Log Book ke SAME output columns (aliasing se, table rename
-# ke bina).  Sirf DONE plans History Card me aate hain.  Column order _COMBINED_LB
-# se bilkul same rakhna zaroori hai (UNION 1:1).
+# Holiday (andar ka naam "Sunday") / Daily plan → Log Book ke SAME output columns
+# (aliasing se, table rename ke bina).  Sirf DONE plans History Card me aate hain.
+# Column order _COMBINED_LB se bilkul same rakhna zaroori hai (UNION 1:1).
+# ⚠ 'Sunday Plan' label mat badalna -- History Card ka SOURCE_LBL isi se
+# "plan work" banata hai; screen par ye label dikhta hi nahi.
 def _combined_plan_sql(source: str) -> str:
     return f"""
     '{source}'::text AS source,

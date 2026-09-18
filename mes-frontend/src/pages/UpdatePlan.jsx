@@ -3,7 +3,12 @@
  * ───────────────────────────────────────────────────────────────────
  * Landing page with the six plan sections (user-specified):
  *   Preventive Yearly Plan · Preventive Monthly Plan · Predictive Plan ·
- *   Sunday Plan Work · Shutdown Plan Work · Daily Work Assign
+ *   Holiday Plan Work · Shutdown Plan Work · Daily Work Assign
+ *   (Holiday Plan Work ka naam pehle "Sunday Plan Work" tha -- 2026-09-18 ko
+ *   badla.  Andar ke naam JAAN-BOOJH kar wahi hain: route `/sunday`, API
+ *   `/api/sunday-plan`, table `maintenance_sunday_plan`, permission
+ *   `maintenance-plan-sunday` -- badalte to di hui permission aur purane
+ *   record toot jaate.)
  * Each opens its own sub-page at /maintenance-update-plan/:section —
  * placeholders for now; each section's format/content comes later.
  *
@@ -33,7 +38,7 @@ export const UP_SECTIONS = [
   { key: "preventive-yearly",  label: "Preventive Yearly Plan",  icon: "🗓️", desc: "Year-wise preventive maintenance plan" },
   { key: "preventive-monthly", label: "Preventive Monthly Plan", icon: "📅", desc: "Month-wise preventive maintenance plan" },
   { key: "predictive",         label: "Predictive Plan",         icon: "📡", desc: "Predictive maintenance plan" },
-  { key: "sunday",             label: "Sunday Plan Work",        icon: "☀️", desc: "Work planned for Sundays" },
+  { key: "sunday",             label: "Holiday Plan Work",       icon: "☀️", desc: "Work planned for holidays" },
   { key: "shutdown",           label: "Shutdown Plan Work",      icon: "🔌", desc: "Work planned for shutdowns" },
   { key: "daily-work",         label: "Daily Work Assign",       icon: "📋", desc: "Day-wise work assignment" },
 ];
@@ -148,8 +153,8 @@ export function UpdatePlanSection() {
   if (section === "preventive-yearly") {
     return <PreventiveYearlyPlan theme={theme} user={user} nav={nav} meta={s} />;
   }
-  if (section === "sunday") {
-    return <WorkPlanBoard theme={theme} user={user} nav={nav} cfg={SUNDAY_CFG} />;
+  if (section === "sunday") {          // Holiday Plan Work (raasta purana hi)
+    return <WorkPlanBoard theme={theme} user={user} nav={nav} cfg={HOLIDAY_CFG} />;
   }
   if (section === "daily-work") {
     return <WorkPlanBoard theme={theme} user={user} nav={nav} cfg={DAILY_CFG} />;
@@ -196,18 +201,13 @@ function Tile({ label, value, color, sub }) {
   );
 }
 
-/* ── Work-plan board (Sunday Plan Work + Daily Work Assign) ──────────
+/* ── Work-plan board (Holiday Plan Work + Daily Work Assign) ─────────
  * Assign work: Date + Zone → Line → Machine No / Machine Name (all from
  * the Machine Master, like everywhere) + the problem/work.  Each plan is
  * later COMPLETED by filling the Action Taken and who did it.  Counter
  * tiles on top (planned / pending / done); the plans are also listed on
  * the Historical Data page.  Daily mode adds a FROM–TO date range to
  * check what happened / what is pending between two dates.             */
-const nextSundayISO = () => {
-  const d = new Date();
-  d.setDate(d.getDate() + ((7 - d.getDay()) % 7));   // today if Sunday
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
 const todayLocalISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -221,12 +221,16 @@ const durLabel = (start, end) => {
   const h = Math.floor(d / 60), m = d % 60;
   return (h ? `${h}h ` : "") + `${m}m` + `  (${d} min)`;
 };
-const SUNDAY_CFG = {
-  api: "/api/sunday-plan", t1: "Sunday Plan", t2: "Work",
-  sub: "Assign Sunday work · fill the action taken and by whom",
-  dateLabel: "Sunday Date", listTitle: "🗓 Sunday Work Plans",
-  defDate: nextSundayISO, range: false, dateCol: "Sunday",
-  timesSpares: true,   // Sunday par hi: Start/End time + auto Total + Spares (Log Book jaisa)
+/* Holiday Plan Work (pehle "Sunday Plan Work").  API wahi `/api/sunday-plan`.
+   Date ka default AB AAJ ka din -- pehle agla Sunday aata tha (user: "iski
+   default date Sunday hai, use hata do, default current rahegi").  Backend
+   kisi bhi din ko maanta hai, Sunday ki koi jaanch nahi. */
+const HOLIDAY_CFG = {
+  api: "/api/sunday-plan", t1: "Holiday Plan", t2: "Work",
+  sub: "Assign holiday work · fill the action taken and by whom",
+  dateLabel: "Holiday Date", listTitle: "🗓 Holiday Work Plans",
+  defDate: todayLocalISO, range: false, dateCol: "Holiday",
+  timesSpares: true,   // Start/End time + auto Total + Spares (Log Book jaisa)
 };
 const DAILY_CFG = {
   api: "/api/daily-plan", t1: "Daily Work", t2: "Assign",
@@ -268,7 +272,7 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
   const [msg, setMsg]       = useState(null);
   const blankFill = () => ({ work_done: "", done_by: "", start_time: "", end_time: "", spare_used: "no", spares: [{ ...EMPTY_SPARE }] });
 
-  // ── spares (repeatable, Log Book jaisa) — sirf cfg.timesSpares (Sunday) par ──
+  // ── spares (repeatable, Log Book jaisa) — sirf cfg.timesSpares (Holiday / Daily) par ──
   const setFillSpare = (i, k, v) => setFill((f) => ({
     ...f, spares: (f.spares || []).map((s, idx) => idx === i ? { ...s, [k]: v } : s) }));
   const addFillSpare = () => setFill((f) => ({ ...f, spares: [...(f.spares || []), { ...EMPTY_SPARE }] }));

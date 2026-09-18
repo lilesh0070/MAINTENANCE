@@ -202,7 +202,7 @@ export default function MaintenanceHistorical() {
   const [dmcReload, setDmcReload]   = useState(0);  // admin edit ke baad taaza
   const [dmcLoading, setDmcLoading] = useState(true);
   const [viewDmc, setViewDmc]       = useState(null);   // full filled DMC sheet (entries incl.)
-  // ── sunday plan work + daily work assign ──
+  // ── holiday plan work (pehle sunday; `sun*` naam wahi) + daily work assign ──
   const [sunRows, setSunRows]       = useState([]);
   const [sunLoading, setSunLoading] = useState(true);
   // CAPA jo CLOSE ho chuki hain (khuli hui yahan NAHI aati — user ki shart)
@@ -311,7 +311,7 @@ export default function MaintenanceHistorical() {
       .then((d) => { if (!ignore) setPmRows(Array.isArray(d?.rows) ? d.rows : []); })
       .catch(() => { if (!ignore) setPmRows([]); })
       .finally(() => { if (!ignore) setPmLoading(false); });
-    // sunday plan work + daily work assign — day-based, to `win` (exact date bhi).
+    // holiday plan work + daily work assign — day-based, to `win` (exact date bhi).
     const p = new URLSearchParams();
     if (win) { p.set("date_from", win.start); p.set("date_to", win.end); }
     setSunLoading(true);
@@ -691,7 +691,7 @@ export default function MaintenanceHistorical() {
     { key: "AUTO", perm: "hist-auto", label: "Auto Slips (ANDON)", color: "#dc2626", count: () => autoList.length },
     { key: "PM",   perm: "hist-pm",   label: "PM Check Sheets",    color: "#2563eb", count: () => pmList.length },
     { key: "DMC",  perm: "hist-dmc",  label: "DMC Check Sheets",   color: "#0d9488", count: () => dmcList.length },
-    { key: "SUN",  perm: "hist-sun",  label: "Sunday Plan Work",   color: "#d97706", count: () => sunList.length },
+    { key: "SUN",  perm: "hist-sun",  label: "Holiday Plan Work",  color: "#d97706", count: () => sunList.length },
     { key: "DAY",  perm: "hist-day",  label: "Daily Work Assign",  color: "#7c3aed", count: () => dayList.length },
     { key: "CAPA", perm: "hist-capa", label: "CAPA (Closed)",      color: "#be185d", count: () => capaList.length },
     { key: "LOG",  perm: "hist-log",  label: "Log Book",           color: "#0891b2", count: () => lbList.length },
@@ -1079,19 +1079,20 @@ export default function MaintenanceHistorical() {
             </div>
           </div>
 
-          {/* ── sunday plan work ── */}
+          {/* ── holiday plan work (pehle "Sunday Plan Work"; andar ke naam
+                -- `SUN`, `sunList`, `/api/sunday-plan`, `hist-sun` -- wahi) ── */}
           <div className="hd-sec" style={{ marginTop:22, display: sec === "SUN" ? undefined : "none" }}>
             <div className="hd-sec-h">
               <span className="hd-sec-dot" style={{ background:"#d97706" }} />
-              <span className="hd-sec-t">Sunday Plan Work</span>
+              <span className="hd-sec-t">Holiday Plan Work</span>
               <span className="hd-sec-c" style={{ background:"#d97706" }}>{sunList.length}</span>
               <span style={{ marginLeft:"auto", fontSize:11.5, color:"#94a3b8" }}>
-                assigned on Update Plan → Sunday Plan Work
+                assigned on Update Plan → Holiday Plan Work
               </span>
               <span style={{ marginLeft:10 }}><ExcelBtn banao={() => ({
-                naam: `Sunday-Plan-Work_${aajKaNaam()}`,
-                sheet: "Sunday Plan Work",
-                headers: ["#", "Sunday", "Zone", "Line", "M/C No", "Machine", "Problem / Work",
+                naam: `Holiday-Plan-Work_${aajKaNaam()}`,
+                sheet: "Holiday Plan Work",
+                headers: ["#", "Holiday", "Zone", "Line", "M/C No", "Machine", "Problem / Work",
                           "Status", "Action Taken", "Done By", "Start", "End", "Total (min)", "Spares"],
                 rows: sunList.map((r, i) => [
                   i + 1, xl(r.plan_date), xl(r.zone_name), xl(r.line_name), xl(r.machine_no),
@@ -1105,7 +1106,7 @@ export default function MaintenanceHistorical() {
               <table className="hd-tbl">
                 <thead>
                   <tr>
-                    <th>#</th><th>Sunday</th><th>Zone</th><th>Line</th>
+                    <th>#</th><th>Holiday</th><th>Zone</th><th>Line</th>
                     <th>M/C No</th><th>Machine</th><th>Problem / Work</th>
                     <th style={{ textAlign:"center" }}>Status</th><th>Action Taken</th><th>Done By</th>
                     <th>Start</th><th>End</th><th>Total</th><th>Spares</th>
@@ -1115,7 +1116,7 @@ export default function MaintenanceHistorical() {
                 <tbody>
                   {sunLoading && <tr><td colSpan={isAdmin ? 15 : 14} className="hd-empty">Loading…</td></tr>}
                   {!sunLoading && sunList.length === 0 &&
-                    <tr><td colSpan={isAdmin ? 15 : 14} className="hd-empty">No Sunday work for this filter.</td></tr>}
+                    <tr><td colSpan={isAdmin ? 15 : 14} className="hd-empty">No holiday work for this filter.</td></tr>}
                   {!sunLoading && sunList.map((r, i) => (
                     <tr key={r.id}>
                       <td>{i + 1}</td>
@@ -1141,7 +1142,7 @@ export default function MaintenanceHistorical() {
                       {isAdmin && (
                         <td style={{ textAlign:"center" }}>
                           <RowDelete chhota
-                            kya={`Sunday Plan Work #${r.id} — ${r.machine_no || "?"} · ${r.plan_date || "?"}`}
+                            kya={`Holiday Plan Work #${r.id} — ${r.machine_no || "?"} · ${r.plan_date || "?"}`}
                             saath={["The full record of this work (who did it, when, and which spares were used)"]}
                             onDelete={() => hatao.sun(r.id)} />
                         </td>

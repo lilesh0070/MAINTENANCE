@@ -98,7 +98,8 @@ const COLS = [
 // Enum/boolean prettifiers for the derived cells.
 const RELATED_LBL = { maintenance: "Maintenance", tool_room: "Tool Room" };
 // Source column display: breakdown slip -> "breakdown"; baaki sab (Log Book /
-// Sunday plan / Daily assign work) -> "plan work".
+// Holiday plan / Daily assign work) -> "plan work".  "Sunday Plan" backend ka
+// andar wala label hai (Holiday Plan Work ka purana naam) -- screen par aata hi nahi.
 const SOURCE_LBL = { "Break Down Slip": "breakdown", "Log Book": "plan work",
                      "Sunday Plan": "plan work", "Daily Plan": "plan work" };
 

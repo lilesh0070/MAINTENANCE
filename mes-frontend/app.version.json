@@ -1,5 +1,5 @@
 {
-  "version": "1.4.77",
-  "notes": "Breakdown QPR: View now works for any zone or line, and the admin can set the down-time limit month by month (default 55 min).",
-  "released_at": "2026-09-18T12:55:24"
+  "version": "1.4.78",
+  "notes": "Sunday Plan Work is now Holiday Plan Work, and its date starts on today.",
+  "released_at": "2026-09-18T13:23:13"
 }

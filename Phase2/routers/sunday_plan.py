@@ -1,9 +1,16 @@
 """
 routers/sunday_plan.py
 ======================
-Sunday Plan Work — Update Plan → "Sunday Plan Work" section.
+Holiday Plan Work — Update Plan → "Holiday Plan Work" section.
 
-Assign work to a machine for a Sunday (zone/line/machine from the Machine
+NAAM (2026-09-18): screen par ab "Holiday Plan Work" hai (pehle "Sunday Plan
+Work"), aur date ka default ab aaj ka din (pehle agla Sunday).  ANDAR KE NAAM
+JAAN-BOOJH KAR WAHI hain -- file/route `/api/sunday-plan`, table
+`maintenance_sunday_plan`, spare ka source "Sunday Plan", audit
+`SUNDAY_PLAN_DELETE`, permission `maintenance-plan-sunday`.  Badalte to di hui
+permission, purane record aur plan-delete par spare hatna -- sab toot-ta.
+
+Assign work to a machine for a holiday (zone/line/machine from the Machine
 Master, plus the problem/work description).  Later the plan is COMPLETED by
 filling what work was done and who did it.  Completed + pending plans are
 also listed on the Historical Data page.
@@ -12,7 +19,7 @@ Table: maintenance_sunday_plan
 Endpoints (prefix /api/sunday-plan)
 -----------------------------------
 GET    /            List plans (+filters) with {total, pending, done} counts
-POST   /            Assign a new Sunday work plan
+POST   /            Assign a new holiday work plan (koi bhi din -- Sunday ki jaanch nahi)
 PUT    /{id}/complete   Fill work_done + done_by → status DONE
 PUT    /{id}/reopen     Undo a completion (back to PENDING)
 DELETE /{id}        Remove a plan (wrong entry)
@@ -73,7 +80,7 @@ def _ser(r: dict) -> dict:
 
 
 class SundayPlanCreate(BaseModel):
-    plan_date:    str            # YYYY-MM-DD (the Sunday)
+    plan_date:    str            # YYYY-MM-DD (holiday -- koi bhi din)
     zone_name:    str
     line_name:    str
     machine_no:   str
@@ -255,6 +262,8 @@ def delete_plan(pid: int, admin=Depends(require_admin)):   # sirf admin delete k
             raise HTTPException(404, "Plan not found")
 
         from routers.maintenance_spare import clear_usage
+        # ⚠ "Sunday Plan" MAT badalna -- record_usage isi naam se likhta hai;
+        # alag naam se dhoondhne par purane plan ke spare kabhi nahi hatte.
         n_spare = clear_usage(conn, pid, "Sunday Plan")
 
         cur.execute("DELETE FROM maintenance_sunday_plan WHERE id=%s", (pid,))

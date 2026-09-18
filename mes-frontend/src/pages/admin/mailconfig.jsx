@@ -97,7 +97,7 @@ export const PAGE_PERM_GROUPS = [
       { key: "maintenance-plan-yearly",     label: "Preventive Yearly Plan" },
       { key: "maintenance-plan-monthly",    label: "Preventive Monthly Plan" },
       { key: "maintenance-plan-predictive", label: "Predictive Plan" },
-      { key: "maintenance-plan-sunday",     label: "Sunday Plan Work" },
+      { key: "maintenance-plan-sunday",     label: "Holiday Plan Work" },   // key purani hi (di hui permission bachi rahe)
       { key: "maintenance-plan-shutdown",   label: "Shutdown Plan Work" },
       { key: "maintenance-plan-daily",      label: "Daily Work Assign" },
     ]},
@@ -131,7 +131,7 @@ export const PAGE_PERM_GROUPS = [
       { key: "hist-auto", label: "Auto Slips (ANDON)" },
       { key: "hist-pm",   label: "PM Check Sheets" },
       { key: "hist-dmc",  label: "DMC Check Sheets" },
-      { key: "hist-sun",  label: "Sunday Plan Work" },
+      { key: "hist-sun",  label: "Holiday Plan Work" },
       { key: "hist-day",  label: "Daily Work Assign" },
       { key: "hist-capa", label: "CAPA (Closed)" },
       { key: "hist-log",  label: "Log Book" },

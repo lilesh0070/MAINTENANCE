@@ -149,7 +149,7 @@ app.include_router(capa_logbook_router)          # CAPA driven by the Breakdown 
 app.include_router(maintenance_logbook_router)  # maintenance daily log book (DB-backed)
 app.include_router(pm_router)                   # preventive maintenance check sheets
 app.include_router(pm_mail_router)              # PM reminder mail (server-side)
-app.include_router(sunday_plan_router)          # Update Plan → Sunday Plan Work
+app.include_router(sunday_plan_router)          # Update Plan → Holiday Plan Work (pehle "Sunday"; andar ke naam wahi)
 app.include_router(daily_plan_router)           # Update Plan → Daily Work Assign
 app.include_router(shutdown_plan_router)        # Update Plan → Shutdown Plan Work
 app.include_router(machine_dmc_router)          # Machine DMC — daily check-sheet points

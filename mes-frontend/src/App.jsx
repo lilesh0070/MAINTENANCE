@@ -173,7 +173,7 @@ function AppRoutes() {
         <Protected requiredAccess="maintenance-update-plan"><UpdatePlan /></Protected>
       } />
       {/* Update Plan → one section (Preventive Yearly/Monthly, Predictive,
-          Sunday, Shutdown, Daily Work Assign) — placeholders for now. */}
+          Holiday (raasta `/sunday` hi), Shutdown, Daily Work Assign). */}
       <Route path="/maintenance-update-plan/:section" element={
         <Protected requiredAccess="maintenance-update-plan"><UpdatePlanSection /></Protected>
       } />

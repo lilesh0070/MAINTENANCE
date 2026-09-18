@@ -31,6 +31,10 @@ const SOURCES = ["Manual Slip", "Log Book", "PM"];   // real source values (back
 // Display labels for the Source dropdown — the underlying VALUE stays the real
 // source string above (what maintenance_spare stores), only the label changes.
 const SRC_LABEL = { "Manual Slip": "Breakdown", "Log Book": "Plan Work", "PM": "Preventive Maintenance" };
+// CSV me source kachcha jaata hai.  "Sunday Plan Work" ka naam ab "Holiday
+// Plan Work" hai, par DB me pehle se "Sunday Plan" likha jaata hai (usi se
+// plan delete par spare hatte hain) -- isliye sirf DIKHNE me badlo.
+const SRC_NAAM = { "Sunday Plan": "Holiday Plan" };
 const ONE_HUE = "#2563eb";               // single-series charts: one hue, no legend
 const TOP_HUE = "#b45309";               // "Most Used Spare" card — green Total se alag dikhe
 const MONTHS = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
@@ -248,7 +252,7 @@ export default function Spare() {
     const head = ["Source", "Date", "Zone", "Line", "Machine No", "Machine Name",
                   "Model No", "Spare ERP No", "Spare Name", "Quantity", "Qty From"];
     const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const body = rows.map(r => [r.source, r.used_date || "", r.zone || "", r.line || "",
+    const body = rows.map(r => [SRC_NAAM[r.source] || r.source, r.used_date || "", r.zone || "", r.line || "",
       r.machine_no || "", r.machine_name || "", r.model_no || "", r.cnmm_no || "",
       r.spare_name || "", r.qty ?? "", r.qty_source].map(esc).join(","));
     const blob = new Blob(["﻿" + [head.map(esc).join(","), ...body].join("\r\n")],

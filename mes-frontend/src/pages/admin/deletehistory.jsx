@@ -47,6 +47,9 @@ const LOOK = {
   AUTH_LOGIN:           { c: "#15803d", bg: "#dcfce7", t: "Login" },
   AUTH_LOGOUT:          { c: "#475569", bg: "#f1f5f9", t: "Logout" },
   AUDIT_CLEAR:          { c: "#6d28d9", bg: "#ede9fe", t: "History cleared" },
+  // Code purana hi (backend aur pehle ke record me yahi likha hai); screen par
+  // naya naam -- "Sunday Plan Work" ab "Holiday Plan Work" hai.
+  SUNDAY_PLAN_DELETE:   { c: "#b91c1c", bg: "#fee2e2", t: "Holiday plan deleted" },
 };
 const look = (a) => LOOK[a] || { c: "#334155", bg: "#e2e8f0", t: a };
 

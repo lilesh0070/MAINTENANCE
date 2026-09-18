@@ -1,7 +1,7 @@
 /* ExcelBtn.jsx — "Excel" ka button jo table ko .xlsx bana kar de deta hai.
  *
  * Chaar jagah lagta hai — History Card, Log Book, Daily Assign Work aur
- * Sunday Plan Work.  Ek hi component isliye ki chaaron jagah ek jaisa dikhe
+ * Holiday Plan Work.  Ek hi component isliye ki chaaron jagah ek jaisa dikhe
  * aur galti ki soorat me ek jaisa hi bataye.
  *
  * `banao` ek function hai jo chalne par { headers, rows, naam, sheet }
