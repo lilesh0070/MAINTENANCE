@@ -1,5 +1,5 @@
 {
-  "version": "1.4.78",
-  "notes": "Sunday Plan Work is now Holiday Plan Work, and its date starts on today.",
-  "released_at": "2026-09-18T13:23:13"
+  "version": "1.4.79",
+  "notes": "DMC: supervisor and maintenance weekly / 2-week / monthly points can be filled on any day of their period; submit is blocked only when the period ends and the point is still empty.",
+  "released_at": "2026-09-18T13:54:22"
 }
