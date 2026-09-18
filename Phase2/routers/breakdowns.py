@@ -15,15 +15,18 @@ GET  /api/breakdowns/log            saari slips (zone / line / machine / date
 GET  /api/breakdowns/log/master     zone -> line -> machine ka universe
                                     (dropdown isi se bharte hain)
 GET  /api/breakdowns/log/stats      ginti + kul ghante
+GET  /api/breakdowns/qpr-config     Breakdown QPR ki hadd (kitne minute ya zyada)
+PUT  /api/breakdowns/qpr-config     wahi hadd badlo -- SIRF admin
 """
 
 from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 
 from database import get_conn, dict_cursor
-from auth import get_current_user
+from auth import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/breakdowns", tags=["breakdowns"])
 
@@ -305,5 +308,72 @@ def breakdown_log_stats(
                         ORDER BY breakdowns_count DESC""", params)
         machines = _fl(cur.fetchall() or [])
     return {"zones": zones, "lines": lines, "machines": machines}
+
+
+# ════════════════════════════════════════════════════════════════════
+#  BREAKDOWN QPR -- kitne minute (ya zyada) ka breakdown QPR me aata hai
+# ════════════════════════════════════════════════════════════════════
+# Breakdown -> Breakdown QPR page par sirf wahi slip ginti me aati hai jiska
+# `mc_down_time_minutes` is hadd ke BARABAR ya UPAR ho.  Hadd sirf ADMIN
+# badalta hai (user: "ye bas admin decide") -- baaki sab sirf dekhte hain.
+# Ek hi qatar (id=1) wali chhoti table; pehli baar padhne par khud banti hai
+# (kpi_ui_settings wala hi tareeqa).  Jab tak admin kuch save na kare, 55.
+QPR_DEFAULT_MIN = 55
+QPR_MAX_MIN = 1440          # ek din -- isse upar ki hadd ka koi matlab nahi
+_qpr_table_ready = False
+
+
+def _qpr_ensure(conn):
+    global _qpr_table_ready
+    if _qpr_table_ready:
+        return
+    cur = conn.cursor()
+    cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS maintenance_breakdown_qpr_config (
+            id                 INT PRIMARY KEY DEFAULT 1,
+            min_down_time_min  INTEGER NOT NULL DEFAULT {QPR_DEFAULT_MIN},
+            updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""")
+    conn.commit()
+    _qpr_table_ready = True
+
+
+# ⚠ Model endpoint se PEHLE -- FastAPI decorator lagte hi body ka type
+# padh leta hai; neeche likhne par import par hi phat-ta hai.
+class QprConfigIn(BaseModel):
+    min_down_time_min: int
+
+
+@router.get("/qpr-config")
+def get_qpr_config(user=Depends(get_current_user)):
+    """QPR ki hadd (minute) -- har signed-in user padh sakta hai."""
+    with get_conn() as conn:
+        _qpr_ensure(conn)
+        cur = dict_cursor(conn)
+        cur.execute("SELECT min_down_time_min, updated_at "
+                    "FROM maintenance_breakdown_qpr_config WHERE id = 1")
+        r = cur.fetchone()
+    return {"min_down_time_min": int(r["min_down_time_min"]) if r else QPR_DEFAULT_MIN,
+            "updated_at": r["updated_at"].isoformat() if r and r["updated_at"] else None}
+
+
+@router.put("/qpr-config")
+def set_qpr_config(body: QprConfigIn, admin=Depends(require_admin)):
+    """Hadd badlo -- SIRF admin.  0 se 1440 ke bahar ka number kinare par
+    le aate hain; jawab me wahi lautta hai jo SACH ME save hua."""
+    mins = max(0, min(QPR_MAX_MIN, int(body.min_down_time_min)))
+    with get_conn() as conn:
+        _qpr_ensure(conn)
+        cur = dict_cursor(conn)
+        cur.execute("""
+            INSERT INTO maintenance_breakdown_qpr_config (id, min_down_time_min, updated_at)
+            VALUES (1, %s, NOW())
+            ON CONFLICT (id) DO UPDATE
+               SET min_down_time_min = EXCLUDED.min_down_time_min, updated_at = NOW()
+            RETURNING min_down_time_min, updated_at""", (mins,))
+        r = cur.fetchone()
+        conn.commit()
+    return {"min_down_time_min": int(r["min_down_time_min"]),
+            "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None}
 
 

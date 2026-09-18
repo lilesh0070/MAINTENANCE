@@ -1,5 +1,5 @@
 {
- "columns": 713,
+ "columns": 757,
  "db": "maintenance_db",
  "schema": {
   "andon_call_output": {
@@ -1800,6 +1800,26 @@
     "nullable": true,
     "pos": 2,
     "type": "character varying"
+   }
+  },
+  "maintenance_breakdown_qpr_config": {
+   "id": {
+    "default": "1",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "min_down_time_min": {
+    "default": "55",
+    "nullable": false,
+    "pos": 2,
+    "type": "integer"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 3,
+    "type": "timestamp with time zone"
    }
   },
   "maintenance_capa_sheet": {
@@ -4383,8 +4403,270 @@
     "pos": 2,
     "type": "character varying"
    }
+  },
+  "walkie_buzz_pairs": {
+   "a_user": {
+    "default": null,
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "added_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 4,
+    "type": "timestamp without time zone"
+   },
+   "added_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "text"
+   },
+   "b_user": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "integer"
+   }
+  },
+  "walkie_channel_members": {
+   "channel_id": {
+    "default": null,
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "user_id": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "integer"
+   }
+  },
+  "walkie_channels": {
+   "color": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "text"
+   },
+   "created_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 4,
+    "type": "timestamp without time zone"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "name": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "text"
+   }
+  },
+  "walkie_chat_pairs": {
+   "a_user": {
+    "default": null,
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "added_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 4,
+    "type": "timestamp without time zone"
+   },
+   "added_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "text"
+   },
+   "b_user": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "integer"
+   }
+  },
+  "walkie_events": {
+   "acked_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "timestamp without time zone"
+   },
+   "acked_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "integer"
+   },
+   "acked_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "text"
+   },
+   "at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 2,
+    "type": "timestamp without time zone"
+   },
+   "from_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "text"
+   },
+   "from_user": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "integer"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "kind": {
+    "default": null,
+    "nullable": false,
+    "pos": 3,
+    "type": "text"
+   },
+   "secs": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "numeric"
+   },
+   "target_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "integer"
+   },
+   "target_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "text"
+   },
+   "target_type": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "text"
+   }
+  },
+  "walkie_members": {
+   "added_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 4,
+    "type": "timestamp without time zone"
+   },
+   "added_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "text"
+   },
+   "enabled": {
+    "default": "true",
+    "nullable": false,
+    "pos": 2,
+    "type": "boolean"
+   },
+   "user_id": {
+    "default": null,
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   }
+  },
+  "walkie_messages": {
+   "at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 2,
+    "type": "timestamp without time zone"
+   },
+   "body": {
+    "default": null,
+    "nullable": false,
+    "pos": 8,
+    "type": "text"
+   },
+   "convo": {
+    "default": null,
+    "nullable": false,
+    "pos": 7,
+    "type": "text"
+   },
+   "from_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "text"
+   },
+   "from_user": {
+    "default": null,
+    "nullable": false,
+    "pos": 3,
+    "type": "integer"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "target_id": {
+    "default": null,
+    "nullable": false,
+    "pos": 6,
+    "type": "integer"
+   },
+   "target_type": {
+    "default": null,
+    "nullable": false,
+    "pos": 5,
+    "type": "text"
+   }
+  },
+  "walkie_reads": {
+   "convo": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "text"
+   },
+   "last_id": {
+    "default": "0",
+    "nullable": false,
+    "pos": 3,
+    "type": "integer"
+   },
+   "user_id": {
+    "default": null,
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   }
   }
  },
- "tables": 52,
- "taken_at": "2026-09-12T11:37:49"
+ "tables": 61,
+ "taken_at": "2026-09-18T11:01:08"
 }
