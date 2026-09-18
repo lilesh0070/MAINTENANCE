@@ -290,6 +290,11 @@ function printDoc(chhapneWala, naam, khada, css) {
     "  .tb-print-fit > * { box-shadow:none !important; margin:0 !important; }",
     /* Print par ye kabhi nahi dikhne chahiye */
     "  .tb-print-btn, .tb-noprint { display:none !important; }",
+    /* Screen ka scroll-dabba kaagaz par KHOL do.  `overflow:auto` wala
+       dabba print aur html2canvas dono me sirf apni chaudai jitna dikhata
+       hai, baaki chup-chaap kaat deta hai.  Jis sheet me aisa dabba ho, wo
+       use `tb-print-open` class de (abhi DmcSheet ki din wali grid). */
+    "  .tb-print-open { overflow:visible !important; }",
     css,
     "</style>",
     '</head><body><div class="tb-print-fit">' + chhapneWala.outerHTML + "</div></body></html>",
@@ -699,9 +704,9 @@ async function pdfDeDo(out, naam) {
  *   doc     -- poora <!doctype html> ... </html>
  *   margin  -- kaagaz ka margin mm me (slip 0 bhejta hai, uska panna poora
  *              297x210mm ka hai)
- *   taiyaar(win, ctx) -- capture se PEHLE caller ka apna fit/scale.  Ye
- *              diya ho to hamari apni simatne wali naap BAND ho jaati hai,
- *              warna do scale ek saath lag jaate.
+ *   taiyaar(win, ctx) -- capture se PEHLE caller ka apna fit/scale (slip
+ *              apna `transform` khud lagata hai).  Hamara print wala
+ *              simatna PDF me kabhi nahi lagta -- neeche `simtao: false`.
  *   kyaLein(win) -- kis element ko utaarna hai (slip `.bds-print-page`
  *              deta hai; na de to `.tb-print-fit`, aur wo bhi na mile to
  *              poora body) */
@@ -750,7 +755,17 @@ export async function pdfDocSe(doc, { naam = "sheet", khada = false, margin = 6,
       } finally {
         hatao();
       }
-    }, { simtao: !taiyaar, margin });
+    // ⚠ PDF me `simtao` HAMESHA false (2026-09-18 ko pakda, site par).
+    // v1.4.50 me yahan `simtao: !taiyaar` likh diya tha -- yaani jis sheet
+    // ke saath `taiyaar` nahi aata (DMC, PM format, BD History, History
+    // Card, Yearly PM -- slip ke siwa SAB) uspar print wala `transform:
+    // scale()` lag jaata tha.  html2canvas phir sirf sheet ka apna, panne
+    // jitna dabba utaarta hai: chaudi sheet daayen se kat-ti thi aur neeche
+    // ka bada hissa gayab -- aur button "Downloaded" likh deta tha.  Naap:
+    // History Card ke 13 me se 1-2 row, DMC me din 20 tak, Yearly PM me 283
+    // me se ~109 machine aur sirf Apr-Jul.  PDF me simatna jsPDF karta hai
+    // (poori tasveer panne ki chaudai par) -- wajah `kaagazParBithao` me.
+    }, { simtao: false, margin });
   } catch (e) {
     return { theek: false, kyun: e?.message || "Could not create the PDF" };
   }

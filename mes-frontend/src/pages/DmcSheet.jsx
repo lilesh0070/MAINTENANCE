@@ -231,8 +231,11 @@ export function DmcSheet({ hdr = {}, groups = [], footer = null,
         </tr>
       </tbody></table>
 
-      {/* the daily grid */}
-      <div style={{ overflowX: "auto" }}>
+      {/* the daily grid.  `tb-print-open` -- print/PDF me ye scroll-dabba
+          khol diya jaata hai (niyam `sheetTools` ke printDoc me).  Bina iske
+          31 din wali 1400px ki grid kaagaz par dabbe ki chaudai par kat-ti
+          thi -- PDF me din 31 ka aadha, print me din ~20 ke baad sab. */}
+      <div className="tb-print-open" style={{ overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", tableLayout: "fixed", ...(fullMonth ? { minWidth: 1400 } : { width: "100%" }), borderTop: "none" }}>
           <colgroup>
             <col style={{ width: 70 }} /><col style={{ width: 200 }} />
