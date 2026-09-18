@@ -236,6 +236,8 @@ def capa_pending(user=Depends(get_current_user)):
                    COALESCE(bd.problem_observed_by_maintenance, '')  AS problem_maintenance,
                    COALESCE(bd.action_taken_on_problem, '')          AS action_taken,
                    COALESCE(bd.bd_attended_by, '')                   AS attended_by,
+                   -- QPR ke "Who?" me jaata hai (slip ka LINE LEADER NAME)
+                   COALESCE(bd.line_leader_name, '')                 AS line_leader_name,
                    COALESCE(NULLIF(bd.problem_observed_by_maintenance,''),
                             bd.problem_reported_by_production, '') AS problem,
                    s.id AS sheet_id, s.status AS sheet_status, s.qpr_no

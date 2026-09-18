@@ -33,7 +33,19 @@ const PREFILL = (bd) => ({
   f_16_3:  bd.problem_maintenance || bd.problem || "",
   f_zone:  bd.zone_name    || "",   // ZONE
   f_line:  bd.line_name    || "",   // LINE
+  // 5W1H + Interim -- user (2026-09-18): What? = wahi jo Reported Problem me,
+  // Where? = machine_no, Who? = slip ka LINE LEADER NAME, Interim Containment
+  // Action = slip ka action taken.
+  f_18_4:  bd.problem_maintenance || bd.problem || "",   // What?
+  f_18_8:  bd.machine_no       || "",                    // Where?
+  f_19_8:  bd.line_leader_name || "",                    // Who?
+  f_24_3:  bd.action_taken     || "",                    // Interim Containment Action
+  f_44_11: bd.problem_maintenance || bd.problem || "",   // Fish bone ka ISSUE
 });
+
+// What? / ISSUE / Where? apne SROT ke peeche chalte hain -- srot badlo to ye
+// bhi badlein, jab tak inhe alag se likh kar badla na gaya ho.
+const MIRROR = { f_16_3: ["f_18_4", "f_44_11"], f_mno: ["f_18_8"] };
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -250,6 +262,60 @@ export default function MaintenanceCAPA() {
     };
     form.addEventListener("input", onInput);
     return () => form.removeEventListener("input", onInput);
+  }, [view]);
+
+  // Reported Problem likho to What? + ISSUE me wahi, MACHINE_NO likho to
+  // Where? me wahi (MIRROR).  Copy tabhi badalti hai jab wo khaali ho ya ab
+  // tak srot ke barabar ho -- user ne copy ko khud alag likha ho to use nahi
+  // chhedte.
+  // JAGAH MAT BADLO: prefill wale effect ke baad (taaki `last` bhare form se
+  // bane) aur sentence-case ke baad (taaki copy me bada akshar bhi jaaye).
+  useEffect(() => {
+    if (view !== "form" || !formRef.current) return;
+    const form = formRef.current;
+    const last = {};
+    Object.keys(MIRROR).forEach((src) => { last[src] = form.elements[src]?.value || ""; });
+    const onInput = (e) => {
+      const src = e.target.name;
+      if (!MIRROR[src]) return;
+      MIRROR[src].forEach((name) => {
+        const dst = form.elements[name];
+        if (!dst) return;
+        if (dst.value.trim() === "" || dst.value.trim() === last[src].trim()) dst.value = e.target.value;
+      });
+      last[src] = e.target.value;
+    };
+    form.addEventListener("input", onInput);
+    return () => form.removeEventListener("input", onInput);
+  }, [view, prefill]);
+
+  // BADE KHAANE (ISSUE, For Occurrence, Countermeasure …): likhne ka dabba
+  // sirf ek line ka hota hai aur khaane ke beech baitha rehta hai -- baaki
+  // khaane me dabane par kuch nahi hota tha (user, 2026-09-18: "box bada hai
+  // par andar likhne ki jagah chhoti").  Dabba khinch kar poora nahi karte,
+  // warna text UPAR chala jaata aur user ko text BEECH me chahiye (ec59bbe).
+  // Isliye poora khaana hi dabba: jis khaane me SIRF ek field hai (label
+  // nahi) use `fbox` -- kahin bhi dabao to wahi field, caret aakhir me; focus
+  // par poora khaana neela (CSS).
+  useEffect(() => {
+    if (view !== "form" || !formRef.current) return;
+    const form = formRef.current;
+    form.querySelectorAll(".qpr td").forEach((td) => {
+      const kids = td.children;
+      if (kids.length !== 1 || !kids[0].matches("textarea.fta, input.fin")) return;
+      const label = [...td.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+      if (!label) td.classList.add("fbox");
+    });
+    const onDown = (e) => {
+      const td = e.target;                       // field par seedha dabaya -> browser khud
+      if (!td.classList || !td.classList.contains("fbox")) return;
+      const f = td.firstElementChild;
+      e.preventDefault();
+      f.focus({ preventScroll: true });          // khaana dikh hi raha hai -- page na khiske
+      if (f.type !== "date") { const n = f.value.length; try { f.setSelectionRange(n, n); } catch { /* purana browser */ } }
+    };
+    form.addEventListener("mousedown", onDown);
+    return () => form.removeEventListener("mousedown", onDown);
   }, [view]);
 
   // live camera — open the webcam when the modal is shown, stop it on close
@@ -501,6 +567,16 @@ export default function MaintenanceCAPA() {
            ja raha tha.  100% se box cell ki poori unchai le leta hai, aur
            chhote khaano me auto-grow pehle jaisa hi chalta rehta hai. */
         .qpr textarea.fta { resize:none; overflow:hidden; line-height:1.15; field-sizing:content; min-height:1.6em; }
+        /* Label aur uska jawab EK line me (Reported Problem :- ____).  Pehle
+           box width:100% tha, isliye jawab label ke NEECHE chala jaata tha.
+           Lamba jawab label ke daayein hi lipatta hai. */
+        .qpr .lblrow { display:flex; align-items:center; gap:6px; }
+        .qpr .lblrow > b { flex:none; white-space:nowrap; }
+        .qpr .lblrow > textarea.fta { flex:1 1 0; min-width:0; width:auto; height:auto; }
+        /* td.fbox = poora khaana hi likhne ka dabba (JS lagata hai) -- kahin
+           bhi dabao, likhna shuru; focus par poora khaana neela. */
+        .qpr td.fbox { cursor:text; }
+        .qpr td.fbox:focus-within:not(:has(> [readonly])) { background:#eff6ff; }
         .qpr input.fin:focus, .qpr textarea.fta:focus { background:#eff6ff; }
         .qpr input.fin[readonly], .qpr textarea.fta[readonly] { background:#eef2f7; cursor:not-allowed; }
         .qpr input.fcb { width:14px; height:14px; margin-left:5px; vertical-align:middle; cursor:pointer; accent-color:#1d4ed8; }
