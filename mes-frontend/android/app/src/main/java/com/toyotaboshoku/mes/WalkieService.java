@@ -21,6 +21,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.util.Log;
@@ -120,6 +121,23 @@ public class WalkieService extends Service {
     private static final int PREBUFFER_FRAMES = 7;      // ~280ms
     private static final byte[] KHAMOSHI = new byte[FRAME_BYTES];
 
+    /* ⚠ BAAT KHATAM -> PLAYER BAND  (battery, 2026-09-19).
+     *
+     * Pehle player EK BAAR chalu hone ke baad service band hone tak chalta
+     * rehta tha -- `audioBand()` sirf `band()` se chalta tha.  Yaani pehli
+     * aawaz ke baad din bhar: writer thread har 10-25ms uthta, AudioTrack
+     * "play" me pada rehta, aur audio focus kabhi nahi chhootta (doosri app
+     * ka gaana dheema reh sakta tha).
+     *
+     * Ab: aakhri frame ke baad CHUPPI_MS tak kuch na aaye (bachi hui aawaz
+     * tab tak baj chuki hoti hai) to player + thread + focus teeno band.
+     * Agli aawaz aate hi `audioTaiyaar()` sab naya bana deta hai -- ~280ms ka
+     * prebuffer waise bhi hota hai, isliye kuch katta nahi.
+     * ATKA_MS: bolne wala atak jaye aur rx_stop aaye hi nahi (button daba
+     * reh gaya, net chala gaya) -- tab bhi player hamesha na chalta rahe. */
+    private static final long CHUPPI_MS = 1500;
+    private static final long ATKA_MS = 10000;
+
     /** Baahar se (plugin se) poochhne ke liye — service chal rahi hai ya nahi. */
     public static volatile boolean RUNNING = false;
     public static volatile boolean CONNECTED = false;
@@ -132,7 +150,9 @@ public class WalkieService extends Service {
     private int retry = 0;
     private final Handler main = new Handler(Looper.getMainLooper());
 
-    private AudioTrack track;
+    /* volatile: writer thread har chakkar me dekhta hai ki ye abhi bhi
+       USI ka player hai -- badla (band / naya bana) to wo khud nikal jaata hai. */
+    private volatile AudioTrack track;
     private AudioFocusRequest focus;
     private MediaPlayer ring;
     /** Aakhri buzz ka event-id -- "OK" dabte hi isi par server par jawab
@@ -156,6 +176,8 @@ public class WalkieService extends Service {
     private Thread writer;
     private final ArrayBlockingQueue<byte[]> qatar = new ArrayBlockingQueue<>(64);
     private volatile boolean bharRahe = true;           // abhi jitter-buffer bhar raha hai
+    private volatile boolean bolRaha = false;           // rx_start / frame se rx_stop tak
+    private volatile long aakhriAaya = 0;               // aakhri frame kab aaya (uptime ms)
     private PowerManager.WakeLock wake;
 
     @Nullable @Override public IBinder onBind(Intent i) { return null; }
@@ -365,11 +387,7 @@ public class WalkieService extends Service {
                         // ring aur aawaz ek saath chalti hain aur kuch samajh
                         // nahi aata.
                         ringBand();
-                        audioTaiyaar();
-                        // Nayi transmission -- buffer naye sire se bhare
-                        bharRahe = true;
-                        qatar.clear();
-                        chirp();
+                        naiBaat();        // player taiyaar + buffer naye sire se + chirp
                         likho((f != null ? f.optString("name", "Someone") : "Someone") + " is speaking…");
                     } else if ("chat".equals(t)) {
                         /* Likha hua message.  App khuli ho to kuch nahi karte --
@@ -402,7 +420,15 @@ public class WalkieService extends Service {
                                 Log.i(TAG, "SOOKHA (underrun) ab tak: " + at.getUnderrunCount());
                             }
                         } catch (Throwable ignored) { /* purana device */ }
-                        bharRahe = true;
+                        /* Baat khatam.  Player yahin band NAHI karte -- qatar me
+                           aakhri tukde abhi baaki ho sakte hain.  Writer unhe
+                           baja deta hai, aur CHUPPI_MS ki khamoshi ke baad
+                           player khud band kar deta hai.
+                           (Pehle yahan `bharRahe = true` tha: writer phir se 7
+                           frame ka intezaar karne lagta -- aakhri 1-2 frame
+                           kabhi bajte hi nahi the aur thread har 10ms uthta
+                           rehta tha.) */
+                        bolRaha = false;
                         likho("Listening");
                     }
                 } catch (Throwable e) {
@@ -411,20 +437,10 @@ public class WalkieService extends Service {
             }
 
             @Override public void onMessage(WebSocket s, ByteString bytes) {
-                audioTaiyaar();
-                // Qatar bhari ho to SABSE PURANA frame gira dete hain, naya
-                // rakhte hain.  Live baat me purani aawaz ka koi matlab nahi —
-                // aur bina iske qatar bharte hi socket ka thread ruk jaata.
-                byte[] b = bytes.toByteArray();
-                if (!qatar.offer(b)) {
-                    /* Qatar bhar gayi -- matlab hum bahut peechhe chal rahe
-                       hain.  Ek frame girane se der wahi ki wahi rehti hai,
-                       isliye AADHI qatar gira dete hain aur taaza aawaz par
-                       aa jaate hain.  Live baat me purani aawaz ka koi
-                       matlab nahi hota. */
-                    for (int i = 0; i < 16; i++) { if (qatar.poll() == null) break; }
-                    qatar.offer(b);
-                }
+                // Player na ban paye to bhi socket na toote -- buzz / chat
+                // isi socket par aate hain.
+                try { daalo(bytes.toByteArray()); }
+                catch (Throwable e) { Log.w(TAG, "frame: " + e); }
             }
 
             @Override public void onClosed(WebSocket s, int code, String reason) {
@@ -474,6 +490,60 @@ public class WalkieService extends Service {
     }
 
     // ── aawaz ─────────────────────────────────────────────────────
+
+    /** Nayi baat shuru (rx_start): player taiyaar, pichhli bachi aawaz hatao,
+     *  buffer naye sire se bhare, aage chirp.  Lock me isliye ki writer isi
+     *  pal "chuppi" dekh kar player band na kar de. */
+    private synchronized void naiBaat() {
+        bolRaha = true;
+        aakhriAaya = SystemClock.uptimeMillis();
+        audioTaiyaar();
+        bharRahe = true;
+        qatar.clear();
+        chirp();
+    }
+
+    /** Aawaz ka ek frame qatar me.  Player band pada ho to naya bana leta
+     *  hai -- beech me judne par (rx_start pehle nikal gaya ho) bhi aawaz aaye.
+     *  Lock wahi jo `chuppiParBand()` ka hai: frame aur "player band" ek saath
+     *  nahi ho sakte, isliye naya frame kabhi band hote player me nahi girta. */
+    private synchronized void daalo(byte[] b) {
+        bolRaha = true;
+        aakhriAaya = SystemClock.uptimeMillis();
+        audioTaiyaar();
+        // Qatar bhari ho to purane frame gira dete hain, naya rakhte hain.
+        // Live baat me purani aawaz ka koi matlab nahi -- aur bina iske
+        // qatar bharte hi socket ka thread ruk jaata.
+        if (!qatar.offer(b)) {
+            /* Qatar bhar gayi -- matlab hum bahut peechhe chal rahe hain.
+               Ek frame girane se der wahi ki wahi rehti hai, isliye AADHI
+               qatar gira dete hain aur taaza aawaz par aa jaate hain. */
+            for (int i = 0; i < 16; i++) { if (qatar.poll() == null) break; }
+            qatar.offer(b);
+        }
+    }
+
+    /** Writer ki taraf se: der se kuch nahi aaya -- player band karo.
+     *  Lock ke andar DOBARA jaanchte hain: isi beech naya frame / nayi baat
+     *  aa gayi ho to band nahi karna.  true = writer ab nikal jaye. */
+    private synchronized boolean chuppiParBand(AudioTrack mera) {
+        if (track != mera) return true;                  // ye player pehle hi hat chuka
+        if (bolRaha || !qatar.isEmpty()) return false;   // beech me nayi aawaz aa gayi
+        Log.i(TAG, "CHUPPI -- player, thread aur focus band");
+        audioBand();
+        return true;
+    }
+
+    /** `write()` ne error lautaya (audio server restart hua, player mar
+     *  gaya).  Wo player chhod do -- agla frame naya bana lega.  Bina iske
+     *  writer har baar turant laut-ti galat write me bina ruke ghoomta rehta
+     *  aur CPU poora kha jaata. */
+    private synchronized void playerKharab(AudioTrack mera) {
+        if (track != mera) return;
+        Log.w(TAG, "PLAYER kharab -- chhod diya, agli aawaz par naya banega");
+        audioBand();
+    }
+
     private synchronized void audioTaiyaar() {
         if (track != null) return;
         int min = AudioTrack.getMinBufferSize(RATE, AudioFormat.CHANNEL_OUT_MONO,
@@ -509,30 +579,42 @@ public class WalkieService extends Service {
         // Koi gaana/video chal raha ho to call ke waqt wo dheema ho jaye.
         focusLo(attrs);
         track.play();
+        bharRahe = true;                  // naya player -- buffer pehle bhare
+        Log.i(TAG, "PLAYER chalu");
 
+        // Thread SIRF isi player ka.  Player badla (chuppi me band hua, ya
+        // naya bana) to ye khud nikal jaata hai -- naye wale se nahi takrata.
+        final AudioTrack mera = track;
         writer = new Thread(() -> {
-            while (chahiye) {
+            while (chahiye && track == mera) {
                 try {
-                    AudioTrack t = track;
-                    if (t == null) { Thread.sleep(20); continue; }
+                    long chup = SystemClock.uptimeMillis() - aakhriAaya;
+                    // Bolne wala atak gaya aur rx_stop aaya hi nahi -- itni
+                    // der baad baat khatam maan lo (upar ATKA_MS dekho).
+                    if (bolRaha && chup >= ATKA_MS) bolRaha = false;
 
                     // 1) Buffer bharne do -- jab tak itne frame na ho jayein,
-                    //    kuch mat bajao.  Ek hi baar har transmission par.
+                    //    kuch mat bajao.  Baat khatam (rx_stop) ho chuki ho to
+                    //    intezaar nahi: jo bacha hai wo baja do.
                     if (bharRahe) {
-                        if (qatar.size() < PREBUFFER_FRAMES) { Thread.sleep(10); continue; }
+                        if (bolRaha && qatar.size() < PREBUFFER_FRAMES) { Thread.sleep(10); continue; }
                         bharRahe = false;
                     }
 
                     byte[] b = qatar.poll(25, TimeUnit.MILLISECONDS);
                     if (b != null) {
-                        t.write(b, 0, b.length);
+                        if (mera.write(b, 0, b.length) < 0) { playerKharab(mera); return; }
+                    } else if (!bolRaha && chup >= CHUPPI_MS) {
+                        // 2) Baat khatam aur bachi aawaz baj chuki -- player,
+                        //    thread aur focus teeno chhodo (battery).
+                        if (chuppiParBand(mera)) return;
                     } else {
-                        /* Kuch nahi aaya.  AudioTrack ko KHALI mat chhodo --
+                        /* 3) Kuch nahi aaya.  AudioTrack ko KHALI mat chhodo --
                            wo sookh kar ruk jaata hai aur dobara chalne par
                            "tik" karta hai.  40ms ki khamoshi likh dete hain:
                            dhaara chalti rehti hai aur agla frame aate hi
                            bina jhatke jud jaata hai. */
-                        t.write(KHAMOSHI, 0, KHAMOSHI.length);
+                        if (mera.write(KHAMOSHI, 0, KHAMOSHI.length) < 0) { playerKharab(mera); return; }
                     }
                 } catch (InterruptedException e) {
                     return;
