@@ -1,9 +1,10 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DisplayProvider } from "./context/DisplayContext";
 import Layout from "./components/Layout";
 import AndonAlert from "./components/AndonAlert";
+import { loadServices, useServiceOn } from "./constants/clientServices";
 
 // ─── Pages — MAINTENANCE-ONLY SLICE ─────────────────────────────────────────
 // This is a standalone copy of the Maintenance department UI extracted from
@@ -138,9 +139,21 @@ function BreakdownSlipRoute() {
 
 // ─── Routes ───────────────────────────────────────────────────────────────
 function AppRoutes() {
+  const { token } = useAuth();
+  // Kaunsi service is device par chale -- Admin → Maintenance Panel → Services.
+  // Login par padho, aur app / tab dobara saamne aaye tab bhi (admin ka badlav
+  // bina reload ke lag jaaye).  Website par default BAND, app par CHALU.
+  useEffect(() => {
+    if (!token) return undefined;
+    loadServices(token);
+    const jago = () => { if (document.visibilityState === "visible") loadServices(token); };
+    document.addEventListener("visibilitychange", jago);
+    return () => document.removeEventListener("visibilitychange", jago);
+  }, [token]);
+  const andonOn = useServiceOn("andon_alert");
   return (
     <>
-      <AndonAlert />
+      {andonOn && <AndonAlert />}
       {/* Har page ab apna alag chunk hai (upar `lazy` wala note dekhein), aur
           `Suspense` wahi hai jo chunk aane tak kuch dikhata hai.  Fallback
           jaan-boojh kar Protected wale loading screen jaisa hi rakha hai --

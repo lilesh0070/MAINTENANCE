@@ -33,6 +33,9 @@ export const ADMIN_SECTIONS = [
       // Delete History — audit-log ka wo hissa jo pehle kahin dikhta hi nahi tha.
       // adminOnly: mitane ka record dekhna oversight ka kaam hai.
       { key: "deletehistory", label: "Delete History", icon: "🗑", adminOnly: true },
+      // Services — kaunsi service (ANDON alert, walkie, background) website
+      // par aur kaunsi app par chale.  adminOnly: poore plant ka switch hai.
+      { key: "services",      label: "Services",       icon: "🔔", adminOnly: true },
     ],
   },
   {

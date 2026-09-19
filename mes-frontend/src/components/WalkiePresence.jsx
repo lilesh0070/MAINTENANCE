@@ -19,6 +19,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { walkieLink, walkieWsBase } from "../constants/walkieLink";
 import { walkieNative } from "../constants/walkieNative";
+import { useServiceOn } from "../constants/clientServices";
 
 export default function WalkiePresence() {
   const { token } = useAuth();
@@ -36,9 +37,23 @@ export default function WalkiePresence() {
      Wahi khaali jagah ye patti bharti hai. */
   const [aayi, setAayi] = useState(null);   // { from, body, convo }
 
+  /* Admin → Maintenance Panel → Services: is device (website / app) par
+     walkie chale ya nahi, aur app me background service chale ya nahi.
+     Website par default BAND, app par CHALU (`constants/clientServices`). */
+  const walkieOn = useServiceOn("walkie");
+  const bgOn     = useServiceOn("walkie_background");
+
   // ── socket + service, har page par ─────────────────────────────
   useEffect(() => {
     if (!token) { walkieLink.stop(); return undefined; }
+    if (!walkieOn) {
+      /* Walkie is device par BAND -- na socket, na online, na parda, na
+         aawaz.  App me background service bhi rok do, warna wo band app me
+         bhi sunti rehti. */
+      walkieLink.stop();
+      if (walkieNative.hai()) walkieNative.stop().catch(() => {});
+      return undefined;
+    }
     let ruk = false;
     let ghadi = null;
 
@@ -58,7 +73,13 @@ export default function WalkiePresence() {
 
       walkieLink.start(token);
 
-      if (walkieNative.hai()) {
+      if (walkieNative.hai() && !bgOn) {
+        /* Background listening BAND (admin ne) -- service mat chalao (chal
+           rahi ho to rok do).  Tab app khuli ho tabhi page khud sunta aur
+           bajata hai; band app me kuch nahi (battery bachti hai). */
+        await walkieNative.stop().catch(() => {});
+        if (!ruk) walkieLink.setPlayHere(true);
+      } else if (walkieNative.hai()) {
         /* Phone par sunne ka kaam service ka hai — page ko bajane se rok do,
            warna ek hi aawaz do baar aati hai.  Service kabhi mar jaye to
            `running` false ho jaata hai aur page khud bajane lagta hai. */
@@ -73,7 +94,7 @@ export default function WalkiePresence() {
     })();
 
     return () => { ruk = true; if (ghadi) clearInterval(ghadi); };
-  }, [token]);
+  }, [token, walkieOn, bgOn]);
 
   // ── buzz ka parda ──────────────────────────────────────────────
   useEffect(() => walkieLink.on((d) => {

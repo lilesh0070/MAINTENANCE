@@ -25,6 +25,7 @@ import { micShuru } from "../constants/walkieAudio";
 import { walkieLink } from "../constants/walkieLink";
 import { walkieNative } from "../constants/walkieNative";
 import { WalkieChatTab, WalkieAdminChatTab } from "../components/WalkieChat";
+import { useServiceOn, PLATFORM } from "../constants/clientServices";
 
 const api = {
   async get(path, token) {
@@ -75,6 +76,9 @@ export default function WalkieTalkie() {
   const { token, theme, user } = useAuth();
   const nav = useNavigate();
   const isAdmin = user?.role === "admin";
+  // Admin ne is device (website / app) par walkie BAND kiya ho to socket judta
+  // hi nahi (WalkiePresence) -- page par saaf bata do, warna sab "offline" dikhta.
+  const walkieOn = useServiceOn("walkie");
 
   const [roster, setRoster] = useState({ me: null, people: [], channels: [] });
   const [tab, setTab] = useState("talk");
@@ -528,6 +532,13 @@ export default function WalkieTalkie() {
         </div>
 
         <div className="wk-body">
+          {!walkieOn && (
+            <div className="wk-card" style={{ borderColor: "#fcd34d", background: "#fffbeb", color: "#92400e",
+                                              fontSize: 13, fontWeight: 700, lineHeight: 1.5 }}>
+              Walkie-Talkie is turned off for the {PLATFORM === "app" ? "app" : "website"}.
+              {isAdmin ? " Turn it on in Maintenance Panel → Services." : " Ask an admin to turn it on."}
+            </div>
+          )}
           {/* Pehle ye patti SIRF admin ko dikhti thi.  Ab chat bhi yahin se
               khulti hai, isliye jise chat ki ijazat hai use bhi chahiye --
               warna uske paas chat tak pahunchne ka koi raasta hi na hota. */}

@@ -65,6 +65,7 @@ from routers.walkie          import router as walkie_router
 from routers.dashboard_zones import router as dashboard_zones_router
 from routers.machine_running_hours import router as machine_running_hours_router
 from routers.kpi_ui_settings import router as kpi_ui_settings_router
+from routers.client_services import router as client_services_router
 from routers.app_update import router as app_update_router
 from routers.breakdown_mail  import router as breakdown_mail_router
 
@@ -161,6 +162,7 @@ app.include_router(walkie_router)               # Walkie-Talkie (push-to-talk) -
 app.include_router(dashboard_zones_router)      # Dashboard Pending-Breakdown zone tiles (admin-curated whitelist)
 app.include_router(machine_running_hours_router) # Per-machine running hours → MTBF calculation (KPI Target)
 app.include_router(kpi_ui_settings_router)      # Admin-editable KPI page appearance (colors/axis)
+app.include_router(client_services_router)      # Admin: kaunsi service website / app par chale (ANDON alert, walkie, background)
 app.include_router(breakdown_mail_router)       # Breakdown escalation mail (Engineer -> Plant Head)
 app.include_router(app_update_router)         # Android app ka update check + APK download
 

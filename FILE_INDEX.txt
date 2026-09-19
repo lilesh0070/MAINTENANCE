@@ -82,6 +82,7 @@ deletehistory.jsx                    406  admin/deletehistory.jsx — "Delete Hi
 loginhistory.jsx                     265  admin/loginhistory.jsx — "Login History" tab (Maintenance Panel, User & Access ke aage). Do view: • Currently Logged In — abhi kaun-kaun active hai (latest...
 mail-kpi.jsx                         459  admin/mail-kpi.jsx — KPI Targets page.
 mailconfig.jsx                       180  admin/mailconfig.jsx — Users page ke saanjhe constants.
+services.jsx                         149  admin/services.jsx — "Services" tab (Maintenance Panel, sirf admin): kaunsi service website par aur kaunsi app par chale.
 org.jsx                              437  admin/org.jsx — Users · Machines · Cameras · Departments.
 slipthreshold.jsx                    105  ── Slip Threshold ────────────────────────────────────────────────── AUTO breakdown slip tabhi banti hai jab maintenance ANDON call itne minute se ZYADA kh...
 system.jsx                            44  admin/system.jsx — Admin Panel ka tab-dhancha (sirf constant, koi component nahi).
@@ -111,6 +112,7 @@ WalkiePresence.jsx                   234  WalkiePresence.jsx — walkie ka "hame
   folder: mes-frontend/src/constants
 ========================================================================================================
 apiBase.js                           371  apiBase.js — APK ke liye server ka pata jodne wala ek hi jagah ka intezaam.
+clientServices.js                     62  clientServices.js — kaunsi service IS device par chale (Website ya App), admin ke "Services" tab se.
 sheetTools.js                        939  sheetTools.js — SHEET KA PRINT AUR EXCEL DOWNLOAD, EK HI JAGAH.
 upperCaret.js                         81  upperCaret.js — "type karte hi BADE AKSHAR" wali dikkat ka hal.
 walkieAudio.js                       193  walkieAudio.js — Walkie-Talkie ka aawaz wala hissa (mic + speaker).
@@ -151,6 +153,7 @@ breakdown_mail.py                    457  BREAKDOWN ESCALATION MAIL — breakdow
 breakdown_slips.py                  1236  Standalone storage for the MANUAL "Break Down Slip" (raised from the sidebar
 breakdowns.py                        309  BREAKDOWN LOG — bhari hui Break Down Slips ka reader (`maintenance_breakdown_data`).
 capa_logbook.py                      424  CAPA driven directly by the Break Down Slip table (`maintenance_breakdown_data`) — the SAME source the Maintenance-KPI / BD-History / BD-Analysis pages com...
+client_services.py                  121  Admin tay karta hai ki kaunsi SERVICE (ANDON alert, walkie, background) website par aur kaunsi app par chale.
 daily_plan.py                        268  Daily Work Assign — Update Plan → "Daily Work Assign" section.
 dashboard_zones.py                   118  Which zones show as tiles on the Maintenance Dashboard "Pending Breakdown" panel (KpiPanel). This is an admin-curated whitelist that *defaults* to the six...
 deviations.py                        298  routers/deviations.py — Online Deviation Form.
@@ -238,6 +241,7 @@ maintenance_audit_log                          8 columns
 maintenance_auto_breakdown_slip               39 columns
 maintenance_breakdown_data                    34 columns
 maintenance_capa_sheet                        13 columns
+maintenance_client_services                    4 columns
 maintenance_daily_plan_work                   18 columns
 maintenance_dashboard_zones                    3 columns
 maintenance_deviations                        41 columns
