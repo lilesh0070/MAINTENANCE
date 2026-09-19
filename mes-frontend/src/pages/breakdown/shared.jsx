@@ -40,7 +40,7 @@ export function usePortrait() {
 
 export const API = "";
 
-// today as YYYY-MM-DD (the Pending Breakdown panel's date filter defaults here)
+// today as YYYY-MM-DD (Pending Breakdown ab ise nahi leta -- wahan date khaali = poora mahina)
 export function todayLocalISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;

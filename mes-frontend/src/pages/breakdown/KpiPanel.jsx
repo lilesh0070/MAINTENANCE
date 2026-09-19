@@ -1,15 +1,28 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { PROD_ZONES } from "../../constants/zones";
-import { Btn, api, todayLocalISO, fmtDuration, fmtClock, usePortrait } from "./shared";
+import { Btn, api, fmtDuration, fmtClock, usePortrait } from "./shared";
+
+// Chaalu mahina: [pehli tarikh, aakhri tarikh] (YYYY-MM-DD) aur "Sep 2026".
+// Har baar `new Date()` se -- 24 ghante chalne wala TV 1 tarikh ko khud naye
+// mahine par aa jaata hai (pehle aaj ki date load ke waqt atak jaati thi).
+const pad2 = (n) => String(n).padStart(2, "0");
+const monthWindow = () => {
+  const d = new Date(), y = d.getFullYear(), m = d.getMonth();
+  return [`${y}-${pad2(m + 1)}-01`, `${y}-${pad2(m + 1)}-${pad2(new Date(y, m + 1, 0).getDate())}`];
+};
+const monthLabel = () => new Date().toLocaleString("en-US", { month: "short", year: "numeric" });
 
 /* ════════════════════════════════════════════════════════════════════
  * 2.5) Maintenance KPI panel (auto-computed + target compare + CSV
  *      download).  Sits between History and Zone&Line Stats.
  * ════════════════════════════════════════════════════════════════════ */
 function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshKey, isAdmin }) {
-  // Filters — same style as every other page: a Date (default TODAY, but
-  // freely changeable) + Zone → Line cascade from the Machine Master.
-  const [fDate,   setFDate]   = useState(todayLocalISO());
+  // Filters — same style as every other page: a Date + Zone → Line cascade
+  // from the Machine Master.  Date KHAALI = poora chaalu mahina (user
+  // 2026-09-19: "default current date nahi, pura month; baad me select karke
+  // check kar sakte hain") -- date chuno to sirf wahi din, date ke picker me
+  // "Clear" dabao to wapas poora mahina.
+  const [fDate,   setFDate]   = useState("");
   const [fZone,   setFZone]   = useState("");
   const [fLine,   setFLine]   = useState("");
   const [zoneSel, setZoneSel] = useState("SEAT_SLIDER");   // clicked zone tile → shows its slips
@@ -77,9 +90,9 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
     try {
       const qs = new URLSearchParams();
       // A single date → a one-day window (period=custom, from=to=date).
-      // No date = fall back to today so the panel is never empty on load.
-      const d = fDate || todayLocalISO();
-      qs.set("period", "custom"); qs.set("date_from", d); qs.set("date_to", d);
+      // No date = the whole current month (1st → last day).
+      const [from, to] = fDate ? [fDate, fDate] : monthWindow();
+      qs.set("period", "custom"); qs.set("date_from", from); qs.set("date_to", to);
       if (fZone) qs.set("zone_name", fZone);
       if (fLine) qs.set("line_name", fLine);
       const r = await api.get(`/api/maintenance-kpi/?${qs.toString()}`, token);
@@ -117,12 +130,12 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
             Pending Breakdown
           </div>
           <div className="kp-sub" style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
-            {fDate || "Today"} · {fZone || "All zones"}{fLine ? ` · ${fLine}` : ""}
+            {fDate || monthLabel()} · {fZone || "All zones"}{fLine ? ` · ${fLine}` : ""}
           </div>
         </div>
         <div className="kp-filters" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <input type="date" value={fDate} onChange={(e) => setFDate(e.target.value)}
-                 style={kpiSelect} title="Breakdown date" />
+                 style={kpiSelect} title="Empty = whole current month. Pick a date to see only that day." />
           <select value={fZone} onChange={(e) => onZone(e.target.value)} style={kpiSelect}>
             <option value="">All Zones</option>
             {zoneOpts.map(z => <option key={z} value={z}>{z}</option>)}
