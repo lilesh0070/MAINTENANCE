@@ -66,9 +66,16 @@
            `.mk-portrait` tune hue the).  Ye tabhi chalta hai jab WebView me
            `useWideViewPort` chalu ho -- wo `MainActivity.java` me kar diya
            hai; bina uske WebView `width=` maanta hi nahi. */
+        /* TV par `user-scalable=no` bhi (user 2026-09-19): TV par double-tap
+           (ya khaane par tap) se page ZOOM ho jaata tha -- slip bharte waqt
+           ya kahin bhi.  `width=1350` device-width nahi hai, isliye browser
+           zoom chalu rakhta hai; phone/tablet `device-width` par hain, wahan
+           ye dikkat thi hi nahi.  Emulator par naapa: layout JYON KA TYON
+           (chaudai 1351, scale 0.5956, koi side-scroll nahi).  Saath me
+           responsive.css me TV ke liye `touch-action: manipulation` bhi. */
         var m = document.createElement("meta");
         m.name = "viewport";
-        m.content = tv ? "width=1350" : "width=device-width, initial-scale=1.0";
+        m.content = tv ? "width=1350, user-scalable=no" : "width=device-width, initial-scale=1.0";
         document.head.appendChild(m);
         if (tv) document.documentElement.setAttribute("data-tv", "1");
         document.documentElement.setAttribute("data-dev", kism);

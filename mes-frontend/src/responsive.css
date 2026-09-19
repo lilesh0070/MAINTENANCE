@@ -2432,3 +2432,16 @@ body.in-app .dmc-scroll > div {
   overflow: visible !important;
   overflow-x: visible !important;
 }
+
+/* ── TV: double-tap par ZOOM nahi (user 2026-09-19) ────────────────────
+ * TV par viewport `width=1350` hai (device-width nahi -- TV ka layout usi
+ * par tune hai), isliye WebView double-tap par page zoom kar deta tha: slip
+ * bharte waqt (ya kahin bhi) do baar jaldi dabao to sab bada ho jaata.
+ * Phone / tablet `device-width` par hain, wahan browser khud double-tap
+ * zoom band rakhta hai -- isliye dikkat sirf TV par thi.
+ * `manipulation` = scroll aur pinch pehle jaise, sirf double-tap zoom band.
+ * Viewport meta NAHI chheda -- TV ka layout locked hai.
+ * `:where()` se specificity ZERO: jinka apna touch-action hai (sign ka
+ * canvas `none`) wo jyon ke tyon rehte hain.
+ */
+:where(html.in-app-tv), :where(html.in-app-tv) * { touch-action: manipulation; }
