@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { tasveeronKoAndarBithao, nativeChhapo, pdfDocSe,
          inputonKoTextBanao, haalatKoAttributeBanao } from "../../constants/sheetTools";
 import { createRoot } from "react-dom/client";
@@ -139,6 +139,18 @@ const nextDay = (dstr) => {
  *     is instantaneous and works offline of the lookup endpoint after
  *     the first fetch.
  */
+// B/D ATTENDED BY ke naam alag karo: "KSHITIJ, ANKIT" / "HEMANT/JITENDER" /
+// "A & B" -- in nishaano se.  Koi nishaan na ho aur 3+ shabd hon ("GAURAV
+// HEMANT JITENDER JASVEER") to space se; 1-2 shabd ek hi naam ("JATIN VERMA").
+const attendNames = (s) => {
+  const t = String(s || "").trim();
+  if (!t) return [];
+  let parts = t.split(/\s*(?:,|\/|&|\+|;|\n|\band\b)\s*/i).map((x) => x.trim()).filter(Boolean);
+  if (parts.length === 1) { const w = parts[0].split(/\s+/); if (w.length >= 3) parts = w; }
+  return [...new Set(parts)];
+};
+const randomOf = (arr) => (arr.length ? arr[Math.floor(Math.random() * arr.length)] : "");
+
 export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose, onSave, token, pickLine = false, onEdit = null }) {
   // mode  : "fill" | "view"
   // phase : "production" → user can edit only the upper half (Production)
@@ -230,6 +242,9 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   const [machines, setMachines] = useState([]);  // [{serial_no, machine_no(code), machine_name}]
   const [masterRows, setMasterRows]     = useState([]);
   const [spareMaster, setSpareMaster]   = useState([]);   // spare picker (maintenance_spare)
+  // RECEIVED BY jo naam HUMNE (B/D ATTENDED BY se) bhara -- user ne khud
+  // badla ho to ye se alag hoga, tab chhedte nahi
+  const autoRcv = useRef("");
 
   // ── Auto-fill on first open from the breakdown record ─────────────
   useEffect(() => {
@@ -281,6 +296,19 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
     // hua) aur band hone par sirf EK baar asli date aati hai.
     const _ed  = prod.bd_end_date      ?? legacy.bd_end_date
                  ?? (ticket.auto_slip ? "" : (fmtDate(end) || _sd));
+
+    // Neeche ke naam (user 2026-09-19): PREPARED BY + HANDOVER TO (Line Leader
+    // / Operator) + HANDOVER TO (Quality Engineer) = upar ka LINE LEADER NAME
+    // (QE baad me joda -- user: "usme bhi aana chahiye"); RECEIVED BY = B/D ATTENDED BY me
+    // se koi EK (kai naam hon to random).  Sirf KHAALI khaane me aur sirf
+    // bharte waqt (view me jo save hua wahi).  Auto slip me production upar ka
+    // hissa pehle bharta hai -- maintenance kholta hai tab yahin se aa jaata.
+    const _ll  = prod.line_leader_name ?? legacy.line_leader_name ?? "";
+    const _att = maint.bd_attended_by  ?? legacy.bd_attended_by  ?? "";
+    const orName = (obj, name) => (readOnly || String(obj?.name || "").trim())
+      ? (obj ?? { name: "" }) : { ...(obj || {}), name };
+    const _rcvPick = readOnly ? "" : randomOf(attendNames(_att));
+    autoRcv.current = "";
 
     // Auto-locked timestamps always sourced from collector — never from
     // any saved blob — so they reflect the live record.
@@ -338,10 +366,15 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
         (maint.spares || legacy.spares || [])
           .some(s => Object.values(s || {}).some(v => String(v ?? "").trim())) ? "yes" : "no"),
       bd_attended_by:          maint.bd_attended_by          ?? legacy.bd_attended_by          ?? "",
-      prepared_by:             maint.prepared_by             ?? legacy.prepared_by             ?? { name: "" },
-      received_by:             maint.received_by             ?? legacy.received_by             ?? { name: "" },
-      line_leader_operator:    maint.line_leader_operator    ?? legacy.line_leader_operator    ?? { name: "" },
-      quality_engineer:        maint.quality_engineer        ?? legacy.quality_engineer        ?? { name: "" },
+      prepared_by:             orName(maint.prepared_by ?? legacy.prepared_by, _ll),
+      received_by:             (() => {
+        const o = maint.received_by ?? legacy.received_by;
+        if (readOnly || String(o?.name || "").trim() || !_rcvPick) return o ?? { name: "" };
+        autoRcv.current = _rcvPick;
+        return { ...(o || {}), name: _rcvPick };
+      })(),
+      line_leader_operator:    orName(maint.line_leader_operator ?? legacy.line_leader_operator, _ll),
+      quality_engineer:        orName(maint.quality_engineer ?? legacy.quality_engineer, _ll),
     });
   }, [ticket?.id, readOnly, phase]);
 
@@ -426,6 +459,30 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   if (!ticket) return null;
 
   const set    = (k, v) => setData(d => ({ ...d, [k]: v }));
+  // LINE LEADER NAME badla → PREPARED BY + dono HANDOVER TO (Line Leader /
+  // Operator aur Quality Engineer) bhi, jab tak wo khaali hon ya ab tak LL ke
+  // hi barabar (haath se alag likha ho to nahi chhedte).
+  const setLL = (v) => setData(d => {
+    const prev = String(d.line_leader_name || "").trim();
+    const nd = { ...d, line_leader_name: v };
+    ["prepared_by", "line_leader_operator", "quality_engineer"].forEach((k) => {
+      const cur = String(d[k]?.name || "").trim();
+      if (!cur || cur === prev) nd[k] = { ...(d[k] || {}), name: v };
+    });
+    return nd;
+  });
+  // B/D ATTENDED BY likh kar bahar nikle → RECEIVED BY me unme se koi EK naam
+  // (random).  Pehle se humara chuna naam abhi bhi list me ho to wahi rahe;
+  // user ne khud likha ho to nahi chhedte.
+  const pickReceiver = () => {
+    const names = attendNames(data.bd_attended_by);
+    const cur = String(data.received_by?.name || "").trim();
+    if (cur && cur !== autoRcv.current) return;        // haath se likha hua
+    if (cur && names.includes(cur)) return;            // humara chuna naam abhi bhi sahi
+    const pick = randomOf(names);
+    autoRcv.current = pick;
+    setSub("received_by", "name", pick);
+  };
   const setSub = (parent, k, v) =>
     setData(d => ({ ...d, [parent]: { ...(d[parent] || {}), [k]: v } }));
 
@@ -945,7 +1002,7 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
                      onChange={v => set("shift", v)}/>
             <BdsCell label="LINE LEADER NAME"
                      value={data.line_leader_name} readOnly={!fieldEditable("line_leader_name")}
-                     onChange={v => set("line_leader_name", v)}/>
+                     onChange={v => setLL(v)}/>
 
             <BdsCell label="MACHINE OPERATOR NAME"
                      value={data.machine_operator_name} readOnly={!fieldEditable("machine_operator_name")}
@@ -1216,7 +1273,8 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
           <BdsRow label="B/D ATTENDED BY"
                   value={data.bd_attended_by}
                   readOnly={!fieldEditable("bd_attended_by")}
-                  onChange={v => set("bd_attended_by", v)}/>
+                  onChange={v => set("bd_attended_by", v)}
+                  onBlur={pickReceiver}/>
 
           {/* ── Signatures (4 columns) ─────────────────────────── */}
           <div className="bds-sign-head">
@@ -1617,7 +1675,7 @@ function BdsCell({ label, value, type = "text", readOnly, onChange, options, min
 }
 
 /* ── Full-width labelled textarea (for free-text rows) ──────────── */
-function BdsRow({ label, value, readOnly, onChange }) {
+function BdsRow({ label, value, readOnly, onChange, onBlur }) {
   return (
     <div className="bds-row">
       <div className="bds-row-label">{label}</div>
@@ -1627,7 +1685,8 @@ function BdsRow({ label, value, readOnly, onChange }) {
         <textarea value={value || ""}
                   disabled={readOnly}
                   rows={2}
-                  onChange={(e) => onChange?.(upperCaret(e))}/>
+                  onChange={(e) => onChange?.(upperCaret(e))}
+                  onBlur={onBlur}/>
       </div>
     </div>
   );
