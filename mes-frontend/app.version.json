@@ -1,5 +1,5 @@
 {
-  "version": "1.4.82",
-  "notes": "CAPA: Gemba / OK / NG filled in automatically, only one own cause, cards filter the list, Historical Data has View (Edit / Delete only for admin). Breakdown slip: Prepared By and Handover names come from Line Leader, Received By from Attended By. TV: no more zoom on double tap.",
-  "released_at": "2026-09-19T11:34:21"
+  "version": "1.4.83",
+  "notes": "Walkie-Talkie uses less battery: after someone stops talking, the voice player switches itself off in about 2 seconds, and music in other apps is no longer kept quiet. Admin: new Services tab in Maintenance Panel to turn ANDON alert, Walkie-Talkie and background listening on or off separately for the website and the app.",
+  "released_at": "2026-09-19T13:19:16"
 }
