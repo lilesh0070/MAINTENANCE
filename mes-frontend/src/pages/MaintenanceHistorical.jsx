@@ -16,7 +16,7 @@
  * slip form production/maintenance/closure JSONB bharti hai).
  * Routing: /maintenance-historical
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { ClosureFormModal } from "./breakdown/ClosureFormModal";
 import { slipPayload } from "./breakdown/slipPayload";
@@ -27,6 +27,10 @@ import ExcelBtn from "../components/ExcelBtn";
 import RowDelete from "../components/RowDelete";
 import { useNavigate } from "react-router-dom";
 import { aajKaNaam } from "../constants/sheetTools";
+// CAPA ka QPR form -- "View" me SIRF DEKHNE ke mode me yahin parde par khulta
+// hai (CAPA page ki permission na ho tab bhi, aur yahan ke filter bhi bache
+// rehte hain).  Lazy -- jab tak koi View na dabaye, 100 KB ka grid load nahi.
+const CapaSheet = lazy(() => import("./MaintenanceCAPA"));
 
 /* Backend ki galti ka SANDESH nikalo, JSON ka kachra nahi.
  *
@@ -208,6 +212,7 @@ export default function MaintenanceHistorical() {
   // CAPA jo CLOSE ho chuki hain (khuli hui yahan NAHI aati — user ki shart)
   const [capaRows, setCapaRows]       = useState([]);
   const [capaLoading, setCapaLoading] = useState(true);
+  const [capaView, setCapaView]       = useState(null);   // "View" -- kaunsi sheet (id)
   const [dayRows, setDayRows]       = useState([]);
   const [dayLoading, setDayLoading] = useState(true);
   // Break Down Log Book — maintenance_logbook_db_history
@@ -1241,12 +1246,12 @@ export default function MaintenanceHistorical() {
                   <th>QPR No</th><th>Problem</th>
                   <th style={{ textAlign:"center" }}>Down Time (min)</th>
                   <th>Closed By</th><th>Closed On</th>
-                  {isAdmin && <th style={{ textAlign:"center" }}>Actions</th>}
+                  <th style={{ textAlign:"center" }}>Actions</th>
                 </tr></thead>
                 <tbody>
-                  {capaLoading && <tr><td colSpan={isAdmin ? 12 : 11} className="hd-empty">Loading…</td></tr>}
+                  {capaLoading && <tr><td colSpan={12} className="hd-empty">Loading…</td></tr>}
                   {!capaLoading && capaList.length === 0 &&
-                    <tr><td colSpan={isAdmin ? 12 : 11} className="hd-empty">
+                    <tr><td colSpan={12} className="hd-empty">
                       {capaRows.length ? "No closed CAPA for this filter."
                                        : "No CAPA closed yet — close one on the CAPA page and it will show here."}
                     </td></tr>}
@@ -1263,12 +1268,14 @@ export default function MaintenanceHistorical() {
                       <td style={{ textAlign:"center", fontWeight:800 }}>{r.duration_min ?? "—"}</td>
                       <td style={{ fontWeight:700, color:"#334155" }}>{r.closed_by || "—"}</td>
                       <td style={{ whiteSpace:"nowrap" }}>{fmtD(r.closed_at)}</td>
-                      {isAdmin && (
-                        <td style={{ textAlign:"center" }}>
-                          <span style={{ display:"inline-flex", gap:6, alignItems:"center" }}>
-                            {/* CAPA ka form apne page ke andar khulta hai (alag route nahi),
-                                isliye wahan `?sheet=` ke saath bhejte hain -- wo page use
-                                khol kar seedha form dikha deta hai. */}
+                      <td style={{ textAlign:"center" }}>
+                        <span style={{ display:"inline-flex", gap:6, alignItems:"center" }}>
+                          {/* View -- sabke liye, sirf dekhna (user 2026-09-19) */}
+                          <button className="hd-view" onClick={() => setCapaView(r.id)}>View</button>
+                          {/* Edit / Delete -- SIRF admin.  CAPA ka form apne page ke
+                              andar khulta hai (alag route nahi), isliye wahan
+                              `?sheet=` ke saath bhejte hain. */}
+                          {isAdmin && (<>
                             <button className="hd-view" style={{ background:"#be185d" }}
                                     onClick={() => nav(`/maintenance-capa?sheet=${r.id}`)}>✎ Edit</button>
                             <RowDelete
@@ -1276,9 +1283,9 @@ export default function MaintenanceHistorical() {
                               kya={`CAPA ${r.qpr_no || "#" + r.id} — ${r.machine_no || "?"}`}
                               saath={["All data filled in on this QPR sheet"]}
                               onDelete={() => hatao.capa(r.id)} />
-                          </span>
-                        </td>
-                      )}
+                          </>)}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1542,6 +1549,15 @@ export default function MaintenanceHistorical() {
                       fontSize: 12.5, fontWeight: 700, maxWidth: 460, textAlign: "center" }}
              onClick={() => setDmcInfo("")}>
           {dmcInfo}
+        </div>
+      )}
+
+      {/* CAPA "View" -- poora QPR, sirf dekhne ke liye */}
+      {capaView != null && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9500, background: "#eef2f7", overflow: "auto" }}>
+          <Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>Loading…</div>}>
+            <CapaSheet viewId={capaView} onClose={() => setCapaView(null)} />
+          </Suspense>
         </div>
       )}
 

@@ -76,7 +76,13 @@ const fyMonthList = (fy) => {
   return out;
 };
 
-export default function MaintenanceCAPA() {
+/* `viewId` diya ho to SIRF DEKHNE ka mode (Historical Data → CAPA (Closed) →
+   "View", user 2026-09-19) -- wahi QPR form, par `<fieldset disabled>` me:
+   kuch badal / save / close nahi hota; list, Save, Close, Print nahi; upar
+   sirf "✕ Close" (`onClose`).  Bharne / badalne wale effect is mode me chalte
+   hi nahi -- jo save hua tha wahi dikhe, jyon ka tyon. */
+export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) {
+  const viewOnly = viewId != null;
   const { token, theme, user } = useAuth();
   const formRef = useRef(null);
   const videoRef = useRef(null);
@@ -132,7 +138,22 @@ export default function MaintenanceCAPA() {
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
   }, [api]);
-  useEffect(() => { loadPending(); }, [loadPending]);
+  useEffect(() => { if (!viewOnly) loadPending(); }, [loadPending, viewOnly]);
+
+  // sirf-dekhne ka mode: wahi ek sheet kholo
+  useEffect(() => {
+    if (!viewOnly) return;
+    let chalu = true;
+    api(`/sheet/${viewId}`)
+      .then((d) => {
+        if (!chalu) return;
+        setPrefill(d.data || {}); setSid(d.id);
+        setSStatus((d.status || "DRAFT").toUpperCase());
+        setView("form");
+      })
+      .catch((e) => { if (chalu) { setMsg("Could not open the CAPA: " + (e.message || "")); setMsgBad(true); } });
+    return () => { chalu = false; };
+  }, [viewOnly, viewId, api]);
 
   // apply the prefill / loaded data whenever the FORM view opens
   // (handles text inputs AND checkboxes)
@@ -154,6 +175,20 @@ export default function MaintenanceCAPA() {
     });
   }, [view, prefill]);
 
+  // sirf-dekhne me Data Validation ka Sr. No. (wo save nahi hota, `span` hai;
+  // aam taur par neeche wala DV effect lagata hai jo is mode me chalta nahi)
+  useEffect(() => {
+    if (!viewOnly || view !== "form" || !formRef.current) return;
+    const form = formRef.current;
+    let n = 0;
+    [...form.querySelectorAll(".dv-cause")]
+      .sort((a, b) => a.dataset.row - b.dataset.row)
+      .forEach((c) => {
+        const sp = form.querySelector(`.dv-srno[data-row="${c.dataset.row}"]`);
+        if (sp) sp.textContent = c.value.trim() ? String(++n) : "";
+      });
+  }, [viewOnly, view, prefill]);
+
   // Data Validation: auto Sr. No. + row-by-row lock (next row typeable only after the
   // previous cause is filled) + compact on clear.  readOnly (not disabled) → clicks
   // always land instantly; render runs ONLY when a row's filled-state flips → typing is
@@ -169,7 +204,7 @@ export default function MaintenanceCAPA() {
   //   Rows badalne ke baad "dv-rebuilt" event -- Result / Annexure wala effect
   //   usi par apna hisaab dobara karta hai.
   useEffect(() => {
-    if (view !== "form" || !formRef.current) return;
+    if (view !== "form" || !formRef.current || viewOnly) return;   // sirf-dekhne me kuch na badle
     const form = formRef.current;
     const COLS = [4, 8, 10, 12];   // cause, verification, result, remarks
     const rows = [...form.querySelectorAll(".dv-cause")].map((c) => +c.dataset.row).sort((a, b) => a - b);
@@ -185,19 +220,24 @@ export default function MaintenanceCAPA() {
     const warn = (m) => { setMsg(m); setMsgBad(true); setTimeout(() => setMsg(""), 3000); };
     const filled = (r) => { const c = cell[r][4]; return !!(c && String(c.value).trim() !== ""); };
     const render = () => {                     // Sr.No + lock the rows below the first empty one
-      let n = 0, prev = true;
+      let n = 0, prev = true, own = 0;
       rows.forEach((r) => {
         const f = filled(r);
         const sr = srno[r]; if (f) { n += 1; if (sr) sr.textContent = n; } else if (sr) sr.textContent = "";
-        const lock = !prev;
         const auto = !!cell[r][4].dataset.src;  // Machine se aaya cause -- yahan nahi badalta
+        // Apna (haath se likha) cause sirf EK (user 2026-09-19) -- wo bhar
+        // gaya to aage ki khaali row band.  Baaki cause Machine se hi aate hain.
+        const full = !auto && !f && own >= 1;
+        const lock = !prev || full;
         COLS.forEach((c) => {
           const el = cell[r][c]; if (!el) return;
           const ro = lock || (c === 4 && auto);
           if (el.readOnly !== ro) el.readOnly = ro;
         });
         cell[r][4].classList.toggle("dv-auto", auto);
-        cell[r][4].title = auto ? "Comes from Data Analysis → Machine" : "";
+        cell[r][4].title = auto ? "Comes from Data Analysis → Machine"
+                         : full ? "Only one own cause — the rest come from Data Analysis → Machine" : "";
+        if (f && !auto) own += 1;
         state[r] = f; prev = prev && f;
       });
     };
@@ -216,7 +256,9 @@ export default function MaintenanceCAPA() {
       MACH.forEach((m) => {
         const s = machRow(m), t = txt(m.value);
         if (!t && !(keepEmpty && bySrc[s])) return;
-        list.push({ src: s, uid: "m" + s, v: [t, ...(bySrc[s] ? bySrc[s].v.slice(1) : ["", "", ""])] });
+        // naya Machine point: method "Gemba", result "OK" pehle se (user
+        // 2026-09-19) -- baad me badal sakte hain; purana ho to jo bhara hai wahi
+        list.push({ src: s, uid: "m" + s, v: [t, ...(bySrc[s] ? bySrc[s].v.slice(1) : ["Gemba", "OK", ""])] });
       });
       cur.forEach((x) => { if (!x.src && txt(x.v[0])) list.push({ ...x, uid: x.uid || `u${++uidSeq}` }); });
       if (list.length > rows.length) {
@@ -238,7 +280,18 @@ export default function MaintenanceCAPA() {
       if (machSet.has(t)) { rebuild(true); return; }
       if (!t.classList || !t.classList.contains("dv-cause")) return;
       const r = +t.dataset.row;
-      if (filled(r) !== state[r]) render();
+      if (filled(r) !== state[r]) {
+        // apna cause abhi likhna shuru kiya: method "Gemba", result "NG" pehle
+        // se (user 2026-09-19) -- khaali hon tabhi; NG kahin aur ho to NG nahi
+        // (poori table me NG ek hi).  Result/Annexure wala effect isi input par
+        // baad me `sync()` karta hai, to 2nd Why bhi turant.
+        if (filled(r) && !cell[r][4].dataset.src) {
+          const vm = cell[r][8], rs = cell[r][10];
+          if (vm && !vm.value) vm.value = "Gemba";
+          if (rs && !rs.value && !rows.some((x) => x !== r && cell[x][10] && cell[x][10].value === "NG")) rs.value = "NG";
+        }
+        render();
+      }
     };
     const onChange = (e) => {
       const t = e.target;
@@ -258,7 +311,7 @@ export default function MaintenanceCAPA() {
     form.addEventListener("change", onChange);
     rebuild(false);
     return () => { form.removeEventListener("input", onInput); form.removeEventListener("change", onChange); };
-  }, [view, prefill]);
+  }, [view, prefill, viewOnly]);
 
   // ── Data Validation: Verification method + Result -- sirf tay kiye naam ──
   // User (2026-09-19): dropdown nahi, likhne wala khaana hi -- par tay naam ke
@@ -284,7 +337,7 @@ export default function MaintenanceCAPA() {
   // JAGAH MAT BADLO: Data Validation wale effect ke BAAD -- khaali row hatne
   // (compact, `change` par) ke baad hi 2nd Why / Annexure milaana hai.
   useEffect(() => {
-    if (view !== "form" || !formRef.current) return;
+    if (view !== "form" || !formRef.current || viewOnly) return;   // sirf-dekhne me kuch na badle
     const form = formRef.current;
     const KINDS = {
       "dv-vm":  { opts: ["Gemba", "Inspection", "Statistical test", "Experiment"],
@@ -406,11 +459,11 @@ export default function MaintenanceCAPA() {
       form.removeEventListener("change", onChange);
       form.removeEventListener("dv-rebuilt", sync);
     };
-  }, [view, prefill]);
+  }, [view, prefill, viewOnly]);
 
   // wire the photo upload / camera widgets (uncontrolled → data-URL into a hidden input)
   useEffect(() => {
-    if (view !== "form" || !formRef.current) return;
+    if (view !== "form" || !formRef.current || viewOnly) return;   // sirf-dekhne me kuch na badle
     const form = formRef.current;
     const onChange = (e) => {
       const inp = e.target;
@@ -441,13 +494,13 @@ export default function MaintenanceCAPA() {
     form.addEventListener("change", onChange);
     form.addEventListener("click", onClick);
     return () => { form.removeEventListener("change", onChange); form.removeEventListener("click", onClick); };
-  }, [view]);
+  }, [view, viewOnly]);
 
   // auto sentence-case: capitalize the first letter, and the first letter after a
   // full-stop / ! / ? (with or without a space) — rest stays as typed, comma doesn't
   // count.  Skips date / code / number fields (label says No./Code/Date/Qty/Model/…).
   useEffect(() => {
-    if (view !== "form" || !formRef.current) return;
+    if (view !== "form" || !formRef.current || viewOnly) return;   // sirf-dekhne me kuch na badle
     const form = formRef.current;
     const CODE_LABEL = /(\bcode\b|\bno\.?\b|\bnos\b|\bnumber\b|\bqty\b|\bquantity\b|\bdate\b|\btime\b|\bmodel\b|\bbatch\b|\brev\b|\bserial\b|\bzone\b|\bline\b|\bshift\b|\bsr\b)/i;
     const skipCap = (el) => {
@@ -479,7 +532,7 @@ export default function MaintenanceCAPA() {
     // jaata hai, isliye queueMicrotask se bhi nahi bachta).
     form.addEventListener("input", onInput, true);
     return () => form.removeEventListener("input", onInput, true);
-  }, [view]);
+  }, [view, viewOnly]);
 
   // Reported Problem likho to What? + ISSUE me wahi, MACHINE_NO likho to
   // Where? me wahi (MIRROR).  Copy tabhi badalti hai jab wo khaali ho ya ab
@@ -488,7 +541,7 @@ export default function MaintenanceCAPA() {
   // JAGAH MAT BADLO: prefill wale effect ke baad (taaki `last` bhare form se
   // bane) aur sentence-case ke baad (taaki copy me bada akshar bhi jaaye).
   useEffect(() => {
-    if (view !== "form" || !formRef.current) return;
+    if (view !== "form" || !formRef.current || viewOnly) return;   // sirf-dekhne me kuch na badle
     const form = formRef.current;
     const last = {};
     Object.keys(MIRROR).forEach((src) => { last[src] = form.elements[src]?.value || ""; });
@@ -504,7 +557,7 @@ export default function MaintenanceCAPA() {
     };
     form.addEventListener("input", onInput);
     return () => form.removeEventListener("input", onInput);
-  }, [view, prefill]);
+  }, [view, prefill, viewOnly]);
 
   // BADE KHAANE (ISSUE, For Occurrence, Countermeasure …): likhne ka dabba
   // sirf ek line ka hota hai aur khaane ke beech baitha rehta hai -- baaki
@@ -515,7 +568,7 @@ export default function MaintenanceCAPA() {
   // nahi) use `fbox` -- kahin bhi dabao to wahi field, caret aakhir me; focus
   // par poora khaana neela (CSS).
   useEffect(() => {
-    if (view !== "form" || !formRef.current) return;
+    if (view !== "form" || !formRef.current || viewOnly) return;   // sirf-dekhne me kuch na badle
     const form = formRef.current;
     form.querySelectorAll(".qpr td").forEach((td) => {
       const kids = td.children;
@@ -533,7 +586,7 @@ export default function MaintenanceCAPA() {
     };
     form.addEventListener("mousedown", onDown);
     return () => form.removeEventListener("mousedown", onDown);
-  }, [view]);
+  }, [view, viewOnly]);
 
   // live camera — open the webcam when the modal is shown, stop it on close
   useEffect(() => {
@@ -614,6 +667,7 @@ export default function MaintenanceCAPA() {
      aur do fetch na chalein. */
   const khola = useRef(false);
   useEffect(() => {
+    if (viewOnly) return;                  // Historical ke andar khula -- uska URL mat chhedo
     const sheet = qs.get("sheet");
     if (!sheet || khola.current) return;
     khola.current = true;
@@ -658,12 +712,12 @@ export default function MaintenanceCAPA() {
   // Machine master — zone/line/machine ke dropdown iske hi bharte hain.
   // Alag effect me hai: /pending fail ho jaye to bhi dropdown khali na rahein.
   useEffect(() => {
-    if (!token) return;
+    if (!token || viewOnly) return;        // sirf-dekhne me list / filter hai hi nahi
     fetch("/api/machines/", { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => (r.ok ? r.json() : []))
       .then((d) => setMaster(Array.isArray(d) ? d : []))
       .catch(() => setMaster([]));
-  }, [token]);
+  }, [token, viewOnly]);
 
   const fyOpts = useMemo(() => {
     const set = new Set(rows.map((r) => fyOf(r.bd_date)).filter(Boolean));
@@ -714,14 +768,41 @@ export default function MaintenanceCAPA() {
 
   const clearFilters = () => { setFFy(fyOf(nowYm)); setFMonth(nowYm); setFZone(""); setFLine(""); setFMno(""); };
 
-  const tile = (label, val, color, sub) => (
-    <div className="cp-tile"
-         style={{ background:"#fff", border:"1px solid #e2e8f0", borderTop:`3px solid ${color}`, borderRadius:14, padding:"14px 18px", minWidth:150 }}>
-      <div style={{ fontSize:11.5, fontWeight:800, letterSpacing:".05em", textTransform:"uppercase", color:"#64748b" }}>{label}</div>
-      <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:38, fontWeight:800, color, lineHeight:1 }}>{loading ? "…" : val}</div>
-      <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>{sub}</div>
-    </div>
-  );
+  /* Card dabao to neeche ki table me SIRF us card ki CAPA (user 2026-09-19).
+       stat: "TOTAL" (filter wali sab, pehle jaisa) | "OPEN" | "CLOSED" |
+             "ALL" (filter ke BINA sab -- card par yahi likha hai)
+       zone: Zone-wise card ka zone ("" = koi nahi).  Zone card data se bante
+             hain, isliye kal naya zone aaye to uska card bhi apne aap chalega.
+     Wahi card dobara dabao = wapas Total.  Filter badla to "ALL" aur zone
+     chhoot jaate hain (warna table filter maanti hi nahi / zone badal chuke). */
+  const [pick, setPick] = useState({ stat: "TOTAL", zone: "" });
+  useEffect(() => {
+    setPick((p) => (p.stat === "ALL" || p.zone ? { stat: p.stat === "ALL" ? "TOTAL" : p.stat, zone: "" } : p));
+  }, [fFy, fMonth, fZone, fLine, fMno]);
+  const tableRows = useMemo(() => {
+    let list = pick.stat === "ALL" ? rows : shown;
+    if (pick.stat === "OPEN")   list = list.filter((r) => !isClosed(r));
+    if (pick.stat === "CLOSED") list = list.filter((r) => isClosed(r));
+    if (pick.zone) list = list.filter((r) => (r.zone_name || "—") === pick.zone);
+    return list;
+  }, [rows, shown, pick]);
+  const pickLabel = pick.zone ? `${pick.zone} zone`
+    : { OPEN: "Open CAPA", CLOSED: "Closed CAPA", ALL: "All CAPA (ignoring the filters)" }[pick.stat] || "";
+
+  const tile = (label, val, color, sub, key) => {
+    const on = pick.stat === key && !pick.zone;
+    return (
+      <div className="cp-tile" title="Click to see these CAPA in the table below"
+           onClick={() => setPick(on || key === "TOTAL" ? { stat: "TOTAL", zone: "" } : { stat: key, zone: "" })}
+           style={{ background: on ? `${color}0d` : "#fff", border:"1px solid #e2e8f0", borderTop:`3px solid ${color}`,
+                    outline: on ? `2px solid ${color}` : "none", borderRadius:14, padding:"14px 18px", minWidth:150,
+                    cursor:"pointer" }}>
+        <div style={{ fontSize:11.5, fontWeight:800, letterSpacing:".05em", textTransform:"uppercase", color:"#64748b" }}>{label}</div>
+        <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:38, fontWeight:800, color, lineHeight:1 }}>{loading ? "…" : val}</div>
+        <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>{sub}</div>
+      </div>
+    );
+  };
 
   return (
     <>
@@ -825,12 +906,23 @@ export default function MaintenanceCAPA() {
         .qpr .sbox .pimg { max-height:44px; }
         .qpr .sbox .pbtn { padding:3px 10px; font-size:10.5px; }
         @media print { .cp-top { display:none; } .cp-root { background:#fff; } .cp-body { margin:0; padding:0; } .cp-sheet { box-shadow:none; } }
+        /* sirf-dekhne wala fieldset: apna koi kinara / jagah nahi; Upload /
+           Camera / Sign / ✕ ke button dikhane ka matlab nahi */
+        .cp-fs { border:0; padding:0; margin:0; min-width:0; }
+        .cp-fs:disabled .pbtns, .cp-fs:disabled .pclr { display:none !important; }
+        .cp-fs:disabled .qpr td { cursor:default; }
       `}</style>
 
       <div className="cp-root">
         <div className="cp-top">
           <div className="cp-title">CA<span>PA</span> <span style={{ fontFamily:"'Barlow',sans-serif", fontSize:14, color:"#64748b", fontWeight:700 }}>· QPR</span></div>
-          {view === "form" ? (<>
+          {viewOnly ? (<>
+            {/* sirf dekhna: na Save, na Close, na Print -- bas band karo */}
+            <button style={btn} onClick={() => onClose && onClose()}>✕ Close</button>
+            <span style={{ fontSize:12, fontWeight:800, color:"#be185d", background:"#fdf2f8",
+                           border:"1px solid #fbcfe8", borderRadius:99, padding:"3px 10px" }}>View only</span>
+            {sid && <span style={{ fontSize:12, color:"#64748b", fontWeight:700 }}>QPR #{sid}</span>}
+          </>) : view === "form" ? (<>
             <button style={btn} onClick={backToList}>← Pending CAPA</button>
             <button className="cp-save" onClick={save} disabled={saving}>{saving ? "Saving…" : (sid ? "💾 Update" : "💾 Save")}</button>
             {sStatus === "CLOSED" ? (
@@ -854,7 +946,12 @@ export default function MaintenanceCAPA() {
           <span className="app-user" style={{ marginLeft:"auto", fontSize:12, color:"#64748b", fontWeight:600 }}>{user?.username ? <>Signed in as <b>{user.username}</b></> : ""}</span>
         </div>
 
-        {view === "list" ? (
+        {viewOnly && view !== "form" ? (
+          /* sirf-dekhne me list kabhi nahi -- sheet aane tak bas intezaar */
+          <div className="cp-body" style={{ textAlign:"center", color:"#94a3b8", padding:40, fontSize:13 }}>
+            {msg ? "" : "Loading…"}
+          </div>
+        ) : view === "list" ? (
           <div className="cp-body">
             {/* ── Filters — default CHAALU MAHINA.  Zone/Line/Machine ke
                    option Machine Master se aate hain. ── */}
@@ -907,10 +1004,10 @@ export default function MaintenanceCAPA() {
                 188px, aur do ke liye 390px chahiye jabki jagah 364px), isliye
                 app me inhe do-do kiya jaata hai. */}
             <div className="cp-tiles" style={{ display:"flex", gap:14, marginBottom:16, flexWrap:"wrap" }}>
-              {tile("Total CAPA", shown.length, "#2563eb", "Breakdowns of 60 min or more")}
-              {tile("Open", open, "#dc2626", "QPR not closed yet")}
-              {tile("Closed", closed, "#16a34a", "QPR filled and closed")}
-              {tile("All CAPA", rows.length, "#64748b", "Ignoring the filters above")}
+              {tile("Total CAPA", shown.length, "#2563eb", "Breakdowns of 60 min or more", "TOTAL")}
+              {tile("Open", open, "#dc2626", "QPR not closed yet", "OPEN")}
+              {tile("Closed", closed, "#16a34a", "QPR filled and closed", "CLOSED")}
+              {tile("All CAPA", rows.length, "#64748b", "Ignoring the filters above", "ALL")}
             </div>
 
             {/* ── Zone-wise open / close ── */}
@@ -923,8 +1020,12 @@ export default function MaintenanceCAPA() {
                 </div>
                 <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
                   {byZone.map((z) => (
-                    <div key={z.zone} style={{ border:"1px solid #e8edf3", borderRadius:11,
-                                               padding:"9px 13px", minWidth:150, background:"#fafbfc" }}>
+                    <div key={z.zone} title="Click to see this zone's CAPA in the table below"
+                         onClick={() => setPick((p) => (p.zone === z.zone ? { stat: "TOTAL", zone: "" } : { stat: "TOTAL", zone: z.zone }))}
+                         style={{ border:"1px solid #e8edf3", borderRadius:11, cursor:"pointer",
+                                  padding:"9px 13px", minWidth:150,
+                                  background: pick.zone === z.zone ? "#eef2ff" : "#fafbfc",
+                                  outline: pick.zone === z.zone ? "2px solid #334155" : "none" }}>
                       <div style={{ fontSize:11.5, fontWeight:800, color:"#334155",
                                     whiteSpace:"nowrap" }}>{z.zone}</div>
                       <div style={{ display:"flex", gap:14, marginTop:5, alignItems:"baseline" }}>
@@ -940,6 +1041,15 @@ export default function MaintenanceCAPA() {
                 </div>
               </div>
             )}
+            {/* card chuna ho to batao ki table me kya dikh raha hai + wapas sab */}
+            {pickLabel && (
+              <div style={{ display:"flex", alignItems:"center", gap:10, margin:"0 0 8px", fontSize:12.5,
+                            fontWeight:700, color:"#334155", flexWrap:"wrap" }}>
+                <span>Showing: <b>{pickLabel}</b> — {tableRows.length} CAPA</span>
+                <button style={{ ...btn, padding:"4px 10px", fontSize:12 }}
+                        onClick={() => setPick({ stat: "TOTAL", zone: "" })}>✕ Show all</button>
+              </div>
+            )}
             <div className="cp-tbl-wrap">
               <table className="cp-tbl">
                 <thead><tr>
@@ -951,8 +1061,8 @@ export default function MaintenanceCAPA() {
                 </tr></thead>
                 <tbody>
                   {loading && <tr><td colSpan={11} style={{ textAlign:"center", color:"#94a3b8", padding:30 }}>Loading…</td></tr>}
-                  {!loading && shown.length === 0 && <tr><td colSpan={11} style={{ textAlign:"center", color:"#94a3b8", padding:30 }}>{rows.length ? "No CAPA matches these filters." : "No breakdowns of 60 min or more."}</td></tr>}
-                  {!loading && shown.map((r, i) => (
+                  {!loading && tableRows.length === 0 && <tr><td colSpan={11} style={{ textAlign:"center", color:"#94a3b8", padding:30 }}>{rows.length ? "No CAPA matches these filters." : "No breakdowns of 60 min or more."}</td></tr>}
+                  {!loading && tableRows.map((r, i) => (
                     <tr key={r.bd_id} onClick={() => fillQpr(r)} title="Click to open QPR">
                       <td>{i + 1}</td>
                       <td style={{ whiteSpace:"nowrap" }}>{r.bd_date}</td>
@@ -985,10 +1095,13 @@ export default function MaintenanceCAPA() {
           <div className="cp-body">
             <div className="cp-scroll">
               <form ref={formRef} onSubmit={(e) => e.preventDefault()}>
-                <div className="cp-sheet">
-                  <div dangerouslySetInnerHTML={GRID_HTML} />
-                  <div className="cp-format">FORMAT NO.:- TBDI / QA / F / 006 &nbsp;&nbsp;&nbsp; REV. NO.:- 00 &nbsp;&nbsp;&nbsp; REV. DATE:- 20/03/2024</div>
-                </div>
+                {/* sirf-dekhne me `disabled` -- andar ka koi khaana / button chalta hi nahi */}
+                <fieldset className="cp-fs" disabled={viewOnly}>
+                  <div className="cp-sheet">
+                    <div dangerouslySetInnerHTML={GRID_HTML} />
+                    <div className="cp-format">FORMAT NO.:- TBDI / QA / F / 006 &nbsp;&nbsp;&nbsp; REV. NO.:- 00 &nbsp;&nbsp;&nbsp; REV. DATE:- 20/03/2024</div>
+                  </div>
+                </fieldset>
               </form>
             </div>
           </div>
