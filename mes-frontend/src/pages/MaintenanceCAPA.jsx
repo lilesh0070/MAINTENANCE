@@ -47,6 +47,13 @@ const PREFILL = (bd) => ({
 // bhi badlein, jab tak inhe alag se likh kar badla na gaya ho.
 const MIRROR = { f_16_3: ["f_18_4", "f_44_11"], f_mno: ["f_18_8"] };
 
+// `__html` wala object EK hi baar -- React 19 har render par naya object dekh
+// kar innerHTML dobara likh deta hai (andar ki string nahi milata).  Yaani
+// form khula ho aur koi bhi state badle (sandesh, Save ke baad, camera / sign
+// ka parda) to poora QPR khaali ho jaata tha -- bhara hua sab, photo, sign.
+// Wahi object rahe to React us div ko chhoota hi nahi.
+const GRID_HTML = { __html: CAPA_QPR_GRID };
+
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 /* FY Apr→Mar.  "2026-27" ka matlab 1-Apr-2026 se 31-Mar-2027. */
@@ -102,7 +109,8 @@ export default function MaintenanceCAPA() {
   const [prefill, setPrefill] = useState({});      // {cell: value} to apply on open
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
-  const flash = (m) => { setMsg(m); setTimeout(() => setMsg(""), 3000); };
+  const [msgBad, setMsgBad] = useState(false);     // true = laal (mana / galti)
+  const flash = (m, bad = false) => { setMsg(m); setMsgBad(bad); setTimeout(() => setMsg(""), 3000); };
 
   const api = useCallback(async (path, opts = {}) => {
     const r = await fetch(`/api/capa-lb${path}`, {
@@ -150,6 +158,16 @@ export default function MaintenanceCAPA() {
   // previous cause is filled) + compact on clear.  readOnly (not disabled) → clicks
   // always land instantly; render runs ONLY when a row's filled-state flips → typing is
   // zero-cost otherwise.
+  // + (2026-09-19, user) Possible cause me DATA ANALYSIS (fish bone) ke "Machine"
+  //   column (f_44_5 … f_50_5) ke point APNE AAP aate hain -- sabse upar, fish
+  //   bone ke kram me, yahan badal nahi sakte (`dv-auto`, `data-src` = Machine
+  //   ki row) -- aur unke neeche user khud bhi cause likh sakta hai.  Har row ek
+  //   record hai (cause + method + result + remarks): Machine ka point judne /
+  //   hatne par rows khisakti hain to method / result / remarks bhi saath.
+  //   Machine khaana likhte waqt beech me khaali ho jaaye to row turant nahi
+  //   hat-ti (blur par hi) -- warna uska method / result mit jaata.
+  //   Rows badalne ke baad "dv-rebuilt" event -- Result / Annexure wala effect
+  //   usi par apna hisaab dobara karta hai.
   useEffect(() => {
     if (view !== "form" || !formRef.current) return;
     const form = formRef.current;
@@ -160,6 +178,11 @@ export default function MaintenanceCAPA() {
       cell[r] = {}; COLS.forEach((c) => { cell[r][c] = form.querySelector('[name="f_' + r + '_' + c + '"]'); });
       srno[r] = form.querySelector('.dv-srno[data-row="' + r + '"]');
     });
+    const MACH = [44, 45, 46, 47, 48, 49, 50].map((r) => form.elements[`f_${r}_5`]).filter(Boolean);
+    const machSet = new Set(MACH);
+    const machRow = (el) => el.name.split("_")[1];
+    const txt = (v) => String(v || "").replace(/\s+/g, " ").trim();
+    const warn = (m) => { setMsg(m); setMsgBad(true); setTimeout(() => setMsg(""), 3000); };
     const filled = (r) => { const c = cell[r][4]; return !!(c && String(c.value).trim() !== ""); };
     const render = () => {                     // Sr.No + lock the rows below the first empty one
       let n = 0, prev = true;
@@ -167,32 +190,222 @@ export default function MaintenanceCAPA() {
         const f = filled(r);
         const sr = srno[r]; if (f) { n += 1; if (sr) sr.textContent = n; } else if (sr) sr.textContent = "";
         const lock = !prev;
-        COLS.forEach((c) => { const el = cell[r][c]; if (el && el.readOnly !== lock) el.readOnly = lock; });
+        const auto = !!cell[r][4].dataset.src;  // Machine se aaya cause -- yahan nahi badalta
+        COLS.forEach((c) => {
+          const el = cell[r][c]; if (!el) return;
+          const ro = lock || (c === 4 && auto);
+          if (el.readOnly !== ro) el.readOnly = ro;
+        });
+        cell[r][4].classList.toggle("dv-auto", auto);
+        cell[r][4].title = auto ? "Comes from Data Analysis → Machine" : "";
         state[r] = f; prev = prev && f;
       });
     };
-    const hasGap = () => {          // an empty row with a filled row below it
-      let seenEmpty = false;
-      for (const r of rows) { if (!filled(r)) seenEmpty = true; else if (seenEmpty) return true; }
-      return false;
-    };
-    const compact = () => {         // clear a middle row → pull the rest up
-      const kept = rows.filter(filled).map((r) => COLS.map((c) => (cell[r][c] ? cell[r][c].value : "")));
-      rows.forEach((r, i) => { const row = kept[i] || ["", "", "", ""];
-        COLS.forEach((c, j) => { const el = cell[r][c]; if (el && el.value !== row[j]) el.value = row[j]; }); });
+    // Machine ke point upar (fish bone ke kram me, purana method / result
+    // saath), phir user ke apne cause (khaali hat jaate hain = compact).
+    // `keepEmpty` -- Machine khaana likhte waqt khaali hua ho to bhi row rakho.
+    // `data-uid` = row ki pehchaan (Machine wali "m44", apni "u1"…) -- Annexure
+    // ke score isi se apne cause ke saath chalte hain
+    let uidSeq = 0;
+    const rebuild = (keepEmpty) => {
+      const cur = rows.map((r) => ({ src: cell[r][4].dataset.src || "", uid: cell[r][4].dataset.uid || "",
+                                     v: COLS.map((c) => (cell[r][c] ? cell[r][c].value : "")) }));
+      const bySrc = {};
+      cur.forEach((x) => { if (x.src) bySrc[x.src] = x; });
+      const list = [];
+      MACH.forEach((m) => {
+        const s = machRow(m), t = txt(m.value);
+        if (!t && !(keepEmpty && bySrc[s])) return;
+        list.push({ src: s, uid: "m" + s, v: [t, ...(bySrc[s] ? bySrc[s].v.slice(1) : ["", "", ""])] });
+      });
+      cur.forEach((x) => { if (!x.src && txt(x.v[0])) list.push({ ...x, uid: x.uid || `u${++uidSeq}` }); });
+      if (list.length > rows.length) {
+        const lost = list.splice(rows.length).map((x) => txt(x.v[0]));
+        warn(`Data Validation has only ${rows.length} rows — not added: ${lost.join(", ")}.`);
+      }
+      rows.forEach((r, i) => {
+        const x = list[i] || { src: "", uid: "", v: ["", "", "", ""] };
+        COLS.forEach((c, j) => { const el = cell[r][c]; if (el && el.value !== x.v[j]) el.value = x.v[j]; });
+        cell[r][4].dataset.src = x.src;
+        cell[r][4].dataset.uid = x.uid;
+      });
       render();
+      form.dispatchEvent(new CustomEvent("dv-rebuilt"));
     };
     const onInput = (e) => {        // re-render ONLY when this row's filled-state actually flips
       const t = e.target;
+      // Machine likha -- bada akshar wala listener CAPTURE me pehle hi chal chuka
+      if (machSet.has(t)) { rebuild(true); return; }
       if (!t.classList || !t.classList.contains("dv-cause")) return;
       const r = +t.dataset.row;
       if (filled(r) !== state[r]) render();
     };
-    const onChange = (e) => { if (e.target.classList && e.target.classList.contains("dv-cause") && hasGap()) compact(); };
+    const onChange = (e) => {
+      const t = e.target;
+      if (machSet.has(t) || (t.classList && t.classList.contains("dv-cause"))) rebuild(false);
+    };
+    // khula / save hua sheet: jis row ka cause kisi Machine point jaisa ho
+    // (pehla bacha hua) wahi us point ki row maano
+    const used = new Set();
+    rows.forEach((r) => {
+      const c = txt(cell[r][4].value);
+      const m = c ? MACH.find((mm) => !used.has(mm) && txt(mm.value) === c) : null;
+      if (m) used.add(m);
+      cell[r][4].dataset.src = m ? machRow(m) : "";
+      cell[r][4].dataset.uid = m ? "m" + machRow(m) : (c ? `u${++uidSeq}` : "");
+    });
     form.addEventListener("input", onInput);
     form.addEventListener("change", onChange);
-    render();
+    rebuild(false);
     return () => { form.removeEventListener("input", onInput); form.removeEventListener("change", onChange); };
+  }, [view, prefill]);
+
+  // ── Data Validation: Verification method + Result -- sirf tay kiye naam ──
+  // User (2026-09-19): dropdown nahi, likhne wala khaana hi -- par tay naam ke
+  // siwa kuch likha to bharta hi nahi.
+  //   Verification method (dv-vm, f_r_8): Gemba / Inspection / Statistical
+  //     test / Experiment -- G / I / S / E dabao to poora naam.
+  //   Result (dv-res, f_r_10): OK / NG -- O / N dabao.  NG poori table me EK
+  //     hi baar.  NG wali row ka "Possible cause" -> ROOT CAUSE "For
+  //     Occurrence" ka **2nd Why** (f_74_5; 1st Why nahi -- user ne sudhaara).
+  //     MIRROR jaisa: 2nd Why khud alag likha ho to nahi chhedte, NG hata to
+  //     (agar badla nahi tha) khaali.
+  // (Pehle OK / NG galti se Verification method par laga tha -- user ne saaf
+  // kiya ki OK / NG Result me, method me upar wale chaar naam.)
+  // Naam bhar jaane ke baad usi naam ke akshar (poora shabd likhna) chup-chaap
+  // chhod dete hain; paste / phone keyboard me poora naam ho to wahi.
+  // ANNEXURE-A (ranking, user 2026-09-19):
+  //   Possible Causes (ax-cause, row 138..145) = Data Validation ke cause
+  //     (row 63..70) usi kram me -- wahan bharte hi yahan; yahan badal nahi
+  //     sakte.  S.No. (ax-sno, saari 11 row) tabhi jab row me cause ho;
+  //     row 9-11 ka cause (ax-cause-free) khula hai -- DV me sirf 8 row.
+  //   Team member ke neeche score (ax-score) = sirf 1 / 3 / 9.
+  //   Total Score (ax-total) = row ke bhare score ka GUNA.
+  // JAGAH MAT BADLO: Data Validation wale effect ke BAAD -- khaali row hatne
+  // (compact, `change` par) ke baad hi 2nd Why / Annexure milaana hai.
+  useEffect(() => {
+    if (view !== "form" || !formRef.current) return;
+    const form = formRef.current;
+    const KINDS = {
+      "dv-vm":  { opts: ["Gemba", "Inspection", "Statistical test", "Experiment"],
+                  bad: "Verification method takes only Gemba, Inspection, Statistical test or Experiment." },
+      "dv-res": { opts: ["OK", "NG"], bad: "Result takes only OK or NG." },
+      "ax-score": { opts: ["1", "3", "9"], bad: "Score takes only 1, 3 or 9." },
+    };
+    const fields = [...form.querySelectorAll("input.dv-vm, input.dv-res, input.ax-score")];
+    if (!fields.length) return;
+    const res = fields.filter((f) => f.classList.contains("dv-res"));
+    const kindOf = (t) => t.classList && Object.keys(KINDS).find((k) => t.classList.contains(k));
+    const WHY2 = "f_74_5";                   // For Occurrence -> 2nd Why
+    const causeOf = (f) => (form.elements[`f_${f.dataset.row}_4`]?.value || "").trim();
+    const warn = (m) => { setMsg(m); setMsgBad(true); setTimeout(() => setMsg(""), 3000); };
+    const norm = (s) => String(s || "").toUpperCase().replace(/\s+/g, " ").trim();
+    // Annexure: DV ki n-vi row ka cause -> Annexure ki n-vi row (DV compact
+    // rehta hai, isliye kram wahi -- S.No. bhi wahi)
+    const dvRows = [...form.querySelectorAll(".dv-cause")].map((c) => +c.dataset.row).sort((a, b) => a - b);
+    const axCause = [...form.querySelectorAll("input.ax-cause")].sort((a, b) => a.dataset.row - b.dataset.row);
+    const axTotal = [...form.querySelectorAll("input.ax-total")];
+    const axSno = [...form.querySelectorAll("input.ax-sno")].sort((a, b) => a.dataset.row - b.dataset.row);
+    const put = (el, v) => { if (el && el.value !== v) el.value = v; };
+    const SC = [6, 7, 8, 9, 10, 11, 12];     // Annexure: 7 team member ke score
+    const dvEl = (i) => (dvRows[i] ? form.elements[`f_${dvRows[i]}_4`] : null);
+    // khulte waqt: Annexure ki n-vi row = DV ki n-vi row (save bhi isi kram me hua tha)
+    axCause.forEach((el, i) => { el.dataset.uid = dvEl(i)?.dataset.uid || ""; });
+    let lastNg = "";                         // pichhli baar NG wali row ka cause
+    const sync = () => {
+      // Annexure: DV ki n-vi row ka cause -> n-vi row.  SCORE apne cause
+      // (DV ka `data-uid`) ke saath chalte hain -- Machine ka naya point beech
+      // me juda to neeche ke cause ke score bhi neeche khiskein, galat cause
+      // ke aage na reh jaayein.  Cause likhte / badalte waqt uid wahi rehta hai.
+      const old = axCause.map((el) => ({ uid: el.dataset.uid || "",
+        s: SC.map((c) => form.elements[`f_${el.dataset.row}_${c}`]?.value || "") }));
+      const byUid = {};
+      old.forEach((o) => { if (o.uid) byUid[o.uid] = o.s; });
+      axCause.forEach((el, i) => {
+        const d = dvEl(i);
+        const uid = d ? (d.dataset.uid || "") : "";
+        put(el, d ? (d.value || "").replace(/\s+/g, " ").trim() : "");
+        if (uid === old[i].uid) return;
+        // naya uid: kahin aur se khiska ho to wahan ke score; row pehle bina
+        // cause ki thi to jo score likhe the wahi; warna khaali
+        const s = (uid && byUid[uid]) || (!old[i].uid && uid ? old[i].s : SC.map(() => ""));
+        SC.forEach((c, j) => put(form.elements[`f_${el.dataset.row}_${c}`], s[j]));
+        el.dataset.uid = uid;
+      });
+      let ng = "";
+      fields.forEach((f) => { f.dataset.last = f.value; });
+      res.forEach((f) => { if (f.value === "NG" && !ng) ng = causeOf(f); });
+      const why = form.elements[WHY2];
+      if (why && (why.value.trim() === "" || why.value.trim() === lastNg) && why.value !== ng) why.value = ng;
+      lastNg = ng;
+      // S.No. sirf jis row me cause ho (user: "serial number bhi uski ke
+      // hisaab se") -- pehle 1-5 pakke chhape the, khaali row par bhi
+      axSno.forEach((el, i) => {
+        put(el, (form.elements[`f_${el.dataset.row}_3`]?.value || "").trim() ? String(i + 1) : "");
+      });
+      axTotal.forEach((el) => {
+        const r = el.dataset.row;
+        const nums = [6, 7, 8, 9, 10, 11, 12].map((c) => form.elements[`f_${r}_${c}`]?.value)
+          .filter((v) => /^\d+$/.test(v || ""));
+        put(el, nums.length ? String(nums.reduce((a, v) => a * Number(v), 1)) : "");
+      });
+    };
+    // `del` = mitaya gaya; `typed` = abhi daba ek akshar (bada), warna ""
+    const fix = (f, kind, del, typed) => {
+      const { opts, bad } = KINDS[kind];
+      const prev = f.dataset.last || "";
+      const exact = opts.find((o) => norm(o) === norm(f.value));
+      const pehla = (c) => opts.find((o) => o[0].toUpperCase() === c);
+      // `fresh` = poora khaana isi ek akshar se badla (khaali tha, ya select karke likha)
+      const fresh = norm(f.value) === typed;
+      let next;
+      if (norm(f.value) === "") next = "";
+      else if (exact) next = exact;
+      else if (del) next = "";                               // aadha mitaya -> poora khaali
+      else if (typed && !fresh && (/\s/.test(typed) || norm(prev).includes(typed))) next = prev;   // poora shabd likh rahe
+      else if (typed && pehla(typed)) next = pehla(typed);
+      else { next = prev; warn(bad); }
+      if (kind === "dv-res" && next === "NG" && prev !== "NG") {
+        const other = res.find((o) => o !== f && o.value === "NG");
+        if (other) {
+          next = prev;
+          const sr = form.querySelector(`.dv-srno[data-row="${other.dataset.row}"]`)?.textContent || "";
+          warn(`Only one NG is allowed in Data Validation${sr ? ` — Sr. No. ${sr} already has NG` : ""}.`);
+        }
+      }
+      if (f.value !== next) f.value = next;
+    };
+    const onInput = (e) => {
+      const t = e.target, kind = kindOf(t);
+      if (kind) {
+        if (e.isComposing) return;                            // phone ka keyboard: compositionend par
+        const one = e.inputType === "insertText" && e.data && e.data.length === 1;
+        fix(t, kind, /^delete/.test(e.inputType || ""), one ? e.data.toUpperCase() : "");
+        sync();
+      } else if (t.classList && (t.classList.contains("dv-cause") || t.classList.contains("ax-cause-free"))) sync();
+    };
+    const onCompEnd = (e) => {
+      const kind = kindOf(e.target);
+      if (!kind) return;
+      fix(e.target, kind, false, String(e.data || "").trim().slice(0, 1).toUpperCase());
+      sync();
+    };
+    const onChange = (e) => {
+      const t = e.target, kind = kindOf(t);
+      if (kind) { fix(t, kind, false, ""); sync(); }
+      else if (t.classList && t.classList.contains("dv-cause")) sync();   // compact ke baad
+    };
+    form.addEventListener("input", onInput);
+    form.addEventListener("compositionend", onCompEnd);
+    form.addEventListener("change", onChange);
+    form.addEventListener("dv-rebuilt", sync);   // Machine se DV ki rows badli
+    sync();
+    return () => {
+      form.removeEventListener("input", onInput);
+      form.removeEventListener("compositionend", onCompEnd);
+      form.removeEventListener("change", onChange);
+      form.removeEventListener("dv-rebuilt", sync);
+    };
   }, [view, prefill]);
 
   // wire the photo upload / camera widgets (uncontrolled → data-URL into a hidden input)
@@ -260,8 +473,12 @@ export default function MaintenanceCAPA() {
         try { el.setSelectionRange(pos, pos); } catch (_) { /* detached */ }
       }
     };
-    form.addEventListener("input", onInput);
-    return () => form.removeEventListener("input", onInput);
+    // CAPTURE me -- baaki sab listener (Machine → Data Validation → Annexure,
+    // Reported Problem → What? …) isse PEHLE chalte to copy me chhota akshar
+    // chala jaata (asli typing me har listener ke beech microtask bhi chal
+    // jaata hai, isliye queueMicrotask se bhi nahi bachta).
+    form.addEventListener("input", onInput, true);
+    return () => form.removeEventListener("input", onInput, true);
   }, [view]);
 
   // Reported Problem likho to What? + ISSUE me wahi, MACHINE_NO likho to
@@ -519,6 +736,7 @@ export default function MaintenanceCAPA() {
         .cp-save { border:none; background:${theme.accent}; color:#fff; cursor:pointer; border-radius:8px; padding:8px 20px; font-size:13.5px; font-weight:800; }
         .cp-save:disabled { opacity:.5; cursor:default; }
         .cp-msg { font-size:12.5px; font-weight:700; color:#16a34a; }
+        .cp-msg.bad { color:#dc2626; }
         .cp-body { max-width:1280px; margin:16px auto; padding:0 24px; }
         .cp-fld { display:flex; flex-direction:column; gap:5px; }
         .cp-fld label { font-size:10.5px; font-weight:800; letter-spacing:.05em;
@@ -577,6 +795,13 @@ export default function MaintenanceCAPA() {
            bhi dabao, likhna shuru; focus par poora khaana neela. */
         .qpr td.fbox { cursor:text; }
         .qpr td.fbox:focus-within:not(:has(> [readonly])) { background:#eff6ff; }
+        /* Annexure-A: apne aap bharne wale khaane (cause / S.No. / Total) --
+           badal nahi sakte, par dikhne me saadhe (DV ki band row jaise gray nahi) */
+        .qpr input.fin.ax-auto[readonly] { background:transparent; cursor:default; }
+        /* DV ka cause jo fish bone "Machine" se aaya -- yahan badal nahi sakte, par band row jaisa gray nahi */
+        .qpr textarea.fta.dv-auto[readonly] { background:transparent; cursor:default; }
+        .qpr input.ax-score, .qpr input.ax-total, .qpr input.ax-sno { text-align:center; }
+        .qpr input.ax-sno { color:#111; }          /* pehle jaisa kaala -- DV ke Sr. No. jaisa */
         .qpr input.fin:focus, .qpr textarea.fta:focus { background:#eff6ff; }
         .qpr input.fin[readonly], .qpr textarea.fta[readonly] { background:#eef2f7; cursor:not-allowed; }
         .qpr input.fcb { width:14px; height:14px; margin-left:5px; vertical-align:middle; cursor:pointer; accent-color:#1d4ed8; }
@@ -625,7 +850,7 @@ export default function MaintenanceCAPA() {
           </>) : (
             <button className="cp-blank" style={btn} onClick={() => { setPrefill({}); setSid(null); setBdId(null); setSStatus("DRAFT"); setView("form"); }}>+ Blank QPR</button>
           )}
-          {msg && <span className="cp-msg">{msg}</span>}
+          {msg && <span className={`cp-msg${msgBad ? " bad" : ""}`}>{msg}</span>}
           <span className="app-user" style={{ marginLeft:"auto", fontSize:12, color:"#64748b", fontWeight:600 }}>{user?.username ? <>Signed in as <b>{user.username}</b></> : ""}</span>
         </div>
 
@@ -761,7 +986,7 @@ export default function MaintenanceCAPA() {
             <div className="cp-scroll">
               <form ref={formRef} onSubmit={(e) => e.preventDefault()}>
                 <div className="cp-sheet">
-                  <div dangerouslySetInnerHTML={{ __html: CAPA_QPR_GRID }} />
+                  <div dangerouslySetInnerHTML={GRID_HTML} />
                   <div className="cp-format">FORMAT NO.:- TBDI / QA / F / 006 &nbsp;&nbsp;&nbsp; REV. NO.:- 00 &nbsp;&nbsp;&nbsp; REV. DATE:- 20/03/2024</div>
                 </div>
               </form>
