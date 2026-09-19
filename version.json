@@ -1,0 +1,5 @@
+{
+  "version": "1.4.84",
+  "notes": "ANDON calls now come over the app's background connection: the phone rings and shows a notification even when the app is closed, and the app no longer checks for calls every 2.5 seconds. Uses less battery in the background. Admin: the Services tab can turn off the ANDON ring for chosen user IDs (the popup, notification and vibration still come).",
+  "released_at": "2026-09-19T17:05:51"
+}
