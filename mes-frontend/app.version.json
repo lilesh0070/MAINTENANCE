@@ -1,5 +1,5 @@
 {
-  "version": "1.4.81",
-  "notes": "CAPA QPR: Data Validation takes fixed values (Gemba / Inspection / Statistical test / Experiment, OK / NG), Machine points fill Possible cause, NG cause goes to 2nd Why, Annexure-A ranking with 1 / 3 / 9 scores and total; the form no longer clears itself. Dashboard Pending Breakdown opens on the whole current month.",
-  "released_at": "2026-09-19T10:01:24"
+  "version": "1.4.82",
+  "notes": "CAPA: Gemba / OK / NG filled in automatically, only one own cause, cards filter the list, Historical Data has View (Edit / Delete only for admin). Breakdown slip: Prepared By and Handover names come from Line Leader, Received By from Attended By. TV: no more zoom on double tap.",
+  "released_at": "2026-09-19T11:34:21"
 }
