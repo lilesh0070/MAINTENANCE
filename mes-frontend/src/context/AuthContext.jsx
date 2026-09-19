@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { isNativeApp } from "../constants/apiBase";
+import { walkieNative } from "../constants/walkieNative";
+import { walkieLink } from "../constants/walkieLink";
 
 const AuthContext = createContext(null);
 
@@ -171,6 +173,22 @@ export function AuthProvider({ children }) {
     loadMe();
     return () => { cancelled = true; };
   }, []);
+
+  // ── Logout hua (khud, ya token mara) -- phone ki background service bhi band ──
+  // Wo ab ANDON bhi sunti hai (2026-09-19).  Pehle logout karte hi page ka
+  // ANDON poochna ruk jaata tha; service chalti rehti to logout ke baad bhi
+  // phone par ANDON ki ring bajti.  Teeno raaste (logout, /me par 401, neeche
+  // wali 10s jaanch) token khaali karte hain -- isliye yahin ek jagah.
+  // Page ka walkie socket bhi yahin band: logout par Layout hi hat jaata hai,
+  // to WalkiePresence ka "token khaali" wala hissa kabhi chalta hi nahi tha --
+  // socket purane token par khula rehta aur banda "online" dikhta (emulator
+  // par pakda).
+  useEffect(() => {
+    if (token) return;
+    walkieLink.stop();
+    if (!walkieNative.hai()) return;
+    walkieNative.status().then((s) => { if (s?.running) walkieNative.stop(); }).catch(() => {});
+  }, [token]);
 
   // ── Force-logout / password-change detect karo (har 10s) ──
   // JWT stateless hai: admin kisi ko force-logout kare (ya password badle) to

@@ -30,8 +30,13 @@ import androidx.annotation.Nullable;
 
 import android.app.RemoteInput;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
@@ -84,6 +89,8 @@ public class WalkieService extends Service {
     public static final String ACTION_REPLY = "com.toyotaboshoku.mes.WALKIE_REPLY";
     /** RemoteInput ka khaana — isi naam se likha hua text nikalta hai. */
     private static final String KEY_REPLY = "walkie_reply_text";
+    /** ANDON notification ka "OK" / swipe — ring band, wo notification hatao. */
+    public static final String ACTION_ANDON_OK = "com.toyotaboshoku.mes.ANDON_OK";
     /** App abhi saamne khuli hai kya — MainActivity set karti hai.
      *  Khuli ho to chat ki notification NAHI dikhate: wo baat page par pehle
      *  hi dikh rahi hoti hai, aur do jagah ek hi cheez dikhana pareshan karta
@@ -98,6 +105,33 @@ public class WalkieService extends Service {
     /* Har baat-cheet ki apni notification -- warna ek hi dabba baar-baar
        badalta rehta aur pichhla message gum ho jaata. */
     private static final int CHAT_ID_BASE = 5000;
+
+    /* ── ANDON (nayi MAINTENANCE call) -- isi socket par ──────────────
+     * User 2026-09-19: "ANDON bhi isi connection se -- app band ho tab bhi
+     * ring aur notification aaye, aur baar-baar poochna band ho."
+     * Pehle ANDON sirf khuli app ka page har 2.5 sec pooch kar dikhata tha;
+     * app band = koi khabar nahi.  Ab server khud poori list bhejta hai
+     * (`"t":"andon"`, `routers/walkie.py`).  App saamne ho to popup PAGE hi
+     * dikhata hai (ye list plugin se use pahunchti hai); peechhe ho to yahan
+     * se ring + vibration + notification. */
+    private static final String CH_ANDON = "andon_call";
+    private static final int ANDON_ID_BASE = 6000;
+    /** Do chhote jhatke, phir viraam -- buzz se alag, jeb me pehchan aaye. */
+    private static final long[] ANDON_THARTHARI = { 0, 400, 200, 400, 1000 };
+    /** Server ne `ready` me ANDON maana (naya server + andon=1).  Page isi se
+     *  tay karta hai ki khud poochna band kare ya nahi. */
+    public static volatile boolean ANDON_SERVER = false;
+    /** Aakhri ANDON haal -- `{"run":..,"seq":..,"rows":[..]}` (JSON).  Page
+     *  khulte hi isi se popup bana leta hai.  `seq` har nayi list par badhta
+     *  hai: app peechhe ho to event qatar me ruk kar DER se pahunch sakte
+     *  hain -- page purane seq wali list chhod deta hai, warna band ho chuki
+     *  call ka popup galti se phir aa jaata.  `run` = service ka ye janam
+     *  (service dobara bani to seq phir 1 se). */
+    public static volatile String ANDON_HAAL = null;
+    private final long andonRun = System.currentTimeMillis();
+    private long andonSeq = 0;
+    /** Chalti service -- MainActivity app saamne aane par ANDON ki ring rokti hai. */
+    private static volatile WalkieService ZINDA = null;
 
     private static final int RATE = 16000;
     private static final int FRAME_BYTES = 640 * 2;     // 40ms ka ek frame
@@ -144,7 +178,7 @@ public class WalkieService extends Service {
     public static volatile String LAST_ERR = "";
 
     private OkHttpClient http;
-    private WebSocket ws;
+    private volatile WebSocket ws;
     private String url = "", token = "";
     private volatile boolean chahiye = false;      // chalte rehna hai?
     private int retry = 0;
@@ -180,20 +214,44 @@ public class WalkieService extends Service {
     private volatile long aakhriAaya = 0;               // aakhri frame kab aaya (uptime ms)
     private PowerManager.WakeLock wake;
 
+    /* Page kya chahta hai (Walkie.start se) aur server ne kya diya (`ready`). */
+    private volatile boolean andonChahiye = false;
+    private volatile boolean walkieChahiye = true;
+    private volatile boolean walkieMila = true;
+    /** Jis URL par abhi socket juda hai -- badla (flag / server / token) to
+     *  purana band karke naya jodte hain. */
+    private String judaUrl = "";
+
+    /* ANDON ka hisaab -- page (AndonAlert.jsx) wala hi: pehli list sirf
+       "dekh li", baad me jo NAYI aur bina response ho usi par khabar. */
+    private final Object andonLock = new Object();
+    private boolean andonBooted = false;
+    private final Set<Integer> andonDekhe = new HashSet<>();
+    private final Set<Integer> andonBaj = new HashSet<>();   // jinki notification abhi dikh rahi hai
+    /* Ring kiski baj rahi hai -- ANDON khatam hone par buzz ki ring na ruke. */
+    private static final int RING_BUZZ = 1, RING_ANDON = 2;
+    private volatile int ringKiska = 0;
+
     @Nullable @Override public IBinder onBind(Intent i) { return null; }
 
     @Override
     public void onCreate() {
         super.onCreate();
         http = new OkHttpClient.Builder()
-                // Server har taraf se chup ho jaye (Wi-Fi chala gaya, server
-                // reboot) to socket ko pata hi nahi chalta.  Ping se wo haalat
-                // ~40 second me pakdi jaati hai aur dobara jud jaate hain.
-                .pingInterval(20, TimeUnit.SECONDS)
+                // Server har taraf se chup ho jaye (server ki bijli gayi) to
+                // socket ko pata hi nahi chalta -- ye ping use pakadta hai.
+                // ⚠ Pehle 20 sec tha: jeb me pada phone sirf "zinda hoon" ke
+                // liye ghante me ~180 baar jaagta (user 2026-09-19: "ping kam
+                // karo").  Ab 2 min -- server bhi native socket ko 2 min par
+                // hi ping karta hai (`WALKIE_NATIVE_PING_S`).  Wi-Fi jaane /
+                // badalne par Android socket khud tod deta hai, wo turant
+                // pakda jaata hai -- ping uske liye nahi.
+                .pingInterval(120, TimeUnit.SECONDS)
                 .readTimeout(0, TimeUnit.MILLISECONDS)     // socket khula rehna hai
                 .retryOnConnectionFailure(true)
                 .build();
         naali();
+        ZINDA = this;
     }
 
     @Override
@@ -244,13 +302,26 @@ public class WalkieService extends Service {
             }
             return START_STICKY;
         }
+        if (ACTION_ANDON_OK.equals(act)) {
+            // ANDON notification ka OK / swipe: ring band, wo notification hatao
+            andonOk(intent.getIntExtra("cid", 0));
+            if (!chahiye) stopSelf();     // service chal hi nahi rahi thi
+            return START_STICKY;
+        }
         if (intent != null) {
             String u = intent.getStringExtra("url");
             String t = intent.getStringExtra("token");
             if (u != null && !u.isEmpty()) url = u;
             if (t != null && !t.isEmpty()) token = t;
+            // Purana page ye nahi bhejta -- tab pehle jaisa: walkie haan, ANDON nahi
+            if (intent.hasExtra("andon")) andonChahiye = intent.getBooleanExtra("andon", false);
+            if (intent.hasExtra("walkie")) walkieChahiye = intent.getBooleanExtra("walkie", true);
         }
-        aageKaro("Connecting…");
+        /* Page har khulne / reload par `start()` bhejta hai.  Pehle yahan
+           hamesha "Connecting…" likh dete the -- socket pehle se juda ho to
+           `jodo()` kuch nahi karta, aur patti "Connecting…" par hi atki
+           rehti (emulator par dikha).  Juda ho to "Listening" hi rakho. */
+        aageKaro(CONNECTED && ws != null ? "Listening" : "Connecting…");
         chahiye = true;
         RUNNING = true;
         jodo();
@@ -264,6 +335,7 @@ public class WalkieService extends Service {
     public void onDestroy() {
         band();
         RUNNING = false;
+        if (ZINDA == this) ZINDA = null;
         super.onDestroy();
     }
 
@@ -301,7 +373,25 @@ public class WalkieService extends Service {
             ct.setDescription("Written messages from Walkie-Talkie");
             ct.setShowBadge(true);
             nm.createNotificationChannel(ct);
+
+            /* ANDON call -- buzz jaisa hi: upar chipak kar dikhe, par channel
+               ki apni awaaz / vibration BAND, kyunki ring aur tharthari hum
+               khud chalate hain (OK dabne ya response aane tak). */
+            NotificationChannel ca = new NotificationChannel(
+                    CH_ANDON, "ANDON calls", NotificationManager.IMPORTANCE_HIGH);
+            ca.setDescription("New maintenance ANDON calls");
+            ca.setSound(null, null);
+            ca.enableVibration(false);
+            ca.setShowBadge(true);
+            nm.createNotificationChannel(ca);
         }
+    }
+
+    /** Hamesha dikhne wali patti ka naam -- service ab sirf walkie nahi. */
+    private String patti() {
+        if (andonChahiye && !walkieMila) return "ANDON alerts";
+        if (andonChahiye) return "Walkie-Talkie & ANDON";
+        return "Walkie-Talkie";
     }
 
     private Notification banao(String text) {
@@ -314,7 +404,7 @@ public class WalkieService extends Service {
         Notification.Builder b = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 ? new Notification.Builder(this, CH_ID)
                 : new Notification.Builder(this);
-        return b.setContentTitle("Walkie-Talkie")
+        return b.setContentTitle(patti())
                 .setContentText(text)
                 .setSmallIcon(android.R.drawable.stat_sys_speakerphone)
                 .setContentIntent(pi)
@@ -343,6 +433,10 @@ public class WalkieService extends Service {
     // ── socket ────────────────────────────────────────────────────
     private void jodo() {
         if (!chahiye || url.isEmpty() || token.isEmpty()) return;
+        String full = url + (url.contains("?") ? "&" : "?")
+                + "role=rx&kind=native&token=" + android.net.Uri.encode(token)
+                + (andonChahiye ? "&andon=1" : "")
+                + (walkieChahiye ? "" : "&walkie=0");
         /* ⚠ EK SE ZYADA SOCKET NA BANE.
            `onStartCommand` kai baar chal sakta hai -- app har baar khulne par
            `start()` bhejti hai, aur Android khud bhi service ko dobara chalu
@@ -353,12 +447,23 @@ public class WalkieService extends Service {
            `ws` tabhi null hota hai jab socket sach me band ho chuka ho
            (onClosed/onFailure me null kiya jaata hai), isliye ye jaanch
            reconnect ko nahi rokti. */
-        if (ws != null) { Log.i(TAG, "pehle se juda hua hai, naya socket nahi"); return; }
-        String full = url + (url.contains("?") ? "&" : "?")
-                + "role=rx&kind=native&token=" + android.net.Uri.encode(token);
+        if (ws != null) {
+            if (full.equals(judaUrl)) { Log.i(TAG, "pehle se juda hua hai, naya socket nahi"); return; }
+            /* Page ne shart badli (ANDON / walkie chalu-band, server ka pata,
+               naya token) -- purana socket band karke naye se jodo.  Purane
+               ke band hone ki khabar baad me aati hai; neeche `ws != s` wali
+               jaanch use chhod deti hai. */
+            Log.i(TAG, "shart badli -- naya socket");
+            WebSocket purana = ws;
+            ws = null;
+            try { purana.close(1000, "badla"); } catch (Throwable ignored) { /* pehle se band */ }
+        }
+        judaUrl = full;
+        walkieMila = walkieChahiye;
         Request req = new Request.Builder().url(full).build();
         ws = http.newWebSocket(req, new WebSocketListener() {
             @Override public void onOpen(WebSocket s, Response r) {
+                if (ws != s) { s.close(1000, "purana"); return; }
                 retry = 0;
                 CONNECTED = true;
                 LAST_ERR = "";
@@ -366,6 +471,7 @@ public class WalkieService extends Service {
             }
 
             @Override public void onMessage(WebSocket s, String text) {
+                if (ws != s) return;          // badle hue purane socket ki baat nahi
                 try {
                     JSONObject d = new JSONObject(text);
                     String t = d.optString("t");
@@ -411,6 +517,17 @@ public class WalkieService extends Service {
                     } else if ("ready".equals(t)) {
                         JSONObject me = d.optJSONObject("me");
                         if (me != null) MERI_ID = me.optInt("id", 0);
+                        /* Naya server batata hai ki walkie mila ya sirf ANDON,
+                           aur ANDON bhejega ya nahi.  Purana server ye bhejta
+                           hi nahi -- tab walkie haan, ANDON nahi (page pehle
+                           jaisa khud poochta rehta hai). */
+                        walkieMila = d.optBoolean("walkie", true);
+                        ANDON_SERVER = d.optBoolean("andon", false);
+                        likho("Listening");       // patti ka naam bhi theek ho jaye
+                    } else if ("andon".equals(t)) {
+                        // `ring` = is ID par ring baje? (admin → Services → ANDON ring;
+                        // purana server bhejta hi nahi -- tab pehle jaisa, baje)
+                        andonAaya(d.optJSONArray("rows"), d.optBoolean("ring", true));
                     } else if ("rx_stop".equals(t)) {
                         // Kitni baar sookha -- yahi batata hai ki aawaz saaf
                         // rahi ya nahi.  0 matlab bilkul saaf.
@@ -437,6 +554,7 @@ public class WalkieService extends Service {
             }
 
             @Override public void onMessage(WebSocket s, ByteString bytes) {
+                if (ws != s) return;
                 // Player na ban paye to bhi socket na toote -- buzz / chat
                 // isi socket par aate hain.
                 try { daalo(bytes.toByteArray()); }
@@ -444,8 +562,12 @@ public class WalkieService extends Service {
             }
 
             @Override public void onClosed(WebSocket s, int code, String reason) {
+                if (ws != s) return;          // hum khud badal chuke -- naya socket chal raha hai
                 CONNECTED = false;
-                if (ws == s) ws = null;
+                ANDON_SERVER = false;
+                ws = null;
+                // 4410 = walkie se hataya par ANDON chalu -- neeche dobara()
+                // se phir judte hain, server ab sirf-ANDON wala bana deta hai.
                 if (code == 4403) {          // admin ne walkie se hata diya
                     LAST_ERR = "not on the walkie-talkie list";
                     chahiye = false;
@@ -462,8 +584,32 @@ public class WalkieService extends Service {
             }
 
             @Override public void onFailure(WebSocket s, Throwable t, Response r) {
+                if (ws != s) return;
                 CONNECTED = false;
-                if (ws == s) ws = null;
+                ANDON_SERVER = false;
+                ws = null;
+                if (r != null && r.code() == 403) {
+                    /* Server ne `accept` se PEHLE hi mana kiya (token purana,
+                       ya walkie / ANDON kuch bhi nahi mila).  Tab handshake
+                       HTTP 403 par girta hai -- 4401/4403 wala close-code
+                       aata hi nahi.  Pehle yahan bhi dobara() chalta tha:
+                       service har 32 sec HAMESHA ke liye koshish karti rehti
+                       (battery).  App khulte hi page naye token / nayi shart
+                       ke saath service khud dobara chalu kar deta hai. */
+                    LAST_ERR = "not allowed";
+                    chahiye = false;
+                    if (!walkieChahiye) {
+                        /* Sirf ANDON maanga tha aur mana hua -- server abhi
+                           purana hai (ANDON isi socket par jaanta hi nahi) ya
+                           ANDON ki ijazat nahi.  "Sign in" wali patti yahan
+                           galat hoti.  Chup-chaap service band: page pehle
+                           jaisa khud poochta rahega. */
+                        main.post(() -> { band(); stopSelf(); });
+                        return;
+                    }
+                    likho("Please open the app and sign in again");
+                    return;
+                }
                 LAST_ERR = String.valueOf(t.getMessage());
                 dobara();
             }
@@ -481,10 +627,21 @@ public class WalkieService extends Service {
     private void band() {
         chahiye = false;
         CONNECTED = false;
+        ANDON_SERVER = false;
+        ANDON_HAAL = null;
         try { if (ws != null) ws.close(1000, "bye"); } catch (Throwable ignored) { /* pehle se band */ }
         ws = null;
+        judaUrl = "";
         ringBand();
         audioBand();
+        // Service band -- "waiting for response" wali ANDON notification
+        // chhod kar mat jao, wo phir kabhi apne aap nahi hatti.
+        synchronized (andonLock) {
+            for (Integer id : andonBaj) andonHatao(id);
+            andonBaj.clear();
+            andonDekhe.clear();
+            andonBooted = false;
+        }
         try { if (wake != null && wake.isHeld()) wake.release(); } catch (Throwable ignored) { /* pehle se chhoot gaya */ }
         wake = null;
     }
@@ -724,28 +881,38 @@ public class WalkieService extends Service {
     private void bajao(String kisne) {
         try {
             ringBand();
-            Uri u = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
-            if (u == null) u = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
-            if (u == null) { Log.w(TAG, "RING koi uri nahi"); }
-            else {
-                MediaPlayer mp = new MediaPlayer();
-                mp.setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build());
-                mp.setDataSource(this, u);
-                mp.setLooping(true);
-                mp.prepare();
-                mp.start();
-                ring = mp;
-                Log.i(TAG, "RING chal padi (lagatar)");
-            }
+            ringChalu();
+            ringKiska = RING_BUZZ;
             bulawaDikhao(kisne);
             // bhoole hue phone ke liye aakhri hadd
             main.removeCallbacks(ringRuko);
             main.postDelayed(ringRuko, MAX_RING_SECONDS * 1000L);
         } catch (Throwable e) {
             Log.w(TAG, "ring: " + e);
+        }
+    }
+
+    /** Phone ki chuni hui ringtone, lagatar -- buzz aur ANDON dono ki. */
+    private boolean ringChalu() {
+        try {
+            Uri u = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+            if (u == null) u = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            if (u == null) { Log.w(TAG, "RING koi uri nahi"); return false; }
+            MediaPlayer mp = new MediaPlayer();
+            mp.setAudioAttributes(new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build());
+            mp.setDataSource(this, u);
+            mp.setLooping(true);
+            mp.prepare();
+            mp.start();
+            ring = mp;
+            Log.i(TAG, "RING chal padi (lagatar)");
+            return true;
+        } catch (Throwable e) {
+            Log.w(TAG, "ring: " + e);
+            return false;
         }
     }
 
@@ -973,6 +1140,7 @@ public class WalkieService extends Service {
     /** Ring + vibration + bulawe ka parda — teeno band. */
     private void ringBand() {
         main.removeCallbacks(ringRuko);
+        ringKiska = 0;
         boolean bajRahiThi = ring != null;
         MediaPlayer r = ring; ring = null;
         try { if (r != null) { r.stop(); r.release(); } } catch (Throwable ignored) { /* pehle se ruki hui */ }
@@ -989,6 +1157,10 @@ public class WalkieService extends Service {
     }
 
     private void thartharao() {
+        thartharao(new long[] { 0, 500, 400 });
+    }
+
+    private void thartharao(long[] pat) {
         try {
             Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
             Log.i(TAG, "VIB v=" + (v != null) + " has=" + (v != null && v.hasVibrator()));
@@ -996,7 +1168,6 @@ public class WalkieService extends Service {
             /* Ring jitni der hilta rahe -- jeb me pada phone ek jhatke se
                nahi pata chalta.  `repeat = 0` yaani pattern dobara-dobara;
                `ringBand()` RING_SECONDS baad `cancel()` kar deta hai. */
-            long[] pat = { 0, 500, 400 };
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 v.vibrate(VibrationEffect.createWaveform(pat, 0));
             } else {
@@ -1005,5 +1176,174 @@ public class WalkieService extends Service {
         } catch (Throwable e) {
             Log.w(TAG, "vibrate: " + e);
         }
+    }
+
+    // ── ANDON ─────────────────────────────────────────────────────
+
+    /** Server ki poori ANDON list aayi.  Socket ke thread par hi (buzz ki
+     *  tarah) -- so rahe phone ke jaagte hi ring shuru ho jaye.  Hisaab page
+     *  (AndonAlert.jsx) wala hi: pehli list sirf "dekh li", baad me jo NAYI
+     *  aur bina response ho usi par khabar; response aate hi / call band hote
+     *  hi uski notification hat jaati hai. */
+    private void andonAaya(JSONArray rows, boolean ringBaje) {
+        if (rows == null) return;
+        String haal;
+        synchronized (andonLock) {
+            andonSeq++;
+            haal = "{\"run\":" + andonRun + ",\"seq\":" + andonSeq + ",\"rows\":" + rows + "}";
+        }
+        ANDON_HAAL = haal;
+        Walkie.andonBhejo(haal);          // page ko -- app khuli ho to popup wahi dikhata hai
+        List<JSONObject> nayi = new ArrayList<>();
+        boolean koiNahi;
+        synchronized (andonLock) {
+            Set<Integer> khuli = new HashSet<>(), intezaar = new HashSet<>();
+            for (int i = 0; i < rows.length(); i++) {
+                JSONObject r = rows.optJSONObject(i);
+                if (r == null) continue;
+                int id = r.optInt("id", 0);
+                khuli.add(id);
+                if (r.isNull("response_seconds")) {
+                    intezaar.add(id);
+                    if (andonBooted && !andonDekhe.contains(id)) nayi.add(r);
+                }
+            }
+            andonBooted = true;
+            andonDekhe.clear();
+            andonDekhe.addAll(khuli);         // band hui call dobara khule to phir khabar
+            for (Integer id : new ArrayList<>(andonBaj)) {
+                if (!intezaar.contains(id)) { andonHatao(id); andonBaj.remove(id); }
+            }
+            // App saamne ho to PAGE popup + beep + tharthari deta hai --
+            // yahan se bhi bajate to do jagah ek saath bajta.
+            if (!APP_FOREGROUND) {
+                for (JSONObject r : nayi) {
+                    andonDikhao(r);
+                    andonBaj.add(r.optInt("id", 0));
+                }
+            }
+            koiNahi = andonBaj.isEmpty();
+        }
+        if (!nayi.isEmpty() && !APP_FOREGROUND) andonBajao(ringBaje);
+        else if (koiNahi) andonRingBand();
+        else if (!ringBaje) andonAwaazBand();   // baj rahi thi aur admin ne abhi band ki
+    }
+
+    private static String saaf(JSONObject r, String k) {
+        return r.isNull(k) ? "" : r.optString(k, "").trim();
+    }
+
+    private void andonDikhao(JSONObject r) {
+        try {
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            if (nm == null) return;
+            int id = r.optInt("id", 0);
+            String zone = saaf(r, "zone_name"), line = saaf(r, "line_name");
+            String kab = saaf(r, "started_at");               // 2026-09-19T14:05:12
+            kab = kab.length() >= 19 ? kab.substring(11, 19) : "";
+            Notification.Builder b = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                    ? new Notification.Builder(this, CH_ANDON)
+                    : new Notification.Builder(this);
+            b.setContentTitle("Maintenance call: " + (zone.isEmpty() ? "—" : zone)
+                              + " / " + (line.isEmpty() ? "—" : line))
+             .setContentText((kab.isEmpty() ? "" : kab + " · ") + "Waiting for response")
+             .setSmallIcon(android.R.drawable.ic_dialog_alert)
+             .setCategory(Notification.CATEGORY_ALARM)
+             .setAutoCancel(true)
+             // Tap = app khule (ring MainActivity rokti hai, popup page dikhata
+             // hai).  `appKholo()` NAHI -- wo walkie ka page kholta aur buzz ka
+             // "jawab mila" bhi bhej deta.
+             .setContentIntent(andonKholo())
+             .setDeleteIntent(andonOkIntent(id, 1))
+             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "OK", andonOkIntent(id, 2));
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                b.setPriority(Notification.PRIORITY_HIGH);
+            }
+            nm.notify(ANDON_ID_BASE + Math.floorMod(id, 1000), b.build());
+            Log.i(TAG, "ANDON notification: call " + id);
+        } catch (Throwable e) {
+            Log.w(TAG, "andonDikhao: " + e);
+        }
+    }
+
+    private void andonHatao(int id) {
+        try {
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            if (nm != null) nm.cancel(ANDON_ID_BASE + Math.floorMod(id, 1000));
+        } catch (Throwable ignored) { /* kuch nahi */ }
+    }
+
+    private PendingIntent andonKholo() {
+        Intent i = new Intent(this, MainActivity.class);
+        i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                   | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        int f = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) f |= PendingIntent.FLAG_IMMUTABLE;
+        return PendingIntent.getActivity(this, 6, i, f);
+    }
+
+    /** OK / swipe -- har call ka apna (requestCode alag, warna extras mil jaate). */
+    private PendingIntent andonOkIntent(int id, int kaunsa) {
+        Intent i = new Intent(this, WalkieService.class);
+        i.setAction(ACTION_ANDON_OK);
+        i.putExtra("cid", id);
+        int f = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) f |= PendingIntent.FLAG_IMMUTABLE;
+        return PendingIntent.getService(this, 7000 + Math.floorMod(id, 1000) * 2 + kaunsa, i, f);
+    }
+
+    /** OK dabaya / notification hatayi: ring band, wo notification bhi. */
+    private void andonOk(int cid) {
+        synchronized (andonLock) {
+            if (cid != 0) { andonHatao(cid); andonBaj.remove(cid); }
+        }
+        andonRingBand();
+    }
+
+    /** `ringBaje` false = is ID par ring band (admin → Services) -- tab sirf
+     *  notification + tharthari, ringtone nahi. */
+    private void andonBajao(boolean ringBaje) {
+        try {
+            // Buzz ki ring pehle se baj rahi ho to wahi chalne do -- ek ke
+            // upar doosri ring nahi.  Notification to dikh hi chuki hai.
+            if (ringKiska != RING_BUZZ) {
+                if (ringBaje && ring == null) ringChalu();
+                ringKiska = RING_ANDON;
+                thartharao(ANDON_THARTHARI);
+            }
+            // bhoole hue phone ke liye wahi aakhri hadd jo buzz ki hai
+            main.removeCallbacks(ringRuko);
+            main.postDelayed(ringRuko, MAX_RING_SECONDS * 1000L);
+        } catch (Throwable e) {
+            Log.w(TAG, "andon ring: " + e);
+        }
+    }
+
+    /** Admin ne is ID ki ring abhi band ki -- baj rahi ANDON ringtone chup,
+     *  tharthari chalti rahe (call abhi bhi intezaar me hai). */
+    private void andonAwaazBand() {
+        if (ringKiska != RING_ANDON) return;
+        MediaPlayer r = ring; ring = null;
+        try { if (r != null) { r.stop(); r.release(); } } catch (Throwable ignored) { /* pehle se ruki hui */ }
+    }
+
+    /** Sirf ANDON ki ring + tharthari band (buzz ki baj rahi ho to use nahi chhedte). */
+    private void andonRingBand() {
+        if (ringKiska != RING_ANDON) return;
+        main.removeCallbacks(ringRuko);
+        ringKiska = 0;
+        MediaPlayer r = ring; ring = null;
+        try { if (r != null) { r.stop(); r.release(); } } catch (Throwable ignored) { /* pehle se ruki hui */ }
+        try {
+            Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+            if (v != null) v.cancel();
+        } catch (Throwable ignored) { /* kuch nahi */ }
+    }
+
+    /** MainActivity: app saamne aayi -- ANDON ki ring band, ab page ka popup
+     *  dikhata hai (warna dono ek saath bajte). */
+    static void appSaamne() {
+        WalkieService s = ZINDA;
+        if (s != null) s.main.post(s::andonRingBand);
     }
 }

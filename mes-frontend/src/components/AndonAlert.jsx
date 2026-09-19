@@ -8,11 +8,21 @@
  * (ya call band hote hi) popup APNE AAP hat jaata hai — manually dismiss
  * karne ki zarurat nahi.  Admin panel (/admin/*) par NAHI aata.  Page load
  * par jo calls pehle se open hain unpar alert nahi (sirf naye par).
+ *
+ * APP ME POLLING NAHI (2026-09-19, user: "baar-baar poochna band ho"):
+ * phone ki background service server se juda socket rakhti hai, aur server
+ * nayi ANDON list usi par bhejta hai (`routers/walkie.py`, "t":"andon").
+ * Service wo list plugin se yahan bhejti hai -- popup / beep / tharthari
+ * bilkul wahi.  App band ho to ring + notification service khud deti hai.
+ * Service na chal rahi ho (Background listening band, purana server) to
+ * pehle jaisa har 2.5s poochna.  Website par hamesha poochna.
  * ─────────────────────────────────────────────────────────────────── */
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { isNativeApp } from "../constants/apiBase";
+import { walkieNative } from "../constants/walkieNative";
+import { useAndonRing } from "../constants/clientServices";
 
 const NATIVE = isNativeApp();
 
@@ -95,6 +105,13 @@ export default function AndonAlert() {
   const muted = !token || andonBand || pathname.startsWith("/admin");
 
   const [alerts, setAlerts] = useState([]);   // [{id, zone, line, started_at}]
+
+  /* Is ID par ring (beep) baje?  Admin → Services → "ANDON ring".  Band ho to
+     popup phir bhi aata hai (app me tharthari bhi) -- sirf awaaz nahi.
+     Ref isliye ki `lagao` ek hi baar banta hai. */
+  const ringOn = useAndonRing();
+  const ringRef = useRef(ringOn);
+  useEffect(() => { ringRef.current = ringOn; }, [ringOn]);
   const seen   = useRef(new Set());           // maintenance call-ids already handled
   const booted = useRef(false);               // pehla poll = sirf seed, alert nahi
 
@@ -106,46 +123,93 @@ export default function AndonAlert() {
   // Server theek ho to koi farak nahi -- call ~15ms me laut aati hai.
   const busy = useRef(false);
 
+  /* Khuli MAINTENANCE calls ki poori list -- chahe poochh kar aayi ho ya
+     service se.  Dono raaston par hisaab EK hi. */
+  const lagao = useCallback((rows) => {
+    const open = new Set(rows.map((r) => r.id));
+    // "waiting" = abhi khuli + jiska response NAHI aaya (response_seconds null).
+    // Response aate hi ya call band hote hi id yahan se hat jaati → popup auto-close.
+    const waiting = new Set(rows.filter((r) => r.response_seconds == null).map((r) => r.id));
+    if (!booted.current) {                              // load par jo already open — un par alert nahi
+      rows.forEach((r) => seen.current.add(r.id));
+      booted.current = true;
+      return;
+    }
+    // sirf NAYI, abhi tak response na aayi call par hi alert + beep
+    const fresh = rows.filter((r) => !seen.current.has(r.id) && r.response_seconds == null);
+    rows.forEach((r) => seen.current.add(r.id));
+    for (const id of [...seen.current]) if (!open.has(id)) seen.current.delete(id);  // band → dobara aaye to phir alert
+    setAlerts((prev) => {
+      const kept = prev.filter((a) => waiting.has(a.id));   // responded/closed → auto-remove
+      const have = new Set(kept.map((p) => p.id));
+      const add = fresh.filter((r) => !have.has(r.id))
+                       .map((r) => ({ id: r.id, zone: r.zone_name, line: r.line_name, started_at: r.started_at }));
+      return (kept.length !== prev.length || add.length) ? [...kept, ...add] : prev;
+    });
+    if (fresh.length && ringRef.current) beep();
+  }, []);
+
   const poll = useCallback(() => {
     if (busy.current) return;
     busy.current = true;
     fetch("/api/andon/dashboard", { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!d) return;
-        const rows = Array.isArray(d.rows) ? d.rows : [];   // MAINTENANCE open calls
-        const open = new Set(rows.map((r) => r.id));
-        // "waiting" = abhi khuli + jiska response NAHI aaya (response_seconds null).
-        // Response aate hi ya call band hote hi id yahan se hat jaati → popup auto-close.
-        const waiting = new Set(rows.filter((r) => r.response_seconds == null).map((r) => r.id));
-        if (!booted.current) {                              // load par jo already open — un par alert nahi
-          rows.forEach((r) => seen.current.add(r.id));
-          booted.current = true;
-          return;
-        }
-        // sirf NAYI, abhi tak response na aayi call par hi alert + beep
-        const fresh = rows.filter((r) => !seen.current.has(r.id) && r.response_seconds == null);
-        rows.forEach((r) => seen.current.add(r.id));
-        for (const id of [...seen.current]) if (!open.has(id)) seen.current.delete(id);  // band → dobara aaye to phir alert
-        setAlerts((prev) => {
-          const kept = prev.filter((a) => waiting.has(a.id));   // responded/closed → auto-remove
-          const have = new Set(kept.map((p) => p.id));
-          const add = fresh.filter((r) => !have.has(r.id))
-                           .map((r) => ({ id: r.id, zone: r.zone_name, line: r.line_name, started_at: r.started_at }));
-          return (kept.length !== prev.length || add.length) ? [...kept, ...add] : prev;
-        });
-        if (fresh.length) beep();
-      })
+      .then((d) => { if (d) lagao(Array.isArray(d.rows) ? d.rows : []); })   // MAINTENANCE open calls
       .catch(() => {})
       .finally(() => { busy.current = false; });
-  }, [token]);
+  }, [token, lagao]);
+
+  /* App me ANDON phone ki service laati hai?  null = abhi pata nahi (tab na
+     poochte, na sunte -- pata ek pal me chal jaata hai), true = service la
+     rahi hai (server ne `ready` me maana), false = khud poochho.  Service
+     WalkiePresence chalu karta hai, isliye thodi-thodi der me dekhte rehte
+     hain -- band ho jaye to turant poochna shuru. */
+  const [push, setPush] = useState(NATIVE ? null : false);
+  useEffect(() => {
+    if (!NATIVE || muted) return undefined;
+    let ruk = false;
+    const jaancho = () => walkieNative.status()
+      .then((s) => { if (!ruk) setPush(!!(s?.running && s?.andon)); })
+      .catch(() => { if (!ruk) setPush(false); });
+    jaancho();
+    const id = setInterval(jaancho, 5000);
+    return () => { ruk = true; clearInterval(id); };
+  }, [muted]);
+
+  /* Service wali list.  `seq` har nayi list par badhta hai -- app peechhe ho
+     to event qatar me ruk kar der se aa sakte hain, purana seq chhod do.
+     Service dobara bani (`run` badla) to seq phir 1 se. */
+  const kram = useRef({ run: null, seq: 0 });
+  const sevaSe = useCallback((h) => {
+    if (!h || !Array.isArray(h.rows)) return;
+    const k = kram.current;
+    if (h.run !== k.run) { k.run = h.run; k.seq = 0; }
+    const s = Number(h.seq) || 0;
+    if (s && s <= k.seq) return;
+    k.seq = s;
+    lagao(h.rows);
+  }, [lagao]);
 
   useEffect(() => {
-    if (muted) return;
+    if (muted || push !== true) return undefined;
+    let ruk = false;
+    const taaza = () => walkieNative.andonHaal()
+      .then((h) => { if (!ruk) sevaSe(h); })
+      .catch(() => {});
+    taaza();
+    const hata = walkieNative.onAndon((h) => { if (!ruk) sevaSe(h); });
+    // App peechhe thi -- saamne aate hi taaza haal (beech ki list chhooti ho to bhi)
+    const jago = () => { if (document.visibilityState === "visible") taaza(); };
+    document.addEventListener("visibilitychange", jago);
+    return () => { ruk = true; hata(); document.removeEventListener("visibilitychange", jago); };
+  }, [muted, push, sevaSe]);
+
+  useEffect(() => {
+    if (muted || push !== false) return;
     poll();
     const id = setInterval(poll, 2500);
     return () => clearInterval(id);
-  }, [muted, poll]);
+  }, [muted, push, poll]);
 
   // Popup dikhte hi tharthari shuru, hatte hi band.  Cleanup dono haalat
   // sambhaal leta hai -- Dismiss dabaya ho, response aa gaya ho, page badla

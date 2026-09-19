@@ -31,6 +31,7 @@ const base = walkieWsBase;
 
 let ws = null;
 let alive = false;            // "judne ki koshish karte raho"
+let paused = false;           // app peechhe gayi -- socket band, token yaad
 let retry = 0;
 let tok = "";
 let spk = null;
@@ -103,19 +104,41 @@ export const walkieLink = {
     if (!token) return;
     if (alive && tok === token) return;
     if (alive) this.stop();
-    tok = token; alive = true; retry = 0;
+    tok = token; alive = true; retry = 0; paused = false;
     if (!spk) spk = speakerBanao();
     jodo();
   },
 
   stop() {
-    alive = false; tok = "";
+    alive = false; tok = ""; paused = false;
     try { ws?.close(); } catch { /* pehle se band */ }
     ws = null;
     try { spk?.band(); } catch { /* chal hi nahi raha tha */ }
     spk = null;
     state.conn = "off"; state.online = []; state.rxFrom = null;
     batao({ t: "conn" });
+  },
+
+  /** App PEECHHE gayi aur phone ki service sun rahi hai -- page ka socket
+   *  band (token yaad rehta hai, `resume()` par wapas).  Warna ye socket bhi
+   *  har 20 sec server ka ping aur har online/offline ka message khaata
+   *  aur jeb me pada phone bina kaam jaagta.  (User 2026-09-19: battery.) */
+  pause() {
+    if (!alive) return;
+    paused = true; alive = false;
+    try { ws?.close(); } catch { /* pehle se band */ }
+    ws = null;
+    state.conn = "off"; state.rxFrom = null;
+    batao({ t: "conn" });
+  },
+
+  /** App wapas saamne -- `pause()` se band hua socket phir jodo. */
+  resume() {
+    if (!paused) return;
+    paused = false;
+    if (!tok) return;
+    alive = true; retry = 0;
+    jodo();
   },
 
   /** Phone par service bajati hai, page nahi — warna aawaz do baar aati. */

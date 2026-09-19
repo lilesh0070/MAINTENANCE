@@ -47,10 +47,33 @@ public class Walkie extends Plugin {
 
     static final String NOTIF = "notif";
 
+    /** Chalta hua plugin -- service ANDON ki nayi list isi se page ko bhejti hai. */
+    private static volatile Walkie EK = null;
+
+    @Override
+    public void load() {
+        EK = this;
+    }
+
+    /** Service se: ANDON ki nayi list aayi -- page (AndonAlert) ko bata do.
+     *  `haal` = `{"run","seq","rows"}`.  App peechhe ho to WebView ruka hota
+     *  hai; tab ye qatar me rukta hai, aur page saamne aate hi `andonHaal()`
+     *  se waise bhi taaza list le leta hai (purana `seq` page chhod deta hai). */
+    static void andonBhejo(String haal) {
+        Walkie p = EK;
+        if (p == null || haal == null) return;
+        try {
+            p.notifyListeners("andon", new JSObject(haal));
+        } catch (Throwable ignored) { /* page na ho to kuch nahi */ }
+    }
+
     private JSObject haal() {
         JSObject o = new JSObject();
         o.put("running", WalkieService.RUNNING);
         o.put("connected", WalkieService.CONNECTED);
+        // Server ANDON isi socket par bhej raha hai (naya server + andon=1).
+        // Page isi par tay karta hai ki khud poochna band kare.
+        o.put("andon", WalkieService.RUNNING && WalkieService.ANDON_SERVER);
         o.put("error", WalkieService.LAST_ERR == null ? "" : WalkieService.LAST_ERR);
         o.put("ignoringBattery", batteryChhoot());
         o.put("canNotify", android.os.Build.VERSION.SDK_INT < 33
@@ -93,12 +116,29 @@ public class Walkie extends Plugin {
         i.setAction(WalkieService.ACTION_START);
         i.putExtra("url", url);
         i.putExtra("token", token);
+        /* Isi socket par ANDON bhi suno?  Aur walkie chahiye ya sirf ANDON?
+           (Admin → Services, aur user ki ANDON ijazat -- page tay karta hai.) */
+        i.putExtra("andon", Boolean.TRUE.equals(call.getBoolean("andon", false)));
+        i.putExtra("walkie", !Boolean.FALSE.equals(call.getBoolean("walkie", true)));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             c.startForegroundService(i);
         } else {
             c.startService(i);
         }
         call.resolve(haal());
+    }
+
+    /** Aakhri ANDON list jo service ke paas hai -- page khulte / saamne aate
+     *  hi isi se popup bana leta hai (event ka intezaar nahi). */
+    @PluginMethod
+    public void andonHaal(PluginCall call) {
+        JSObject o = new JSObject();
+        String haal = WalkieService.ANDON_HAAL;
+        try {
+            if (haal != null) o = new JSObject(haal);   // run, seq, rows
+        } catch (Throwable ignored) { /* kharab -- khaali haal */ }
+        o.put("andon", WalkieService.RUNNING && WalkieService.ANDON_SERVER);
+        call.resolve(o);
     }
 
     /** Page ke "OK" se aata hai -- ring/vibration band aur server par jawab. */

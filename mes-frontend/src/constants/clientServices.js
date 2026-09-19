@@ -7,7 +7,8 @@
  *
  *   andon_alert        nayi ANDON call par popup + beep (app me vibration)
  *   walkie             walkie ka socket: online, buzz ka parda, chat patti, aawaz
- *   walkie_background  (sirf app) app band hone par bhi sunna — Android service
+ *   walkie_background  (sirf app) app band hone par bhi sunna — Android service.
+ *                      2026-09-19 se ANDON bhi isi service ke socket se aata hai.
  *
  * "App" = APK (phone / tablet / TV), "Website" = browser.
  *
@@ -27,6 +28,10 @@ export const SERVICE_DEFAULTS = {
 };
 
 let cfg = SERVICE_DEFAULTS;
+/* IS user ke device par ANDON popup ki ring bajegi?  Admin → Services →
+   "ANDON ring" (ID ke hisaab se).  Default HAAN -- purana server ye bhejta hi
+   nahi, tab bhi pehle jaisa bajta rahe. */
+let ring = true;
 const subs = new Set();
 
 /** Poora haal badlo (server se aaya, ya admin ne abhi save kiya). */
@@ -46,7 +51,9 @@ export async function loadServices(token) {
     const r = await fetch("/api/client-services/", { headers: { Authorization: `Bearer ${token}` } });
     if (!r.ok) return;
     const d = await r.json();
+    if (d) ring = d.andon_ring !== false;
     if (d && d.services) setServices(d.services);
+    else subs.forEach((f) => f());
   } catch { /* server na mile to jo tha wahi chalne do */ }
 }
 
@@ -58,5 +65,13 @@ export function useServiceOn(key) {
   return useSyncExternalStore(
     (f) => { subs.add(f); return () => subs.delete(f); },
     () => serviceOn(key),
+  );
+}
+
+/** Is user par ANDON popup ki ring (beep) baje? — admin → Services → "ANDON ring". */
+export function useAndonRing() {
+  return useSyncExternalStore(
+    (f) => { subs.add(f); return () => subs.delete(f); },
+    () => ring,
   );
 }

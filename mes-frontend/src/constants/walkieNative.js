@@ -24,11 +24,35 @@ export const walkieNative = {
     try { return await P.status(); } catch { return { running: false, connected: false }; }
   },
 
-  /** Service chalu karo.  `url` = ws://...  `token` = JWT */
-  async start(url, token) {
+  /** Service chalu karo.  `url` = ws://...  `token` = JWT
+   *  `andon`  = isi socket par nayi ANDON call bhi suno (app band ho tab bhi)
+   *  `walkie` = walkie chahiye (false = sirf ANDON) */
+  async start(url, token, { andon = false, walkie = true } = {}) {
     const P = pul();
     if (!P?.start) return { running: false };
-    try { return await P.start({ url, token }); } catch { return { running: false }; }
+    try { return await P.start({ url, token, andon: !!andon, walkie: walkie !== false }); }
+    catch { return { running: false }; }
+  },
+
+  /** Service ke paas jo aakhri ANDON haal hai: `{ andon, run, seq, rows }`.
+   *  `andon` = server ye list isi socket par bhej raha hai.  `seq` har nayi
+   *  list par badhta hai (`run` = service ka ye janam) -- purani chhodo. */
+  async andonHaal() {
+    const P = pul();
+    if (!P?.andonHaal) return { andon: false, rows: null };
+    try { return await P.andonHaal(); } catch { return { andon: false, rows: null }; }
+  },
+
+  /** Nayi ANDON list aate hi `fn({ run, seq, rows })`.  Lautaya function
+   *  bulao to sunna band. */
+  onAndon(fn) {
+    const P = pul();
+    if (!P?.addListener) return () => {};
+    let h = null, band = false;
+    Promise.resolve(P.addListener("andon", (e) => { if (!band) fn(e); }))
+      .then((x) => { h = x; if (band) h?.remove?.(); })
+      .catch(() => {});
+    return () => { band = true; try { h?.remove?.(); } catch { /* pehle se hata */ } };
   },
 
   /** Notification ki ijazat (Android 13+).  Service chalu karne se pehle. */

@@ -1,5 +1,5 @@
 {
- "columns": 764,
+ "columns": 765,
  "db": "maintenance_db",
  "schema": {
   "andon_call_output": {
@@ -1923,6 +1923,12 @@
    }
   },
   "maintenance_client_services": {
+   "andon_ring_off": {
+    "default": "'[]'::jsonb",
+    "nullable": false,
+    "pos": 5,
+    "type": "jsonb"
+   },
    "id": {
     "default": "1",
     "nullable": false,
@@ -4714,5 +4720,5 @@
   }
  },
  "tables": 63,
- "taken_at": "2026-09-19T12:35:16"
+ "taken_at": "2026-09-19T15:15:40"
 }

@@ -59,12 +59,16 @@ Endpoints:
   POST   /api/walkie/chat/delete                    (admin) chune hue / poori chat
   GET    /api/walkie/buzz/pairs                     (admin) kaun kisko buzz kar sakta hai
   PUT    /api/walkie/buzz/pairs/{user_id}           (admin) ek bande ki list set karo
-  WS     /api/walkie/ws?token=..&role=rx|tx&kind=web|native
+  WS     /api/walkie/ws?token=..&role=rx|tx&kind=web|native[&andon=1][&walkie=0]
+         andon=1  -> nayi MAINTENANCE ANDON call bhi isi socket par ("t":"andon")
+         walkie=0 -> sirf ANDON, walkie ka kuch nahi.  Walkie ka member na ho
+                     tab bhi andon=1 wala socket isi tarah (sirf ANDON) judta hai.
 """
 from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from typing import Optional
 
@@ -82,6 +86,34 @@ router = APIRouter(prefix="/api/walkie", tags=["walkie"])
 # hai -- ye us soorat ke liye hai jab button daba hi reh jaye (phone jeb me
 # chala gaya, app mar gayi) aur channel hamesha ke liye jam ho jaye.
 MAX_TALK_SECONDS = 60
+
+
+def _env_s(naam: str, default: float, kam_se_kam: float) -> float:
+    """.env se seconds -- galat likha ho to default, bahut chhota ho to hadd.
+    (Yahan ki galti se poora router import hi na ho, wo nahi hona chahiye.)"""
+    try:
+        v = float(os.getenv(naam, "") or default)
+    except ValueError:
+        v = default
+    return max(v, kam_se_kam)
+
+
+# ── Phone ki background service (kind=native) ka "zinda hoon" ping ──
+# uvicorn har socket ko har 20 sec ping karta hai.  Jeb me pade phone ke liye
+# iska matlab: sirf "zinda hoon" batane ke liye ghante me ~180 baar jaagna.
+# (User 2026-09-19: "ping kam karo".)  Isliye SIRF native socket ka ping
+# lamba karte hain -- browser / page wale 20 sec par hi rehte hain, taaki
+# unka "online" pehle jaisa jaldi sahi ho.  2 min isliye ki kai Wi-Fi
+# controller ~5 min chup rehne wale phone ko nikaal dete hain.  Plant ka
+# Wi-Fi lamba jhelta ho to `.env` me WALKIE_NATIVE_PING_S badha do (backend
+# restart, APK nahi).
+NATIVE_PING_S = _env_s("WALKIE_NATIVE_PING_S", 120, 10)
+NATIVE_PING_TIMEOUT_S = _env_s("WALKIE_NATIVE_PING_TIMEOUT_S", 20, 5)
+
+# Nayi ANDON call DB me kitni der me dekhi jaaye.  Pehle HAR khuli app khud
+# har 2.5 sec poochti thi (aur band app ko kuch pata hi nahi chalta tha); ab
+# server EK query se sab sunne walon ko bata deta hai.
+ANDON_CHAKKAR_S = 2.0
 
 # ══════════════════════════════════════════════════════════════════
 #  DDL — baaki routers jaisa hi lazy + idempotent
@@ -1134,13 +1166,104 @@ class _Conn:
        `kind` sirf batane ke liye hai ki ye native service hai ya web page --
        server dono ko ek jaisa hi bhejta hai; bajana ya na bajana CLIENT tay
        karta hai (phone par service bajati hai, page nahi -- warna ek hi
-       aawaz do baar aati)."""
-    __slots__ = ("ws", "uid", "name", "role", "kind", "since")
+       aawaz do baar aati).  Sirf "online/offline" (presence) native ko nahi
+       jaata -- wo use padhti hi nahi, bas phone jaagta.
+       `walkie` False = sirf ANDON wala socket (walkie ka member nahi, ya app
+       me walkie band): na online dikhta, na walkie ka koi message jaata.
+       `andon` True = nayi ANDON call isi socket par bhejo."""
+    __slots__ = ("ws", "uid", "name", "role", "kind", "since", "walkie", "andon")
 
-    def __init__(self, ws, uid, name, role, kind):
+    def __init__(self, ws, uid, name, role, kind, walkie=True, andon=False):
         self.ws, self.uid, self.name = ws, uid, name
         self.role, self.kind = role, kind
         self.since = time.time()
+        self.walkie, self.andon = walkie, andon
+
+
+def _lamba_ping(ws: WebSocket, every: float, timeout: float) -> bool:
+    """Sirf IS socket ka server-ping badlo (baaki sab 20 sec par hi rehte hain).
+
+    uvicorn ping ka waqt sabke liye ek hi rakhta hai (`--ws-ping-interval`),
+    per-socket koi raasta nahi.  Isliye socket ke peechhe baithe uvicorn ke
+    protocol object tak pahunch kar uska `ping_interval` badalte hain --
+    websockets ka keepalive har chakkar me wahi padhta hai.  Starlette `send`
+    ko closure me lapet deta hai, isliye closure ke andar dhoondhte hain.
+
+    ⚠ Ye uvicorn / websockets ke ANDAR ka hissa hai.  requirements.txt me
+    uvicorn 0.27.0 + websockets 12.0 pinned hain -- unpar naapa: 2s set kiya
+    to ping theek 2s par aaya.  Kuch na mile to kuch nahi badalta -- ping
+    20 sec hi rehta hai, tootta kuch nahi.
+    """
+    seen, todo = set(), [getattr(ws, "_send", None)]
+    while todo and len(seen) < 50:
+        f = todo.pop()
+        if f is None or id(f) in seen:
+            continue
+        seen.add(id(f))
+        p = getattr(f, "__self__", None)
+        if p is not None and isinstance(getattr(p, "ping_interval", None), (int, float)) \
+                and hasattr(p, "ping_timeout"):
+            p.ping_interval = float(every)
+            p.ping_timeout = float(timeout)
+            return True
+        for cell in (getattr(f, "__closure__", None) or ()):
+            try:
+                todo.append(cell.cell_contents)
+            except ValueError:              # khaali cell
+                pass
+    return False
+
+
+_PING_BATAYA = False
+
+
+def _andon_band(user: dict) -> bool:
+    """Is user ki ANDON khabar band hai?  Wahi niyam jo page (`AndonAlert.jsx`)
+    maanta hai: SIRF saaf-saaf "none" band karta hai, set na ho to chalu --
+    ANDON madad bulane ka system hai, galti se sabki khabar band na ho."""
+    try:
+        with get_conn() as conn:
+            cur = dict_cursor(conn)
+            cur.execute("SELECT perm_level FROM maintenance_user_permissions"
+                        " WHERE user_id = %s AND page_key = 'andon-alert'", (user["id"],))
+            r = cur.fetchone()
+        return bool(r) and (r["perm_level"] or "") == "none"
+    except Exception:
+        return False
+
+
+def _andon_rows_db() -> list:
+    """Abhi khuli MAINTENANCE ANDON calls -- bilkul wahi jo `/api/andon/dashboard`
+    ki `rows` deti hai (wahi shart, wahi naam), taaki page ka popup dono raaston
+    se ek jaisa bane.  Sync hai -- event-loop se `asyncio.to_thread` me bulao."""
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""
+            SELECT e.id, e.zone AS zone_name, e.line AS line_name, e.started_at,
+                   CASE WHEN e.acknowledged_at IS NOT NULL
+                        THEN EXTRACT(EPOCH FROM (e.acknowledged_at - e.started_at))::int END
+                        AS response_seconds
+              FROM andon_system e
+              LEFT JOIN andon_departments dep ON dep.id = e.department_id
+             WHERE e.state = 'OPEN'
+               AND COALESCE(dep.name, e.display_name) ILIKE 'maintenance'
+             ORDER BY e.started_at
+        """)
+        rows = cur.fetchall() or []
+    return [{"id": r["id"], "zone_name": r["zone_name"], "line_name": r["line_name"],
+             "started_at": r["started_at"].isoformat() if r["started_at"] else None,
+             "response_seconds": r["response_seconds"]} for r in rows]
+
+
+def _andon_ring_band() -> set:
+    """Jin ID par ANDON ki RING band hai (admin → Services → "ANDON ring").
+    Wahan popup / notification phir bhi jaata hai, bas phone awaaz nahi karta.
+    Kuch na mile (table abhi bani nahi) to kisi ki band nahi -- default ON."""
+    try:
+        from routers.client_services import ring_band_ids
+        return ring_band_ids()
+    except Exception:
+        return set()
 
 
 class _Hub:
@@ -1154,10 +1277,15 @@ class _Hub:
         # liye event-loop ka pata chahiye.  Pehla connection aate hi rakh lete
         # hain.
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        # ANDON: aakhri list jo sabko bheji gayi, jin ID ki ring band hai, aur
+        # DB dekhne wala chakkar
+        self._andon_rows: Optional[list] = None
+        self._andon_band: Optional[set] = None
+        self._andon_task: Optional[asyncio.Task] = None
 
     # ── presence ──
     def online_ids(self) -> set:
-        return {c.uid for c in self._conns if c.role == "rx"}
+        return {c.uid for c in self._conns if c.role == "rx" and c.walkie}
 
     def kick_later(self, uid: int):
         """Admin ne kisi ko walkie se hata diya -- uska socket ABHI band karo.
@@ -1173,38 +1301,107 @@ class _Hub:
             pass
 
     async def _close_user(self, uid: int):
-        for c in [x for x in self._conns if x.uid == uid]:
+        for c in [x for x in self._conns if x.uid == uid and x.walkie]:
             try:
-                await c.ws.close(code=4403)
+                # ANDON bhi isi socket par aata ho to 4410 = "dobara judo":
+                # server ab use sirf-ANDON wala bana dega, ANDON chalta rahe.
+                # Bina ANDON 4403 = "ab mat judna" (jaisa pehle tha).
+                await c.ws.close(code=4410 if c.andon else 4403)
             except Exception:
                 pass
 
     def _rx_of(self, uid: int):
-        return [c for c in self._conns if c.uid == uid and c.role == "rx"]
+        # Sirf-ANDON wale socket ko walkie ka kuch nahi jaata
+        return [c for c in self._conns if c.uid == uid and c.role == "rx" and c.walkie]
 
     async def add(self, c: _Conn):
         if self._loop is None:
             self._loop = asyncio.get_running_loop()
         async with self._lock:
             self._conns.append(c)
-        await self._presence()
+        if c.walkie:
+            await self._presence()
+        if c.andon:
+            await self._andon_naya(c)
 
     async def drop(self, c: _Conn):
         async with self._lock:
             if c in self._conns:
                 self._conns.remove(c)
-            held = self._talking.pop(c.uid, None)
+            held = self._talking.pop(c.uid, None) if c.walkie else None
         if held:
             await self._release(c.uid, held, "disconnect")
-        await self._presence()
+        if c.walkie:
+            await self._presence()
 
     async def _presence(self):
         msg = json.dumps({"t": "presence", "online": sorted(self.online_ids())})
-        for c in list(self._conns):
+        # Phone ki service (native) "online" padhti hi nahi -- use bhejna
+        # matlab har kisi ke app kholne / band karne par har jeb me pade phone
+        # ko bina kaam jagana.  Sirf page wale socket ko.
+        for c in [x for x in self._conns if x.walkie and x.kind != "native"]:
             try:
                 await c.ws.send_text(msg)
             except Exception:
                 pass
+
+    # ── ANDON: nayi MAINTENANCE call isi socket par ──
+    # Pehle har khuli app khud har 2.5 sec `/api/andon/dashboard` poochti thi,
+    # aur band app ko kuch pata hi nahi chalta tha.  Ab server EK query har
+    # ANDON_CHAKKAR_S par chalata hai aur list badalte hi (nayi call, response
+    # aaya, call band) POORI list un sab socket ko bhej deta hai jinhone
+    # `andon=1` maanga.  Poori list isliye (sirf "nayi call" nahi) ki client
+    # ka hisaab wahi rahe jo polling me tha, aur beech ka koi message chhoot
+    # bhi jaye to agli list sab theek kar de.
+    def _andon_wale(self) -> list:
+        return [c for c in self._conns if c.andon]
+
+    def _andon_msg(self, c: _Conn) -> str:
+        # `ring` = is ID par ANDON ki ring baje?  Har phone ko uski apni -- isiliye
+        # message har socket ka alag banta hai.
+        return json.dumps({"t": "andon", "rows": self._andon_rows,
+                           "ring": c.uid not in (self._andon_band or set())})
+
+    async def _andon_naya(self, c: _Conn):
+        """Naya ANDON sunne wala: jo list pehle se hai wo turant, aur chakkar
+        chalu (pehla sunne wala ho to)."""
+        if self._andon_rows is not None:
+            try:
+                await c.ws.send_text(self._andon_msg(c))
+            except Exception:
+                pass
+        if self._andon_task is None or self._andon_task.done():
+            self._andon_task = asyncio.create_task(self._andon_chakkar())
+
+    async def _andon_chakkar(self):
+        galti = ""
+        try:
+            while self._andon_wale():
+                try:
+                    rows = await asyncio.to_thread(_andon_rows_db)
+                    band = await asyncio.to_thread(_andon_ring_band)
+                    galti = ""
+                except Exception as e:          # DB gaya -- agle chakkar me phir
+                    rows = band = None
+                    if str(e) != galti:         # ek hi galti baar-baar mat chhapo
+                        galti = str(e)
+                        print(f"[walkie] ANDON list nahi mili: {e}")
+                # List badli, ya admin ne kisi ki ring badli -- sabko taaza haal
+                # (app band pade phone par bhi badlaav turant lagta hai).
+                if rows is not None and (rows != self._andon_rows or band != self._andon_band):
+                    self._andon_rows, self._andon_band = rows, band
+                    for c in self._andon_wale():
+                        try:
+                            await c.ws.send_text(self._andon_msg(c))
+                        except Exception:
+                            pass
+                await asyncio.sleep(ANDON_CHAKKAR_S)
+        finally:
+            # Koi sunne wala nahi bacha -- agli baar naye sire se, taaki
+            # purani list kisi naye socket ko na chali jaye.
+            self._andon_rows = None
+            self._andon_band = None
+            self._andon_task = None
 
     # ── target -> kaun sunega ──
     def _targets(self, sender_uid: int, target: dict) -> list:
@@ -1316,8 +1513,11 @@ class _Hub:
 
         Apne aap ko bhi bhejte hain taaki bande ke doosre device (phone ki
         service + khula hua page) dono par wahi baat-cheet ek jaisi dikhe --
-        chahe usne notification se bheja ho ya page se."""
-        return self._targets(sender_uid, target) + self._rx_of(int(sender_uid))
+        chahe usne notification se bheja ho ya page se.
+        Apni hi phone ki SERVICE ko nakal nahi: wo apna message waise bhi
+        chhod deti hai (MERI_ID), bhejne se bas jeb me pada phone jaagta."""
+        return self._targets(sender_uid, target) + [
+            c for c in self._rx_of(int(sender_uid)) if c.kind != "native"]
 
     async def chat_push(self, payload: dict, sender_uid: int, target: dict):
         msg = json.dumps(payload)
@@ -1348,7 +1548,8 @@ class _Hub:
 
     async def _del_push(self, convo: str, ids: list):
         msg = json.dumps({"t": "chat_del", "convo": convo, "ids": ids})
-        for l in self._convo_ke_log(convo):
+        # Parde se hatana page ka kaam hai -- phone ki service ko nahi chahiye
+        for l in [x for x in self._convo_ke_log(convo) if x.kind != "native"]:
             try:
                 await l.ws.send_text(msg)
             except Exception:
@@ -1431,19 +1632,35 @@ def _user_from_token(token: str) -> Optional[dict]:
 async def walkie_ws(ws: WebSocket,
                     token: str = Query(""),
                     role: str = Query("rx"),
-                    kind: str = Query("web")):
+                    kind: str = Query("web"),
+                    andon: str = Query("0"),
+                    walkie: str = Query("1")):
+    global _PING_BATAYA
     user = _user_from_token(token)
     if not user:
         await ws.close(code=4401)                  # 4401 = humara "token galat"
         return
     _ensure_tables()
-    if user["id"] not in _enabled_ids():
+    # Walkie tabhi jab admin ne jodha ho (aur client ne walkie maanga ho).
+    # ANDON ki khabar walkie ke member hone par tiki NAHI -- phone ki service
+    # ab ANDON bhi isi socket se sunti hai, isliye member na ho to bhi
+    # `andon=1` wala socket "sirf ANDON" ban kar judta hai.
+    walkie_mila = walkie != "0" and user["id"] in _enabled_ids()
+    andon_mila = andon == "1" and not _andon_band(user)
+    if not walkie_mila and not andon_mila:
         await ws.close(code=4403)                  # 4403 = "admin ne jodha hi nahi"
         return
 
     role = "tx" if role == "tx" else "rx"
-    c = _Conn(ws, user["id"], _naam(user), role, kind)
+    c = _Conn(ws, user["id"], _naam(user), role, kind, walkie=walkie_mila, andon=andon_mila)
     await ws.accept()
+    if kind == "native":
+        # Jeb me pade phone ko server ka ping kam jagaye (upar NATIVE_PING_S)
+        ok = _lamba_ping(ws, NATIVE_PING_S, NATIVE_PING_TIMEOUT_S)
+        if not _PING_BATAYA:
+            _PING_BATAYA = True
+            print(f"[walkie] phone service ka server-ping: {NATIVE_PING_S:.0f}s" if ok
+                  else "[walkie] phone service ka server-ping badal nahi paya -- 20s hi")
     # `ready` SABSE PEHLA message hona chahiye -- usi me client ko apni id aur
     # naam milta hai.  Pehle `add()` karte the, par wo presence broadcast kar
     # deta hai aur wo broadcast is socket par bhi jaata hai -- yaani client ko
@@ -1452,8 +1669,13 @@ async def walkie_ws(ws: WebSocket,
         await ws.send_text(json.dumps({
             "t": "ready",
             "me": {"id": c.uid, "name": c.name},
-            "online": sorted(_hub.online_ids()),
+            "online": sorted(_hub.online_ids()) if c.walkie else [],
             "max_talk": MAX_TALK_SECONDS,
+            # Naya client inse jaanta hai ki server ANDON bhejega, aur walkie
+            # mila ya sirf ANDON.  (Purana server ye bhejta hi nahi -- tab
+            # client pehle jaisa khud poochta rehta hai.)
+            "walkie": c.walkie,
+            "andon": c.andon,
         }))
         await _hub.add(c)
         while True:
@@ -1461,7 +1683,8 @@ async def walkie_ws(ws: WebSocket,
             if m.get("type") == "websocket.disconnect":
                 break
             if m.get("bytes") is not None:
-                await _hub.relay(c, m["bytes"])
+                if c.walkie:
+                    await _hub.relay(c, m["bytes"])
                 continue
 
             txt = m.get("text")
@@ -1475,6 +1698,8 @@ async def walkie_ws(ws: WebSocket,
 
             if t == "ping":
                 await ws.send_text(json.dumps({"t": "pong"}))
+            elif not c.walkie:
+                continue            # sirf-ANDON socket: walkie ka koi kaam nahi
             elif t == "ptt_start":
                 if (d.get("target") or {}).get("type") == "channel" \
                         and not _can(user, "walkie-channel"):

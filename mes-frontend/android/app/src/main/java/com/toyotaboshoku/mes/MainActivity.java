@@ -246,6 +246,10 @@ public class MainActivity extends BridgeActivity {
            se dikh rahi hoti hai, aur do jagah ek hi cheez dikhana pareshan
            karta hai.  Buzz ki ring par iska koi asar NAHI. */
         WalkieService.APP_FOREGROUND = true;
+        /* ANDON ki ring baj rahi ho to band -- app saamne aate hi page ka popup
+           (beep + tharthari ke saath) wahi call dikhata hai; dono ek saath
+           bajte to shor hi hota. */
+        WalkieService.appSaamne();
         // Walkie ki notification se aaye ho to seedha us page par (neeche dekho)
         khaanKholo(getIntent());
     }

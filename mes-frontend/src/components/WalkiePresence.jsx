@@ -11,10 +11,11 @@
  * tha jab wo wahi page khole baitha ho, aur buzz ka pata bhi wahin chalta
  * tha.  Ab app khuli ho — koi bhi page ho — dono cheezein chalti hain.
  *
- * Jinhe admin ne joda hi nahi, unke liye ye kuch nahi karta — na socket, na
- * service, na koi parda, na permission ka sawaal.
+ * Jinhe admin ne joda hi nahi, unke liye walkie ka kuch nahi — na socket, na
+ * parda.  Par APP me background service ab ANDON bhi sunti hai (2026-09-19),
+ * isliye wo unke liye bhi chalti hai — "sirf ANDON" ban kar.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { walkieLink, walkieWsBase } from "../constants/walkieLink";
@@ -22,7 +23,7 @@ import { walkieNative } from "../constants/walkieNative";
 import { useServiceOn } from "../constants/clientServices";
 
 export default function WalkiePresence() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const nav = useNavigate();
   const [buzz, setBuzz] = useState(null);      // { ev, from:{id,name}, target }
   /* Chat ki ijazat USI roster wale jawab se aati hai jo neeche pehle se
@@ -42,59 +43,108 @@ export default function WalkiePresence() {
      Website par default BAND, app par CHALU (`constants/clientServices`). */
   const walkieOn = useServiceOn("walkie");
   const bgOn     = useServiceOn("walkie_background");
+  /* ANDON bhi ab isi background service se aata hai (app band ho tab bhi).
+     Admin ka "ANDON alert" switch + user ki ANDON ijazat -- AndonAlert.jsx
+     jaisa hi niyam: sirf saaf-saaf "none" band karta hai. */
+  const andonOn  = useServiceOn("andon_alert");
+  const andonSuno = andonOn && user?.permissions?.["andon-alert"] !== "none";
+
+  /* Service chal rahi hai aur WALKIE sun rahi hai? -- app peechhe jaane par
+     page ka socket band karne ke liye (neeche). */
+  const sevaWalkie = useRef(false);
 
   // ── socket + service, har page par ─────────────────────────────
   useEffect(() => {
     if (!token) { walkieLink.stop(); return undefined; }
-    if (!walkieOn) {
-      /* Walkie is device par BAND -- na socket, na online, na parda, na
-         aawaz.  App me background service bhi rok do, warna wo band app me
-         bhi sunti rehti. */
-      walkieLink.stop();
-      if (walkieNative.hai()) walkieNative.stop().catch(() => {});
-      return undefined;
-    }
     let ruk = false;
     let ghadi = null;
+    let phir = null;
 
-    (async () => {
-      // Jude hue hain ya nahi — ye poochhe bina socket kholna bekaar hai,
-      // server waise bhi 4403 de kar band kar dega.
+    const chalao = async () => {
+      /* Walkie par jude hue hain ya nahi -- ye poochhe bina socket kholna
+         bekaar hai, server mana kar deta.  Server na mile to KUCH mat
+         badlo (galat andaze par service ko "sirf ANDON" bana dena bura
+         hota) -- 15 sec baad phir poochho.  Pehle yahan dobara poochna tha
+         hi nahi: app khulte waqt Wi-Fi abhi jud raha ho to service kabhi
+         chalti hi nahi thi -- aur ab ANDON bhi usi par tika hai. */
       let mera = false;
-      try {
-        const r = await fetch("/api/walkie/roster", { headers: { Authorization: `Bearer ${token}` } });
-        if (r.ok) {
-          const me = (await r.json())?.me;
-          mera = !!me?.enabled;
-          if (!ruk) setCanChat(me?.can_chat !== false);
-        }
-      } catch { /* server band ho to chup rah jao — baaki app chalti rahe */ }
-      if (ruk || !mera) return;
+      if (walkieOn) {
+        let pata = false;
+        try {
+          const r = await fetch("/api/walkie/roster", { headers: { Authorization: `Bearer ${token}` } });
+          if (r.ok) {
+            const me = (await r.json())?.me;
+            mera = !!me?.enabled;
+            pata = true;
+            if (!ruk) setCanChat(me?.can_chat !== false);
+          }
+        } catch { /* server band ho to chup rah jao — baaki app chalti rahe */ }
+        if (!pata) { if (!ruk) phir = setTimeout(chalao, 15000); return; }
+      }
+      if (ruk) return;
 
-      walkieLink.start(token);
+      /* Walkie is device par BAND (admin ne) ya member nahi -- na socket, na
+         online, na parda, na aawaz. */
+      const walkieHai = walkieOn && mera;
+      if (walkieHai) walkieLink.start(token); else walkieLink.stop();
 
-      if (walkieNative.hai() && !bgOn) {
-        /* Background listening BAND (admin ne) -- service mat chalao (chal
-           rahi ho to rok do).  Tab app khuli ho tabhi page khud sunta aur
-           bajata hai; band app me kuch nahi (battery bachti hai). */
+      if (!walkieNative.hai()) return;           // website -- service hai hi nahi
+
+      /* TV board hamesha saamne khula rehta hai aur bijli par chalta hai --
+         wahan SIRF ANDON ke liye background service (aur uski notification
+         wali ijazat ka dialog board ke upar) nahi chahiye.  Page wahan
+         pehle jaisa khud poochta hai.  (Walkie ka member ho to service
+         pehle ki tarah chalti hai.) */
+      const tv = document.documentElement.classList.contains("in-app-tv");
+      if (!bgOn || (!walkieHai && !(andonSuno && !tv))) {
+        /* Background listening BAND (admin ne), ya sunne ko kuch nahi --
+           service mat chalao (chal rahi ho to rok do).  Tab app khuli ho
+           tabhi page khud sunta aur bajata hai; band app me kuch nahi. */
+        sevaWalkie.current = false;
         await walkieNative.stop().catch(() => {});
         if (!ruk) walkieLink.setPlayHere(true);
-      } else if (walkieNative.hai()) {
-        /* Phone par sunne ka kaam service ka hai — page ko bajane se rok do,
-           warna ek hi aawaz do baar aati hai.  Service kabhi mar jaye to
-           `running` false ho jaata hai aur page khud bajane lagta hai. */
-        const taaza = () => walkieNative.status()
-          .then((s) => { if (!ruk) walkieLink.setPlayHere(!s?.running); })
-          .catch(() => {});
-        await walkieNative.requestPerms().catch(() => {});
-        await walkieNative.start(walkieWsBase(), token).catch(() => {});
-        taaza();
-        ghadi = setInterval(taaza, 8000);
+        return;
       }
-    })();
+      /* Phone par sunne ka kaam service ka hai (walkie + ANDON) — page ko
+         bajane se rok do, warna ek hi aawaz do baar aati hai.  Service kabhi
+         mar jaye to `running` false ho jaata hai aur page khud bajane lagta
+         hai. */
+      const taaza = () => walkieNative.status()
+        .then((s) => {
+          if (ruk) return;
+          sevaWalkie.current = !!s?.running && walkieHai;
+          walkieLink.setPlayHere(!s?.running);
+        })
+        .catch(() => {});
+      await walkieNative.requestPerms().catch(() => {});
+      if (ruk) return;
+      await walkieNative.start(walkieWsBase(), token, { andon: andonSuno, walkie: walkieHai }).catch(() => {});
+      taaza();
+      ghadi = setInterval(taaza, 8000);
+    };
+    chalao();
 
-    return () => { ruk = true; if (ghadi) clearInterval(ghadi); };
-  }, [token, walkieOn, bgOn]);
+    return () => { ruk = true; if (ghadi) clearInterval(ghadi); if (phir) clearTimeout(phir); };
+  }, [token, walkieOn, bgOn, andonSuno]);
+
+  /* App PEECHHE gayi aur service walkie sun rahi hai -- page ka apna socket
+     band (wapas aate hi phir jud jaata hai).  Warna wo socket bhi har 20 sec
+     server ka ping aur har online/offline ka message khaata, aur jeb me pada
+     phone bina kaam jaagta -- service ka ping lamba karne ka faayda hi na
+     hota.  (User 2026-09-19: battery.)  Service na chal rahi ho to kuch
+     nahi badalta -- tab yahi socket akela sunne wala hai. */
+  useEffect(() => {
+    if (!token || !walkieNative.hai()) return undefined;
+    const badlo = () => {
+      if (document.visibilityState === "hidden") {
+        if (sevaWalkie.current) walkieLink.pause();
+      } else {
+        walkieLink.resume();
+      }
+    };
+    document.addEventListener("visibilitychange", badlo);
+    return () => document.removeEventListener("visibilitychange", badlo);
+  }, [token]);
 
   // ── buzz ka parda ──────────────────────────────────────────────
   useEffect(() => walkieLink.on((d) => {
