@@ -1,5 +1,5 @@
 {
-  "version": "1.4.98",
-  "notes": "BD History columns are in a new order: shift, zone, line, machine no, machine name, slip date, the problem reported by production, the problem observed by maintenance, action taken, the times, minutes taken, spares, attended by, problem related to and category first - everything else follows. The column names are unchanged and the Excel download follows the same order.",
-  "released_at": "2026-09-20T14:29:38"
+  "version": "1.4.99",
+  "notes": "On the phone, the manual Break Down Slip now starts with Zone, Line, Machine No. and Machine Name; everything after them is unchanged. The slip on a desktop, tablet or TV keeps its original three-column layout exactly as printed.",
+  "released_at": "2026-09-20T14:40:53"
 }
