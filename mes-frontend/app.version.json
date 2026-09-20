@@ -1,5 +1,5 @@
 {
-  "version": "1.4.91",
-  "notes": "Breakdown QPR: the breakdown table you open with View is now sorted by down time, longest first. A new CAPA column at the end gives every breakdown that reaches the CAPA limit its own View button, which opens that breakdown's CAPA directly - the filled one if it exists, otherwise a new CAPA with the machine, date and problem already in place.",
-  "released_at": "2026-09-20T11:45:36"
+  "version": "1.4.92",
+  "notes": "Serial numbers. The CAPA list now starts from the earliest date - number 1 is the oldest breakdown and the newest is at the bottom. The breakdown table under Breakdown QPR View gets a number column of its own; it stays sorted by down time with the longest first and is numbered 1, 2, 3 from the top.",
+  "released_at": "2026-09-20T12:00:51"
 }
