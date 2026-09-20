@@ -1,5 +1,5 @@
 {
-  "version": "1.4.88",
-  "notes": "CAPA access now follows Breakdown. In Users & Access, CAPA is listed under Breakdown along with BD History and Breakdown QPR, and anyone given Breakdown access gets CAPA with it. To keep one person out of CAPA, set their CAPA row to No Access.",
-  "released_at": "2026-09-20T10:50:50"
+  "version": "1.4.89",
+  "notes": "CAPA attachments: once you add a DMC check sheet, a PM check sheet or an OJT form, that button disappears from the list below, so you cannot add the same thing twice. Remove the attachment with the X and the button comes back. When all three are attached the whole add row is hidden.",
+  "released_at": "2026-09-20T11:05:11"
 }
