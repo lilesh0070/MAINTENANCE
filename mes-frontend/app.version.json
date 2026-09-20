@@ -1,5 +1,5 @@
 {
-  "version": "1.4.97",
-  "notes": "BD History: long entries are no longer cut off with dots. Problem, action taken and spares now wrap inside the same column width, so you can read the whole text. A new Excel button sits next to Print and PDF and downloads exactly the rows and columns you are looking at.",
-  "released_at": "2026-09-20T14:21:05"
+  "version": "1.4.98",
+  "notes": "BD History columns are in a new order: shift, zone, line, machine no, machine name, slip date, the problem reported by production, the problem observed by maintenance, action taken, the times, minutes taken, spares, attended by, problem related to and category first - everything else follows. The column names are unchanged and the Excel download follows the same order.",
+  "released_at": "2026-09-20T14:29:38"
 }
