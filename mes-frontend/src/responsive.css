@@ -910,6 +910,21 @@ body.in-app .bds-cell-label {
 body.in-app .bds-cell-input input,
 body.in-app .bds-cell-input select { min-height: 30px !important; padding: 5px 8px !important; }
 
+/* -- PHONE par header ka kram (user 2026-09-20) --------------------------
+   Upar 3 column -> 1 column ho jaate hain, to DOM ka kram hi upar-se-neeche
+   dikhta hai.  User ko pehle ZONE, LINE, MACHINE NO., MACHINE NAME chahiye;
+   baaki khaane uske baad WAISE KE WAISE.
+   Desktop / tablet / TV ka 3x3 -- jo kaagaz wali slip ki hoobahoo naqal hai --
+   bilkul nahi chhedte: JSX ka kram waisa hi hai, ye sirf `order` se dikhne ka
+   kram badalta hai aur sirf `body.in-app` (yaani phone) me lagta hai.
+   `[data-k]` sirf header wale grid ke khaano par hai, to neeche wala
+   time-wala grid apne aap bach jaata hai. */
+body.in-app .bds-grid-3 > .bds-cell[data-k]                { order: 5; }
+body.in-app .bds-grid-3 > .bds-cell[data-k="zone"]         { order: 1; }
+body.in-app .bds-grid-3 > .bds-cell[data-k="line"]         { order: 2; }
+body.in-app .bds-grid-3 > .bds-cell[data-k="machine_no"]   { order: 3; }
+body.in-app .bds-grid-3 > .bds-cell[data-k="machine_name"] { order: 4; }
+
 /* -- category ke do grid: tick wala column dono me barabar rakhna zaroori
       hai, warna heading aur row ki line aapas me nahi milti -- */
 body.in-app .bds-cat-head { grid-template-columns: 1fr 56px !important; }

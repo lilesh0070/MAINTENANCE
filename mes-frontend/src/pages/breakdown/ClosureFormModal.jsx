@@ -980,39 +980,39 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
               MACHINE NO. is a dropdown of that (zone, line)'s machines;
               picking one auto-fills MACHINE NAME.  (Serial No. removed.) */}
           <div className="bds-grid bds-grid-3">
-            <BdsCell label="ZONE"
+            <BdsCell label="ZONE" k="zone"
                      value={data.zone}             readOnly={!fieldEditable("zone")}
                      options={pickLine ? zoneOptions : undefined}
                      onChange={pickLine ? onPickZone : (v => set("zone", v))}/>
-            <BdsCell label="MACHINE NO."
+            <BdsCell label="MACHINE NO." k="machine_no"
                      value={data.machine_no}          readOnly={!fieldEditable("machine_no")}
                      options={machineRows.map(m => m.machine_no).filter(Boolean)}
                      onChange={onPickMachine}/>
-            <BdsCell label="DATE" type="date"
+            <BdsCell label="DATE" type="date" k="date"
                      value={data.date}             readOnly={!fieldEditable("date")}
                      onChange={v => set("date", v)}/>
 
-            <BdsCell label="LINE"
+            <BdsCell label="LINE" k="line"
                      value={data.line}             readOnly={!fieldEditable("line")}
                      options={pickLine ? lineOptions : undefined}
                      onChange={pickLine ? onPickLine : (v => set("line", v))}/>
-            <BdsCell label="SHIFT"
+            <BdsCell label="SHIFT" k="shift"
                      value={data.shift}            readOnly={!fieldEditable("shift")}
                      options={pickLine ? ["A", "B"] : undefined}
                      onChange={v => set("shift", v)}/>
-            <BdsCell label="LINE LEADER NAME"
+            <BdsCell label="LINE LEADER NAME" k="line_leader"
                      value={data.line_leader_name} readOnly={!fieldEditable("line_leader_name")}
                      onChange={v => setLL(v)}/>
 
-            <BdsCell label="MACHINE OPERATOR NAME"
+            <BdsCell label="MACHINE OPERATOR NAME" k="operator"
                      value={data.machine_operator_name} readOnly={!fieldEditable("machine_operator_name")}
                      onChange={v => set("machine_operator_name", v)}/>
             {/* wrap: lamba machine naam (jaise "E_Ring,Lighter protector Assy
                 & Pop Gun Riveter") input me kat jaata tha — ab poora dikhta hai */}
-            <BdsCell label="MACHINE NAME" wrap
+            <BdsCell label="MACHINE NAME" wrap k="machine_name"
                      value={data.machine_name}        readOnly
                      onChange={() => {}}/>
-            <BdsCell label="MODEL NO."
+            <BdsCell label="MODEL NO." k="model_no"
                      value={data.model_no}            readOnly={!fieldEditable("model_no")}
                      onChange={v => set("model_no", v)}/>
           </div>
@@ -1611,14 +1611,18 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
 }
 
 /* ── Single label+input cell (for the 3×3 header & time grids) ──── */
-function BdsCell({ label, value, type = "text", readOnly, onChange, options, min, wrap }) {
+function BdsCell({ label, value, type = "text", readOnly, onChange, options, min, wrap, k }) {
+  // `k` = is khaane ki pehchaan (data-k).  Sirf CSS ke liye: PHONE par slip
+  // ka header ek column me girta hai aur wahan kram badalna hota hai
+  // (responsive.css).  Desktop ka 3x3 -- kaagaz wali slip ki naqal -- isse
+  // bilkul nahi badalta.
   // Jahan LETTER type hote hain wahan sab kuch BADE AKSHAR me — slip ek
   // official document hai, isliye ek jaisa dikhna chahiye.  Date / time /
   // number par nahi lagate (unme akshar hote hi nahi, aur `toUpperCase`
   // browser ke date-picker ki value bigaad sakta hai).
   const up = (v) => (type === "text" && typeof v === "string" ? v.toUpperCase() : v);
   return (
-    <div className="bds-cell">
+    <div className="bds-cell" data-k={k}>
       <div className="bds-cell-label">{label} :-</div>
       <div className="bds-cell-input">
         {/* KHALI list par dropdown mat banao.  Ek khali array bhi JS me "truthy"
