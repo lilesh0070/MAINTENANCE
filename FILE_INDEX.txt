@@ -200,6 +200,7 @@ main.py                             1139  Platform — FastAPI Backend Toyota Bo
 ========================================================================================================
 check_deps.py                        133  requirements.txt ki koi library install hone se reh gayi ho to shuru me hi uska naam le kar chetavni deta hai.  [padh kar likha]
 schema_guard.py                      185  schema_guard.py — DB ke dhanche ka pehra.
+doctor.pyw                           655  doctor.pyw — site ka "daaktar": double-click karo, window khulti hai aur batati hai kahan dikkat hai (backend / DB / schema / har GET API ka samay+row / log / version).  Sirf PADHTA hai.
 
 ========================================================================================================
   BACKEND -- Scripts   (2 files)

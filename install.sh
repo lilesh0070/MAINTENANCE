@@ -53,6 +53,21 @@ if ! ./.venv/bin/python -c "import fastapi, uvicorn, pydantic, psycopg2, jose, p
 fi
 echo "  Backend imports OK."
 
+# tkinter Ubuntu par alag package hai (Windows ke Python me saath hi aata hai).
+# Iske bina `Phase2/tools/doctor.pyw` ki window nahi khulti -- wo text me chhap
+# jaata hai, phir bhi kaam karta hai.  Isliye ye rok NAHI, sirf salah:
+if ! ./.venv/bin/python -c "import tkinter" >/dev/null 2>&1; then
+  echo "  [NOTE] tkinter nahi hai — doctor.pyw ki WINDOW nahi khulegi"
+  echo "         (text me phir bhi chalega).  Window chahiye to:"
+  echo "           sudo apt install -y python3-tk"
+else
+  echo "  tkinter OK (doctor.pyw ki window khul jayegi)."
+fi
+
+# doctor.pyw right-click -> "Run as a Program" se chale, iske liye chalne ki
+# ijazat chahiye.  Ek baar yahin de dete hain.
+chmod +x Phase2/tools/doctor.pyw 2>/dev/null || true
+
 # ----------------------- FRONTEND ----------------------
 echo "[2/2] Frontend (mes-frontend) — npm"
 cd ../mes-frontend
