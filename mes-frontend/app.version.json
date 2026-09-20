@@ -1,5 +1,5 @@
 {
-  "version": "1.4.92",
-  "notes": "Serial numbers. The CAPA list now starts from the earliest date - number 1 is the oldest breakdown and the newest is at the bottom. The breakdown table under Breakdown QPR View gets a number column of its own; it stays sorted by down time with the longest first and is numbered 1, 2, 3 from the top.",
-  "released_at": "2026-09-20T12:00:51"
+  "version": "1.4.93",
+  "notes": "Blank QPR: the machine details now come from the machine master. Pick a Zone, then its Line, then its Machine No from drop-downs, and the Machine Name fills in by itself. A CAPA opened from a breakdown is untouched - those four fields still come from the slip and stay as they were.",
+  "released_at": "2026-09-20T12:20:56"
 }
