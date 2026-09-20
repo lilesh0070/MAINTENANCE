@@ -1,5 +1,5 @@
 {
-  "version": "1.4.89",
-  "notes": "CAPA attachments: once you add a DMC check sheet, a PM check sheet or an OJT form, that button disappears from the list below, so you cannot add the same thing twice. Remove the attachment with the X and the button comes back. When all three are attached the whole add row is hidden.",
-  "released_at": "2026-09-20T11:05:11"
+  "version": "1.4.90",
+  "notes": "CAPA now respects Read-only access. If your CAPA permission is set to Read-only you can open and print any CAPA and view its attached check sheets, but the form is locked and there is no Save, Close, Blank QPR or attachment button - the screen shows a View only tag instead. Full CRUD users are unaffected.",
+  "released_at": "2026-09-20T11:15:53"
 }
