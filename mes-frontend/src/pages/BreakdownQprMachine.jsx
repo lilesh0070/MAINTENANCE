@@ -114,11 +114,15 @@ export default function BreakdownQprMachine() {
      par poori utarti hain. */
   const [sheets, setSheets] = useState([]);
   const [tick, setTick] = useState({});        // { id: busy } -- abhi save ho rahi
+  const [master, setMaster] = useState([]);    // machine master -- picker ke liye
   useEffect(() => {
     if (!token) return;
     api.get("/api/capa-lb/sheets", token)
       .then((d) => setSheets(Array.isArray(d?.rows) ? d.rows : []))
       .catch(() => setSheets([]));
+    api.get("/api/machines/", token)
+      .then((d) => setMaster(Array.isArray(d) ? d : []))
+      .catch(() => setMaster([]));
   }, [token]);
   // CAPA ka khaana sirf usko jisko CAPA ki ijazat hai
   const capaDikhe = canAccess("maintenance-capa");
@@ -155,31 +159,61 @@ export default function BreakdownQprMachine() {
   }, [got.rows, f, machine, hadd]);
   const kulMin = rows.reduce((s, r) => s + (Number(r.solve_time_min) || 0), 0);
 
-  /* Is filter par kaunsi Blank QPR banti hain: breakdown se na juddi ho, aur
-     uski QPR DATE (na ho to jab bani) isi samay ki khidki me ho, aur zone /
-     line / machine (jo filter lagaye hon) miley.  Jo tick hain wo upar. */
-  const blankSab = useMemo(() => {
-    const din = (s) => String(s?.qpr_date || s?.created_at || "").slice(0, 10);
-    const maane = (a, b) => !a || String(a).trim() === String(b || "").trim();
-    return sheets
-      .filter((s) => s.breakdown_id == null)
-      .filter((s) => {
-        const d = din(s);
-        if (!d) return false;
-        if (win.from && d < win.from) return false;
-        if (win.to && d > win.to) return false;
-        if (f.date && d !== f.date) return false;
-        return maane(f.zone, s.zone) && maane(f.line, s.line) && maane(machine, s.machine_no);
-      })
-      .sort((a, b) => (b.in_qpr ? 1 : 0) - (a.in_qpr ? 1 : 0)
-        || String(din(a)).localeCompare(String(din(b))) || a.id - b.id);
-  }, [sheets, win.from, win.to, f.date, f.zone, f.line, machine]);
-  const blankLage = blankSab.filter((s) => s.in_qpr).length;
+  /* ── BLANK QPR ka chunaav ──────────────────────────────────────────
+     MAHINA page se hi aata hai (upar ka FY / Month / Date -- wahi jisse
+     breakdown aaye hain); us mahine ki SAARI blank QPR ek saath nahi
+     dikhate.  User patti ke andar Zone -> Line -> Machine No chunta hai,
+     aur SIRF usi ki blank QPR saamne aati hai -- phir "+ Add" se report me
+     judti hai (user 2026-09-20).  Page par zone / line / machine pehle se
+     chuni ho to picker wahi dikhata hai aur badla nahi ja sakta, warna
+     joda hua saamaan is report me dikhta hi nahi. */
+  const blankDin = (s) => String(s?.qpr_date || s?.created_at || "").slice(0, 10);
+  // Is MAHINE ki saari blank QPR (zone / line / machine ka koi hisaab nahi)
+  const blankMahina = useMemo(() => sheets
+    .filter((s) => s.breakdown_id == null)
+    .filter((s) => {
+      const d = blankDin(s);
+      if (!d) return false;
+      if (win.from && d < win.from) return false;
+      if (win.to && d > win.to) return false;
+      if (f.date && d !== f.date) return false;
+      return true;
+    }), [sheets, win.from, win.to, f.date]);
 
-  /* Tick lagao / hatao -- turant dikhe, server se jawab aane par pakka. */
-  const tickKaro = async (s) => {
+  // Picker -- page ne jo pehle se chuna hai wo pakka, baaki user chunta hai
+  const [pZone, setPZone] = useState("");
+  const [pLine, setPLine] = useState("");
+  const [pMc, setPMc] = useState("");
+  useEffect(() => { setPZone(f.zone || ""); setPLine(f.line || ""); setPMc(machine || ""); },
+    [f.zone, f.line, machine]);
+  const uniqSort = (a) => [...new Set(a.filter(Boolean))].sort();
+  const pZones = useMemo(() => uniqSort(master.map((m) => m.zone_name)), [master]);
+  const pLines = useMemo(() => uniqSort(master.filter((m) => m.zone_name === pZone)
+    .map((m) => m.line_name)), [master, pZone]);
+  const pMcs = useMemo(() => uniqSort(master
+    .filter((m) => m.zone_name === pZone && m.line_name === pLine)
+    .map((m) => m.machine_no)), [master, pZone, pLine]);
+
+  const maane = (a, b) => !a || String(a).trim() === String(b || "").trim();
+  // Jo is report me JUD chuki hain (page ke zone / line / machine par)
+  const blankLagi = useMemo(() => blankMahina
+    .filter((s) => s.in_qpr)
+    .filter((s) => maane(f.zone, s.zone) && maane(f.line, s.line) && maane(machine, s.machine_no))
+    .sort((a, b) => String(blankDin(a)).localeCompare(String(blankDin(b))) || a.id - b.id),
+    [blankMahina, f.zone, f.line, machine]);
+  // Picker se jo mili -- aur abhi juddi nahi
+  const blankMili = useMemo(() => {
+    if (!pZone || !pLine || !pMc) return [];      // teeno chune bina kuch nahi
+    return blankMahina
+      .filter((s) => !s.in_qpr)
+      .filter((s) => maane(pZone, s.zone) && maane(pLine, s.line) && maane(pMc, s.machine_no))
+      .sort((a, b) => String(blankDin(a)).localeCompare(String(blankDin(b))) || a.id - b.id);
+  }, [blankMahina, pZone, pLine, pMc]);
+  const blankLage = blankLagi.length;
+
+  /* Report me jodo / hatao -- turant dikhe, server se jawab aane par pakka. */
+  const tickKaro = async (s, naya = !s.in_qpr) => {
     if (tick[s.id]) return;
-    const naya = !s.in_qpr;
     setTick((t) => ({ ...t, [s.id]: true }));
     setSheets((old) => old.map((x) => (x.id === s.id ? { ...x, in_qpr: naya } : x)));
     try {
@@ -255,6 +289,26 @@ export default function BreakdownQprMachine() {
                           letter-spacing:.04em; color:#0f172a; }
         .bqm-blank-hd span { font-size:11.5px; color:#64748b; font-weight:600; }
         .bqm-blank-how { display:block; margin-top:6px; font-size:12px; color:#94a3b8; font-weight:600; }
+        /* machine chunne wala hissa -- judi hui list ke NEECHE */
+        .bqm-pick { border-top:1px solid #cbd5e1; background:#f8fafc; padding:12px; }
+        .bqm-pick-t { font-size:12px; font-weight:800; color:#0f172a; text-transform:uppercase;
+                      letter-spacing:.04em; margin-bottom:9px; }
+        .bqm-pick-row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:10px; }
+        .bqm-pick-row label { display:flex; flex-direction:column; gap:4px; font-size:10.5px;
+                              font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:#64748b; }
+        .bqm-pick-row select { border:1.5px solid #cbd5e1; border-radius:9px; padding:8px 11px;
+                               font-size:13px; font-weight:600; color:#0f172a; background:#fff;
+                               font-family:'Barlow',sans-serif; min-width:150px; outline:none; }
+        .bqm-pick-row select:disabled { background:#f1f5f9; color:#94a3b8; }
+        .bqm-pick-msg { font-size:12.5px; color:#475569; font-weight:600; }
+        .bqm-add { border:1px solid #15803d; background:#16a34a; color:#fff; border-radius:8px;
+                   padding:5px 14px; font-size:12px; font-weight:800; cursor:pointer;
+                   font-family:'Barlow',sans-serif; white-space:nowrap; }
+        .bqm-add:disabled { background:#86efac; border-color:#86efac; cursor:default; }
+        .bqm-del { border:1px solid #fecaca; background:#fff; color:#b91c1c; border-radius:8px;
+                   padding:4px 10px; font-size:12px; font-weight:800; cursor:pointer;
+                   font-family:'Barlow',sans-serif; }
+        .bqm-del:hover { background:#fef2f2; }
         .bqm-btable th.tick, .bqm-btable td.tick { width:44px; vertical-align:middle; }
         .bqm-btable td.tick input { width:16px; height:16px; cursor:pointer; }
         .bqm-btable tr.off td { color:#94a3b8; }
@@ -263,7 +317,7 @@ export default function BreakdownQprMachine() {
            aur ek bhi tick na ho to poori patti hi nahi. */
         @media print { .bqm-blank-hd span, .bqm-btable th.tick, .bqm-btable td.tick { display:none; }
                        .bqm-btable tr.off { display:none; }
-                       .bqm-blank.khaali { display:none; } }
+                       .bqm-blank.khaali, .bqm-pick { display:none; } }
       `}</style>
 
       <div className="bh-root">
@@ -336,71 +390,132 @@ export default function BreakdownQprMachine() {
             )}
 
             {/* ── BLANK QPR ──────────────────────────────────────────────
-                Jo QPR bina breakdown ke bhari gayi ("+ Blank QPR"), wo is
-                report me apne aap nahi aa sakti -- user KHUD tick karta hai.
-                Yahan sirf wahi dikhti hain jo is samay / zone / line /
-                machine par poori utarti hain.  Upar wali ginti aur Pareto ye
-                nahi badalti -- wo slip ke hisaab se hi rehti hai.
-                Kaagaz par sirf TICK ki hui jaati hain. */}
+                Jo QPR bina breakdown ke bhari gayi ("+ Blank QPR") wo is
+                report me apne aap nahi aa sakti.  MAHINA upar ke filter se hi
+                aata hai (wahi jisse breakdown aaye); us mahine ki SAARI blank
+                QPR ek saath nahi dikhate -- user yahin Zone → Line → Machine
+                No chunta hai aur usi ki QPR saamne aati hai, phir "+ Add"
+                (user 2026-09-20).  Upar ki ginti / Pareto ye NAHI badalti.
+                Kaagaz par sirf judi hui jaati hain. */}
             {capaDikhe && (
               <div className={`bqm-blank${blankLage ? "" : " khaali"}`}>
                 <div className="bqm-blank-hd">
                   <b>BLANK QPR</b>
-                  <span>Filled without a breakdown slip — tick the ones that belong to this report
-                    ({blankLage} of {blankSab.length} added). The count and Pareto above do not change.</span>
+                  <span>Filled without a breakdown slip — {blankLage} added to this report
+                    ({kabLabel(f)}). The count and Pareto above do not change.</span>
                 </div>
-                {/* Ek bhi na mile to bhi patti dikhti hai -- warna user ko pata
-                    hi nahi chalta ki ye jagah hai kahan (user 2026-09-20). */}
-                {blankSab.length === 0 ? (
-                  <div className="bqm-empty" style={{ padding: "26px 16px" }}>
-                    No blank QPR for this period{f.zone ? ` in ${[f.zone, f.line].filter(Boolean).join(" / ")}` : ""}
-                    {machine ? ` on ${machine}` : ""}.
-                    <span className="bqm-blank-how"> Fill one from Breakdown → CAPA → “+ Blank QPR”, then it shows up here to tick.</span>
+
+                {/* jo jud chuki hain */}
+                {blankLagi.length === 0 ? (
+                  <div className="bqm-empty" style={{ padding: "18px 16px" }}>
+                    Nothing added yet — pick a machine below.
                   </div>
                 ) : (
-                <div className="bqm-scroll">
-                  <table className="bqm-table bqm-btable">
-                    <thead><tr>
-                      <th className="sno">#</th>
-                      <th className="tick">Add</th>
-                      <th>QPR Date</th>
-                      <th>Zone</th>
-                      <th>Line</th>
-                      <th>machine_no</th>
-                      <th>Machine Name</th>
-                      <th className="txt">Problem / Title</th>
-                      <th>Status</th>
-                      <th className="capa">CAPA</th>
-                    </tr></thead>
-                    <tbody>
-                      {blankSab.map((s2, i) => (
-                        <tr key={s2.id} className={s2.in_qpr ? "on" : "off"}>
-                          <td className="sno">{i + 1}</td>
-                          <td className="tick">
-                            <input type="checkbox" checked={!!s2.in_qpr} disabled={!!tick[s2.id]}
-                                   onChange={() => tickKaro(s2)}
-                                   title={s2.in_qpr ? "Remove from this report" : "Add to this report"} />
-                          </td>
-                          <td>{khali(String(s2.qpr_date || s2.created_at || "").slice(0, 10))}</td>
-                          <td>{khali(s2.zone)}</td>
-                          <td>{khali(s2.line)}</td>
-                          <td className="mc">{khali(s2.machine_no)}</td>
-                          <td>{khali(s2.machine_name)}</td>
-                          <td className="txt">{khali(s2.title)}</td>
-                          <td>{khali(s2.status)}</td>
-                          <td className="capa">
-                            <button type="button" className="bqm-capa"
-                                    title="Open this QPR"
-                                    onClick={() => nav(`/maintenance-capa?sheet=${s2.id}`)}>
-                              View
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                  <div className="bqm-scroll">
+                    <table className="bqm-table bqm-btable">
+                      <thead><tr>
+                        <th className="sno">#</th>
+                        <th>QPR Date</th>
+                        <th>Zone</th>
+                        <th>Line</th>
+                        <th>machine_no</th>
+                        <th>Machine Name</th>
+                        <th className="txt">Problem / Title</th>
+                        <th>Status</th>
+                        <th className="capa">CAPA</th>
+                        <th className="tick">Remove</th>
+                      </tr></thead>
+                      <tbody>
+                        {blankLagi.map((s2, i) => (
+                          <tr key={s2.id} className="on">
+                            <td className="sno">{i + 1}</td>
+                            <td>{khali(blankDin(s2))}</td>
+                            <td>{khali(s2.zone)}</td>
+                            <td>{khali(s2.line)}</td>
+                            <td className="mc">{khali(s2.machine_no)}</td>
+                            <td>{khali(s2.machine_name)}</td>
+                            <td className="txt">{khali(s2.title)}</td>
+                            <td>{khali(s2.status)}</td>
+                            <td className="capa">
+                              <button type="button" className="bqm-capa" title="Open this QPR"
+                                      onClick={() => nav(`/maintenance-capa?sheet=${s2.id}`)}>View</button>
+                            </td>
+                            <td className="tick">
+                              <button type="button" className="bqm-del" disabled={!!tick[s2.id]}
+                                      title="Remove from this report"
+                                      onClick={() => tickKaro(s2, false)}>✕</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
+
+                {/* jodne ka raasta -- mahina upar se, machine yahin se */}
+                <div className="bqm-pick">
+                  <div className="bqm-pick-t">Add a blank QPR of {kabLabel(f)}</div>
+                  <div className="bqm-pick-row">
+                    <label>Zone
+                      <select value={pZone} disabled={!!f.zone}
+                              onChange={(e) => { setPZone(e.target.value); setPLine(""); setPMc(""); }}>
+                        <option value="">Select…</option>
+                        {pZones.map((z) => <option key={z} value={z}>{z}</option>)}
+                      </select>
+                    </label>
+                    <label>Line
+                      <select value={pLine} disabled={!!f.line || !pZone}
+                              onChange={(e) => { setPLine(e.target.value); setPMc(""); }}>
+                        <option value="">Select…</option>
+                        {pLines.map((l) => <option key={l} value={l}>{l}</option>)}
+                      </select>
+                    </label>
+                    <label>Machine No
+                      <select value={pMc} disabled={!!machine || !pLine}
+                              onChange={(e) => setPMc(e.target.value)}>
+                        <option value="">Select…</option>
+                        {pMcs.map((m) => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                  {!(pZone && pLine && pMc) ? (
+                    <div className="bqm-pick-msg">Pick Zone, Line and Machine No to see its blank QPR.</div>
+                  ) : blankMili.length === 0 ? (
+                    <div className="bqm-pick-msg">
+                      No blank QPR filled for <b>{pMc}</b> in {kabLabel(f)} (or it is already added).
+                      <span className="bqm-blank-how">Fill one from Breakdown → CAPA → “+ Blank QPR”.</span>
+                    </div>
+                  ) : (
+                    <div className="bqm-scroll">
+                      <table className="bqm-table bqm-btable">
+                        <thead><tr>
+                          <th>QPR Date</th>
+                          <th className="txt">Problem / Title</th>
+                          <th>Status</th>
+                          <th className="capa">CAPA</th>
+                          <th className="tick">Add</th>
+                        </tr></thead>
+                        <tbody>
+                          {blankMili.map((s2) => (
+                            <tr key={s2.id} className="off">
+                              <td>{khali(blankDin(s2))}</td>
+                              <td className="txt">{khali(s2.title)}</td>
+                              <td>{khali(s2.status)}</td>
+                              <td className="capa">
+                                <button type="button" className="bqm-capa" title="Open this QPR"
+                                        onClick={() => nav(`/maintenance-capa?sheet=${s2.id}`)}>View</button>
+                              </td>
+                              <td className="tick">
+                                <button type="button" className="bqm-add" disabled={!!tick[s2.id]}
+                                        onClick={() => tickKaro(s2, true)}>+ Add</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
