@@ -53,20 +53,35 @@ if ! ./.venv/bin/python -c "import fastapi, uvicorn, pydantic, psycopg2, jose, p
 fi
 echo "  Backend imports OK."
 
-# tkinter Ubuntu par alag package hai (Windows ke Python me saath hi aata hai).
-# Iske bina `Phase2/tools/doctor.pyw` ki window nahi khulti -- wo text me chhap
-# jaata hai, phir bhi kaam karta hai.  Isliye ye rok NAHI, sirf salah:
-if ! ./.venv/bin/python -c "import tkinter" >/dev/null 2>&1; then
-  echo "  [NOTE] tkinter nahi hai — doctor.pyw ki WINDOW nahi khulegi"
-  echo "         (text me phir bhi chalega).  Window chahiye to:"
-  echo "           sudo apt install -y python3-tk"
+# tkinter (doctor.pyw ki WINDOW) — ye pip ka package hai hi NAHI, isliye
+# requirements.txt me nahi daala ja sakta.  Python ke saath aata hai, par
+# Ubuntu use alag `python3-tk` (apt) me rakhta hai.  Yahin laga dete hain,
+# taaki `git pull && ./install.sh` ke baad aur kuch na karna pade.
+# Na lag paye to ROKTE NAHI — doctor.pyw text me phir bhi chalta hai.
+echo "  Checking tkinter (doctor.pyw ki window)..."
+if ./.venv/bin/python -c "import tkinter" >/dev/null 2>&1; then
+  echo "  tkinter OK — doctor.pyw ki window khulegi."
 else
-  echo "  tkinter OK (doctor.pyw ki window khul jayegi)."
+  SUDO=""
+  if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
+  if command -v apt-get >/dev/null 2>&1; then
+    echo "  tkinter nahi hai — python3-tk laga rahe hain (sudo maang sakta hai)..."
+    $SUDO apt-get install -y python3-tk >/dev/null 2>&1 || {
+      $SUDO apt-get update -y >/dev/null 2>&1 || true
+      $SUDO apt-get install -y python3-tk >/dev/null 2>&1 || true
+    }
+  fi
+  if ./.venv/bin/python -c "import tkinter" >/dev/null 2>&1; then
+    echo "  tkinter lag gaya — doctor.pyw ki window khulegi."
+  else
+    echo "  [NOTE] tkinter nahi lag paya.  doctor.pyw phir bhi TEXT me chalta hai."
+    echo "         Window chahiye to khud:  sudo apt install -y python3-tk"
+  fi
 fi
 
 # doctor.pyw right-click -> "Run as a Program" se chale, iske liye chalne ki
-# ijazat chahiye.  Ek baar yahin de dete hain.
-chmod +x Phase2/tools/doctor.pyw 2>/dev/null || true
+# ijazat chahiye.  (Yahan hum Phase2 ke ANDAR hain -- raasta usi hisaab se.)
+chmod +x tools/doctor.pyw 2>/dev/null || true
 
 # ----------------------- FRONTEND ----------------------
 echo "[2/2] Frontend (mes-frontend) — npm"
