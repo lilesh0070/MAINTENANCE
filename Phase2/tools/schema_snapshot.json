@@ -1,5 +1,5 @@
 {
- "columns": 788,
+ "columns": 789,
  "db": "maintenance_db",
  "schema": {
   "andon_call_output": {
@@ -1912,6 +1912,12 @@
     "nullable": false,
     "pos": 1,
     "type": "integer"
+   },
+   "in_qpr": {
+    "default": "false",
+    "nullable": false,
+    "pos": 14,
+    "type": "boolean"
    },
    "line": {
     "default": null,
@@ -4864,5 +4870,5 @@
   }
  },
  "tables": 66,
- "taken_at": "2026-09-20T10:24:19"
+ "taken_at": "2026-09-20T12:43:36"
 }

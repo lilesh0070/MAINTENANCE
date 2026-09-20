@@ -32,6 +32,7 @@ POST /start/{bd_id}    Open (or resume) the CAPA-QPR for a breakdown → {qpr_id
 GET  /min-config       {min_down_time_min, months:{'YYYY-MM': n}, updated_at}
 PUT  /min-config       admin — set the default, or one month's own limit
 DEL  /min-config/{m}   admin — drop that month's limit (back to the default)
+PUT  /sheet/{id}/in-qpr  tick a BLANK QPR into the Breakdown-QPR report
 """
 import json
 import re
@@ -342,6 +343,8 @@ def start_capa(bd_id: int, user=Depends(get_current_user)):
 _QPR_NO_KEY  = "f_4_13"    # M4  — QPR No.
 _TITLE_KEY   = "f_16_3"    # C16 — Reported Problem
 _MC_KEY      = "f_mno"     # MACHINE_NO value (machine section cell)
+_ZONE_KEY    = "f_zone"    # ZONE value
+_LINE_KEY    = "f_line"    # LINE value
 
 _CAPA_DDL = False
 
@@ -370,6 +373,13 @@ def _ensure_capa_sheet():
         """)
         # link a saved QPR sheet back to the ≥60-min breakdown it belongs to
         cur.execute("ALTER TABLE maintenance_capa_sheet ADD COLUMN IF NOT EXISTS breakdown_id INTEGER")
+        # Blank QPR (jiska koi breakdown nahi) ko Breakdown-QPR ki report me
+        # dikhana hai ya nahi -- user KHUD tick karta hai (2026-09-20).  Nishaan
+        # sheet ke saath hi rehta hai, isliye jis bhi month / zone / line /
+        # machine ke filter se wo milti hai, wahan dikh jaati hai -- aur sabko
+        # ek jaisi dikhti hai.
+        cur.execute("ALTER TABLE maintenance_capa_sheet "
+                    "ADD COLUMN IF NOT EXISTS in_qpr BOOLEAN NOT NULL DEFAULT FALSE")
         conn.commit()
     _CAPA_DDL = True
 
@@ -433,7 +443,16 @@ def list_capa_sheets(user=Depends(get_current_user)):
     _ensure_capa_sheet()
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("""SELECT id, qpr_no, machine_no, zone, line, title, status,
+        # `qpr_date` = sheet me bhari hui QPR DATE (grid ka `f_2_13`) -- Breakdown
+        # QPR ki report isi se mahina milati hai; na bhari ho to created_at.
+        cur.execute("""SELECT id, qpr_no, machine_no, title, status,
+                              breakdown_id, COALESCE(in_qpr, FALSE) AS in_qpr,
+                              NULLIF(data->>'f_2_13', '')                 AS qpr_date,
+                              NULLIF(data->>'f_mname', '')                AS machine_name,
+                              -- purani sheet me ye khaane khaali reh gaye the:
+                              -- tab form ke blob se le lo
+                              COALESCE(NULLIF(zone,''), data->>'f_zone')  AS zone,
+                              COALESCE(NULLIF(line,''), data->>'f_line')  AS line,
                               created_by, created_at, updated_by, updated_at
                          FROM maintenance_capa_sheet
                         ORDER BY updated_at DESC NULLS LAST, id DESC LIMIT 500""")
@@ -443,6 +462,35 @@ def list_capa_sheets(user=Depends(get_current_user)):
             if r.get(k):
                 r[k] = r[k].isoformat()
     return {"rows": rows}
+
+
+class InQprIn(BaseModel):
+    in_qpr: bool
+
+
+@router.put("/sheet/{sid}/in-qpr")
+def set_in_qpr(sid: int, body: InQprIn, user=Depends(get_current_user)):
+    """Blank QPR ko Breakdown-QPR ki report me dikhana hai ya nahi -- tick /
+    untick.  SIRF blank QPR par (jiska koi breakdown nahi); breakdown wali CAPA
+    to apne aap us report me aati hi hai."""
+    _ensure_capa_sheet()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("SELECT breakdown_id FROM maintenance_capa_sheet WHERE id=%s", (sid,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "No such QPR sheet")
+        if row["breakdown_id"] is not None:
+            raise HTTPException(400, "Only a blank QPR can be added to the report")
+        # `updated_by` / `updated_at` ko haath NAHI lagate -- Historical me wahi
+        # "closed by / closed at" ban kar dikhte hain; tick lagane se wo badalna
+        # galat hoga.
+        cur.execute("""UPDATE maintenance_capa_sheet SET in_qpr = %s WHERE id = %s
+                    RETURNING id, COALESCE(in_qpr, FALSE) AS in_qpr""",
+                    (bool(body.in_qpr), sid))
+        out = cur.fetchone()
+        conn.commit()
+        return out
 
 
 @router.get("/sheet/{sid}")
@@ -470,6 +518,10 @@ def save_capa_sheet(body: CapaSheet, user=Depends(get_current_user)):
     d = body.data or {}
     qpr_no = (body.qpr_no or str(d.get(_QPR_NO_KEY) or "")).strip()
     machine = (body.machine_no or str(d.get(_MC_KEY) or "")).strip()
+    # Zone / Line bhi form ke khaano se -- Blank QPR ke saath koi breakdown nahi
+    # hota, isliye inhe wahan se le lena hi ekmatra raasta hai (2026-09-20).
+    zone = (body.zone or str(d.get(_ZONE_KEY) or "")).strip()
+    line = (body.line or str(d.get(_LINE_KEY) or "")).strip()
     title = (body.title or str(d.get(_TITLE_KEY) or "")).strip()
     status = (body.status or "DRAFT").strip() or "DRAFT"
     who = _author(user)
@@ -480,7 +532,7 @@ def save_capa_sheet(body: CapaSheet, user=Depends(get_current_user)):
                               SET data=%s::jsonb, qpr_no=%s, machine_no=%s, zone=%s, line=%s,
                                   title=%s, status=%s, updated_by=%s, updated_at=NOW()
                             WHERE id=%s RETURNING id""",
-                        (json.dumps(d), qpr_no, machine, body.zone or "", body.line or "",
+                        (json.dumps(d), qpr_no, machine, zone, line,
                          title, status, who, body.id))
             row = cur.fetchone()
             if not row:
@@ -491,7 +543,7 @@ def save_capa_sheet(body: CapaSheet, user=Depends(get_current_user)):
                               (qpr_no, machine_no, zone, line, title, status, data,
                                breakdown_id, created_by, updated_by)
                             VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s) RETURNING id""",
-                        (qpr_no, machine, body.zone or "", body.line or "", title, status,
+                        (qpr_no, machine, zone, line, title, status,
                          json.dumps(d), body.breakdown_id, who, who))
             sid = cur.fetchone()[0]
         conn.commit()

@@ -25,6 +25,14 @@
  * (`/maintenance-capa?bd=<id>`), list se hokar nahi.  Khaana sirf usko
  * dikhta hai jiske paas `maintenance-capa` ki ijazat ho.
  *
+ * BLANK QPR (2026-09-20): table ke NEECHE apni patti -- wo QPR jo bina
+ * breakdown slip ke bhari gayi ("+ Blank QPR").  Wo apne aap is report me
+ * nahi aa sakti, isliye user KHUD tick karta hai; nishaan sheet ke saath DB
+ * me rehta hai (`maintenance_capa_sheet.in_qpr`, PUT /sheet/{id}/in-qpr), to
+ * sabko ek jaisa dikhta hai.  Sirf wahi dikhti hain jo is samay / zone /
+ * line / machine par utarti hain.  Upar ki ginti aur Pareto ye NAHI badalti
+ * -- wo slip ke hisaab se hi rehti hai.  Kaagaz par sirf tick ki hui.
+ *
  * Styling: patti BD History ki `bh-` class se (phone/tablet/TV ke niyam
  * pehle se); sheet ki apni `bqm-` class, phone ke niyam responsive.css me.
  *
@@ -97,6 +105,21 @@ export default function BreakdownQprMachine() {
       .catch(() => setCapaCfg(haddCfg(null)));
   }, [token]);
   const capaHadd = useMemo(() => haddOf(capaCfg || haddCfg(null)), [capaCfg]);
+
+  /* BLANK QPR -- jinka koi breakdown slip nahi (user khud "+ Blank QPR" se
+     banata hai).  Wo is report me apne aap nahi aa sakti, isliye user KHUD
+     tick karta hai (user 2026-09-20: "select hum manually karenge").  Nishaan
+     sheet ke saath DB me rehta hai (`in_qpr`), to sabko ek jaisa dikhta hai.
+     Yahan sirf wahi dikhti hain jo is filter (samay + zone / line / machine)
+     par poori utarti hain. */
+  const [sheets, setSheets] = useState([]);
+  const [tick, setTick] = useState({});        // { id: busy } -- abhi save ho rahi
+  useEffect(() => {
+    if (!token) return;
+    api.get("/api/capa-lb/sheets", token)
+      .then((d) => setSheets(Array.isArray(d?.rows) ? d.rows : []))
+      .catch(() => setSheets([]));
+  }, [token]);
   // CAPA ka khaana sirf usko jisko CAPA ki ijazat hai
   const capaDikhe = canAccess("maintenance-capa");
   const capaHai = (r) => (Number(r.solve_time_min) || 0) >= capaHadd(String(r.bd_date || "").slice(0, 7));
@@ -131,6 +154,48 @@ export default function BreakdownQprMachine() {
     });
   }, [got.rows, f, machine, hadd]);
   const kulMin = rows.reduce((s, r) => s + (Number(r.solve_time_min) || 0), 0);
+
+  /* Is filter par kaunsi Blank QPR banti hain: breakdown se na juddi ho, aur
+     uski QPR DATE (na ho to jab bani) isi samay ki khidki me ho, aur zone /
+     line / machine (jo filter lagaye hon) miley.  Jo tick hain wo upar. */
+  const blankSab = useMemo(() => {
+    const din = (s) => String(s?.qpr_date || s?.created_at || "").slice(0, 10);
+    const maane = (a, b) => !a || String(a).trim() === String(b || "").trim();
+    return sheets
+      .filter((s) => s.breakdown_id == null)
+      .filter((s) => {
+        const d = din(s);
+        if (!d) return false;
+        if (win.from && d < win.from) return false;
+        if (win.to && d > win.to) return false;
+        if (f.date && d !== f.date) return false;
+        return maane(f.zone, s.zone) && maane(f.line, s.line) && maane(machine, s.machine_no);
+      })
+      .sort((a, b) => (b.in_qpr ? 1 : 0) - (a.in_qpr ? 1 : 0)
+        || String(din(a)).localeCompare(String(din(b))) || a.id - b.id);
+  }, [sheets, win.from, win.to, f.date, f.zone, f.line, machine]);
+  const blankLage = blankSab.filter((s) => s.in_qpr).length;
+
+  /* Tick lagao / hatao -- turant dikhe, server se jawab aane par pakka. */
+  const tickKaro = async (s) => {
+    if (tick[s.id]) return;
+    const naya = !s.in_qpr;
+    setTick((t) => ({ ...t, [s.id]: true }));
+    setSheets((old) => old.map((x) => (x.id === s.id ? { ...x, in_qpr: naya } : x)));
+    try {
+      const r = await fetch(`/api/capa-lb/sheet/${s.id}/in-qpr`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ in_qpr: naya }),
+      });
+      if (!r.ok) throw new Error();
+    } catch {
+      // na lag saka -- wapas purana nishaan
+      setSheets((old) => old.map((x) => (x.id === s.id ? { ...x, in_qpr: !naya } : x)));
+    } finally {
+      setTick((t) => { const n = { ...t }; delete n[s.id]; return n; });
+    }
+  };
   // Machine ka naam sirf jab EK machine ho
   const naam = machine ? (rows.find((r) => r.machine_name)?.machine_name || "") : "";
   // Sheet kiski hai: machine, warna Zone / Line, warna sab
@@ -182,6 +247,19 @@ export default function BreakdownQprMachine() {
         @media print { .bqm-table td.capa, .bqm-table th.capa { display:none; } }
         .bqm-table tbody tr:nth-child(even) td { background:#f8fafc; }
         .bqm-empty { padding:50px 16px; text-align:center; color:#64748b; font-size:13.5px; font-weight:600; }
+        /* Blank QPR ki patti -- breakdown wali table ke NEECHE */
+        .bqm-blank { border-top:2px solid #111827; }
+        .bqm-blank-hd { padding:10px 12px; background:#f8fafc; display:flex; flex-wrap:wrap;
+                        align-items:baseline; gap:10px; border-bottom:1px solid #111827; }
+        .bqm-blank-hd b { font-family:'Barlow Condensed',sans-serif; font-size:16px;
+                          letter-spacing:.04em; color:#0f172a; }
+        .bqm-blank-hd span { font-size:11.5px; color:#64748b; font-weight:600; }
+        .bqm-btable th.tick, .bqm-btable td.tick { width:44px; vertical-align:middle; }
+        .bqm-btable td.tick input { width:16px; height:16px; cursor:pointer; }
+        .bqm-btable tr.off td { color:#94a3b8; }
+        .bqm-btable tr.on td { background:#eff6ff !important; }
+        @media print { .bqm-blank-hd span, .bqm-btable th.tick, .bqm-btable td.tick { display:none; }
+                       .bqm-btable tr.off { display:none; } }
       `}</style>
 
       <div className="bh-root">
@@ -250,6 +328,65 @@ export default function BreakdownQprMachine() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {/* ── BLANK QPR ──────────────────────────────────────────────
+                Jo QPR bina breakdown ke bhari gayi ("+ Blank QPR"), wo is
+                report me apne aap nahi aa sakti -- user KHUD tick karta hai.
+                Yahan sirf wahi dikhti hain jo is samay / zone / line /
+                machine par poori utarti hain.  Upar wali ginti aur Pareto ye
+                nahi badalti -- wo slip ke hisaab se hi rehti hai.
+                Kaagaz par sirf TICK ki hui jaati hain. */}
+            {capaDikhe && blankSab.length > 0 && (
+              <div className="bqm-blank">
+                <div className="bqm-blank-hd">
+                  <b>BLANK QPR</b>
+                  <span>Filled without a breakdown slip — tick the ones that belong to this report
+                    ({blankLage} of {blankSab.length} added). The count and Pareto above do not change.</span>
+                </div>
+                <div className="bqm-scroll">
+                  <table className="bqm-table bqm-btable">
+                    <thead><tr>
+                      <th className="sno">#</th>
+                      <th className="tick">Add</th>
+                      <th>QPR Date</th>
+                      <th>Zone</th>
+                      <th>Line</th>
+                      <th>machine_no</th>
+                      <th>Machine Name</th>
+                      <th className="txt">Problem / Title</th>
+                      <th>Status</th>
+                      <th className="capa">CAPA</th>
+                    </tr></thead>
+                    <tbody>
+                      {blankSab.map((s2, i) => (
+                        <tr key={s2.id} className={s2.in_qpr ? "on" : "off"}>
+                          <td className="sno">{i + 1}</td>
+                          <td className="tick">
+                            <input type="checkbox" checked={!!s2.in_qpr} disabled={!!tick[s2.id]}
+                                   onChange={() => tickKaro(s2)}
+                                   title={s2.in_qpr ? "Remove from this report" : "Add to this report"} />
+                          </td>
+                          <td>{khali(String(s2.qpr_date || s2.created_at || "").slice(0, 10))}</td>
+                          <td>{khali(s2.zone)}</td>
+                          <td>{khali(s2.line)}</td>
+                          <td className="mc">{khali(s2.machine_no)}</td>
+                          <td>{khali(s2.machine_name)}</td>
+                          <td className="txt">{khali(s2.title)}</td>
+                          <td>{khali(s2.status)}</td>
+                          <td className="capa">
+                            <button type="button" className="bqm-capa"
+                                    title="Open this QPR"
+                                    onClick={() => nav(`/maintenance-capa?sheet=${s2.id}`)}>
+                              View
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
