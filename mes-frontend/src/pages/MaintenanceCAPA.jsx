@@ -664,6 +664,97 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
     return () => form.removeEventListener("input", onInput);
   }, [view, prefill, viewOnly]);
 
+  /* BLANK QPR ka machine — MASTER se (user 2026-09-20: "zone, line,
+     machine_no, machine name wo sab maintenance machine se aayenge; ye bas
+     blank QPR ke liye — jisme automatic aa raha tha un QPR me kuch change
+     nahi karna").
+
+     Isliye ye SIRF tab chalta hai jab CAPA kisi breakdown se na khuli ho
+     (`bdId` khaali).  Zone chuno → us zone ki Line → us line ka Machine No;
+     Machine Name apne aap bhar jaata hai (uska khaana sirf-padhne ka).
+
+     Grid ka HTML ek hi baar chhapta hai (GRID_HTML), React use dobara nahi
+     likhta — isliye khaane ka <input> yahin <select> se badal dete hain aur
+     nikalte waqt wapas <input> laga dete hain (value bhi le aate hain).
+     Machine No badalne par `input` ki awaaz bhi dete hain, taaki MIRROR wala
+     "Where?" pehle jaisa bharta rahe.  Master na aaya ho to kuch nahi badalte
+     — khaane saade rehte hain, form phir bhi chalta hai.
+
+     JAGAH MAT BADLO: MIRROR wale effect ke BAAD (uska listener pehle lage). */
+  useEffect(() => {
+    if (view !== "form" || !formRef.current || viewOnly) return;
+    if (bdId || !master.length) return;
+    const form = formRef.current;
+    const zIn = form.elements.f_zone, lIn = form.elements.f_line,
+          mIn = form.elements.f_mno, nameEl = form.elements.f_mname;
+    if (!zIn || !lIn || !mIn || !nameEl) return;
+
+    const badle = [];
+    const dabbaBanao = (inp) => {
+      const sel = document.createElement("select");
+      sel.name = inp.name;
+      sel.className = inp.className;
+      inp.parentNode.replaceChild(sel, inp);
+      badle.push([sel, inp]);
+      return sel;
+    };
+    const zSel = dabbaBanao(zIn), lSel = dabbaBanao(lIn), mSel = dabbaBanao(mIn);
+    const naamPehle = { ro: nameEl.readOnly, cls: nameEl.className };
+    nameEl.readOnly = true;
+    nameEl.classList.add("mc-auto");
+
+    const uniq = (a) => [...new Set(a.filter(Boolean))].sort();
+    const zones  = uniq(master.map((m) => m.zone_name));
+    const lines  = (z) => uniq(master.filter((m) => m.zone_name === z).map((m) => m.line_name));
+    const mcs    = (z, l) => uniq(master.filter((m) => m.zone_name === z && m.line_name === l)
+                                        .map((m) => m.machine_no));
+    // Purani bhari hui QPR me koi aisa naam ho jo ab master me nahi — to bhi
+    // wo option me rahega, warna khulte hi chup-chaap mit jaata.
+    const bharo = (sel, list, val) => {
+      const v = val || "";
+      sel.innerHTML = "";
+      const sab = v && !list.includes(v) ? [v, ...list] : list;
+      [["", "—"], ...sab.map((x) => [x, x])].forEach(([val2, txt]) => {
+        const o = document.createElement("option");
+        o.value = val2; o.textContent = txt; sel.appendChild(o);
+      });
+      sel.value = v;
+    };
+    const lagao = (z, l, m) => {
+      bharo(zSel, zones, z);
+      bharo(lSel, z ? lines(z) : [], l);
+      bharo(mSel, z && l ? mcs(z, l) : [], m);
+      lSel.disabled = !zSel.value;
+      mSel.disabled = !(zSel.value && lSel.value);
+      const rec = master.find((x) => x.machine_no === mSel.value
+        && x.zone_name === zSel.value && x.line_name === lSel.value);
+      const naya = mSel.value ? (rec?.machine_name || mSel.value) : "";
+      if (nameEl.value !== naya) nameEl.value = naya;
+    };
+    lagao(zIn.value.trim(), lIn.value.trim(), mIn.value.trim());
+
+    // MIRROR is awaaz se hi "Where?" bharta hai
+    const bolo = () => mSel.dispatchEvent(new Event("input", { bubbles: true }));
+    const onZ = () => { lagao(zSel.value, "", ""); bolo(); };
+    const onL = () => { lagao(zSel.value, lSel.value, ""); bolo(); };
+    const onM = () => { lagao(zSel.value, lSel.value, mSel.value); bolo(); };
+    zSel.addEventListener("change", onZ);
+    lSel.addEventListener("change", onL);
+    mSel.addEventListener("change", onM);
+
+    return () => {
+      zSel.removeEventListener("change", onZ);
+      lSel.removeEventListener("change", onL);
+      mSel.removeEventListener("change", onM);
+      badle.forEach(([sel, inp]) => {
+        inp.value = sel.value;
+        if (sel.parentNode) sel.parentNode.replaceChild(inp, sel);
+      });
+      nameEl.readOnly = naamPehle.ro;
+      nameEl.className = naamPehle.cls;
+    };
+  }, [view, prefill, viewOnly, bdId, master]);
+
   // BADE KHAANE (ISSUE, For Occurrence, Countermeasure …): likhne ka dabba
   // sirf ek line ka hota hai aur khaane ke beech baitha rehta hai -- baaki
   // khaane me dabane par kuch nahi hota tha (user, 2026-09-18: "box bada hai
@@ -1122,6 +1213,18 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
         /* Annexure-A: apne aap bharne wale khaane (cause / S.No. / Total) --
            badal nahi sakte, par dikhne me saadhe (DV ki band row jaise gray nahi) */
         .qpr input.fin.ax-auto[readonly] { background:transparent; cursor:default; }
+        /* Blank QPR ke machine wale dropdown -- dikhne me khaane jaise hi
+           (koi kinara nahi), bas chunne ka teer dikhta hai. */
+        .qpr select.fin { width:100%; height:100%; box-sizing:border-box; border:none; outline:none;
+                          background:transparent; font:inherit; color:#1d4ed8; padding:1px 3px;
+                          cursor:pointer; -webkit-appearance:none; appearance:none;
+                          background-image:linear-gradient(45deg,transparent 50%,#1d4ed8 50%),
+                                           linear-gradient(135deg,#1d4ed8 50%,transparent 50%);
+                          background-position:right 8px center, right 4px center;
+                          background-size:4px 4px, 4px 4px; background-repeat:no-repeat; }
+        .qpr select.fin:disabled { color:#94a3b8; background-image:none; cursor:default; }
+        .qpr input.fin[readonly].mc-auto { color:#1d4ed8; cursor:default; }
+        @media print { .qpr select.fin { background-image:none; -webkit-appearance:none; appearance:none; } }
         /* DV ka cause jo fish bone "Machine" se aaya -- yahan badal nahi sakte, par band row jaisa gray nahi */
         .qpr textarea.fta.dv-auto[readonly] { background:transparent; cursor:default; }
         .qpr input.ax-score, .qpr input.ax-total, .qpr input.ax-sno { text-align:center; }
