@@ -53,6 +53,12 @@ const attLabel = (a) => {
 export function CapaAttach({ value = [], onChange = null, token, getMachine,
                              viewOnly = false, accent = "#1d4ed8", soft = "#eff6ff" }) {
   const list = Array.isArray(value) ? value : [];
+  /* Kaun si cheez pehle se lagi hui hai -- uska "+" button neeche nahi dikhta
+     (user 2026-09-20: "check sheet add ho gayi to option hat jaye; cancel
+     kare to wapas aaye").  Hatate hi `list` chhoti ho jaati hai, to button
+     apne aap wapas. */
+  const lagi = { dmc: false, pm: false, ojt: false };
+  list.forEach((a) => { if (a && a.k in lagi) lagi[a.k] = true; });
   /* Har badlaav TAAZA list par -- do row jaldi-jaldi dabane par dono nishaan
      lagne chahiye.  Seedha `list` par hisaab karte to pehla mit jaata (dono
      click ek hi render ke purane `list` ko dekhte).  CAPA ka `onChange`
@@ -225,11 +231,15 @@ export function CapaAttach({ value = [], onChange = null, token, getMachine,
             </div>
           ))}
         </div>
-        {!viewOnly && (
+        {/* Jo cheez ek baar lag gayi, uska button neeche se hat jaata hai
+            (user 2026-09-20) -- ek CAPA me ek hi DMC sheet, ek PM sheet aur
+            ek OJT form.  Upar se ✕ karke hatao to button wapas aa jaata hai.
+            Teeno lag gaye to poori patti hi nahi dikhti. */}
+        {!viewOnly && !(lagi.dmc && lagi.pm && lagi.ojt) && (
           <div className="ca-add">
-            <button type="button" onClick={() => kholo("dmc")}>+ DMC Check Sheet</button>
-            <button type="button" onClick={() => kholo("pm")}>+ PM Check Sheet</button>
-            <button type="button" onClick={ojtJodo}>+ OJT Form</button>
+            {!lagi.dmc && <button type="button" onClick={() => kholo("dmc")}>+ DMC Check Sheet</button>}
+            {!lagi.pm  && <button type="button" onClick={() => kholo("pm")}>+ PM Check Sheet</button>}
+            {!lagi.ojt && <button type="button" onClick={ojtJodo}>+ OJT Form</button>}
           </div>
         )}
         {err && <div className="ca-err">{err}</div>}
