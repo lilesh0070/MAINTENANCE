@@ -1,5 +1,5 @@
 {
-  "version": "1.4.94",
-  "notes": "Breakdown QPR: below the breakdown table there is now a BLANK QPR panel. A QPR filled without a breakdown slip cannot join the report on its own, so you tick the ones that belong to it - the tick is saved, so everyone sees the same report and printing keeps only the ticked ones. Only QPRs matching the chosen month, zone, line and machine are listed, and the breakdown count and Pareto above never change.",
-  "released_at": "2026-09-20T12:44:50"
+  "version": "1.4.95",
+  "notes": "The BLANK QPR panel under Breakdown QPR View is now always visible. Earlier it only appeared once a blank QPR existed, so there was nothing to see; it now tells you where to create one. An empty panel, and rows you have not ticked, are left out when printing.",
+  "released_at": "2026-09-20T13:04:27"
 }
