@@ -14,6 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { onlyProdZones } from "../constants/zones";
 import SheetPrintBtn from "../components/SheetPrintBtn";
+import ExcelBtn from "../components/ExcelBtn";
 import { aajKaNaam, tableReportCss } from "../constants/sheetTools";
 
 const api = {
@@ -65,14 +66,14 @@ const COLUMNS = [
   ["line",                               (r) => r.line_name],
   ["machine_no",                         (r) => r.machine_no],
   ["machine_name",                       (r) => r.machine_name],
-  ["problem_observed_by_maintenance",    (r) => r.problem_maintenance],
-  ["action_taken_on_problem",            (r) => r.action_taken],
+  ["problem_observed_by_maintenance",    (r) => r.problem_maintenance, "txt"],
+  ["action_taken_on_problem",            (r) => r.action_taken, "txt"],
   ["bd_start_time",                      (r) => r.bd_start_time],
   ["bd_received_time",                   (r) => r.bd_received_time],
   ["response_time_minutes",              (r) => r.bd_response_time],
   ["bd_ok_time",                         (r) => r.bd_ok_time],
   ["mc_down_time_minutes",               (r) => r.solve_time_min],
-  ["spares_used",                        (r) => r.spares_detail],
+  ["spares_used",                        (r) => r.spares_detail, "txt"],
   ["bd_attended_by",                     (r) => r.attended_by],
   // ── uske baad baaki sab ──
   ["shift",                              (r) => r.shift],
@@ -83,8 +84,8 @@ const COLUMNS = [
   ["bd_start_date",                      (r) => fmtDate(r.bd_start_date)],
   ["bd_end_date",                        (r) => fmtDate(r.bd_end_date)],
   ["frequency",                          (r) => r.frequency],
-  ["problem_reported_by_production",     (r) => r.problem_production],
-  ["problem_related_to",                 (r) => r.problem_related_to],
+  ["problem_reported_by_production",     (r) => r.problem_production, "txt"],
+  ["problem_related_to",                 (r) => r.problem_related_to, "txt"],
   ["type_electrical / type_mechanical",  (r) => r.type_of_problem],
   ["prepared_by_name",                   (r) => r.prepared_by],
   ["received_by_name",                   (r) => r.received_by],
@@ -253,7 +254,20 @@ export default function BDHistory() {
         .bh-table th { text-align:left; padding:10px 12px; font-size:10.5px; font-weight:700; letter-spacing:.02em;
                        text-transform:none; color:#64748b; border-bottom:2px solid #e2e8f0; white-space:nowrap; }
         .bh-table td { padding:9px 12px; border-bottom:1px solid #f1f5f9; color:#334155; white-space:nowrap;
-                       max-width:300px; overflow:hidden; text-overflow:ellipsis; }
+                       max-width:300px; overflow:hidden; text-overflow:ellipsis; vertical-align:top; }
+        /* Lamba likha hua khaana (problem / action / spares): chaudai WAHI
+           300px, par text kaat kar "..." nahi -- neeche lipat kar poora
+           dikhta hai (user 2026-09-20).  Bina space wala lamba shabd bhi
+           khaane se bahar na nikle, isliye break-word. */
+        .bh-table td.txt { white-space:normal; overflow:visible; text-overflow:clip;
+                           min-width:200px; line-height:1.45; }
+        /* Bina space wala lamba shabd khaane se bahar na nikle -- par ye SIRF
+           SCREEN par.  Print/PDF ki window page ki saari CSS utha leti hai
+           (pageKeStyles), aur wahan shabd todna mana hai: sheetTools me likha
+           hai ki ek baar laga kar dekha tha to PDF me "breakdown" ek-ek akshar
+           karke khada nikla tha.  Kaagaz par tableReportCss waise bhi
+           max-width hata deti hai, to jagah ki kami hoti hi nahi. */
+        @media screen { .bh-table td.txt { overflow-wrap:break-word; } }
         .bh-table tr:hover td { background:#f8fafc; }
         .bh-empty { padding:46px; text-align:center; color:#94a3b8; font-size:13px; }
       `}</style>
@@ -350,6 +364,19 @@ export default function BDHistory() {
               <span>Breakdown History</span>
               <span style={{ display:"flex", alignItems:"center", gap:12 }}>
                 <span className="bh-count">{filtered.length} {filtered.length === 1 ? "entry" : "entries"}</span>
+                {/* Excel me bhi WAHI qatarein aur WAHI khaane jaate hain jo abhi
+                    saamne hain (filter + search ke baad) -- heading bhi wahi
+                    `COLUMNS` se, isliye screen aur file kabhi alag nahi hongi.
+                    "—" ki jagah Excel me khali khaana. */}
+                <ExcelBtn banao={() => ({
+                  naam: `Breakdown-History_${aajKaNaam()}`,
+                  sheet: "Breakdown History",
+                  headers: COLUMNS.map(([h]) => h),
+                  rows: filtered.map((r) => COLUMNS.map(([, fn]) => {
+                    const v = fn(r);
+                    return v === null || v === undefined || v === "—" ? "" : v;
+                  })),
+                })} />
                 {/* Print/PDF me WAHI qatarein jaati hain jo abhi saamne hain
                     (filter + search lagne ke baad).  Card ka heading aur ginti
                     bhi kaagaz par aati hai.  Landscape -- table chaudi hai. */}
@@ -378,7 +405,10 @@ export default function BDHistory() {
                         {COLUMNS.map(([, fn], i) => {
                           const v = fn(r);
                           const show = (v === null || v === undefined || v === "") ? "—" : v;
-                          return <td key={i} title={show === "—" ? "" : String(show)}>{show}</td>;
+                          return (
+                            <td key={i} className={COLUMNS[i][2] === "txt" ? "txt" : undefined}
+                                title={show === "—" ? "" : String(show)}>{show}</td>
+                          );
                         })}
                       </tr>
                     ))}
