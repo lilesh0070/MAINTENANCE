@@ -110,6 +110,7 @@ export const PAGE_PERM_GROUPS = [
       { key: "maintenance-breakdown-pareto",   label: "Pareto Analysis" },
       { key: "maintenance-breakdown-top10",    label: "Top 10 BD" },
       { key: "maintenance-breakdown-qpr",      label: "Breakdown QPR" },
+      { key: "maintenance-capa",               label: "CAPA" },
     ]},
     { key: "production-breakdown-slip",  label: "Production Breakdown Slip", children: [
       /* Chaaron tab alag grant ho sakte hain — production wale ko sirf apna
@@ -136,7 +137,6 @@ export const PAGE_PERM_GROUPS = [
       { key: "hist-capa", label: "CAPA (Closed)" },
       { key: "hist-log",  label: "Log Book" },
     ]},
-    { key: "maintenance-capa",           label: "CAPA" },
     { key: "maintenance-deviations",     label: "Deviations" },
     { key: "maintenance-logbook",        label: "Log Book" },
     { key: "maintenance-history-card",   label: "History Card" },

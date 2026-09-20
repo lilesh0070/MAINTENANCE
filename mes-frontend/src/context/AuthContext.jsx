@@ -25,6 +25,10 @@ export const SUBPAGE_PARENT = {
   "maintenance-breakdown-pareto":   "maintenance-breakdown",
   "maintenance-breakdown-top10":    "maintenance-breakdown",
   "maintenance-breakdown-qpr":      "maintenance-breakdown",
+  // CAPA ab Breakdown page ka hi ek card hai (user 2026-09-20), isliye uski
+  // access bhi baaki sub-item jaisi -- Breakdown di to CAPA apne aap.  Kisi
+  // ek aadmi ko rokna ho to uski CAPA ko saaf-saaf "none" karna padega.
+  "maintenance-capa":               "maintenance-breakdown",
   // Update Plan
   "maintenance-plan-yearly":     "maintenance-update-plan",
   "maintenance-plan-monthly":    "maintenance-update-plan",
