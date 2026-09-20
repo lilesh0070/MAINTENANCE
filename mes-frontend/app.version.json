@@ -1,5 +1,5 @@
 {
-  "version": "1.4.86",
-  "notes": "CAPA: a new \"Down time >= (min)\" box at the top of the CAPA list sets how long a breakdown must last to become a CAPA. It is 55 minutes by default for every month; an admin can pick a month and give it its own limit, and Use default puts that month back. Everyone else just sees the limit. A CAPA that is already started or filled always stays in the list even if the limit is raised later.",
-  "released_at": "2026-09-20T10:25:52"
+  "version": "1.4.87",
+  "notes": "CAPA has moved: it is no longer a separate item in the side menu. Open Breakdown and you will find CAPA as the last card there, next to Breakdown QPR. A Back button on the CAPA screen returns you to Breakdown. Nothing else changed - the same CAPA list, the same forms, and the Edit link from Historical Data still work exactly as before.",
+  "released_at": "2026-09-20T10:42:25"
 }
