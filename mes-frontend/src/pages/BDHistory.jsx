@@ -60,12 +60,14 @@ function fyMonths(fy) {
 // [header, (row) => value]  — order slip ke flow jaisa (production → maintenance → sign).
 // Header = actual DB column naam (maintenance_breakdown_data), order user ke sequence me.
 const COLUMNS = [
-  // ── user-requested sequence (breakdown / maintenance flow) ──
-  ["slip_date",                          (r) => fmtDate(r.bd_date)],
+  // ── User ka kram (2026-09-20).  Naam koi nahi badla -- sirf kram. ──
+  ["shift",                              (r) => r.shift],
   ["zone",                               (r) => r.zone_name],
   ["line",                               (r) => r.line_name],
   ["machine_no",                         (r) => r.machine_no],
   ["machine_name",                       (r) => r.machine_name],
+  ["slip_date",                          (r) => fmtDate(r.bd_date)],
+  ["problem_reported_by_production",     (r) => r.problem_production, "txt"],
   ["problem_observed_by_maintenance",    (r) => r.problem_maintenance, "txt"],
   ["action_taken_on_problem",            (r) => r.action_taken, "txt"],
   ["bd_start_time",                      (r) => r.bd_start_time],
@@ -75,17 +77,15 @@ const COLUMNS = [
   ["mc_down_time_minutes",               (r) => r.solve_time_min],
   ["spares_used",                        (r) => r.spares_detail, "txt"],
   ["bd_attended_by",                     (r) => r.attended_by],
-  // ── uske baad baaki sab ──
-  ["shift",                              (r) => r.shift],
-  ["model_no",                           (r) => r.model_no],
+  ["problem_related_to",                 (r) => r.problem_related_to, "txt"],
   ["category",                           (r) => r.category],
+  // ── uske baad baaki sab ──
+  ["model_no",                           (r) => r.model_no],
   ["line_leader_name",                   (r) => r.line_leader_name],
   ["machine_operator_name",              (r) => r.machine_operator_name],
   ["bd_start_date",                      (r) => fmtDate(r.bd_start_date)],
   ["bd_end_date",                        (r) => fmtDate(r.bd_end_date)],
   ["frequency",                          (r) => r.frequency],
-  ["problem_reported_by_production",     (r) => r.problem_production, "txt"],
-  ["problem_related_to",                 (r) => r.problem_related_to, "txt"],
   ["type_electrical / type_mechanical",  (r) => r.type_of_problem],
   ["prepared_by_name",                   (r) => r.prepared_by],
   ["received_by_name",                   (r) => r.received_by],
