@@ -1,5 +1,5 @@
 {
-  "version": "1.4.87",
-  "notes": "CAPA has moved: it is no longer a separate item in the side menu. Open Breakdown and you will find CAPA as the last card there, next to Breakdown QPR. A Back button on the CAPA screen returns you to Breakdown. Nothing else changed - the same CAPA list, the same forms, and the Edit link from Historical Data still work exactly as before.",
-  "released_at": "2026-09-20T10:42:25"
+  "version": "1.4.88",
+  "notes": "CAPA access now follows Breakdown. In Users & Access, CAPA is listed under Breakdown along with BD History and Breakdown QPR, and anyone given Breakdown access gets CAPA with it. To keep one person out of CAPA, set their CAPA row to No Access.",
+  "released_at": "2026-09-20T10:50:50"
 }
