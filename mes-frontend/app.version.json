@@ -1,5 +1,5 @@
 {
-  "version": "1.4.85",
-  "notes": "CAPA: the Data Validation result now shows NG in red. At the end of the CAPA form you can attach the machine's DMC or PM check sheet (check points with the blank format, revision of your choice) and an OJT form. An attached sheet is frozen - it never changes even if points are added to the master later. Open an attached sheet and tap any point to highlight its row for audit, then save. The OJT form you fill in CAPA also appears in Skill & Training - OJT. Annexure-A now starts with one row and grows as you add possible causes.",
-  "released_at": "2026-09-20T09:53:25"
+  "version": "1.4.86",
+  "notes": "CAPA: a new \"Down time >= (min)\" box at the top of the CAPA list sets how long a breakdown must last to become a CAPA. It is 55 minutes by default for every month; an admin can pick a month and give it its own limit, and Use default puts that month back. Everyone else just sees the limit. A CAPA that is already started or filled always stays in the list even if the limit is raised later.",
+  "released_at": "2026-09-20T10:25:52"
 }
