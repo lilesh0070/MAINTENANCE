@@ -58,6 +58,8 @@ TopBreakdowns.jsx                    399  ────────────�
 UpdatePlan.jsx                       900  ─────────────────────────────────────────────────────────────────── UpdatePlan.jsx — "Update Plan" (sidebar, first entry in Maintenance)
 WalkieTalkie.jsx                     944  ─────────────────────────────────────────────────────────────────── WalkieTalkie.jsx — plant ke andar push-to-talk.
 capaGrid.js                            4  AUTO-GENERATED from capa.xlsx by gen_capa_html.py — QPR form grid. Exact merged-cell layout; empty/example cells are fillable <input>/<textarea> named f_<r...
+capa/CapaAttach.jsx                   295  capa/CapaAttach.jsx — CAPA ke aakhir me juda hua saamaan: DMC / PM ki KHAALI check sheet (points + format ki naqal, baad me nahi badalti) aur OJT form.
+skill/OjtForm.jsx                     156  skill/OjtForm.jsx — "ON JOB TRAINING" (TBDI / HR / F / 014) ka FORM; OJT page aur CAPA dono yahi use karte hain.
 
 ========================================================================================================
   FRONTEND -- Breakdown sub-screens   (8 files)

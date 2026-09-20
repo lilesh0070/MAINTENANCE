@@ -25,7 +25,12 @@ import SheetPrintBtn from "../../components/SheetPrintBtn";
 
 export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = false, printable = false, onEdit = null, signVals = [], signImgs = [], onSign = null, onSignVal = null, signable = null,
                               cellSel = null, onCellDown = null, onCellEnter = null, onSpares = null,
-                              sheetSpares = [], onSheetSpare = null, onAddSheetSpare = null, onDelSheetSpare = null, spareNames = [] }) {
+                              sheetSpares = [], onSheetSpare = null, onAddSheetSpare = null, onDelSheetSpare = null, spareNames = [],
+                              /* CAPA ki judi hui sheet ke liye (2026-09-20): kis point ki
+                                 row par rang lage, aur row dabane par kya ho.  Baaki page
+                                 ye bhejte hi nahi -- wahan kuch nahi badalta. */
+                              markIds = null, onMarkPoint = null }) {
+  const markSet = markIds && markIds.length ? new Set(markIds) : null;
   // Spares are no longer captured per check point — the per-row "SPARES USED"
   // cell is left blank and a single sheet-level list is filled at the bottom
   // (fill form only).  onSpares stays in the signature for callers that still
@@ -88,8 +93,12 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
               const inp = { width:"100%", border:"none", outline:"none", fontSize:11,
                             fontFamily:"inherit", background:"#fff", padding:"3px 4px", boxSizing:"border-box" };
               const FILL = ["observation", "action_taken", "spares_used", "status", "sign"];
+              const mk = p.id != null ? p.id : `i${i}`;
               return (
-                <tr key={i}>
+                <tr key={i}
+                    className={markSet && markSet.has(mk) ? "sheet-mark" : undefined}
+                    onClick={onMarkPoint ? () => onMarkPoint(mk) : undefined}
+                    style={onMarkPoint ? { cursor: "pointer" } : undefined}>
                   <td style={{ border:sb, fontSize:11, textAlign:"center", padding:"3px 5px", verticalAlign:"top" }}>{p.s_no || i + 1}</td>
                   <td style={{ border:sb, fontSize:11, padding:"3px 6px", verticalAlign:"top" }}>{p.check_point || ""}</td>
                   <td style={{ border:sb, fontSize:11, padding:"3px 6px", verticalAlign:"top" }}>{p.judgement_standard || ""}</td>

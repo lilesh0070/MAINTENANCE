@@ -152,7 +152,12 @@ export function DmcSheet({ hdr = {}, groups = [], footer = null,
                            fillDay = null,          // the date this stage is writing to
 
                            days = sheetMonth ? monthDayList(sheetMonth) : DAYS,
-                           dayBandLabel = "", printable = false }) {
+                           dayBandLabel = "", printable = false,
+                           /* CAPA ki judi hui sheet ke liye (2026-09-20): kis point
+                              ki row par rang lage, aur row dabane par kya ho.
+                              Baaki page ye bhejte hi nahi -- wahan kuch nahi badalta. */
+                           markIds = null, onMarkPoint = null }) {
+  const markSet = markIds && markIds.length ? new Set(markIds) : null;
   // `days` lets a caller show a subset of the 31 day columns — the Daily DMC
   // Fill page passes only today's day so the operator fills a single column.
   // "full month" = a whole month's worth of columns (28/29/30/31), not just 31.
@@ -291,7 +296,13 @@ export function DmcSheet({ hdr = {}, groups = [], footer = null,
           <tbody>
             {groups.map((g) =>
               g.points.map((p, i) => (
-                <tr key={g.eng + i}>
+                /* `markIds` / `onMarkPoint` sirf CAPA ki judi hui sheet ke liye
+                   hain (audit me "ye point add kiya tha" dikhane ke liye row
+                   par rang).  Ye prop na do to sab pehle jaisa. */
+                <tr key={g.eng + i}
+                    className={p && markSet && markSet.has(p.id) ? "sheet-mark" : undefined}
+                    onClick={p && onMarkPoint ? () => onMarkPoint(p.id) : undefined}
+                    style={p && onMarkPoint ? { cursor: "pointer" } : undefined}>
                   {i === 0 && <td rowSpan={g.points.length} style={catCell}>{g.eng}</td>}
                   <td style={detail}>{p ? p.check_point : ""}</td>
                   <td style={detail}>{p ? p.criteria : ""}</td>

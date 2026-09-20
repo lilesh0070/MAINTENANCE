@@ -17,6 +17,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useSearchParams } from "react-router-dom";
 import { CAPA_QPR_GRID } from "./capaGrid";
+import { CapaAttach } from "./capa/CapaAttach";
+import { ojtBhara } from "./skill/OjtForm";
 
 // breakdown field  →  QPR grid cell (input name)
 const PREFILL = (bd) => ({
@@ -53,6 +55,27 @@ const MIRROR = { f_16_3: ["f_18_4", "f_44_11"], f_mno: ["f_18_8"] };
 // ka parda) to poora QPR khaali ho jaata tha -- bhara hua sab, photo, sign.
 // Wahi object rahe to React us div ko chhoota hi nahi.
 const GRID_HTML = { __html: CAPA_QPR_GRID };
+
+/* ANNEXURE-A ki row: sirf KAAM KI dikhao (user 2026-09-20: "isme row bahut
+   jyada hain -- bas EK row default, baaki point ke hisaab se aati rahengi").
+   Bhari hui row + bharne wale mode me EK khaali (usi me naya cause likha jaata
+   hai); sirf-dekhne me bas bhari hui.  Value KABHI nahi mitate -- sirf
+   `display` -- isliye cause hat-te hi row apne aap wapas aa jaati hai, aur
+   Data Validation se aane wala hisaab jyon ka tyon chalta hai. */
+function axRowsDikhao(sab, khaaliBhi) {
+  let aakhri = -1;
+  sab.forEach((el, i) => { if ((el.value || "").trim()) aakhri = i; });
+  const kitni = Math.max(1, aakhri + 1 + (khaaliBhi ? 1 : 0));
+  sab.forEach((el, i) => {
+    const tr = el.closest("tr");
+    if (tr) tr.style.display = i < kitni ? "" : "none";
+  });
+}
+
+/** Annexure ke saare cause khaane (DV wale + apne se likhne wale), kram me. */
+const axSabCause = (form) =>
+  [...form.querySelectorAll("input.ax-cause, input.ax-cause-free")]
+    .sort((a, b) => a.dataset.row - b.dataset.row);
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -109,6 +132,10 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
   const [fMno, setFMno]   = useState("");
   const [master, setMaster] = useState([]);
 
+  /* CAPA ke aakhir me juda saamaan: DMC / PM ki KHAALI check sheet (points +
+     format ki naqal) aur OJT form.  CAPA ke apne blob me `attachments` par
+     save hota hai -- `capa/CapaAttach.jsx` dekho. */
+  const [att, setAtt] = useState([]);
   const [sid, setSid] = useState(null);            // current saved-sheet id
   const [sStatus, setSStatus] = useState("DRAFT"); // khuli hui sheet ka status
   const [bdId, setBdId] = useState(null);          // current breakdown id
@@ -187,6 +214,9 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
         const sp = form.querySelector(`.dv-srno[data-row="${c.dataset.row}"]`);
         if (sp) sp.textContent = c.value.trim() ? String(++n) : "";
       });
+    // Annexure: sirf bhari hui row (yahan kuch likha nahi ja sakta, isliye
+    // khaali row bhi nahi)
+    axRowsDikhao(axSabCause(form), false);
   }, [viewOnly, view, prefill]);
 
   // Data Validation: auto Sr. No. + row-by-row lock (next row typeable only after the
@@ -359,6 +389,7 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
     const axCause = [...form.querySelectorAll("input.ax-cause")].sort((a, b) => a.dataset.row - b.dataset.row);
     const axTotal = [...form.querySelectorAll("input.ax-total")];
     const axSno = [...form.querySelectorAll("input.ax-sno")].sort((a, b) => a.dataset.row - b.dataset.row);
+    const axSab = axSabCause(form);          // DV wale + apne se likhne wale cause
     const put = (el, v) => { if (el && el.value !== v) el.value = v; };
     const SC = [6, 7, 8, 9, 10, 11, 12];     // Annexure: 7 team member ke score
     const dvEl = (i) => (dvRows[i] ? form.elements[`f_${dvRows[i]}_4`] : null);
@@ -402,6 +433,8 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
           .filter((v) => /^\d+$/.test(v || ""));
         put(el, nums.length ? String(nums.reduce((a, v) => a * Number(v), 1)) : "");
       });
+      // bhari hui row + ek khaali (upar `axRowsDikhao` dekho)
+      axRowsDikhao(axSab, true);
     };
     // `del` = mitaya gaya; `typed` = abhi daba ek akshar (bada), warna ""
     const fix = (f, kind, del, typed) => {
@@ -460,6 +493,29 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
       form.removeEventListener("dv-rebuilt", sync);
     };
   }, [view, prefill, viewOnly]);
+
+  /* Data Validation ka Result: "NG" LAAL dikhe (user 2026-09-20).
+     Alag effect isliye ki ye SIRF-DEKHNE wale mode me bhi chale -- upar wala
+     Result / Annexure wala effect wahan chalta hi nahi.  Rang CSS se
+     (`.dv-res.ng`), yahan sirf class lagti-hat-ti hai. */
+  useEffect(() => {
+    if (view !== "form" || !formRef.current) return;
+    const form = formRef.current;
+    const rango = () => form.querySelectorAll("input.dv-res").forEach((el) => {
+      el.classList.toggle("ng", el.value.trim().toUpperCase() === "NG");
+    });
+    rango();
+    // `input` / `change` upar wale effect ke BAAD chalte hain (wo pehle juda
+    // hai), yaani value theek hone ke baad rang lagta hai.
+    form.addEventListener("input", rango);
+    form.addEventListener("change", rango);
+    form.addEventListener("dv-rebuilt", rango);     // Machine se DV ki rows badli
+    return () => {
+      form.removeEventListener("input", rango);
+      form.removeEventListener("change", rango);
+      form.removeEventListener("dv-rebuilt", rango);
+    };
+  }, [view, prefill]);
 
   // wire the photo upload / camera widgets (uncontrolled → data-URL into a hidden input)
   useEffect(() => {
@@ -635,10 +691,45 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
     setSign(null);
   };
 
-  const collect = () => {
+  /* Grid ke khaane FormData se, aur uske saath juda hua saamaan.
+     `attachments` koi form ka khaana nahi -- seedha blob me jaata hai (usme
+     check sheet ke points ki poori naqal hoti hai). */
+  const collect = (attNow = att) => {
     const data = {};
     if (formRef.current) new FormData(formRef.current).forEach((v, k) => { if (String(v).trim() !== "") data[k] = v; });
+    if (attNow && attNow.length) data.attachments = attNow;
     return data;
+  };
+
+  // khuli hui CAPA ka juda saamaan wapas state me
+  useEffect(() => {
+    setAtt(Array.isArray(prefill?.attachments) ? prefill.attachments : []);
+  }, [prefill]);
+
+  /* CAPA me bhari OJT Skill & Training → OJT ki list me bhi jaati hai (user
+     2026-09-20: "CAPA + OJT list dono me").  Pehli baar POST, baad me usi
+     record ka PUT -- isliye us record ki id (`ojt_id`) CAPA me sambhaal kar
+     rakhte hain.  Na ja paye to CAPA ka save phir bhi hota hai; agli baar
+     dobara koshish ho jaati hai. */
+  const ojtSync = async (arr) => {
+    let gadbad = false;
+    const out = [];
+    for (const a of arr) {
+      if (a.k !== "ojt" || !ojtBhara(a.form)) { out.push(a); continue; }
+      if (a.ojt_id && a.changed === false) { out.push(a); continue; }
+      const body = { section: "ojt", title: (a.form.training_subjects || "").trim() || "OJT record", payload: a.form };
+      try {
+        const r = await fetch(a.ojt_id ? `/api/skill-training/${a.ojt_id}` : "/api/skill-training/", {
+          method: a.ojt_id ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json().catch(() => ({}));
+        out.push({ ...a, ojt_id: a.ojt_id || d.id || null, changed: false });
+      } catch { gadbad = true; out.push(a); }
+    }
+    return { arr: out, gadbad };
   };
 
   const fillQpr = async (row) => {
@@ -690,11 +781,14 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
   const saveWith = async (status) => {
     setSaving(true);
     try {
+      // OJT pehle (uski id CAPA ke blob me jaani chahiye), phir CAPA
+      const { arr, gadbad } = await ojtSync(att);
+      setAtt(arr);
       const r = await api(`/sheet`, { method: "POST",
-        body: JSON.stringify({ id: sid, breakdown_id: bdId, data: collect(), status }) });
+        body: JSON.stringify({ id: sid, breakdown_id: bdId, data: collect(arr), status }) });
       setSid(r.id); setSStatus(status);
-      flash(status === "CLOSED" ? `Closed ✓ (QPR #${r.id})`
-            : sid ? `Saved ✓ (QPR #${r.id})` : `Saved ✓ (QPR #${r.id})`);
+      if (gadbad) flash(`Saved ✓ (QPR #${r.id}) — but the OJT record could not be sent to Skill & Training`, true);
+      else flash(status === "CLOSED" ? `Closed ✓ (QPR #${r.id})` : `Saved ✓ (QPR #${r.id})`);
       return true;
     } catch (e) { flash("Save failed: " + (e.message || "")); return false; }
     finally { setSaving(false); }
@@ -883,6 +977,9 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
         .qpr textarea.fta.dv-auto[readonly] { background:transparent; cursor:default; }
         .qpr input.ax-score, .qpr input.ax-total, .qpr input.ax-sno { text-align:center; }
         .qpr input.ax-sno { color:#111; }          /* pehle jaisa kaala -- DV ke Sr. No. jaisa */
+        /* Data Validation ka Result: NG LAAL (user 2026-09-20).  Baaki khaane
+           ke neele rang se alag -- NG hi wo row hai jispar aage ka kaam hai. */
+        .qpr input.dv-res.ng { color:#dc2626; font-weight:800; }
         .qpr input.fin:focus, .qpr textarea.fta:focus { background:#eff6ff; }
         .qpr input.fin[readonly], .qpr textarea.fta[readonly] { background:#eef2f7; cursor:not-allowed; }
         .qpr input.fcb { width:14px; height:14px; margin-left:5px; vertical-align:middle; cursor:pointer; accent-color:#1d4ed8; }
@@ -1102,6 +1199,26 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
                     <div className="cp-format">FORMAT NO.:- TBDI / QA / F / 006 &nbsp;&nbsp;&nbsp; REV. NO.:- 00 &nbsp;&nbsp;&nbsp; REV. DATE:- 20/03/2024</div>
                   </div>
                 </fieldset>
+                {/* Juda hua saamaan fieldset ke BAAHAR -- sirf-dekhne wale mode
+                    me bhi "View" ka button chalna chahiye (fieldset disabled
+                    andar ke har button ko band kar deta hai). */}
+                <CapaAttach
+                  value={att}
+                  /* seedha value ya "purane se naya" wala function -- dono chalte
+                     hain (do row ek saath dabne par dono nishaan lagein) */
+                  onChange={(next) => setAtt((prev) => (typeof next === "function" ? next(prev) : next))}
+                  token={token}
+                  viewOnly={viewOnly}
+                  accent={theme?.accent}
+                  soft={theme?.soft}
+                  getMachine={() => {
+                    const el = formRef.current?.elements;
+                    return { machine_no: (el?.f_mno?.value || "").trim(),
+                             machine_name: (el?.f_mname?.value || "").trim(),
+                             zone: (el?.f_zone?.value || "").trim(),
+                             line: (el?.f_line?.value || "").trim() };
+                  }}
+                />
               </form>
             </div>
           </div>
