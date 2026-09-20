@@ -809,15 +809,29 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
   useEffect(() => {
     if (viewOnly) return;                  // Historical ke andar khula -- uska URL mat chhedo
     const sheet = qs.get("sheet");
-    if (!sheet || khola.current) return;
+    // `?bd=<breakdown id>` -- Breakdown QPR ki table ke "View" se aata hai:
+    // seedha USI breakdown ki CAPA kholo (bhari ho to wahi, warna nayi jisme
+    // machine / date / problem pehle se bhare hon).
+    const bd = qs.get("bd");
+    if ((!sheet && !bd) || khola.current) return;
     khola.current = true;
     setQs({}, { replace: true });
     (async () => {
       try {
-        const d = await api(`/sheet/${sheet}`);
-        setPrefill(d.data || {}); setSid(d.id); setBdId(d.breakdown_id || null);
-        setSStatus((d.status || "DRAFT").toUpperCase());
-        setView("form");
+        if (sheet) {
+          const d = await api(`/sheet/${sheet}`);
+          setPrefill(d.data || {}); setSid(d.id); setBdId(d.breakdown_id || null);
+          setSStatus((d.status || "DRAFT").toUpperCase());
+          setView("form");
+          return;
+        }
+        // Pending ki list me se wahi breakdown dhoondo -- `fillQpr` dono
+        // haalat (sheet hai / nahi) khud sambhal leta hai.
+        const d = await api(`/pending`);
+        const row = (d.rows || []).find((x) => String(x.bd_id) === String(bd));
+        if (!row) { flash("That breakdown is not a CAPA.", true); return; }
+        setRows(d.rows || []);        // list bhi taaza rahe (Back par wahi dikhe)
+        await fillQpr(row);
       } catch (e) {
         flash("Could not open the CAPA: " + (e.message || ""));
       }

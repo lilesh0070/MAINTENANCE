@@ -16,7 +16,14 @@
  * Column (user ke kram me): Breakdown Date (Slip Date) · Zone · Line ·
  * machine_no · Problem Observed by Production · Actual Problem by
  * Maintenance · Action Taken · Start Time · BD Received Time · Response
- * Time · BD OK Time · Total Time (min).
+ * Time · BD OK Time · Total Time (min) · CAPA.
+ *
+ * Kram (2026-09-20): SABSE ZYADA down time sabse UPAR (barabar ho to naya
+ * pehle).  Aakhri khaana "CAPA": jis breakdown ki down time CAPA ki hadd
+ * (`/api/capa-lb/min-config` -- QPR wali se ALAG setting) poori karti hai,
+ * uske aage "View" -- seedha USI breakdown ki CAPA khulti hai
+ * (`/maintenance-capa?bd=<id>`), list se hokar nahi.  Khaana sirf usko
+ * dikhta hai jiske paas `maintenance-capa` ki ijazat ho.
  *
  * Styling: patti BD History ki `bh-` class se (phone/tablet/TV ke niyam
  * pehle se); sheet ki apni `bqm-` class, phone ke niyam responsive.css me.
@@ -60,7 +67,7 @@ const COLS = [
 ];
 
 export default function BreakdownQprMachine() {
-  const { token, theme, user } = useAuth();
+  const { token, theme, user, canAccess } = useAuth();
   const nav = useNavigate();
   const [sp] = useSearchParams();
   // QPR ke filter + kaunsi machine.  `sp` badle (naya link) to naya hisaab.
@@ -78,6 +85,21 @@ export default function BreakdownQprMachine() {
       .then((c) => setCfg(haddCfg(c)))
       .catch(() => setCfg(haddCfg(null)));
   }, [token]);
+
+  /* CAPA ki apni hadd -- QPR wali se ALAG setting hai (Settings me dono alag
+     rakhi ja sakti hain).  Aakhri column ka "View" isi par aata hai, taaki jo
+     bhi CAPA banti hai uske aage raasta mile -- koi chhoote na. */
+  const [capaCfg, setCapaCfg] = useState(null);
+  useEffect(() => {
+    if (!token) return;
+    api.get("/api/capa-lb/min-config", token)
+      .then((c) => setCapaCfg(haddCfg(c)))
+      .catch(() => setCapaCfg(haddCfg(null)));
+  }, [token]);
+  const capaHadd = useMemo(() => haddOf(capaCfg || haddCfg(null)), [capaCfg]);
+  // CAPA ka khaana sirf usko jisko CAPA ki ijazat hai
+  const capaDikhe = canAccess("maintenance-capa");
+  const capaHai = (r) => (Number(r.solve_time_min) || 0) >= capaHadd(String(r.bd_date || "").slice(0, 7));
 
   // Slips -- sirf samay ki khidki server se; baaki `qprSlips` yahin.
   const win = apiWindow(f);
@@ -98,7 +120,16 @@ export default function BreakdownQprMachine() {
   const hadd = useMemo(() => haddOf(cfg || haddCfg(null)), [cfg]);   // (ym) => minute
   const bayan = cfg ? haddBayan(cfg, f) : null;
 
-  const rows = useMemo(() => qprSlips(got.rows, { ...f, mc: machine }, hadd), [got.rows, f, machine, hadd]);
+  /* Kram: SABSE ZYADA down time sabse UPAR (user 2026-09-20).  Barabar minute
+     ho to naya breakdown pehle -- warna har baar kram badalta rehta. */
+  const rows = useMemo(() => {
+    const list = qprSlips(got.rows, { ...f, mc: machine }, hadd);
+    return [...list].sort((a, b) => {
+      const d = (Number(b.solve_time_min) || 0) - (Number(a.solve_time_min) || 0);
+      if (d) return d;
+      return String(b.bd_date || "").localeCompare(String(a.bd_date || ""));
+    });
+  }, [got.rows, f, machine, hadd]);
   const kulMin = rows.reduce((s, r) => s + (Number(r.solve_time_min) || 0), 0);
   // Machine ka naam sirf jab EK machine ho
   const naam = machine ? (rows.find((r) => r.machine_name)?.machine_name || "") : "";
@@ -141,6 +172,13 @@ export default function BreakdownQprMachine() {
            8px chaudi padti thi aur bekaar ka scrollbar aata tha (naapa). */
         .bqm-table td.txt { white-space:normal; text-align:left; min-width:180px; }
         .bqm-table td.mc { font-weight:700; }
+        /* aakhri khaana -- usi breakdown ki CAPA kholne ka button */
+        .bqm-table td.capa { vertical-align:middle; color:#94a3b8; }
+        .bqm-capa { border:1.5px solid #1d4ed8; background:#2563eb; color:#fff; border-radius:8px;
+                    padding:5px 14px; font-size:12px; font-weight:800; cursor:pointer;
+                    font-family:'Barlow',sans-serif; white-space:nowrap; }
+        .bqm-capa:hover { background:#1d4ed8; }
+        @media print { .bqm-table td.capa, .bqm-table th.capa { display:none; } }
         .bqm-table tbody tr:nth-child(even) td { background:#f8fafc; }
         .bqm-empty { padding:50px 16px; text-align:center; color:#64748b; font-size:13.5px; font-weight:600; }
       `}</style>
@@ -178,7 +216,10 @@ export default function BreakdownQprMachine() {
             ) : (
               <div className="bqm-scroll">
                 <table className="bqm-table">
-                  <thead><tr>{COLS.map(([h]) => <th key={h}>{h}</th>)}</tr></thead>
+                  <thead><tr>
+                    {COLS.map(([h]) => <th key={h}>{h}</th>)}
+                    {capaDikhe && <th className="capa">CAPA</th>}
+                  </tr></thead>
                   <tbody>
                     {rows.map((r) => (
                       <tr key={r.id}>
@@ -187,6 +228,19 @@ export default function BreakdownQprMachine() {
                             {khali(v(r))}
                           </td>
                         ))}
+                        {/* CAPA ki hadd poori karne walon ke aage hi "View" --
+                            seedha USI breakdown ki CAPA khulti hai. */}
+                        {capaDikhe && (
+                          <td className="capa">
+                            {capaHai(r) ? (
+                              <button type="button" className="bqm-capa"
+                                      title="Open this breakdown's CAPA"
+                                      onClick={() => nav(`/maintenance-capa?bd=${r.id}`)}>
+                                View
+                              </button>
+                            ) : "—"}
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
