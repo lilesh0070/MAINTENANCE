@@ -54,7 +54,8 @@ export default function SlideNav() {
           // still works if reached directly.
           { key: "skill-training",          label: "Skill & Training",      icon: "🎓",                   path: "/skill-training" },
           { key: "maintenance-historical",  label: "Historical Data",       icon: "/historical-icon.png", iconImg: true, path: "/maintenance-historical" },
-          { key: "maintenance-capa",        label: "CAPA",                  icon: "🛡",                   path: "/maintenance-capa" },
+          // CAPA yahan se hata di -- ab Breakdown page ke andar ek card hai
+          // (user 2026-09-20).  Raasta /maintenance-capa waisa hi chalta hai.
           { key: "maintenance-deviations",  label: "Deviations",            icon: "⚠",                    path: "/maintenance-deviations" },
           { key: "maintenance-logbook",     label: "Log Book",              icon: "📒",                   path: "/maintenance-logbook" },
           { key: "maintenance-history-card", label: "History Card",         icon: "🗂",                   path: "/maintenance-history-card" },
@@ -86,7 +87,8 @@ export default function SlideNav() {
           { key: "production-breakdown-slip", label: "Production Breakdown Slip", icon: "🏭",     path: "/production-breakdown-slip" },
         { key: "skill-training",          label: "Skill & Training",      icon: "🎓",                   path: "/skill-training" },
         { key: "maintenance-historical",  label: "Historical Data",       icon: "/historical-icon.png", iconImg: true, path: "/maintenance-historical" },
-        { key: "maintenance-capa",        label: "CAPA",                  icon: "🛡",                   path: "/maintenance-capa" },
+        // CAPA yahan se hata di -- ab Breakdown page ke andar ek card hai
+        // (user 2026-09-20).  Raasta /maintenance-capa waisa hi chalta hai.
         { key: "maintenance-deviations",  label: "Deviations",            icon: "⚠",                    path: "/maintenance-deviations" },
         { key: "maintenance-logbook",     label: "Log Book",              icon: "📒",                   path: "/maintenance-logbook" },
         { key: "maintenance-history-card", label: "History Card",         icon: "🗂",                   path: "/maintenance-history-card" },

@@ -16,7 +16,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { CAPA_QPR_GRID } from "./capaGrid";
 import { CapaAttach } from "./capa/CapaAttach";
 import { ojtBhara } from "./skill/OjtForm";
@@ -139,6 +139,7 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
   const drawing = useRef(false);
   const [view, setView]   = useState("list");      // "list" | "form"
   const [qs, setQs]       = useSearchParams();
+  const nav = useNavigate();
   const [rows, setRows]   = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -1153,9 +1154,13 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
             )}
             <button style={btn} onClick={() => window.print()}>🖨 Print</button>
             {sid && <span style={{ fontSize:12, color:"#64748b", fontWeight:700 }}>QPR #{sid}</span>}
-          </>) : (
+          </>) : (<>
+            {/* CAPA ab Breakdown page ka ek card hai -- wahin wapas jaane ka
+                raasta, bilkul BD History / Breakdown QPR jaisa.  Sirf list
+                me; form aur sirf-dekhne wale mode ke apne button hain. */}
+            <button style={btn} onClick={() => nav("/maintenance-breakdown")}>← Back</button>
             <button className="cp-blank" style={btn} onClick={() => { setPrefill({}); setSid(null); setBdId(null); setSStatus("DRAFT"); setView("form"); }}>+ Blank QPR</button>
-          )}
+          </>)}
           {msg && <span className={`cp-msg${msgBad ? " bad" : ""}`}>{msg}</span>}
           <span className="app-user" style={{ marginLeft:"auto", fontSize:12, color:"#64748b", fontWeight:600 }}>{user?.username ? <>Signed in as <b>{user.username}</b></> : ""}</span>
         </div>

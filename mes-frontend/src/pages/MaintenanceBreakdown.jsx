@@ -21,6 +21,13 @@ const BUTTONS = [
   { key: "pareto",       permKey: "maintenance-breakdown-pareto",   label: "Pareto Analysis",       icon: "📈", path: "/maintenance-breakdown/pareto-analysis" },
   { key: "top-10",       permKey: "maintenance-breakdown-top10",    label: "Top 10 BD",             icon: "🏆", path: "/maintenance-breakdown/top-10" },
   { key: "bd-qpr",       permKey: "maintenance-breakdown-qpr",      label: "Breakdown QPR",         icon: "📋", path: "/maintenance-breakdown/breakdown-qpr" },
+  // CAPA pehle sidebar me apni alag patti thi (user 2026-09-20: "CAPA jo side
+  // me hai usko Breakdown wale me le ja").  Raasta `/maintenance-capa` hi
+  // rakha hai -- Historical Data ka "Edit", QPRForm ka "Back" aur permission
+  // ki key `maintenance-capa` sab usi par tike hain.  Isliye permKey yahan
+  // bhi `maintenance-capa` hi hai (breakdown ka sub-key NAHI -- warna jisko
+  // breakdown mili hai usko CAPA bhi apne aap mil jaati).
+  { key: "capa",         permKey: "maintenance-capa",               label: "CAPA",                  icon: "🛡", path: "/maintenance-capa" },
 ];
 
 export default function MaintenanceBreakdown() {
