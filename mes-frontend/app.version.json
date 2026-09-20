@@ -1,5 +1,5 @@
 {
-  "version": "1.4.96",
-  "notes": "Breakdown QPR: the BLANK QPR panel now has its own machine picker. The month comes from the page filter; choose Zone, then Line, then Machine No, and any blank QPR filled for that machine in that month appears with an Add button. Added ones are listed above with a remove button. If the page already has a zone, line or machine chosen, the picker follows it.",
-  "released_at": "2026-09-20T13:17:29"
+  "version": "1.4.97",
+  "notes": "BD History: long entries are no longer cut off with dots. Problem, action taken and spares now wrap inside the same column width, so you can read the whole text. A new Excel button sits next to Print and PDF and downloads exactly the rows and columns you are looking at.",
+  "released_at": "2026-09-20T14:21:05"
 }
