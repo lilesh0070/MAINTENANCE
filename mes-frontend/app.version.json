@@ -1,5 +1,5 @@
 {
-  "version": "1.4.93",
-  "notes": "Blank QPR: the machine details now come from the machine master. Pick a Zone, then its Line, then its Machine No from drop-downs, and the Machine Name fills in by itself. A CAPA opened from a breakdown is untouched - those four fields still come from the slip and stay as they were.",
-  "released_at": "2026-09-20T12:20:56"
+  "version": "1.4.94",
+  "notes": "Breakdown QPR: below the breakdown table there is now a BLANK QPR panel. A QPR filled without a breakdown slip cannot join the report on its own, so you tick the ones that belong to it - the tick is saved, so everyone sees the same report and printing keeps only the ticked ones. Only QPRs matching the chosen month, zone, line and machine are listed, and the breakdown count and Pareto above never change.",
+  "released_at": "2026-09-20T12:44:50"
 }
