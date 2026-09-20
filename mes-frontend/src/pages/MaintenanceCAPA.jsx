@@ -1000,7 +1000,15 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
     if (pick.stat === "OPEN")   list = list.filter((r) => !isClosed(r));
     if (pick.stat === "CLOSED") list = list.filter((r) => isClosed(r));
     if (pick.zone) list = list.filter((r) => (r.zone_name || "—") === pick.zone);
-    return list;
+    /* Kram: SABSE PURANI date sabse UPAR (user 2026-09-20) -- taaki serial
+       number 1 pehli date ko mile aur neeche 2,3,4 chalte jaayein.  Pehle
+       server se nayi date pehle aati thi, to #1 sabse nayi par lagta tha.
+       Ek hi din ke do breakdown ho to jo pehle darj hua (chhoti id) upar. */
+    return [...list].sort((a, b) => {
+      const d = String(a.bd_date || "").localeCompare(String(b.bd_date || ""));
+      if (d) return d;
+      return (Number(a.bd_id) || 0) - (Number(b.bd_id) || 0);
+    });
   }, [rows, shown, pick]);
   const pickLabel = pick.zone ? `${pick.zone} zone`
     : { OPEN: "Open CAPA", CLOSED: "Closed CAPA", ALL: "All CAPA (ignoring the filters)" }[pick.stat] || "";

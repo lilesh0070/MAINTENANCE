@@ -13,7 +13,7 @@
  * NAHI -- isliye server se sirf samay ki khidki maangte hain aur machine_no
  * yahin milate hain.
  *
- * Column (user ke kram me): Breakdown Date (Slip Date) · Zone · Line ·
+ * Column (user ke kram me): # · Breakdown Date (Slip Date) · Zone · Line ·
  * machine_no · Problem Observed by Production · Actual Problem by
  * Maintenance · Action Taken · Start Time · BD Received Time · Response
  * Time · BD OK Time · Total Time (min) · CAPA.
@@ -172,6 +172,7 @@ export default function BreakdownQprMachine() {
            8px chaudi padti thi aur bekaar ka scrollbar aata tha (naapa). */
         .bqm-table td.txt { white-space:normal; text-align:left; min-width:180px; }
         .bqm-table td.mc { font-weight:700; }
+        .bqm-table th.sno, .bqm-table td.sno { width:34px; font-weight:700; }
         /* aakhri khaana -- usi breakdown ki CAPA kholne ka button */
         .bqm-table td.capa { vertical-align:middle; color:#94a3b8; }
         .bqm-capa { border:1.5px solid #1d4ed8; background:#2563eb; color:#fff; border-radius:8px;
@@ -217,12 +218,16 @@ export default function BreakdownQprMachine() {
               <div className="bqm-scroll">
                 <table className="bqm-table">
                   <thead><tr>
+                    <th className="sno">#</th>
                     {COLS.map(([h]) => <th key={h}>{h}</th>)}
                     {capaDikhe && <th className="capa">CAPA</th>}
                   </tr></thead>
                   <tbody>
-                    {rows.map((r) => (
+                    {rows.map((r, i) => (
                       <tr key={r.id}>
+                        {/* Serial number -- jaisa table saja hai (down time,
+                            bada upar) waise hi 1,2,3 (user 2026-09-20). */}
+                        <td className="sno">{i + 1}</td>
                         {COLS.map(([h, v, kism]) => (
                           <td key={h} className={kism === "txt" ? "txt" : h === "machine_no" ? "mc" : undefined}>
                             {khali(v(r))}
