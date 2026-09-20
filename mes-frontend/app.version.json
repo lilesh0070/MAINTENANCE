@@ -1,5 +1,5 @@
 {
-  "version": "1.4.84",
-  "notes": "ANDON calls now come over the app's background connection: the phone rings and shows a notification even when the app is closed, and the app no longer checks for calls every 2.5 seconds. Uses less battery in the background. Admin: the Services tab can turn off the ANDON ring for chosen user IDs (the popup, notification and vibration still come).",
-  "released_at": "2026-09-19T17:05:06"
+  "version": "1.4.85",
+  "notes": "CAPA: the Data Validation result now shows NG in red. At the end of the CAPA form you can attach the machine's DMC or PM check sheet (check points with the blank format, revision of your choice) and an OJT form. An attached sheet is frozen - it never changes even if points are added to the master later. Open an attached sheet and tap any point to highlight its row for audit, then save. The OJT form you fill in CAPA also appears in Skill & Training - OJT. Annexure-A now starts with one row and grows as you add possible causes.",
+  "released_at": "2026-09-20T09:53:25"
 }
