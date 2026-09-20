@@ -1,5 +1,5 @@
 {
-  "version": "1.4.95",
-  "notes": "The BLANK QPR panel under Breakdown QPR View is now always visible. Earlier it only appeared once a blank QPR existed, so there was nothing to see; it now tells you where to create one. An empty panel, and rows you have not ticked, are left out when printing.",
-  "released_at": "2026-09-20T13:04:27"
+  "version": "1.4.96",
+  "notes": "Breakdown QPR: the BLANK QPR panel now has its own machine picker. The month comes from the page filter; choose Zone, then Line, then Machine No, and any blank QPR filled for that machine in that month appears with an Add button. Added ones are listed above with a remove button. If the page already has a zone, line or machine chosen, the picker follows it.",
+  "released_at": "2026-09-20T13:17:29"
 }
