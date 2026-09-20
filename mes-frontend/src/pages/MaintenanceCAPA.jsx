@@ -130,7 +130,13 @@ const fyMonthList = (fy) => {
    hi nahi -- jo save hua tha wahi dikhe, jyon ka tyon. */
 export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) {
   const viewOnly = viewId != null;
-  const { token, theme, user, isAdmin } = useAuth();
+  const { token, theme, user, isAdmin, canWrite } = useAuth();
+  /* User Access me CAPA ko "Read-only" diya ho to sirf DEKH sakta hai --
+     bhar / save / close / attachment kuch nahi (user 2026-09-20).  `canWrite`
+     admin ko hamesha true deta hai.  `sirfDekho` = ya to Historical ke andar
+     khuli hai, ya permission read-only hai. */
+  const likhSakta = canWrite("maintenance-capa");
+  const sirfDekho = viewOnly || !likhSakta;
   const formRef = useRef(null);
   const videoRef = useRef(null);
   const [cam, setCam] = useState(null);   // {box} while the live-camera modal is open
@@ -822,6 +828,9 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
      har sheet ko DRAFT kar deta tha aur CAPA kabhi CLOSE ho hi nahi sakti thi —
      Historical ka "CAPA (Closed)" section hamesha khali rehta. */
   const saveWith = async (status) => {
+    // Do taala: button to chhipa hi hai, par kisi aur raaste se yahan pahunche
+    // to bhi read-only wale ka kuch save na ho.
+    if (sirfDekho) { flash("You have view-only access to CAPA.", true); return false; }
     setSaving(true);
     try {
       // OJT pehle (uski id CAPA ke blob me jaani chahiye), phir CAPA
@@ -1139,8 +1148,19 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
             {sid && <span style={{ fontSize:12, color:"#64748b", fontWeight:700 }}>QPR #{sid}</span>}
           </>) : view === "form" ? (<>
             <button style={btn} onClick={backToList}>← Pending CAPA</button>
-            <button className="cp-save" onClick={save} disabled={saving}>{saving ? "Saving…" : (sid ? "💾 Update" : "💾 Save")}</button>
-            {sStatus === "CLOSED" ? (
+            {/* Read-only wale ko Save / Close / Reopen nahi -- sirf dekhna aur
+                chhaapna.  Patti par saaf likh bhi dete hain, taaki "button
+                kahan gaya" na poochhna pade. */}
+            {!likhSakta && (
+              <span style={{ fontSize:12, fontWeight:800, color:"#be185d", background:"#fdf2f8",
+                             border:"1px solid #fbcfe8", borderRadius:99, padding:"3px 10px" }}>
+                View only
+              </span>
+            )}
+            {likhSakta && (
+              <button className="cp-save" onClick={save} disabled={saving}>{saving ? "Saving…" : (sid ? "💾 Update" : "💾 Save")}</button>
+            )}
+            {!likhSakta ? null : sStatus === "CLOSED" ? (
               <button style={{ ...btn, color:"#15803d", borderColor:"#bbf7d0", background:"#f0fdf4" }}
                       onClick={reopenCapa} disabled={saving} title="Reopen this CAPA — it will be removed from Historical Data">
                 ✓ Closed · Reopen
@@ -1159,7 +1179,15 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
                 raasta, bilkul BD History / Breakdown QPR jaisa.  Sirf list
                 me; form aur sirf-dekhne wale mode ke apne button hain. */}
             <button style={btn} onClick={() => nav("/maintenance-breakdown")}>← Back</button>
-            <button className="cp-blank" style={btn} onClick={() => { setPrefill({}); setSid(null); setBdId(null); setSStatus("DRAFT"); setView("form"); }}>+ Blank QPR</button>
+            {/* Nayi khaali QPR banana bhi "likhna" hai -- read-only ko nahi */}
+            {likhSakta ? (
+              <button className="cp-blank" style={btn} onClick={() => { setPrefill({}); setSid(null); setBdId(null); setSStatus("DRAFT"); setView("form"); }}>+ Blank QPR</button>
+            ) : (
+              <span style={{ fontSize:12, fontWeight:800, color:"#be185d", background:"#fdf2f8",
+                             border:"1px solid #fbcfe8", borderRadius:99, padding:"3px 10px" }}>
+                View only
+              </span>
+            )}
           </>)}
           {msg && <span className={`cp-msg${msgBad ? " bad" : ""}`}>{msg}</span>}
           <span className="app-user" style={{ marginLeft:"auto", fontSize:12, color:"#64748b", fontWeight:600 }}>{user?.username ? <>Signed in as <b>{user.username}</b></> : ""}</span>
@@ -1338,8 +1366,9 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
                       </td>
                       <td className="cp-stick" style={{ textAlign:"center" }}>
                         {r.sheet_id
-                          ? <button className="cp-open" onClick={(e) => { e.stopPropagation(); fillQpr(r); }}>Open</button>
-                          : <button className="cp-fill" onClick={(e) => { e.stopPropagation(); fillQpr(r); }}>Fill QPR</button>}
+                          ? <button className="cp-open" onClick={(e) => { e.stopPropagation(); fillQpr(r); }}>{likhSakta ? "Open" : "View"}</button>
+                          /* read-only ko "Fill" kehna galat hoga -- wo bhar nahi sakta, sirf dekh sakta hai */
+                          : <button className="cp-fill" onClick={(e) => { e.stopPropagation(); fillQpr(r); }}>{likhSakta ? "Fill QPR" : "View"}</button>}
                       </td>
                     </tr>
                   ))}
@@ -1352,7 +1381,7 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
             <div className="cp-scroll">
               <form ref={formRef} onSubmit={(e) => e.preventDefault()}>
                 {/* sirf-dekhne me `disabled` -- andar ka koi khaana / button chalta hi nahi */}
-                <fieldset className="cp-fs" disabled={viewOnly}>
+                <fieldset className="cp-fs" disabled={sirfDekho}>
                   <div className="cp-sheet">
                     <div dangerouslySetInnerHTML={GRID_HTML} />
                     <div className="cp-format">FORMAT NO.:- TBDI / QA / F / 006 &nbsp;&nbsp;&nbsp; REV. NO.:- 00 &nbsp;&nbsp;&nbsp; REV. DATE:- 20/03/2024</div>
@@ -1367,7 +1396,7 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
                      hain (do row ek saath dabne par dono nishaan lagein) */
                   onChange={(next) => setAtt((prev) => (typeof next === "function" ? next(prev) : next))}
                   token={token}
-                  viewOnly={viewOnly}
+                  viewOnly={sirfDekho}
                   accent={theme?.accent}
                   soft={theme?.soft}
                   getMachine={() => {
