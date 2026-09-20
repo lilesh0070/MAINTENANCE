@@ -254,12 +254,16 @@ export default function BreakdownQprMachine() {
         .bqm-blank-hd b { font-family:'Barlow Condensed',sans-serif; font-size:16px;
                           letter-spacing:.04em; color:#0f172a; }
         .bqm-blank-hd span { font-size:11.5px; color:#64748b; font-weight:600; }
+        .bqm-blank-how { display:block; margin-top:6px; font-size:12px; color:#94a3b8; font-weight:600; }
         .bqm-btable th.tick, .bqm-btable td.tick { width:44px; vertical-align:middle; }
         .bqm-btable td.tick input { width:16px; height:16px; cursor:pointer; }
         .bqm-btable tr.off td { color:#94a3b8; }
         .bqm-btable tr.on td { background:#eff6ff !important; }
+        /* Kaagaz par: tick ka khaana / hint nahi, bina tick wali row nahi,
+           aur ek bhi tick na ho to poori patti hi nahi. */
         @media print { .bqm-blank-hd span, .bqm-btable th.tick, .bqm-btable td.tick { display:none; }
-                       .bqm-btable tr.off { display:none; } }
+                       .bqm-btable tr.off { display:none; }
+                       .bqm-blank.khaali { display:none; } }
       `}</style>
 
       <div className="bh-root">
@@ -338,13 +342,22 @@ export default function BreakdownQprMachine() {
                 machine par poori utarti hain.  Upar wali ginti aur Pareto ye
                 nahi badalti -- wo slip ke hisaab se hi rehti hai.
                 Kaagaz par sirf TICK ki hui jaati hain. */}
-            {capaDikhe && blankSab.length > 0 && (
-              <div className="bqm-blank">
+            {capaDikhe && (
+              <div className={`bqm-blank${blankLage ? "" : " khaali"}`}>
                 <div className="bqm-blank-hd">
                   <b>BLANK QPR</b>
                   <span>Filled without a breakdown slip — tick the ones that belong to this report
                     ({blankLage} of {blankSab.length} added). The count and Pareto above do not change.</span>
                 </div>
+                {/* Ek bhi na mile to bhi patti dikhti hai -- warna user ko pata
+                    hi nahi chalta ki ye jagah hai kahan (user 2026-09-20). */}
+                {blankSab.length === 0 ? (
+                  <div className="bqm-empty" style={{ padding: "26px 16px" }}>
+                    No blank QPR for this period{f.zone ? ` in ${[f.zone, f.line].filter(Boolean).join(" / ")}` : ""}
+                    {machine ? ` on ${machine}` : ""}.
+                    <span className="bqm-blank-how"> Fill one from Breakdown → CAPA → “+ Blank QPR”, then it shows up here to tick.</span>
+                  </div>
+                ) : (
                 <div className="bqm-scroll">
                   <table className="bqm-table bqm-btable">
                     <thead><tr>
@@ -387,6 +400,7 @@ export default function BreakdownQprMachine() {
                     </tbody>
                   </table>
                 </div>
+                )}
               </div>
             )}
           </div>
