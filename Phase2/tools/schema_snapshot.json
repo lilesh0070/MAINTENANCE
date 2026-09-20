@@ -1,5 +1,5 @@
 {
- "columns": 765,
+ "columns": 788,
  "db": "maintenance_db",
  "schema": {
   "andon_call_output": {
@@ -1842,6 +1842,46 @@
     "type": "timestamp with time zone"
    }
   },
+  "maintenance_capa_min_config": {
+   "id": {
+    "default": "1",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "min_down_time_min": {
+    "default": "55",
+    "nullable": false,
+    "pos": 2,
+    "type": "integer"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 3,
+    "type": "timestamp with time zone"
+   }
+  },
+  "maintenance_capa_min_month": {
+   "min_down_time_min": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "integer"
+   },
+   "month": {
+    "default": null,
+    "nullable": false,
+    "pos": 1,
+    "type": "character varying"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 3,
+    "type": "timestamp with time zone"
+   }
+  },
   "maintenance_capa_sheet": {
    "breakdown_id": {
     "default": null,
@@ -3296,6 +3336,110 @@
     "type": "timestamp without time zone"
    }
   },
+  "maintenance_py_sensor_faults": {
+   "first_detected_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 14,
+    "type": "timestamp with time zone"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "last_seen_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 15,
+    "type": "timestamp with time zone"
+   },
+   "line_id": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "integer"
+   },
+   "line_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "text"
+   },
+   "line_producing": {
+    "default": null,
+    "nullable": true,
+    "pos": 16,
+    "type": "boolean"
+   },
+   "model_bit": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "integer"
+   },
+   "model_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "text"
+   },
+   "not_working_since": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "timestamp with time zone"
+   },
+   "py_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "text"
+   },
+   "py_no": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "text"
+   },
+   "register_addr": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "text"
+   },
+   "sensing_bits": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "text"
+   },
+   "source": {
+    "default": "'MES sensor health'::text",
+    "nullable": true,
+    "pos": 17,
+    "type": "text"
+   },
+   "stuck_bits": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "text"
+   },
+   "stuck_for_sec": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "integer"
+   },
+   "zone_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "text"
+   }
+  },
   "maintenance_qpr": {
    "capa_status": {
     "default": null,
@@ -4719,6 +4863,6 @@
    }
   }
  },
- "tables": 63,
- "taken_at": "2026-09-19T15:15:40"
+ "tables": 66,
+ "taken_at": "2026-09-20T10:24:19"
 }

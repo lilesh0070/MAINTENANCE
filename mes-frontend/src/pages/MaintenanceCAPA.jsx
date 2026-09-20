@@ -1,8 +1,9 @@
 /* ───────────────────────────────────────────────────────────────────
  * MaintenanceCAPA.jsx  —  CAPA / Quality Problem Report (QPR)
  * ───────────────────────────────────────────────────────────────────
- * Every manual-slip breakdown with a ≥60-min repair (maintenance_breakdown_data,
- * mc_down_time_minutes ≥ 60) is a CAPA.  This page has two views:
+ * Every manual-slip breakdown that reaches the CAPA down-time limit
+ * (maintenance_breakdown_data.mc_down_time_minutes; 55 min by default, an admin
+ * can set a different limit for any one month) is a CAPA.  This page has two views:
  *   • LIST  — the pending / filled CAPAs (Machine No / Name / Date / Model /
  *             Duration / Problem) from /api/capa-lb/pending.
  *   • FORM  — the full QPR sheet (capa.xlsx format, grid from capaGrid.js, every
@@ -79,6 +80,29 @@ const axSabCause = (form) =>
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
+/* ── HADD (minute) -- default + MAHINE-WISE ──────────────────────────────
+   User 2026-09-20: "jaise Breakdown QPR me hai ki kitne minute se upar ka
+   breakdown aayega -- default 55 sab month ke liye, baad me badalna ho to
+   kar sakte hain -- wahi CAPA me bhi, upar."  Server: GET/PUT/DELETE
+   /api/capa-lb/min-config -> { min_down_time_min, months: {"2026-10": 60} }.
+   Har breakdown APNE mahine ki hadd se parkha jaata hai (chhant server par
+   hoti hai, isliye hadd badalte hi list dobara maangi jaati hai). */
+const CAPA_MIN_DEFAULT = 55;
+
+/* Server ka jawab -> { def, months }.  Na mile (purana backend) to 55 -- page
+   phir bhi chalta rahe. */
+function minCfgOf(c) {
+  const def = Number.isFinite(Number(c?.min_down_time_min)) ? Number(c.min_down_time_min) : CAPA_MIN_DEFAULT;
+  const months = {};
+  for (const [k, v] of Object.entries(c?.months || {})) {
+    if (Number.isFinite(Number(v))) months[k] = Number(v);
+  }
+  return { def, months };
+}
+
+/* "2026-09" -> "Sep 2026" */
+const mahinaNaam = (ym) => { const [y, m] = String(ym).split("-"); return `${MONTHS[Number(m) - 1]} ${y}`; };
+
 /* FY Apr→Mar.  "2026-27" ka matlab 1-Apr-2026 se 31-Mar-2027. */
 const fyOf = (ymd) => {
   const m = /^(\d{4})-(\d{2})/.exec(String(ymd || ""));
@@ -106,7 +130,7 @@ const fyMonthList = (fy) => {
    hi nahi -- jo save hua tha wahi dikhe, jyon ka tyon. */
 export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) {
   const viewOnly = viewId != null;
-  const { token, theme, user } = useAuth();
+  const { token, theme, user, isAdmin } = useAuth();
   const formRef = useRef(null);
   const videoRef = useRef(null);
   const [cam, setCam] = useState(null);   // {box} while the live-camera modal is open
@@ -131,6 +155,14 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
   const [fLine, setFLine] = useState("");
   const [fMno, setFMno]   = useState("");
   const [master, setMaster] = useState([]);
+
+  /* Hadd (minute): `null` = abhi server se aayi nahi.  `minDraft.k` = kis
+     mahine/hadd ke liye likha gaya -- mahina badalte hi box apne aap us
+     mahine ki hadd dikhata hai, bina kisi effect ke. */
+  const [minCfg, setMinCfg]       = useState(null);
+  const [minDraft, setMinDraft]   = useState({ k: "", t: "" });
+  const [minSaving, setMinSaving] = useState(false);
+  const [minKehna, setMinKehna]   = useState(null);   // { text, ok }
 
   /* CAPA ke aakhir me juda saamaan: DMC / PM ki KHAALI check sheet (points +
      format ki naqal) aur OJT form.  CAPA ke apne blob me `attachments` par
@@ -166,6 +198,16 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
       .finally(() => setLoading(false));
   }, [api]);
   useEffect(() => { if (!viewOnly) loadPending(); }, [loadPending, viewOnly]);
+
+  // Hadd -- sirf list wale mode me chahiye (sirf-dekhne me list hai hi nahi).
+  useEffect(() => {
+    if (viewOnly || !token) return;
+    let chalu = true;
+    api(`/min-config`)
+      .then((c) => { if (chalu) setMinCfg(minCfgOf(c)); })
+      .catch(() => { if (chalu) setMinCfg(minCfgOf(null)); });
+    return () => { chalu = false; };
+  }, [api, token, viewOnly]);
 
   // sirf-dekhne ka mode: wahi ek sheet kholo
   useEffect(() => {
@@ -862,6 +904,62 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
 
   const clearFilters = () => { setFFy(fyOf(nowYm)); setFMonth(nowYm); setFZone(""); setFLine(""); setFMno(""); };
 
+  /* ── Hadd (minute) — sirf admin badalta hai, baaki ko sirf dikhti hai ──
+     Mahina chuna ho to SIRF us mahine ki; "Full year" par default (sab mahine
+     jinki alag nahi rakhi).  Chhant server par hoti hai, isliye save ke baad
+     list dobara maangte hain. */
+  const minM    = fMonth || "";
+  const minVal  = minCfg ? (minM ? (minCfg.months[minM] ?? minCfg.def) : minCfg.def) : null;
+  const minApni = !!(minCfg && minM && minCfg.months[minM] != null);   // is mahine ki ALAG hadd?
+  /* Dikhne wala bayan: "Full year" par agar is FY ke kisi mahine ki hadd alag
+     rakhi ho to ek number likhna galat hoga -- tab mahine-wise kehte hain. */
+  const minAlag = !!(minCfg && !minM
+    && fyMonthList(fFy).some((m) => minCfg.months[m.value] != null));
+  const minTile   = !minCfg ? "—"
+    : minAlag ? "Breakdowns above each month's limit" : `Breakdowns of ${minVal} min or more`;
+  const minKhaali = !minCfg ? "No breakdowns yet."
+    : minAlag ? "No breakdown above any month's limit." : `No breakdowns of ${minVal} min or more.`;
+  const minK    = `${minM}|${minVal}`;
+  const minT    = minDraft.k === minK ? minDraft.t : String(minVal ?? "");
+  const minBadla = minT.trim() !== String(minVal ?? "");
+
+  // Jawab me poori hadd lautti hai -- wahi rakh lo, box apne aap naya dikhayega.
+  const minLaga = (r, text) => {
+    setMinCfg(minCfgOf(r)); setMinDraft({ k: "", t: "" });
+    setMinKehna({ text, ok: true }); loadPending();
+    setTimeout(() => setMinKehna(null), 4000);
+  };
+  const minSambhalo = async () => {
+    if (minSaving) return;
+    const n = Number(minT);
+    if (minT.trim() === "" || !Number.isInteger(n) || n < 0) {
+      setMinKehna({ text: "Enter whole minutes (0 or more)", ok: false });
+      setTimeout(() => setMinKehna(null), 4000);
+      return;
+    }
+    setMinSaving(true); setMinKehna(null);
+    try {
+      const r = await api(`/min-config`, { method: "PUT",
+        body: JSON.stringify({ min_down_time_min: n, month: minM || null }) });
+      minLaga(r, "Saved");
+    } catch {
+      setMinKehna({ text: "Could not save", ok: false });
+      setTimeout(() => setMinKehna(null), 4000);
+    } finally { setMinSaving(false); }
+  };
+  // Is mahine ki alag hadd hatao -- wapas default par.
+  const minDefaultPar = async () => {
+    if (minSaving || !minM) return;
+    setMinSaving(true); setMinKehna(null);
+    try {
+      const r = await api(`/min-config/${minM}`, { method: "DELETE" });
+      minLaga(r, "Back to default");
+    } catch {
+      setMinKehna({ text: "Could not reset", ok: false });
+      setTimeout(() => setMinKehna(null), 4000);
+    } finally { setMinSaving(false); }
+  };
+
   /* Card dabao to neeche ki table me SIRF us card ki CAPA (user 2026-09-19).
        stat: "TOTAL" (filter wali sab, pehle jaisa) | "OPEN" | "CLOSED" |
              "ALL" (filter ke BINA sab -- card par yahi likha hai)
@@ -921,6 +1019,25 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
                   font-family:'Barlow',sans-serif; min-width:140px; }
         .cp-sel:focus { border-color:${theme.accent}; }
         .cp-sel:disabled { background:#f1f5f9; color:#94a3b8; cursor:not-allowed; }
+
+        /* hadd (minute) -- filter ki line me SABSE DAAYEN (Breakdown QPR jaisa) */
+        .cp-hadd { margin-left:auto; }
+        .cp-hadd-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+        .cp-hadd-in { min-width:0; width:92px; }
+        .cp-hadd-ro { min-width:0; width:92px; background:#f8fafc; color:#0f172a;
+                      border:1.5px solid #cbd5e1; border-radius:9px; padding:8px 11px;
+                      font-size:13px; font-weight:700; }
+        .cp-hadd-save { border:1px solid #1d4ed8; background:#2563eb; color:#fff; border-radius:9px;
+                        padding:8px 16px; font-size:13px; font-weight:800; cursor:pointer;
+                        font-family:'Barlow',sans-serif; }
+        .cp-hadd-save:disabled { background:#93c5fd; border-color:#93c5fd; cursor:default; }
+        .cp-hadd-reset { border:1px solid #cbd5e1; background:#fff; color:#475569; border-radius:9px;
+                         padding:8px 12px; font-size:12px; font-weight:800; cursor:pointer;
+                         font-family:'Barlow',sans-serif; white-space:nowrap; }
+        .cp-hadd-reset:hover { border-color:#2563eb; color:#1d4ed8; }
+        .cp-hadd-kehna { font-size:11.5px; font-weight:800; }
+        /* phone par poori chaudai -- warna box aur Save alag-alag line me girte hain */
+        @media (max-width:640px) { .cp-hadd { margin-left:0; width:100%; } .cp-hadd-in { flex:1; } }
 
         .cp-tbl-wrap { background:#fff; border:1px solid #e2e8f0; border-radius:14px; overflow-x:auto; box-shadow:0 1px 3px rgba(15,23,42,.05); }
         .cp-tbl { width:100%; border-collapse:collapse; }
@@ -1092,6 +1209,43 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
                 </select>
               </div>
               <button style={btn} onClick={clearFilters}>✕ Reset</button>
+
+              {/* Hadd -- kitne minute (ya zyada) ka breakdown CAPA me aayega.
+                  Sirf admin badalta hai; baaki ko sirf dikhti hai.  Mahina
+                  chuna ho to SIRF us mahine ki, warna default (sab mahine
+                  jinki alag nahi rakhi). */}
+              <div className="cp-fld cp-hadd">
+                <label>Down time ≥ (min) · {minM ? mahinaNaam(minM) : "Default"}</label>
+                {isAdmin ? (
+                  <div className="cp-hadd-row">
+                    <input type="number" min={0} max={1440} step={1} className="cp-sel cp-hadd-in"
+                           value={minT} disabled={minCfg === null}
+                           onChange={(e) => setMinDraft({ k: minK, t: e.target.value })}
+                           onKeyDown={(e) => { if (e.key === "Enter") minSambhalo(); }} />
+                    <button type="button" className="cp-hadd-save" onClick={minSambhalo}
+                            disabled={minSaving || minCfg === null || !minBadla}>
+                      {minSaving ? "Saving…" : "Save"}
+                    </button>
+                    {/* Is mahine ki alag hadd rakhi ho to wapas default par laane
+                        ka raasta -- warna ek baar alag rakhi hadd kabhi hatti hi nahi. */}
+                    {minApni && (
+                      <button type="button" className="cp-hadd-reset" onClick={minDefaultPar} disabled={minSaving}
+                              title={`Remove the ${mahinaNaam(minM)} limit — use the default (${minCfg.def} min)`}>
+                        Use default ({minCfg.def})
+                      </button>
+                    )}
+                    {minKehna && (
+                      <span className="cp-hadd-kehna" style={{ color: minKehna.ok ? "#15803d" : "#b91c1c" }}>
+                        {minKehna.ok ? "✓ " : ""}{minKehna.text}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="cp-hadd-ro" title="Set by admin">
+                    {minVal === null ? "…" : `${minVal} min`}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Cards ab FILTER ke hisaab se — upar ki ginti aur neeche ki
@@ -1101,7 +1255,7 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
                 188px, aur do ke liye 390px chahiye jabki jagah 364px), isliye
                 app me inhe do-do kiya jaata hai. */}
             <div className="cp-tiles" style={{ display:"flex", gap:14, marginBottom:16, flexWrap:"wrap" }}>
-              {tile("Total CAPA", shown.length, "#2563eb", "Breakdowns of 60 min or more", "TOTAL")}
+              {tile("Total CAPA", shown.length, "#2563eb", minTile, "TOTAL")}
               {tile("Open", open, "#dc2626", "QPR not closed yet", "OPEN")}
               {tile("Closed", closed, "#16a34a", "QPR filled and closed", "CLOSED")}
               {tile("All CAPA", rows.length, "#64748b", "Ignoring the filters above", "ALL")}
@@ -1158,7 +1312,7 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
                 </tr></thead>
                 <tbody>
                   {loading && <tr><td colSpan={11} style={{ textAlign:"center", color:"#94a3b8", padding:30 }}>Loading…</td></tr>}
-                  {!loading && tableRows.length === 0 && <tr><td colSpan={11} style={{ textAlign:"center", color:"#94a3b8", padding:30 }}>{rows.length ? "No CAPA matches these filters." : "No breakdowns of 60 min or more."}</td></tr>}
+                  {!loading && tableRows.length === 0 && <tr><td colSpan={11} style={{ textAlign:"center", color:"#94a3b8", padding:30 }}>{rows.length ? "No CAPA matches these filters." : minKhaali}</td></tr>}
                   {!loading && tableRows.map((r, i) => (
                     <tr key={r.bd_id} onClick={() => fillQpr(r)} title="Click to open QPR">
                       <td>{i + 1}</td>

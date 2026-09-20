@@ -5,8 +5,10 @@ CAPA driven directly by the Break Down Slip table (`maintenance_breakdown_data`)
 SAME source the Maintenance-KPI / BD-History / BD-Analysis pages compute
 from, so the CAPA counts always reconcile with those pages.
 
-Rule: every breakdown whose repair duration (mc_down_time_minutes, numeric) is
-60 minutes or more is automatically a CAPA.
+Rule: every breakdown whose repair duration (mc_down_time_minutes, numeric)
+reaches the CAPA down-time limit is automatically a CAPA.  The limit is
+**55 minutes by default** and an admin may set a different one for any single
+month (same design as the Breakdown-QPR limit) — see /min-config below.
 
   • OPEN   (Pending)      — its CAPA-QPR has not been completed yet.
   • CLOSED (CAPA Records) — a QPR has been filled and saved for it
@@ -27,8 +29,12 @@ Endpoints (prefix /api/capa-lb)
 -------------------------------
 GET  /summary          {open_count, closed_count, open[], closed[]}
 POST /start/{bd_id}    Open (or resume) the CAPA-QPR for a breakdown → {qpr_id}
+GET  /min-config       {min_down_time_min, months:{'YYYY-MM': n}, updated_at}
+PUT  /min-config       admin — set the default, or one month's own limit
+DEL  /min-config/{m}   admin — drop that month's limit (back to the default)
 """
 import json
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -39,8 +45,93 @@ from auth import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/capa-lb", tags=["capa-logbook"])
 
-# a CAPA = a breakdown with a ≥60-minute repair (mc_down_time_minutes)
-_MIN60 = "mc_down_time_minutes >= 60"
+# ════════════════════════════════════════════════════════════════════
+#  CAPA ki HADD (minute) -- default + MAHINE-WISE
+# ════════════════════════════════════════════════════════════════════
+# User (2026-09-20): "jaise Breakdown QPR ke liye kar rakha hai ki kitne minute
+# se upar ke breakdown ka data aayega -- default 55 aur monthly alag-alag save --
+# same CAPA ke liye karna hai."  Isliye bilkul wahi dhancha jo
+# `routers/breakdowns.py` ke QPR config me hai:
+#   * ek qatar (id=1) wali chhoti table = SAB mahine ki default hadd (55)
+#   * `..._month` table me SIRF un mahino ki qatar jinki hadd ALAG rakhi ho
+#   * har breakdown APNE mahine (slip_date / bd_start_date) ki hadd se parkha
+#     jaata hai -- isliye SQL me `CASE to_char(...) WHEN ... END` banta hai.
+# Hadd sirf ADMIN badalta hai; baaki sab sirf dekhte hain (QPR jaisa hi).
+#
+# ⚠ Pehle yahan pakki `>= 60` likhi thi.  Default ab 55 hai -- yaani 55-59
+# minute wale breakdown bhi ab CAPA me aayenge (user ne yahi maanga).
+CAPA_DEFAULT_MIN = 55
+CAPA_MAX_MIN = 1440          # ek din -- isse upar ki hadd ka koi matlab nahi
+_CAPA_MONTH = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+_min_table_ready = False
+
+
+def _min_ensure(conn):
+    global _min_table_ready
+    if _min_table_ready:
+        return
+    cur = conn.cursor()
+    cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS maintenance_capa_min_config (
+            id                 INT PRIMARY KEY DEFAULT 1,
+            min_down_time_min  INTEGER NOT NULL DEFAULT {CAPA_DEFAULT_MIN},
+            updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS maintenance_capa_min_month (
+            month              VARCHAR(7) PRIMARY KEY,
+            min_down_time_min  INTEGER NOT NULL,
+            updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""")
+    conn.commit()
+    _min_table_ready = True
+
+
+def _min_config(cur):
+    """Poori hadd ek saath: default + jin mahino ki alag rakhi hai."""
+    cur.execute("SELECT min_down_time_min, updated_at "
+                "FROM maintenance_capa_min_config WHERE id = 1")
+    r = cur.fetchone()
+    cur.execute("SELECT month, min_down_time_min FROM maintenance_capa_min_month ORDER BY month")
+    months = {m["month"]: int(m["min_down_time_min"]) for m in (cur.fetchall() or [])}
+    return {"min_down_time_min": int(r["min_down_time_min"]) if r else CAPA_DEFAULT_MIN,
+            "months": months,
+            "updated_at": r["updated_at"].isoformat() if r and r["updated_at"] else None}
+
+
+def _min_sql(cfg, p="bd."):
+    """Hadd ka SQL tukda -- `<p>mc_down_time_minutes >= <us mahine ki hadd>`.
+
+    Number hi jaate hain (month regex se parkha, minute int me badla), isliye
+    seedha jodna mehfooz hai.  `p` = table ka alias ('bd.' ya khaali)."""
+    d = int(cfg["min_down_time_min"])
+    months = cfg.get("months") or {}
+    if not months:
+        return f"{p}mc_down_time_minutes >= {d}"
+    whens = " ".join(f"WHEN '{m}' THEN {int(v)}" for m, v in months.items()
+                     if _CAPA_MONTH.match(str(m)))
+    if not whens:
+        return f"{p}mc_down_time_minutes >= {d}"
+    return (f"{p}mc_down_time_minutes >= CASE "
+            f"to_char(COALESCE({p}slip_date, {p}bd_start_date), 'YYYY-MM') "
+            f"{whens} ELSE {d} END")
+
+
+def _min_where(conn, p="bd.", bhi=None):
+    """Hadd ki shart, aur `bhi` diya ho to "ya jiski CAPA pehle se khuli hai".
+
+    Admin hadd BADHA de to jo CAPA pehle se shuru/bhari padi hai wo list se
+    gayab nahi honi chahiye -- warna bhara hua kaam dikhna hi band ho jaata.
+    Isliye wahan `bhi` me wo shart aati hai ("iski sheet/QPR maujood hai")."""
+    _min_ensure(conn)
+    sql = _min_sql(_min_config(dict_cursor(conn)), p)
+    return f"({sql}{' OR ' + bhi if bhi else ''})"
+
+
+def _min_month_ok(month):
+    if not month or not _CAPA_MONTH.match(month):
+        raise HTTPException(status_code=400, detail="Month must be YYYY-MM")
+    return month
 
 
 def _author(user) -> str:
@@ -63,10 +154,68 @@ def _num(v):
     return int(f) if f == int(f) else f
 
 
+# ⚠ Model apne endpoint se PEHLE -- FastAPI decorator lagte hi body ka type
+# padh leta hai; neeche likhne par import par hi phat-ta hai.
+class CapaMinIn(BaseModel):
+    min_down_time_min: int
+    month: Optional[str] = None      # 'YYYY-MM' -> sirf us mahine ki; khaali -> default
+
+
+@router.get("/min-config")
+def get_min_config(user=Depends(get_current_user)):
+    """CAPA ki hadd (minute) -- har signed-in user padh sakta hai."""
+    with get_conn() as conn:
+        _min_ensure(conn)
+        return _min_config(dict_cursor(conn))
+
+
+@router.put("/min-config")
+def set_min_config(body: CapaMinIn, admin=Depends(require_admin)):
+    """Hadd badlo -- SIRF admin.  `month` diya to sirf us mahine ki, warna
+    default (sab mahine jinki alag nahi rakhi).  0 se 1440 ke bahar ka number
+    kinare par le aate hain; jawab me poori hadd jo SACH ME save hui."""
+    mins = max(0, min(CAPA_MAX_MIN, int(body.min_down_time_min)))
+    month = (body.month or "").strip()
+    with get_conn() as conn:
+        _min_ensure(conn)
+        cur = dict_cursor(conn)
+        if month:
+            _min_month_ok(month)
+            cur.execute("""
+                INSERT INTO maintenance_capa_min_month (month, min_down_time_min, updated_at)
+                VALUES (%s, %s, NOW())
+                ON CONFLICT (month) DO UPDATE
+                   SET min_down_time_min = EXCLUDED.min_down_time_min, updated_at = NOW()""",
+                        (month, mins))
+        else:
+            cur.execute("""
+                INSERT INTO maintenance_capa_min_config (id, min_down_time_min, updated_at)
+                VALUES (1, %s, NOW())
+                ON CONFLICT (id) DO UPDATE
+                   SET min_down_time_min = EXCLUDED.min_down_time_min, updated_at = NOW()""",
+                        (mins,))
+        conn.commit()
+        return _min_config(cur)
+
+
+@router.delete("/min-config/{month}")
+def reset_min_month(month: str, admin=Depends(require_admin)):
+    """Us mahine ki alag hadd hatao -- wo mahina wapas default par.  SIRF admin."""
+    _min_month_ok(month)
+    with get_conn() as conn:
+        _min_ensure(conn)
+        cur = dict_cursor(conn)
+        cur.execute("DELETE FROM maintenance_capa_min_month WHERE month = %s", (month,))
+        conn.commit()
+        return _min_config(cur)
+
+
 @router.get("/summary")
 def summary(user=Depends(get_current_user)):
     _ensure_qpr()
     with get_conn() as conn:
+        # hadd + "ya jiski QPR pehle se hai" (khuli CAPA kabhi gayab na ho)
+        shart = _min_where(conn, "bd.", "q.qpr_id IS NOT NULL")
         cur = dict_cursor(conn)
         # LEFT JOIN LATERAL that picks ONE QPR per breakdown and PREFERS a CLOSED
         # one — so once a CAPA has been closed it can never reappear as Open, even
@@ -93,7 +242,7 @@ def summary(user=Depends(get_current_user)):
                     ORDER BY (mq.capa_status = 'CLOSED') DESC, mq.id DESC
                     LIMIT 1
               ) q ON TRUE
-             WHERE {_MIN60}
+             WHERE {shart}
              ORDER BY COALESCE(bd.slip_date, bd.bd_start_date) DESC NULLS LAST, bd.id DESC
         """)
         rows = cur.fetchall()
@@ -125,17 +274,22 @@ def summary(user=Depends(get_current_user)):
 def start_capa(bd_id: int, user=Depends(get_current_user)):
     _ensure_qpr()
     with get_conn() as conn:
+        # hadd, ya jiski QPR pehle se khul chuki ho (hadd badhne par bhi khule
+        # CAPA par "Start / Resume" chalta rahe)
+        shart = _min_where(conn, "bd.",
+                           "EXISTS (SELECT 1 FROM maintenance_qpr mq WHERE mq.logbook_id = bd.id)")
         cur = dict_cursor(conn)
-        cur.execute(f"""SELECT id, zone AS zone_code,
-                               COALESCE(slip_date, bd_start_date) AS bd_date,
-                               problem_reported_by_production AS problem_production,
-                               problem_observed_by_maintenance AS problem_maintenance,
-                               machine_name, machine_no,
-                               bd_attended_by AS attended_by
-                          FROM maintenance_breakdown_data WHERE id=%s AND {_MIN60}""", (bd_id,))
+        cur.execute(f"""SELECT bd.id, bd.zone AS zone_code,
+                               COALESCE(bd.slip_date, bd.bd_start_date) AS bd_date,
+                               bd.problem_reported_by_production AS problem_production,
+                               bd.problem_observed_by_maintenance AS problem_maintenance,
+                               bd.machine_name, bd.machine_no,
+                               bd.bd_attended_by AS attended_by
+                          FROM maintenance_breakdown_data bd
+                         WHERE bd.id=%s AND {shart}""", (bd_id,))
         bd = cur.fetchone()
         if not bd:
-            raise HTTPException(404, "No ≥60-minute breakdown for this id")
+            raise HTTPException(404, "This breakdown is below the CAPA down-time limit")
 
         # already started? → return the existing CAPA-QPR (no duplicate)
         cur.execute("SELECT id, qpr_no FROM maintenance_qpr WHERE logbook_id=%s", (bd_id,))
@@ -222,11 +376,14 @@ def _ensure_capa_sheet():
 
 @router.get("/pending")
 def capa_pending(user=Depends(get_current_user)):
-    """Every manual-slip breakdown with a ≥60-min repair (mc_down_time_minutes) is
-    a CAPA.  Returns each with machine_no / machine_name / date / model + whether
+    """Every manual-slip breakdown whose repair took at least the CAPA down-time
+    limit (default 55 min, per-month overrides — GET /min-config) is a CAPA.
+    Returns each with machine_no / machine_name / date / model + whether
     its QPR sheet is started (sheet_id) yet."""
     _ensure_capa_sheet()
     with get_conn() as conn:
+        # hadd + "ya jiski sheet pehle se hai" (bhari CAPA kabhi gayab na ho)
+        shart = _min_where(conn, "bd.", "s.id IS NOT NULL")
         cur = dict_cursor(conn)
         cur.execute(f"""
             SELECT bd.id AS bd_id, bd.machine_no, bd.machine_name,
@@ -246,7 +403,7 @@ def capa_pending(user=Depends(get_current_user)):
                    SELECT id, status, qpr_no FROM maintenance_capa_sheet
                     WHERE breakdown_id = bd.id ORDER BY id DESC LIMIT 1
               ) s ON TRUE
-             WHERE {_MIN60}
+             WHERE {shart}
              ORDER BY COALESCE(bd.slip_date, bd.bd_start_date) DESC NULLS LAST, bd.id DESC
         """)
         rows = cur.fetchall()
