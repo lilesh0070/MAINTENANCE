@@ -244,6 +244,9 @@ public class WalkieService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        // App band ho aur sirf service chal rahi ho, tab bhi atak ka pehredaar
+        // (AnrLog.java) -- dobara bulane par kuch nahi karta.
+        try { AnrLog.shuru(this); } catch (Throwable t) { /* log na bane to bhi service chale */ }
         http = new OkHttpClient.Builder()
                 // Server har taraf se chup ho jaye (server ki bijli gayi) to
                 // socket ko pata hi nahi chalta -- ye ping use pakadta hai.

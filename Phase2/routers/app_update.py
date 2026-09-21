@@ -15,6 +15,9 @@ TEEN RAASTE
     GET  /api/app/download  -> APK ki file khud
     GET  /api/app/health    -> sirf ye batata hai ki intezaam theek se laga hai
 
+(Neeche "APP KI ATAK / CRASH KA LOG" ke raaste bhi isi prefix par hain -- wo
+LOGIN ke peeche hain, in teeno jaise khule nahi.)
+
 BINA LOGIN KYUN
 ---------------
 Download **external browser / Android ke download manager** se hota hai, aur
@@ -36,9 +39,14 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime
+from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
+
+from database import get_conn, dict_cursor
+from auth import get_current_user, require_admin, _asli_ip
 
 router = APIRouter(prefix="/api/app", tags=["app-update"])
 
@@ -113,3 +121,154 @@ def app_health():
         "version_hai":  os.path.isfile(_META),
         "version":      _read_meta().get("version") or "",
     }
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# APP KI ATAK / CRASH KA LOG  (2026-09-21)
+# ═════════════════════════════════════════════════════════════════════════
+# User: "TV me din bhar 'Close app / Wait' aata hai -- log bana de, aaye to
+# log bhej de jisse tu dekh sake."
+#
+# App (`AnrLog.java` + `AppDiag.jsx`) main thread 4 sec se zyada atakte hi
+# uska stack (kis line par atka) + memory likh leti hai, aur Android 11+ par
+# Android ka apna record bhi (pichhli baar app ANR / crash / kam memory se
+# band hui).  Page wo reports yahan bhejta hai; yahan ek table me rakhi jaati
+# hain.  Dekhne ke do raaste: admin ke GET (neeche), ya laptop se seedha DB:
+#     SELECT id, received_at, device, kind, summary FROM maintenance_app_diag
+#     ORDER BY id DESC LIMIT 20;
+#
+#   POST /api/app/diag        (login)  {reports:[{kind, at_ms, summary, detail, path}],
+#                                       app_version, device, path}
+#   GET  /api/app/diag        (admin)  aakhri reports (detail ke bina)
+#   GET  /api/app/diag/{id}   (admin)  ek report poori
+#
+# ⚠ Upar ke teen raaste bina login hain -- ye JAAN-BOOJH KAR login ke peeche
+# hain: domain ke raaste `/api` internet se bhi pahunch me hai, bina login ke
+# koi bhi DB bhar deta.  Hadd bhi: ek request me 10, detail 200 KB, ek user
+# ke 24 ghante me 300 (usse upar chup-chaap chhod dete hain -- "ok" hi lautta
+# hai, warna app wahi report baar-baar bhejti rehti).  60 din se purani
+# report process shuru hote hi mit jaati hai.
+_DIAG_MAX_REPORTS = 10
+_DIAG_MAX_DETAIL = 200_000
+_DIAG_MAX_DAY = 300
+_DIAG_KEEP_DAYS = 60
+_DIAG_DDL_DONE = False
+
+
+def _diag_ensure(conn):
+    global _DIAG_DDL_DONE
+    if _DIAG_DDL_DONE:
+        return
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS maintenance_app_diag (
+            id           SERIAL PRIMARY KEY,
+            received_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+            happened_at  TIMESTAMP,
+            user_id      INT,
+            username     TEXT,
+            client_ip    TEXT,
+            device       TEXT,
+            app_version  TEXT,
+            kind         TEXT,
+            summary      TEXT,
+            detail       TEXT,
+            path         TEXT
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS ix_app_diag_received"
+                " ON maintenance_app_diag (received_at)")
+    cur.execute("DELETE FROM maintenance_app_diag WHERE received_at < NOW() - %s * INTERVAL '1 day'",
+                (_DIAG_KEEP_DAYS,))
+    conn.commit()
+    _DIAG_DDL_DONE = True
+
+
+class _DiagReport(BaseModel):
+    kind: str = "stall"                  # stall | anr | crash | low_memory | ...
+    at_ms: Optional[float] = None        # device ka waqt (epoch ms)
+    summary: str = ""
+    detail: str = ""
+    path: str = ""                       # atak ke waqt app kaunse page par thi
+
+
+class _DiagIn(BaseModel):
+    reports: List[_DiagReport] = []
+    app_version: str = ""
+    device: str = ""                     # tv / tab / phone
+    path: str = ""                       # bhejte waqt ka page
+
+
+def _kaat(s, n):
+    s = "" if s is None else str(s)
+    return s if len(s) <= n else s[:n] + "\n…[kaata: %d aur]" % (len(s) - n)
+
+
+def _waqt(ms):
+    try:
+        if ms and float(ms) > 0:
+            return datetime.fromtimestamp(float(ms) / 1000.0)
+    except (TypeError, ValueError, OverflowError, OSError):
+        pass
+    return None
+
+
+@router.post("/diag")
+def app_diag_save(body: _DiagIn, request: Request, user=Depends(get_current_user)):
+    """App ki atak / crash ki report -- `AppDiag.jsx` bhejta hai."""
+    reps = list(body.reports or [])[:_DIAG_MAX_REPORTS]
+    if not reps:
+        return {"ok": True, "saved": 0}
+    uid = (user or {}).get("id")
+    uname = (user or {}).get("username")
+    ip = _asli_ip(request)
+    with get_conn() as conn:
+        _diag_ensure(conn)
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM maintenance_app_diag"
+                    " WHERE user_id = %s AND received_at > NOW() - INTERVAL '1 day'", (uid,))
+        pehle = cur.fetchone()[0] or 0
+        jagah = max(0, _DIAG_MAX_DAY - pehle)
+        saved = 0
+        for r in reps[:jagah]:
+            cur.execute("""
+                INSERT INTO maintenance_app_diag
+                    (happened_at, user_id, username, client_ip, device, app_version,
+                     kind, summary, detail, path)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (_waqt(r.at_ms), uid, uname, ip,
+                  _kaat(body.device, 20), _kaat(body.app_version, 30),
+                  _kaat(r.kind, 30), _kaat(r.summary, 1000),
+                  _kaat(r.detail, _DIAG_MAX_DETAIL), _kaat(r.path or body.path, 300)))
+            saved += 1
+        conn.commit()
+    if saved < len(reps):
+        print(f"[APP-DIAG] {uname} ki {len(reps) - saved} report chhodi (24 ghante ki hadd)")
+    return {"ok": True, "saved": saved, "dropped": len(reps) - saved}
+
+
+@router.get("/diag")
+def app_diag_list(limit: int = 50, user=Depends(require_admin)):
+    """Aakhri reports -- detail ke bina (wo `/diag/{id}` se)."""
+    limit = max(1, min(int(limit or 50), 500))
+    with get_conn() as conn:
+        _diag_ensure(conn)
+        cur = dict_cursor(conn)
+        cur.execute("""
+            SELECT id, received_at, happened_at, username, client_ip, device,
+                   app_version, kind, summary, path, LENGTH(detail) AS detail_len
+            FROM maintenance_app_diag ORDER BY id DESC LIMIT %s
+        """, (limit,))
+        return cur.fetchall()
+
+
+@router.get("/diag/{did}")
+def app_diag_one(did: int, user=Depends(require_admin)):
+    with get_conn() as conn:
+        _diag_ensure(conn)
+        cur = dict_cursor(conn)
+        cur.execute("SELECT * FROM maintenance_app_diag WHERE id = %s", (did,))
+        row = cur.fetchone()
+    if not row:
+        raise HTTPException(404, "Report nahi mili")
+    return row

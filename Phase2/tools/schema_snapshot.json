@@ -1,5 +1,5 @@
 {
- "columns": 789,
+ "columns": 801,
  "db": "maintenance_db",
  "schema": {
   "andon_call_output": {
@@ -1308,6 +1308,80 @@
     "nullable": true,
     "pos": 2,
     "type": "character varying"
+   }
+  },
+  "maintenance_app_diag": {
+   "app_version": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "text"
+   },
+   "client_ip": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "text"
+   },
+   "detail": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "text"
+   },
+   "device": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "text"
+   },
+   "happened_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "timestamp without time zone"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "kind": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "text"
+   },
+   "path": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "text"
+   },
+   "received_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 2,
+    "type": "timestamp without time zone"
+   },
+   "summary": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "text"
+   },
+   "user_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "integer"
+   },
+   "username": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "text"
    }
   },
   "maintenance_audit_log": {
@@ -4869,6 +4943,6 @@
    }
   }
  },
- "tables": 66,
- "taken_at": "2026-09-20T12:43:36"
+ "tables": 67,
+ "taken_at": "2026-09-21T16:42:37"
 }

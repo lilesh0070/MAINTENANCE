@@ -5,6 +5,7 @@ import DisplayToolbar from "./DisplayToolbar";
 import AIAssistant from "./AIAssistant";
 import AppSettings from "./AppSettings";
 import WalkiePresence from "./WalkiePresence";
+import AppDiag from "./AppDiag";
 import ErrorBoundary from "./ErrorBoundary";
 import { isNativeApp } from "../constants/apiBase";
 
@@ -48,6 +49,8 @@ export default function Layout({ children }) {
           rakhta hai, taaki banda tabhi "online" na dikhe jab wo walkie ka
           page khole baitha ho. */}
       <WalkiePresence />
+      {/* Koi UI nahi -- app ki atak (ANR) ka log server tak (AppDiag.jsx). */}
+      <AppDiag />
 
       {/* Maintenance AI assistant — ek hi jagah lagi hai, isliye HAR page par
           milti hai: Breakdown, ANDON, CAPA, PM, Spare, KPI, wall-display, sab.

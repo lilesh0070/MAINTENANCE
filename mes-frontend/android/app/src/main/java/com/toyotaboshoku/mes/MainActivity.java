@@ -113,6 +113,10 @@ public class MainActivity extends BridgeActivity {
      */
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // Atak ka pehredaar SABSE PEHLE -- WebView ka shuru hona (super.onCreate)
+        // bhi atak sakta hai, wo bhi pakda jaaye (AnrLog.java).
+        try { AnrLog.shuru(this); } catch (Throwable t) { /* log na bane to bhi app chale */ }
+
         // Plugin `super.onCreate()` se PEHLE register karna padta hai --
         // wahin Capacitor bridge banata hai aur usi waqt plugin ki list
         // padhta hai.  Baad me register karne se JS ko plugin milta hi nahi.
@@ -127,6 +131,7 @@ public class MainActivity extends BridgeActivity {
             registerPlugin(ScreenMode.class);
             registerPlugin(SheetTools.class);
             registerPlugin(Walkie.class);
+            registerPlugin(AnrLog.class);
         } catch (Throwable t) {
             // chup-chaap chhod do -- JS me plugin na milne par wahan pehle se
             // browser wala raasta rakha hua hai.
