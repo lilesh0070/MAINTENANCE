@@ -1,5 +1,5 @@
 {
-  "version": "1.4.100",
-  "notes": "Maintenance call alert: tapping OK on the phone notification now also closes the call popup inside the app, so the phone stops vibrating at once. You no longer have to open the app to close the popup.",
-  "released_at": "2026-09-21T11:47:38"
+  "version": "1.4.101",
+  "notes": "New page in the sidebar: 3D View. Open it and tap Cylinder to see an interactive 3D model of a double-acting cylinder with a 5/2 solenoid valve: rotate, zoom, switch coils Y1/Y2, turn X-Ray on or off, and explode the parts. It works on the plant network without internet.",
+  "released_at": "2026-09-21T16:06:06"
 }
