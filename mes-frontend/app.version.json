@@ -1,5 +1,5 @@
 {
-  "version": "1.4.101",
-  "notes": "New page in the sidebar: 3D View. Open it and tap Cylinder to see an interactive 3D model of a double-acting cylinder with a 5/2 solenoid valve: rotate, zoom, switch coils Y1/Y2, turn X-Ray on or off, and explode the parts. It works on the plant network without internet.",
-  "released_at": "2026-09-21T16:06:06"
+  "version": "1.4.102",
+  "notes": "The app now keeps a small log when it freezes (the Close app / Wait message) and sends it to the server, so the cause can be found and fixed. Nothing changes on screen.",
+  "released_at": "2026-09-21T16:46:06"
 }
