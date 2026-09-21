@@ -10,6 +10,7 @@ To change JWT secret → edit SECRET_KEY
 To change token expiry → edit TOKEN_EXPIRE_HOURS
 """
 
+import ipaddress
 import os
 import secrets
 import time
@@ -220,13 +221,83 @@ _LOGIN_WINDOW_S   = int(os.getenv("LOGIN_FAIL_WINDOW", "300") or 300)   # 5 min
 _LOGIN_BLOCK_S    = int(os.getenv("LOGIN_BLOCK_SECONDS", "120") or 120) # 2 min
 
 
-def _throttle_key(username, request):
-    ip = "?"
+def _sahi_ip(s):
+    """Text -> saaf IP (IPv4-mapped IPv6 jaise ::ffff:1.2.3.4 ko IPv4 bana
+    ke), ya None agar wo IP hi nahi hai.  Header me kuch bhi likha ho sakta
+    hai -- bina parkhe kabhi mat maano."""
+    s = str(s or "").strip()
+    if not s:
+        return None
     try:
-        ip = (request.client.host if request and request.client else "?") or "?"
+        a = ipaddress.ip_address(s)
+    except ValueError:
+        return None
+    if a.version == 6 and a.ipv4_mapped:
+        a = a.ipv4_mapped
+    return str(a)
+
+
+def _loopback(s):
+    a = _sahi_ip(s)
+    return bool(a) and ipaddress.ip_address(a).is_loopback
+
+
+def _asli_ip(request):
+    """Login karne wale ka ASLI IP -- rok isi par lagti hai (2026-09-21).
+
+    Website (LAN se ho ya domain se) Vite ke raaste aati hai, to backend ko
+    har request `127.0.0.1` se dikhti thi.  Rok (username, IP) par hai, isliye
+    internet se koi bhi kisi ka account SABKE liye band karwa sakta tha.
+
+    Kis par bharosa, kis par nahi -- ye hi poora khel hai:
+      1. Seedha koi aur IP (APK, ya koi bhi jo 8892 par seedha aaya) -> WAHI.
+         Uske bheje header KABHI nahi maante -- warna nakli header bhej kar
+         rok se bach jaata, ya kisi aur ka IP likh kar use fansa deta.
+      2. `127.0.0.1` se aayi (yaani apna Vite proxy) -> Vite `xfwd` se
+         X-Forwarded-For ke AAKHIR me jis se usne baat ki uska IP jodta hai.
+         Sirf wahi aakhri entry maano (pehli entry bhejne wala khud likh
+         sakta hai).
+           a. Aakhri entry asli IP hai -> LAN wala browser; WAHI.  Iska
+              CF-Connecting-IP nakli ho sakta hai (LAN se seedha 9965 par
+              koi bhi ye header bhej sakta hai) -- isliye nahi maante.
+           b. Aakhri entry bhi loopback (ya header hi nahi) -> request isi
+              machine ke cloudflared se aayi, yaani Cloudflare ke raaste.
+              Tab CF-Connecting-IP -- ise Cloudflare khud likhta hai, bahar
+              wala badal nahi sakta.
+      3. Kuch bhi pakka na ho -> `127.0.0.1` (yaani aaj jaisa, usse bura nahi).
+
+    ⚠ uvicorn KHUD bhi yahi karta hai (uska `proxy_headers` default chalu
+    hai, sirf 127.0.0.1 par bharosa): Vite se aayi request ka `client.host`
+    wo X-Forwarded-For ki aakhri bharose-ke-bahar wali entry se badal deta
+    hai.  To LAN browser / Cloudflare wala asli IP aksar yahin seedha mil
+    jaata hai (neeche pehla `return`).  Par jab poora XFF loopback ho (isi
+    machine se aayi request) to uvicorn `client` ko KHAALI kar deta hai --
+    us haal me bhi headers dekhne hain, isliye khaali client ko loopback
+    jaisa maante hain.  (Vite 8 + uvicorn 0.27 par chala kar naapa.)
+    """
+    try:
+        seedha = (request.client.host if request and request.client else "") or ""
     except Exception:
-        pass
-    return (str(username or "").strip().lower(), ip)
+        seedha = ""
+    seedha = _sahi_ip(seedha)                           # None = khaali / kachra
+    if request is None:
+        return "?"
+    if seedha and not _loopback(seedha):
+        return seedha                                   # 1) seedha aaya
+    try:
+        h = request.headers
+    except Exception:
+        return seedha or "127.0.0.1"
+    xff = [x.strip() for x in str(h.get("x-forwarded-for") or "").split(",") if x.strip()]
+    aakhri = _sahi_ip(xff[-1]) if xff else None
+    if aakhri and not _loopback(aakhri):
+        return aakhri                                   # 2a) LAN browser
+    cf = _sahi_ip(h.get("cf-connecting-ip"))
+    return cf or seedha or "127.0.0.1"                  # 2b) Cloudflare / 3)
+
+
+def _throttle_key(username, request):
+    return (str(username or "").strip().lower(), _asli_ip(request))
 
 
 def _throttle_check(key):
@@ -284,6 +355,10 @@ def login(request: Request, form: OAuth2PasswordRequestForm = Depends()):
         )
     if not user or not verify_password(form.password, user["password_hash"]):
         _throttle_fail(_tkey)
+        # Galat login ka asli IP log me -- server par deploy ke baad isi se
+        # pakka hota hai ki Cloudflare wala IP sach me aa raha hai (127.0.0.1
+        # dikhe to header nahi pahunch raha).  Password kabhi nahi likhte.
+        print(f"[LOGIN] galat password  user={_tkey[0]!r}  ip={_tkey[1]}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",

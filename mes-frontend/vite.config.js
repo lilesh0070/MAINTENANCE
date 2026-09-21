@@ -39,6 +39,12 @@ export default defineConfig({
         // -- dev par socket chup-chaap fail hota hai (build/APK me proxy hai
         // hi nahi, isliye wahan ye dikkat kabhi aati hi nahi).
         ws: true,
+        // Jis browser se baat hui uska IP X-Forwarded-For ke AAKHIR me jod do
+        // (2026-09-21).  Iske bina backend ko har website user 127.0.0.1 dikhta
+        // tha, aur login ki rok sab par ek saath lag jaati thi -- koi bhi kisi
+        // ka account band karwa sakta tha.  Backend sirf AAKHRI entry maanta
+        // hai (auth.py `_asli_ip`), jo yahi Vite likhta hai.
+        xfwd: true,
       },
       '/cms-api': {
         target: 'http://localhost:5555',
