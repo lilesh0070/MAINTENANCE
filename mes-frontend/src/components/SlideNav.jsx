@@ -62,6 +62,7 @@ export default function SlideNav() {
           { key: "maintenance-pm",          label: "Preventive Maint.",     icon: "🛠",                   path: "/maintenance-pm" },
           { key: "maintenance-machine-manual", label: "Machine Manual",     icon: "📖",                   path: "/maintenance-machine-manual" },
           { key: "maintenance-study-material", label: "Study Material",   icon: "🎓",                   path: "/maintenance-study-material" },
+          { key: "maintenance-3d-view",        label: "3D View",          icon: "🧊",                   path: "/maintenance-3d-view" },
           { key: "maintenance-machine-dmc",    label: "Machine DMC",        icon: "🏷",                   path: "/maintenance-machine-dmc" },
           { key: "maintenance-spare",          label: "Spare",              icon: "🔩",                   path: "/maintenance-spare" },
           { key: "machine-master",             label: "Machine Master",     icon: "🏭",                   path: "/machine-master" },
@@ -95,6 +96,7 @@ export default function SlideNav() {
         { key: "maintenance-pm",          label: "Preventive Maint.",     icon: "🛠",                   path: "/maintenance-pm" },
         { key: "maintenance-machine-manual", label: "Machine Manual",     icon: "📖",                   path: "/maintenance-machine-manual" },
           { key: "maintenance-study-material", label: "Study Material",   icon: "🎓",                   path: "/maintenance-study-material" },
+          { key: "maintenance-3d-view",        label: "3D View",          icon: "🧊",                   path: "/maintenance-3d-view" },
         { key: "maintenance-machine-dmc",    label: "Machine DMC",        icon: "🏷",                   path: "/maintenance-machine-dmc" },
         { key: "maintenance-spare",          label: "Spare",              icon: "🔩",                   path: "/maintenance-spare" },
         { key: "machine-master",             label: "Machine Master",     icon: "🏭",                   path: "/machine-master" },
@@ -140,6 +142,7 @@ export default function SlideNav() {
     if (path === "/maintenance-historical")  return location.pathname.startsWith("/maintenance-historical");
     if (path === "/maintenance-capa")        return location.pathname.startsWith("/maintenance-capa");
     if (path === "/maintenance-deviations")  return location.pathname.startsWith("/maintenance-deviations");
+    if (path === "/maintenance-3d-view")     return location.pathname.startsWith("/maintenance-3d-view");
     if (path === "/process-graphs")          return location.pathname.startsWith("/process-graphs");
     if (path === "/quality-dashboard")       return location.pathname.startsWith("/quality-dashboard");
     if (path === "/quality-deviations")      return location.pathname.startsWith("/quality-deviations");

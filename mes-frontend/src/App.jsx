@@ -53,6 +53,7 @@ const OrganisationChart     = lazy(() => import("./pages/OrganisationChart"));
 const SkillUpgradation      = lazy(() => import("./pages/SkillUpgradation"));
 const MachineManual         = lazy(() => import("./pages/MachineManual"));
 const StudyMaterial         = lazy(() => import("./pages/StudyMaterial"));
+const ThreeDView            = lazy(() => import("./pages/ThreeDView"));
 const MachineDMC            = lazy(() => import("./pages/MachineDMC"));
 const DailyDMCFill          = lazy(() => import("./pages/DailyDMCFill"));
 const DMCSupervisorVerify   = lazy(() => import("./pages/DMCSupervisorVerify"));
@@ -318,6 +319,14 @@ function AppRoutes() {
           sab ke liye, likhna sirf admin ke liye (rok backend par bhi hai). */}
       <Route path="/maintenance-study-material" element={
         <Protected requiredAccess="maintenance-study-material"><StudyMaterial /></Protected>
+      } />
+      {/* 3D View — 3D model ki list; model `public/3d/*.html` iframe me khulta
+          hai.  Dono raaste ek hi key par (model ki alag permission nahi). */}
+      <Route path="/maintenance-3d-view" element={
+        <Protected requiredAccess="maintenance-3d-view"><ThreeDView /></Protected>
+      } />
+      <Route path="/maintenance-3d-view/:model" element={
+        <Protected requiredAccess="maintenance-3d-view"><ThreeDView /></Protected>
       } />
       <Route path="/maintenance-machine-dmc" element={
         <Protected requiredAccess="maintenance-machine-dmc"><MachineDMC /></Protected>
