@@ -56,9 +56,12 @@ public class Walkie extends Plugin {
     }
 
     /** Service se: ANDON ki nayi list aayi -- page (AndonAlert) ko bata do.
-     *  `haal` = `{"run","seq","rows"}`.  App peechhe ho to WebView ruka hota
-     *  hai; tab ye qatar me rukta hai, aur page saamne aate hi `andonHaal()`
-     *  se waise bhi taaza list le leta hai (purana `seq` page chhod deta hai). */
+     *  `haal` = `{"run","seq","rows","ok"}` (ok = notification par OK kiye
+     *  ID).  App peechhe ho to bhi WebView chalta rehta hai (emulator par
+     *  dekha, 2026-09-21 -- timer bas dheeme ho jaate hain), isliye OK ki
+     *  khabar page turant pa leta hai.  Kabhi event chhoot jaye to page
+     *  saamne aate hi `andonHaal()` se waise bhi taaza list le leta hai
+     *  (purana `seq` page chhod deta hai). */
     static void andonBhejo(String haal) {
         Walkie p = EK;
         if (p == null || haal == null) return;
@@ -135,7 +138,7 @@ public class Walkie extends Plugin {
         JSObject o = new JSObject();
         String haal = WalkieService.ANDON_HAAL;
         try {
-            if (haal != null) o = new JSObject(haal);   // run, seq, rows
+            if (haal != null) o = new JSObject(haal);   // run, seq, rows, ok
         } catch (Throwable ignored) { /* kharab -- khaali haal */ }
         o.put("andon", WalkieService.RUNNING && WalkieService.ANDON_SERVER);
         call.resolve(o);

@@ -228,6 +228,13 @@ public class WalkieService extends Service {
     private boolean andonBooted = false;
     private final Set<Integer> andonDekhe = new HashSet<>();
     private final Set<Integer> andonBaj = new HashSet<>();   // jinki notification abhi dikh rahi hai
+    /* Jinki notification par OK dabaya (ya swipe karke hataya) -- 2026-09-21.
+       Page ko bhi batate hain (ANDON_HAAL ka "ok"), warna app peechhe khuli
+       ho to page ka popup apni tharthari chalata rehta tha aur baad me app
+       kholte hi wahi call phir se thartharane lagti -- jabki aadmi OK kar
+       chuka hai.  Call band / response aate hi yahan se hat jaati hai. */
+    private final Set<Integer> andonOkKiye = new HashSet<>();
+    private String andonRows = "[]";                          // aakhri list -- OK par dobara bhejne ke liye
     /* Ring kiski baj rahi hai -- ANDON khatam hone par buzz ki ring na ruke. */
     private static final int RING_BUZZ = 1, RING_ANDON = 2;
     private volatile int ringKiska = 0;
@@ -640,6 +647,9 @@ public class WalkieService extends Service {
             for (Integer id : andonBaj) andonHatao(id);
             andonBaj.clear();
             andonDekhe.clear();
+            andonOkKiye.clear();
+            andonRows = "[]";
+            ANDON_HAAL = null;                // beech me OK aaya ho to uska haal bhi nahi
             andonBooted = false;
         }
         try { if (wake != null && wake.isHeld()) wake.release(); } catch (Throwable ignored) { /* pehle se chhoot gaya */ }
@@ -1188,12 +1198,6 @@ public class WalkieService extends Service {
     private void andonAaya(JSONArray rows, boolean ringBaje) {
         if (rows == null) return;
         String haal;
-        synchronized (andonLock) {
-            andonSeq++;
-            haal = "{\"run\":" + andonRun + ",\"seq\":" + andonSeq + ",\"rows\":" + rows + "}";
-        }
-        ANDON_HAAL = haal;
-        Walkie.andonBhejo(haal);          // page ko -- app khuli ho to popup wahi dikhata hai
         List<JSONObject> nayi = new ArrayList<>();
         boolean koiNahi;
         synchronized (andonLock) {
@@ -1208,6 +1212,14 @@ public class WalkieService extends Service {
                     if (andonBooted && !andonDekhe.contains(id)) nayi.add(r);
                 }
             }
+            // band hui / response aayi call ka OK bhi bhool jao -- set na badhe
+            andonOkKiye.retainAll(intezaar);
+            andonRows = rows.toString();
+            andonSeq++;
+            haal = haalBanao();
+            // lock ke ANDAR -- OK (main thread) aur ye (socket thread) aapas me
+            // aage-peechhe na ho jaayein; ANDON_HAAL hamesha sabse naya seq rakhe
+            ANDON_HAAL = haal;
             andonBooted = true;
             andonDekhe.clear();
             andonDekhe.addAll(khuli);         // band hui call dobara khule to phir khabar
@@ -1224,6 +1236,7 @@ public class WalkieService extends Service {
             }
             koiNahi = andonBaj.isEmpty();
         }
+        Walkie.andonBhejo(haal);          // page ko -- app khuli ho to popup wahi dikhata hai
         if (!nayi.isEmpty() && !APP_FOREGROUND) andonBajao(ringBaje);
         else if (koiNahi) andonRingBand();
         else if (!ringBaje) andonAwaazBand();   // baj rahi thi aur admin ne abhi band ki
@@ -1292,12 +1305,38 @@ public class WalkieService extends Service {
         return PendingIntent.getService(this, 7000 + Math.floorMod(id, 1000) * 2 + kaunsa, i, f);
     }
 
-    /** OK dabaya / notification hatayi: ring band, wo notification bhi. */
+    /** OK dabaya / notification hatayi: ring band, wo notification bhi -- aur
+     *  PAGE ko bhi khabar, taaki us call ka popup (aur uski tharthari) band ho.
+     *  Pehle sirf native ring rukti thi; app peechhe khuli ho to page ka popup
+     *  har 2s phir thartharata rehta aur app kholkar popup hatana padta tha. */
     private void andonOk(int cid) {
+        String haal = null;
         synchronized (andonLock) {
-            if (cid != 0) { andonHatao(cid); andonBaj.remove(cid); }
+            if (cid != 0) {
+                andonHatao(cid);
+                andonBaj.remove(cid);
+                andonOkKiye.add(cid);
+                andonSeq++;
+                haal = haalBanao();
+                ANDON_HAAL = haal;
+            }
         }
         andonRingBand();
+        if (haal != null) Walkie.andonBhejo(haal);   // page seq dekhkar purana chhod deta hai
+    }
+
+    /** Page ko jaane wala poora haal.  `andonLock` ke ANDAR bulao. */
+    private String haalBanao() {
+        StringBuilder ok = new StringBuilder("[");
+        boolean pehla = true;
+        for (Integer id : andonOkKiye) {
+            if (!pehla) ok.append(',');
+            ok.append(id);
+            pehla = false;
+        }
+        ok.append(']');
+        return "{\"run\":" + andonRun + ",\"seq\":" + andonSeq
+             + ",\"rows\":" + andonRows + ",\"ok\":" + ok + "}";
     }
 
     /** `ringBaje` false = is ID par ring band (admin → Services) -- tab sirf

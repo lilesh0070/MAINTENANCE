@@ -29,7 +29,8 @@ const NATIVE = isNativeApp();
 /* ─── App me tharthari (vibration) ────────────────────────────────────
  * Phone jeb me ho to beep sunai nahi deta -- isliye APK me popup ke saath
  * phone thartharata bhi hai.  Jab tak popup dikh raha hai tab tak, aur
- * popup hatte hi (khud response aane par ya Dismiss dabane par) band.
+ * popup hatte hi (khud response aane par, Dismiss dabane par, ya phone ki
+ * notification par OK dabane par -- service `ok` list bhejti hai) band.
  *
  * WEBSITE PAR ISKA KOI ASAR NAHI -- `NATIVE` wahan false hai, to neeche wala
  * effect pehli line par hi laut jaata hai.  (TV board bhi website hi hai.)
@@ -125,18 +126,22 @@ export default function AndonAlert() {
 
   /* Khuli MAINTENANCE calls ki poori list -- chahe poochh kar aayi ho ya
      service se.  Dono raaston par hisaab EK hi. */
-  const lagao = useCallback((rows) => {
+  const lagao = useCallback((rows, okIds) => {
+    // `okIds` = phone ki notification par jin par OK daba diya (service batati
+    // hai).  Wo "dekh li" -- unka popup na khule, khula ho to band.
+    const ok = okIds instanceof Set ? okIds : new Set();
+    const okKiya = (r) => ok.has(Number(r.id));
     const open = new Set(rows.map((r) => r.id));
     // "waiting" = abhi khuli + jiska response NAHI aaya (response_seconds null).
     // Response aate hi ya call band hote hi id yahan se hat jaati → popup auto-close.
-    const waiting = new Set(rows.filter((r) => r.response_seconds == null).map((r) => r.id));
+    const waiting = new Set(rows.filter((r) => r.response_seconds == null && !okKiya(r)).map((r) => r.id));
     if (!booted.current) {                              // load par jo already open — un par alert nahi
       rows.forEach((r) => seen.current.add(r.id));
       booted.current = true;
       return;
     }
     // sirf NAYI, abhi tak response na aayi call par hi alert + beep
-    const fresh = rows.filter((r) => !seen.current.has(r.id) && r.response_seconds == null);
+    const fresh = rows.filter((r) => !seen.current.has(r.id) && r.response_seconds == null && !okKiya(r));
     rows.forEach((r) => seen.current.add(r.id));
     for (const id of [...seen.current]) if (!open.has(id)) seen.current.delete(id);  // band → dobara aaye to phir alert
     setAlerts((prev) => {
@@ -187,7 +192,7 @@ export default function AndonAlert() {
     const s = Number(h.seq) || 0;
     if (s && s <= k.seq) return;
     k.seq = s;
-    lagao(h.rows);
+    lagao(h.rows, new Set((Array.isArray(h.ok) ? h.ok : []).map(Number)));
   }, [lagao]);
 
   useEffect(() => {
