@@ -1,5 +1,5 @@
 {
-  "version": "1.4.102",
-  "notes": "The app now keeps a small log when it freezes (the Close app / Wait message) and sends it to the server, so the cause can be found and fixed. Nothing changes on screen.",
-  "released_at": "2026-09-21T16:46:06"
+  "version": "1.4.103",
+  "notes": "Fixes the app freezing (Close app / Wait), mostly seen on the TV with the Breakdown page or the manual Breakdown Slip open. The AI button no longer animates all the time, and the slip no longer blurs the screen behind it; this also saves battery on phones.",
+  "released_at": "2026-09-21T18:04:12"
 }
