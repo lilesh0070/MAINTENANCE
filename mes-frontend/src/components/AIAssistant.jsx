@@ -1,5 +1,20 @@
 import { useState, useRef, useEffect } from "react";
 import axios from "axios";
+import { isNativeApp } from "../constants/apiBase";
+
+/* APP me floating button ki animation GINTI ki (2026-09-21) -- kuch second
+ * tair / chamak kar ruk jaata hai.  Wajah naap kar mili: TV ki app me din
+ * bhar "Close app / Wait" (ANR) aa raha tha, Breakdown page / manual slip
+ * khule rehne par sabse zyada.  Emulator par `dumpsys gfxinfo`: bina chhue
+ * HAR page ~50 frame/sec banata tha (Dashboard 56, Breakdown 48, slip 53) --
+ * sirf is button ko chhupate hi 0.  Yaani ye akela button poore app ko har
+ * second 50 baar dobara banwata tha; TV ka kamzor GPU badi screen par ye
+ * jhel nahi paata, app ka main thread GPU ke intezaar me atak jaata
+ * (`HardwareRenderer.nSyncAndDrawFrame`).  Phone ki battery bhi khaata tha.
+ * WEBSITE PAR PEHLE JAISA (infinite) -- wahan PC ka GPU, aur user ne kuch
+ * nahi kaha. */
+const NATIVE = isNativeApp();
+const baar = (n) => (NATIVE ? String(n) : "infinite");
 
 const api = axios.create({ baseURL: "" });
 api.interceptors.request.use(cfg => {
@@ -447,7 +462,7 @@ export default function AIAssistant({ pageContext = {} }) {
           cursor:"pointer", outline:"none",
           display:"flex", alignItems:"center", justifyContent:"center",
           boxShadow:"0 8px 24px rgba(59,130,246,.25), 0 0 0 1px #3b82f620, inset 0 1px 0 rgba(255,255,255,.05)",
-          animation:"floatBtn 3s ease-in-out infinite",
+          animation:`floatBtn 3s ease-in-out ${baar(2)}`,
           transition:"box-shadow .2s",
         }}
           onMouseEnter={e => e.currentTarget.style.boxShadow="0 12px 32px rgba(59,130,246,.4), 0 0 0 1px #3b82f640"}
@@ -466,7 +481,7 @@ export default function AIAssistant({ pageContext = {} }) {
               borderBottom: c.includes("b") ? "1.5px solid #3b82f6" : "none",
               borderLeft:   c.includes("l") ? "1.5px solid #3b82f6" : "none",
               borderRight:  c.includes("r") ? "1.5px solid #3b82f6" : "none",
-              animation:"cornerGlow 2s ease infinite",
+              animation:`cornerGlow 2s ease ${baar(3)}`,
               animationDelay: `${["tl","tr","bl","br"].indexOf(c)*.25}s`,
             }} />
           ))}
@@ -477,7 +492,7 @@ export default function AIAssistant({ pageContext = {} }) {
             width:8, height:8, borderRadius:"50%",
             background:"#00ff88", border:"1.5px solid #060912",
             boxShadow:"0 0 8px #00ff88",
-            animation:"dotBounce 1.5s ease infinite",
+            animation:`dotBounce 1.5s ease ${baar(4)}`,
           }} />
         </button>
       )}

@@ -4,6 +4,11 @@ import { tasveeronKoAndarBithao, nativeChhapo, pdfDocSe,
 import { createRoot } from "react-dom/client";
 import { Btn, api, fmtDuration, fmtDateTime } from "./shared";
 import { upperCaret, maskCaret } from "../../constants/upperCaret";
+import { isNativeApp } from "../../constants/apiBase";
+
+// App (APK) me chal rahe hain?  Slip ke peeche wala blur sirf website par
+// (neeche overlay dekho -- TV par wahi "Close app / Wait" ki badi wajah tha).
+const IS_NATIVE = isNativeApp();
 
 // One spare row — SAME shape the Log Book uses, so spare data is consistent
 // across both features.
@@ -920,7 +925,12 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   return (
     <div onClick={onClose} style={{
       position: "fixed", inset: 0, background: "rgba(15,23,42,.55)",
-      backdropFilter: "blur(2px)", zIndex: 9000,
+      /* APP me blur NAHI (2026-09-21): poori screen ka backdrop-blur har
+         frame (scroll, cursor ki jhapak, AI button) par dobara banta hai --
+         TV ke kamzor GPU par slip khuli rehne par hi sabse zyada "Close app /
+         Wait" aata tha.  2px ka blur waise bhi mushkil se dikhta hai; peeche
+         ka kaala parda waisa hi hai.  Website par pehle jaisa. */
+      ...(IS_NATIVE ? {} : { backdropFilter: "blur(2px)" }), zIndex: 9000,
       display: "flex", alignItems: "flex-start", justifyContent: "center",
       overflowY: "auto", padding: "24px 12px",
     }}>
