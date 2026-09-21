@@ -1,5 +1,5 @@
 {
-  "version": "1.4.99",
-  "notes": "On the phone, the manual Break Down Slip now starts with Zone, Line, Machine No. and Machine Name; everything after them is unchanged. The slip on a desktop, tablet or TV keeps its original three-column layout exactly as printed.",
-  "released_at": "2026-09-20T14:40:53"
+  "version": "1.4.100",
+  "notes": "Maintenance call alert: tapping OK on the phone notification now also closes the call popup inside the app, so the phone stops vibrating at once. You no longer have to open the app to close the popup.",
+  "released_at": "2026-09-21T11:47:38"
 }
