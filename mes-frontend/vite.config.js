@@ -27,7 +27,9 @@ export default defineConfig({
     // http://192.168.30.15:9965 (LAN) aur http://localhost:9965 chalte rehte
     // hain — unhe yahan likhne ki zaroorat nahi.
     // Naya hostname jode to yahan bhi jodein, warna "Blocked request" aata hai.
-    allowedHosts: ['maintenance.tbdi.in'],
+    // 2026-09-21: naya domain maintenance.dxtbdi.com bhi -- purana (tbdi.in)
+    // bhi rakha hai, taaki dono chalte rahein.
+    allowedHosts: ['maintenance.tbdi.in', 'maintenance.dxtbdi.com'],
     proxy: {
       '/api': {
         target: 'http://localhost:8892',
