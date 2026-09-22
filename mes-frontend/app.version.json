@@ -1,5 +1,5 @@
 {
-  "version": "1.4.108",
-  "notes": "New Attendance Dashboard: shift-wise board (G / A / B shift, Week Off, Leave, Work From Home) with drag and drop, plus an All Members list. Only admin can add, edit or remove members.",
-  "released_at": "2026-09-22T13:07:10"
+  "version": "1.4.109",
+  "notes": "Attendance Dashboard: type a name or emp code and press Search to jump to that person's card. On TV the board now fits in the top half of the screen with no scrolling.",
+  "released_at": "2026-09-22T14:13:42"
 }
