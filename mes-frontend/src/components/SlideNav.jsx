@@ -53,6 +53,7 @@ export default function SlideNav() {
           // sidebar entry was a duplicate.  Route /maintenance-breakdown/new-slip
           // still works if reached directly.
           { key: "skill-training",          label: "Skill & Training",      icon: "🎓",                   path: "/skill-training" },
+          { key: "maintenance-attendance",  label: "Attendance Dashboard",  icon: "👥",                   path: "/maintenance-attendance" },
           { key: "maintenance-historical",  label: "Historical Data",       icon: "/historical-icon.png", iconImg: true, path: "/maintenance-historical" },
           // CAPA yahan se hata di -- ab Breakdown page ke andar ek card hai
           // (user 2026-09-20).  Raasta /maintenance-capa waisa hi chalta hai.
@@ -87,6 +88,7 @@ export default function SlideNav() {
         { key: "maintenance-breakdown",   label: "Breakdown",             icon: "🚨",                   path: "/maintenance-breakdown" },
           { key: "production-breakdown-slip", label: "Production Breakdown Slip", icon: "🏭",     path: "/production-breakdown-slip" },
         { key: "skill-training",          label: "Skill & Training",      icon: "🎓",                   path: "/skill-training" },
+        { key: "maintenance-attendance",  label: "Attendance Dashboard",  icon: "👥",                   path: "/maintenance-attendance" },
         { key: "maintenance-historical",  label: "Historical Data",       icon: "/historical-icon.png", iconImg: true, path: "/maintenance-historical" },
         // CAPA yahan se hata di -- ab Breakdown page ke andar ek card hai
         // (user 2026-09-20).  Raasta /maintenance-capa waisa hi chalta hai.

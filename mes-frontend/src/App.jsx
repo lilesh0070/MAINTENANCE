@@ -54,6 +54,7 @@ const SkillUpgradation      = lazy(() => import("./pages/SkillUpgradation"));
 const MachineManual         = lazy(() => import("./pages/MachineManual"));
 const StudyMaterial         = lazy(() => import("./pages/StudyMaterial"));
 const ThreeDView            = lazy(() => import("./pages/ThreeDView"));
+const AttendanceDashboard   = lazy(() => import("./pages/AttendanceDashboard"));
 const MachineDMC            = lazy(() => import("./pages/MachineDMC"));
 const DailyDMCFill          = lazy(() => import("./pages/DailyDMCFill"));
 const DMCSupervisorVerify   = lazy(() => import("./pages/DMCSupervisorVerify"));
@@ -327,6 +328,11 @@ function AppRoutes() {
       } />
       <Route path="/maintenance-3d-view/:model" element={
         <Protected requiredAccess="maintenance-3d-view"><ThreeDView /></Protected>
+      } />
+      {/* Attendance Dashboard — shift-wise board (G/A/B/Week Off/Leave/WFH),
+          card ghaseet kar shift badlo.  Likhna = full (rok backend par bhi). */}
+      <Route path="/maintenance-attendance" element={
+        <Protected requiredAccess="maintenance-attendance"><AttendanceDashboard /></Protected>
       } />
       <Route path="/maintenance-machine-dmc" element={
         <Protected requiredAccess="maintenance-machine-dmc"><MachineDMC /></Protected>

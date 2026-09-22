@@ -68,6 +68,7 @@ from routers.kpi_ui_settings import router as kpi_ui_settings_router
 from routers.client_services import router as client_services_router
 from routers.app_update import router as app_update_router
 from routers.breakdown_mail  import router as breakdown_mail_router
+from routers.attendance      import router as attendance_router
 
 # ── App ────────────────────────────────────────────────────────
 # SECURITY: /docs, /redoc aur /openapi.json bina login ke khulte hain — ye
@@ -165,6 +166,7 @@ app.include_router(kpi_ui_settings_router)      # Admin-editable KPI page appear
 app.include_router(client_services_router)      # Admin: kaunsi service website / app par chale (ANDON alert, walkie, background)
 app.include_router(breakdown_mail_router)       # Breakdown escalation mail (Engineer -> Plant Head)
 app.include_router(app_update_router)         # Android app ka update check + APK download
+app.include_router(attendance_router)         # Attendance Dashboard (shift-wise board, din-wise)
 
 
 # NOTE (maintenance-only slice): the manpower / kanban / report-scheduler
@@ -1014,7 +1016,10 @@ RULES:
     # Tables the AI query tool must never expose (credentials / audit /
     # permission map).  The bcrypt hashes in maintenance_users would be crackable
     # offline if dumped, so this is a hard block.
-    _AI_BLOCKED_TABLES = ("maintenance_users", "maintenance_audit_log", "maintenance_user_permissions")
+    # maintenance_attendance_photo: har row ek ~15 KB base64 photo -- 20 row = 300 KB
+    # AI ke context me.  Naam / shift wali tables khuli hain, sirf photo band.
+    _AI_BLOCKED_TABLES = ("maintenance_users", "maintenance_audit_log", "maintenance_user_permissions",
+                          "maintenance_attendance_photo")
 
     def execute_query(sql: str) -> str:
         # SECURITY: the model authors this SQL.  Constrain it to a single
