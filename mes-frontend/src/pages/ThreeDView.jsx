@@ -28,6 +28,7 @@
 import { useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { isNativeApp } from "../constants/apiBase";
 
 const MODELS = [
   { key: "cylinder", label: "Cylinder", icon: "🛢️",
@@ -190,10 +191,20 @@ function ModelViewer({ m, user, onBack }) {
      bada karo -- andar ka page ASLI screen ke naap (804px) par banta hai aur
      1:1 dikhta hai.  `?tv=1` se 3D ki file TV wale halke niyam lagaati hai
      (camera door, pixel ratio 1, 30 fps -- dekho public/3d/cylinder.html).
-     Phone / tablet / website par kuch nahi badla. */
-  const tv = document.documentElement.classList.contains("in-app-tv");
-  const k = tv ? (window.visualViewport?.scale || 1) : 1;
-  const chhota = tv && k > 0.2 && k < 0.95;
+     Phone / tablet (app) par kuch nahi badla; website ke liye neeche `tvWeb`. */
+  const tvApp = document.documentElement.classList.contains("in-app-tv");
+  /* WEBSITE par bhi TV jaisi screen (2026-09-22, user: "TV ka size pata chal
+     gaya, website me 3D dekh lo"): TV ke browser me website 1350 wala layout
+     NAHI leti, seedha screen ki chaudai (~804) -- par 3D ko TV ke niyam
+     nahi milte the, to model kata hua, button bilkul neeche aur AI ka button
+     "Reset Cam" par chadha (804x1428 par naapa).  Isliye khadi badi screen
+     (chaudai 700+, oonchai 1.3 guna+) par website bhi `?tv=1` bhejti hai.
+     Phone (< 700) aur aam desktop window (choudi) pehle jaisi.  Scale ki
+     tarkeeb sirf APP ki TV ke liye -- website par page pehle hi 1:1 hai. */
+  const tvWeb = !isNativeApp() && window.innerWidth >= 700 && window.innerHeight >= window.innerWidth * 1.3;
+  const tv = tvApp || tvWeb;
+  const k = tvApp ? (window.visualViewport?.scale || 1) : 1;
+  const chhota = tvApp && k > 0.2 && k < 0.95;
   const src = tv ? `${m.file}?tv=1` : m.file;
   const frameStyle = chhota
     ? { width: `${k * 100}%`, height: `${k * 100}%`, transform: `scale(${1 / k})`, transformOrigin: "0 0" }
