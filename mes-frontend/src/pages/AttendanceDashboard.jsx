@@ -7,6 +7,11 @@
  *
  *   • Upar "Add Member" (aur har kataar ka "+") -> daayein side panel:
  *     photo, naam, emp code, designation, contact, date of joining, kataar.
+ *     Member jodna / badalna / hatana SIRF ADMIN (user 2026-09-22) -- server
+ *     bhi rokta hai.  Full permission wala sirf shift badal sakta hai
+ *     (ghaseet kar, ya card dabao -> shift chuno).
+ *   • "All Members" -> daayein side me saare member ki list + khoj; admin
+ *     wahin se edit / delete.
  *   • Card ghaseet kar doosri kataar me (ya usi me aage-peeche).
  *       mouse  : pakad kar kheencho
  *       touch  : card ko thoda dabaye rakho (ya ⠿ pakdo), fir kheencho --
@@ -192,6 +197,25 @@ const IcoCal = () => (
     <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" />
   </svg>
 );
+const IcoUsers = () => (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+       strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+    <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+  </svg>
+);
+const IcoEdit = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+       strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+  </svg>
+);
+const IcoTrash = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+       strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" />
+  </svg>
+);
 const IcoCam = () => (
   <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
        strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -202,7 +226,7 @@ const IcoCam = () => (
 
 /* ═══════════════════════════════════════════════════════════════════ */
 export default function AttendanceDashboard() {
-  const { token, user, theme, canWrite } = useAuth();
+  const { token, user, theme, canWrite, isAdmin } = useAuth();
   const mayWrite = canWrite(PAGE_KEY);
 
   const [day, setDay]           = useState(null);    // null = aaj (server ka) -- raat 12 baad khud agla din
@@ -214,6 +238,8 @@ export default function AttendanceDashboard() {
   const [panel, setPanel]       = useState(null);    // {mode:"add", slot} | {mode:"edit"|"view", id}
   const [drag, setDrag]         = useState(null);    // {id, slot, index, w, h}
   const [toast, setToast]       = useState(null);    // {text, kind}
+  const [membersOpen, setMembersOpen] = useState(false);
+  const [memRev, setMemRev]     = useState(0);       // badlav ke baad "All Members" list dobara
 
   const boardRef   = useRef(null);
   const boardEl    = useRef(null);
@@ -232,7 +258,8 @@ export default function AttendanceDashboard() {
 
   useEffect(() => { boardRef.current = board; }, [board]);
 
-  const editable = !!(board && board.editable && mayWrite);
+  const editable = !!(board && board.editable && mayWrite);   // shift badalna (full)
+  const adminEdit = editable && isAdmin;                        // member jodna / badalna / hatana
   const wantDay = day || board?.today || null;
   const loading = !board || (day === null ? board.day !== board.today : board.day !== day);
 
@@ -280,9 +307,8 @@ export default function AttendanceDashboard() {
      `tried` me "id:ver" jo ek baar maang liya -- mile ya na mile, dobara
      nahi (warna server par na mili photo har render par maangi jaati).
      Network toota ho to hi wapas hatate hain -- agle taaze board par phir. */
-  useEffect(() => {
-    if (!board) return;
-    const need = board.people.filter((p) => p.photo_ver && !tried.current.has(`${p.id}:${p.photo_ver}`));
+  const loadPhotos = useCallback((list) => {
+    const need = (list || []).filter((p) => p.photo_ver && !tried.current.has(`${p.id}:${p.photo_ver}`));
     for (const p of need) tried.current.add(`${p.id}:${p.photo_ver}`);
     for (let i = 0; i < need.length; i += 60) {
       const chunk = need.slice(i, i + 60);
@@ -298,7 +324,8 @@ export default function AttendanceDashboard() {
         }))
         .catch(() => { for (const p of chunk) tried.current.delete(`${p.id}:${p.photo_ver}`); });
     }
-  }, [board, token]);
+  }, [token]);
+  useEffect(() => { if (board) loadPhotos(board.people); }, [board, loadPhotos]);
 
   const photoOf = (p) => (p && p.photo_ver ? photoMap[p.id]?.url || null : null);
 
@@ -514,7 +541,7 @@ export default function AttendanceDashboard() {
 
   const openCard = (p) => {
     if (performance.now() - clickBlock.current < 400) return;   // abhi ghaseeta tha -- click nahi
-    setPanel({ mode: editable ? "edit" : "view", id: p.id });
+    setPanel({ mode: adminEdit ? "edit" : editable ? "shift" : "view", id: p.id });
   };
 
   const pickDay = (v) => {
@@ -523,7 +550,8 @@ export default function AttendanceDashboard() {
   };
   const stepDay = (n) => { if (wantDay) pickDay(shiftDay(wantDay, n)); };
 
-  const panelPerson = panel && panel.id ? (board?.people || []).find((p) => p.id === panel.id) : null;
+  const panelPerson = panel && panel.id
+    ? (panel.person || (board?.people || []).find((p) => p.id === panel.id) || null) : null;
   const shownDay = board ? (loading ? (day || board.today) : board.day) : day;   // maanga hua din turant
   const status = !board ? "" : board.day === board.today ? "today" : board.day < board.today ? "past" : "future";
   const ghostPerson = drag ? (board?.people || []).find((p) => p.id === drag.id) : null;
@@ -764,6 +792,64 @@ export default function AttendanceDashboard() {
         .att-confirm { width:100%; font-size:13px; font-weight:600; color:#7f1d1d; background:#fef2f2;
                        border:1px solid #fecaca; border-radius:10px; padding:10px 12px; line-height:1.35; }
 
+        /* ── All Members ── */
+        .att-members { height:40px; padding:0 16px; border-radius:11px; border:1.5px solid #cbd5e1; background:#fff;
+                       color:#0f172a; font-family:inherit; font-size:14px; font-weight:800; cursor:pointer;
+                       display:flex; align-items:center; gap:8px; white-space:nowrap; }
+        .att-members:hover { background:#f8fafc; border-color:${theme.accent}; color:${theme.accent}; }
+        .att-mback { position:fixed; top:0; right:0; bottom:0; left:0; background:rgba(15,23,42,.38); z-index:10030; }
+        .att-mdraw { position:fixed; top:0; right:0; bottom:0; width:560px; max-width:100%; background:#f1f5f9;
+                     z-index:10031; display:flex; flex-direction:column; box-shadow:-18px 0 40px rgba(15,23,42,.18);
+                     font-family:'Barlow',sans-serif; animation:att-in .22s ease-out 1; }
+        body.in-app-tv .att-mdraw { animation:none; }
+        .att-md-head { padding:18px 20px 16px; color:#fff; display:flex; align-items:center; gap:12px;
+                       background:linear-gradient(135deg,#0f172a,#1e3a8a); }
+        .att-md-title { font-family:'Barlow Condensed',sans-serif; font-size:24px; font-weight:800; line-height:1.05; }
+        .att-md-sub { font-size:12px; font-weight:600; opacity:.85; margin-top:2px; }
+        .att-md-add { margin-left:auto; height:36px; padding:0 14px; border-radius:10px; border:1.5px solid rgba(255,255,255,.45);
+                      background:rgba(255,255,255,.14); color:#fff; font-weight:800; font-size:13px; cursor:pointer;
+                      font-family:inherit; white-space:nowrap; }
+        .att-md-add:hover { background:rgba(255,255,255,.26); }
+        .att-md-add + .att-x { margin-left:0; }
+        .att-md-search { padding:12px 14px; border-bottom:1px solid #e2e8f0; background:#fff; }
+        .att-md-search input { width:100%; height:40px; box-sizing:border-box; border:1px solid #cbd5e1; border-radius:10px;
+                               padding:0 12px; font-family:inherit; font-size:14px; background:#f8fafc; }
+        .att-md-search input:focus { outline:none; border-color:${theme.accent}; box-shadow:0 0 0 3px ${theme.soft}; }
+        .att-md-list { flex:1; overflow-y:auto; padding:10px 12px 24px; -webkit-overflow-scrolling:touch; }
+        .att-mrow { display:flex; align-items:center; gap:12px; background:#fff; border:1px solid #e2e8f0;
+                    border-left:4px solid var(--c); border-radius:14px; padding:10px 12px; margin-bottom:8px;
+                    cursor:pointer; outline:none; }
+        .att-mrow:hover { box-shadow:0 6px 16px rgba(15,23,42,.08); }
+        .att-mrow:focus-visible { box-shadow:0 0 0 3px ${theme.accent}; }
+        .att-mph { width:50px; height:50px; border-radius:50%; flex-shrink:0; overflow:hidden; background:var(--soft);
+                   color:var(--c); box-shadow:0 0 0 2px #fff, 0 0 0 4px var(--c); display:flex; align-items:center;
+                   justify-content:center; font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:19px; }
+        .att-mph img { width:100%; height:100%; object-fit:cover; display:block; }
+        .att-mtxt { flex:1; min-width:0; }
+        .att-mname { display:flex; align-items:center; gap:6px; min-width:0; }
+        .att-mnm { font-size:14px; font-weight:800; color:#0f172a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .att-mname .att-code { margin-top:0; flex-shrink:0; }
+        .att-mmeta { font-size:12px; color:#64748b; font-weight:600; white-space:nowrap; overflow:hidden;
+                     text-overflow:ellipsis; margin-top:2px; }
+        .att-mline { display:flex; align-items:center; gap:8px; margin-top:4px; flex-wrap:wrap; }
+        .att-mslot { font-size:11px; font-weight:800; padding:2px 9px; border-radius:99px; background:var(--soft);
+                     color:var(--c); white-space:nowrap; }
+        .att-mjoin { font-size:11px; font-weight:600; color:#94a3b8; white-space:nowrap; }
+        .att-mact { display:flex; gap:6px; flex-shrink:0; }
+        .att-ibtn2 { width:34px; height:34px; min-height:0 !important; border-radius:9px; border:1px solid #e2e8f0;
+                     background:#fff; color:#475569; cursor:pointer; display:flex; align-items:center;
+                     justify-content:center; padding:0; }
+        .att-ibtn2:hover { background:#f1f5f9; color:#0f172a; }
+        .att-ibtn2.red { color:#b91c1c; border-color:#fecaca; }
+        .att-ibtn2.red:hover { background:#fef2f2; }
+        .att-mconfirm { display:flex; align-items:center; gap:6px; flex-shrink:0; font-size:12px; font-weight:800;
+                        color:#991b1b; }
+        .att-mconfirm button { height:30px; min-height:0 !important; padding:0 12px; border-radius:8px; font-weight:800;
+                               font-size:12px; cursor:pointer; font-family:inherit; border:1px solid #cbd5e1;
+                               background:#fff; color:#334155; }
+        .att-mconfirm button.yes { background:#dc2626; color:#fff; border-color:#dc2626; }
+        .att-mempty { text-align:center; color:#94a3b8; font-weight:600; font-size:13px; padding:34px 10px; }
+
         .att-toast { position:fixed; left:50%; bottom:28px; transform:translateX(-50%); z-index:10060;
                      background:#0f172a; color:#fff; padding:11px 18px; border-radius:12px; font-size:14px; font-weight:700;
                      box-shadow:0 12px 30px rgba(15,23,42,.3); max-width:calc(100vw - 32px); font-family:'Barlow',sans-serif; }
@@ -788,7 +874,8 @@ export default function AttendanceDashboard() {
           .att-nav { flex:1 1 100%; }
           .att-date { flex:1; }
           .att-search { flex:1 1 100%; min-width:0; }
-          .att-add { flex:1 1 100%; justify-content:center; }
+          .att-add, .att-members { flex:1 1 0; justify-content:center; padding:0 10px; }
+          .att-mdraw { width:100%; }
           .att-stats { grid-template-columns:repeat(4, minmax(0,1fr)); gap:7px; }
           .att-stat { padding:8px 9px; border-radius:12px; }
           .att-stat .n { font-size:22px; }
@@ -849,7 +936,10 @@ export default function AttendanceDashboard() {
                      aria-label="Search" />
             </label>
 
-            {editable && (
+            <button className="att-members" onClick={() => setMembersOpen(true)}>
+              <IcoUsers /> All Members
+            </button>
+            {adminEdit && (
               <button className="att-add" onClick={() => setPanel({ mode: "add", slot: "G" })}>
                 <b>+</b> Add Member
               </button>
@@ -883,15 +973,20 @@ export default function AttendanceDashboard() {
           {!ql && editable && counts.total > 0 && (
             <div className="att-note tip">
               {COARSE
-                ? "Tip: press and hold a card (or its ⋮⋮ handle), then drag it to another row. Tap a card to edit."
-                : "Tip: drag a card to another row to change the shift. Click a card to edit."}
+                ? (isAdmin
+                  ? "Tip: press and hold a card (or its ⋮⋮ handle), then drag it to another row. Tap a card to edit."
+                  : "Tip: press and hold a card (or its ⋮⋮ handle) and drag it to another row, or just tap it, to change the shift.")
+                : (isAdmin
+                  ? "Tip: drag a card to another row to change the shift. Click a card to edit."
+                  : "Tip: drag a card to another row, or just click it, to change the shift.")}
             </div>
           )}
           {!loading && !err && counts.total === 0 && (
             <div className="att-note tip">
-              {editable
+              {adminEdit
                 ? "No members yet. Use Add Member to add your team (photo, name, emp code, designation, contact, date of joining), then drag them into shifts."
-                : "No members on the board for this date."}
+                : editable ? "No members on the board yet. Only admin can add members."
+                  : "No members on the board for this date."}
             </div>
           )}
 
@@ -908,7 +1003,7 @@ export default function AttendanceDashboard() {
                       <div className="att-lane-name">{s.label}</div>
                       <div className="att-lane-count">{n} {n === 1 ? "person" : "people"}</div>
                     </div>
-                    {editable && (
+                    {adminEdit && (
                       <button className="att-lane-add" onClick={() => setPanel({ mode: "add", slot: s.key })}
                               title={`Add to ${s.label}`} aria-label={`Add to ${s.label}`}>+</button>
                     )}
@@ -945,15 +1040,29 @@ export default function AttendanceDashboard() {
         document.body,
       )}
 
-      {panel && (panel.mode === "add" || panelPerson) && (
+      {membersOpen && board && (
+        <MembersDrawer
+          token={token} isAdmin={isAdmin} today={board.today} rev={memRev} blocked={!!panel}
+          photoOf={photoOf} loadPhotos={loadPhotos}
+          onClose={() => setMembersOpen(false)}
+          onAdd={() => setPanel({ mode: "add", slot: "G", list: true })}
+          onOpen={(m) => setPanel({ mode: isAdmin ? "edit" : "view", id: m.id, person: m, list: true })}
+          onRemoved={(msg) => { showToast(msg); setMemRev((r) => r + 1); localVer.current += 1; reload(); }}
+        />
+      )}
+
+      {panel && board && (panel.mode === "add" || panelPerson) && (
         <MemberPanel
-          key={`${panel.mode}-${panel.id || panel.slot}`}
+          key={`${panel.mode}-${panel.id || panel.slot}-${panel.list ? "l" : "b"}`}
           mode={panel.mode} slot0={panel.mode === "add" ? panel.slot : panelPerson.slot}
           person={panelPerson} photo0={photoOf(panelPerson)}
-          day={board.day} today={board.today} editable={editable}
+          // All Members se: aaj ke hisaab se (board kisi bhi din ka ho); shift wahan nahi badalti
+          day={panel.list ? board.today : board.day} today={board.today}
+          editable={panel.list ? isAdmin : editable} showSlot={!panel.list}
           designations={designations} token={token}
           onClose={() => setPanel(null)}
-          onDone={(msg) => { setPanel(null); showToast(msg); localVer.current += 1; reload(); }}
+          onMove={(id, slot) => { setPanel(null); dropTo(id, slot, Number.MAX_SAFE_INTEGER); }}
+          onDone={(msg) => { setPanel(null); showToast(msg); setMemRev((r) => r + 1); localVer.current += 1; reload(); }}
         />
       )}
 
@@ -1004,8 +1113,12 @@ function DateField({ value, onChange, disabled }) {
 }
 
 /* ── side panel: add / edit / dekhna ─────────────────────────────────── */
-function MemberPanel({ mode, slot0, person, photo0, day, today, editable, designations, token, onClose, onDone }) {
-  const view = mode === "view" || !editable;
+function MemberPanel({ mode, slot0, person, photo0, day, today, editable, showSlot = true, designations, token,
+  onClose, onMove, onDone }) {
+  // form = poori details (admin); shift = sirf kataar badlo (full); baaki sirf dekhna
+  const form = editable && (mode === "add" || mode === "edit");
+  const shiftOnly = editable && mode === "shift";
+  const view = !form;
   const [f, setF] = useState(() => ({
     name: person?.name || "", emp_code: person?.emp_code || "", designation: person?.designation || "",
     contact: person?.contact || "", doj: person?.doj || "", slot: slot0 || "G",
@@ -1058,9 +1171,9 @@ function MemberPanel({ mode, slot0, person, photo0, day, today, editable, design
       } else {
         await api.put(`/api/attendance/staff/${person.id}`, {
           ...body, photo, photo_change: photoChanged,
-          ...(f.slot !== person.slot ? { slot: f.slot } : {}),
+          ...(showSlot && f.slot !== person.slot ? { slot: f.slot } : {}),
         }, token);
-        onDone(f.slot !== person.slot ? `${name} → ${SLOT[f.slot].label}` : `${name} saved`);
+        onDone(showSlot && f.slot !== person.slot ? `${name} → ${SLOT[f.slot].label}` : `${name} saved`);
       }
     } catch (x) {
       setPerr(x.message || "Could not save.");
@@ -1084,8 +1197,10 @@ function MemberPanel({ mode, slot0, person, photo0, day, today, editable, design
   const title = mode === "add" ? "Add Member" : view ? (person?.name || "Member") : "Edit Member";
   const sub = mode === "add"
     ? (day === today ? "Adds to today's board" : `Appears on the board from ${shortDay(day)}`)
-    : view ? [person?.designation, person?.emp_code].filter(Boolean).join(" · ") || s.label
-      : `Changes to the shift apply from ${day === today ? "today" : shortDay(day)}`;
+    : shiftOnly ? `Change the shift from ${day === today ? "today" : shortDay(day)}`
+      : view ? [person?.designation, person?.emp_code].filter(Boolean).join(" · ") || s.label
+        : showSlot ? `Changes to the shift apply from ${day === today ? "today" : shortDay(day)}`
+          : "Details are the same on every date";
 
   return (
     <>
@@ -1123,7 +1238,8 @@ function MemberPanel({ mode, slot0, person, photo0, day, today, editable, design
 
           {view && (
             <div className="att-info">
-              <b>Shift</b><span>{s.label}</span>
+              <b>Shift</b><span>{person?.slot ? SLOT[person.slot].label
+                : person?.from_day ? `From ${shortDay(person.from_day)}` : s.label}</span>
               {person?.emp_code && (<><b>Emp code</b><span>{person.emp_code}</span></>)}
               {person?.designation && (<><b>Designation</b><span>{person.designation}</span></>)}
               {person?.contact && (<><b>Contact</b><span>{person.contact}
@@ -1155,17 +1271,19 @@ function MemberPanel({ mode, slot0, person, photo0, day, today, editable, design
                 <DateField value={f.doj} onChange={set("doj")} />
                 {f.doj && <div className="att-hint" style={{ marginTop: 5 }}>{tenure(f.doj, today)}</div>}
               </div>
-              <div className="att-fld"><span>Shift / Status</span>
-                <div className="att-seg">
-                  {SLOTS.map((x) => (
-                    <button key={x.key} type="button" className={f.slot === x.key ? "on" : ""}
-                            style={vars(x)} onClick={() => setF((o) => ({ ...o, slot: x.key }))}>
-                      {x.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </>
+          )}
+          {((form && showSlot) || shiftOnly) && (
+            <div className="att-fld"><span>{shiftOnly ? "Move to" : "Shift / Status"}</span>
+              <div className="att-seg">
+                {SLOTS.map((x) => (
+                  <button key={x.key} type="button" className={f.slot === x.key ? "on" : ""}
+                          style={vars(x)} onClick={() => setF((o) => ({ ...o, slot: x.key }))}>
+                    {x.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
           {perr && <div className="att-perr">{perr}</div>}
         </div>
@@ -1179,6 +1297,13 @@ function MemberPanel({ mode, slot0, person, photo0, day, today, editable, design
               <div style={{ flex: 1 }} />
               <button className="att-btn" onClick={() => setConfirmDel(false)} disabled={busy}>Cancel</button>
               <button className="att-btn delyes" onClick={remove} disabled={busy}>{busy ? "Removing…" : "Yes, remove"}</button>
+            </>
+          ) : shiftOnly ? (
+            <>
+              <div style={{ flex: 1 }} />
+              <button className="att-btn" onClick={onClose}>Cancel</button>
+              <button className="att-btn pri" disabled={f.slot === person?.slot}
+                      onClick={() => onMove(person.id, f.slot)}>Move</button>
             </>
           ) : view ? (
             <>
@@ -1197,6 +1322,126 @@ function MemberPanel({ mode, slot0, person, photo0, day, today, editable, design
               </button>
             </>
           )}
+        </div>
+      </aside>
+    </>
+  );
+}
+
+/* ── "All Members": daayein side me saare member (aaj ki kataar ke saath) ──
+   Board sirf ek din ka hota hai; yahan wo bhi dikhte hain jo aage ki tareekh
+   se jude hain.  Admin: row dabao / ✎ = edit, 🗑 = hatao (confirm ke saath). */
+function MembersDrawer({ token, isAdmin, today, rev, blocked, photoOf, loadPhotos, onClose, onAdd, onOpen, onRemoved }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState("");
+  const [q, setQ] = useState("");
+  const [confirmId, setConfirmId] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+
+  useEffect(() => {
+    let off = false;
+    api.get("/api/attendance/members", token)
+      .then((d) => {
+        if (off) return;
+        setData(d);
+        setErr("");
+        loadPhotos(d.members);
+      })
+      .catch((e) => { if (!off) setErr(e.message || "Could not load members."); });
+    return () => { off = true; };
+  }, [token, rev, loadPhotos]);
+
+  // Esc = band -- par upar edit panel khula ho to pehle wahi band ho
+  useEffect(() => {
+    const k = (e) => { if (e.key === "Escape" && !blocked) onClose(); };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [blocked, onClose]);
+
+  const ql = q.trim().toLowerCase();
+  const all = data ? data.members : [];
+  const list = ql ? all.filter((m) => [m.name, m.emp_code, m.designation, m.contact]
+    .some((v) => (v || "").toLowerCase().includes(ql))) : all;
+
+  const remove = async (m) => {
+    setBusyId(m.id);
+    setErr("");
+    try {
+      const r = await api.delete(`/api/attendance/staff/${m.id}?day=${today}`, token);
+      setConfirmId(null);
+      onRemoved(r && r.mode === "deleted" ? `${m.name} deleted` : `${m.name} removed from ${shortDay(today)}`);
+    } catch (e) {
+      setErr(e.message || "Could not remove.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <>
+      <div className="att-mback" onClick={onClose} />
+      <aside className="att-mdraw" role="dialog" aria-modal="true" aria-label="All members">
+        <div className="att-md-head">
+          <div style={{ minWidth: 0 }}>
+            <div className="att-md-title">All Members</div>
+            <div className="att-md-sub">
+              {data ? `${all.length} member${all.length === 1 ? "" : "s"}` : "Loading…"}
+              {isAdmin ? " · click a member to edit" : ""}
+            </div>
+          </div>
+          {isAdmin && <button className="att-md-add" onClick={onAdd}>+ Add Member</button>}
+          <button className="att-x" onClick={onClose} aria-label="Close">×</button>
+        </div>
+        <div className="att-md-search">
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, emp code, designation, contact…"
+                 aria-label="Search members" />
+        </div>
+        {err && <div className="att-perr" style={{ margin: "10px 12px 0" }}>{err}</div>}
+        <div className="att-md-list">
+          {data && list.length === 0 && (
+            <div className="att-mempty">{ql ? "No member matches this search." : "No members yet."}</div>
+          )}
+          {list.map((m) => {
+            const sl = m.slot ? SLOT[m.slot] : null;
+            const url = photoOf(m);
+            return (
+              <div key={m.id} className="att-mrow" style={vars(sl || SLOT.WO)} role="button" tabIndex={0}
+                   onClick={() => { if (confirmId !== m.id) onOpen(m); }}
+                   onKeyDown={(e) => { if (e.key === "Enter") onOpen(m); }}>
+                <div className="att-mph">{url ? <img src={url} alt="" /> : initials(m.name)}</div>
+                <div className="att-mtxt">
+                  <div className="att-mname">
+                    <span className="att-mnm">{m.name}</span>
+                    {m.emp_code && <span className="att-code">{m.emp_code}</span>}
+                  </div>
+                  <div className="att-mmeta">{[m.designation, m.contact].filter(Boolean).join(" · ") || "—"}</div>
+                  <div className="att-mline">
+                    <span className="att-mslot">{sl ? sl.label : m.from_day ? `From ${shortDay(m.from_day)}` : "Not on the board"}</span>
+                    {m.doj && <span className="att-mjoin">Joined {shortDay(m.doj)} · {tenure(m.doj, today)}</span>}
+                  </div>
+                </div>
+                {isAdmin && (confirmId === m.id ? (
+                  <div className="att-mconfirm" onClick={(e) => e.stopPropagation()}>
+                    <span>Remove?</span>
+                    <button onClick={() => setConfirmId(null)} disabled={busyId === m.id}>No</button>
+                    <button className="yes" onClick={() => remove(m)} disabled={busyId === m.id}>
+                      {busyId === m.id ? "…" : "Yes"}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="att-mact" onClick={(e) => e.stopPropagation()}>
+                    <button className="att-ibtn2" title="Edit" aria-label={`Edit ${m.name}`} onClick={() => onOpen(m)}>
+                      <IcoEdit />
+                    </button>
+                    <button className="att-ibtn2 red" title="Remove" aria-label={`Remove ${m.name}`}
+                            onClick={() => setConfirmId(m.id)}>
+                      <IcoTrash />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
         </div>
       </aside>
     </>

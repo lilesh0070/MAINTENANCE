@@ -126,8 +126,9 @@ export const PAGE_PERM_GROUPS = [
       { key: "skill-org-chart",   label: "Organisation Chart" },
       { key: "skill-upgradation", label: "Skill Upgradation Plan" },
     ]},
-    // Read = sirf dekhna; Full = log jodna / badalna / ghaseet kar shift badalna
-    { key: "maintenance-attendance",     label: "Attendance Dashboard (Full = add / edit / move people)" },
+    // Read = sirf dekhna; Full = ghaseet kar shift badalna.  Member jodna / badalna /
+    // hatana SIRF ADMIN (user 2026-09-22) -- ye permission se nahi milta.
+    { key: "maintenance-attendance",     label: "Attendance Dashboard (Full = move people between shifts · add / edit / remove members = admin only)" },
     { key: "maintenance-historical",     label: "Historical Data", children: [
       /* Kram wahi jo page ke section buttons ka hai. */
       { key: "hist-bd",   label: "Breakdown Slips" },

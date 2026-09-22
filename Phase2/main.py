@@ -1016,10 +1016,10 @@ RULES:
     # Tables the AI query tool must never expose (credentials / audit /
     # permission map).  The bcrypt hashes in maintenance_users would be crackable
     # offline if dumped, so this is a hard block.
-    # maintenance_attendance_photo: har row ek ~15 KB base64 photo -- 20 row = 300 KB
+    # maintenance_employee_photo: har row ek ~15 KB base64 photo -- 20 row = 300 KB
     # AI ke context me.  Naam / shift wali tables khuli hain, sirf photo band.
     _AI_BLOCKED_TABLES = ("maintenance_users", "maintenance_audit_log", "maintenance_user_permissions",
-                          "maintenance_attendance_photo")
+                          "maintenance_employee_photo")
 
     def execute_query(sql: str) -> str:
         # SECURITY: the model authors this SQL.  Constrain it to a single

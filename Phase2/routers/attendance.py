@@ -8,9 +8,12 @@ code, contact number, designation.  Card ghaseet kar doosri kataar me.
 
 Teen table
 ----------
-  maintenance_attendance_staff  -- aadmi: naam, emp code, designation,
+  maintenance_employee          -- aadmi: naam, emp code, designation,
                                    contact, date of joining, removed_on
-  maintenance_attendance_photo  -- photo ALAG table me (data URL, ~15 KB):
+                                   (naam user ne diya 2026-09-22; pehle
+                                   maintenance_attendance_staff tha --
+                                   _purane_naam_badlo() khud badal deta hai)
+  maintenance_employee_photo    -- photo ALAG table me (data URL, ~15 KB):
         * board ki list halki rahe -- photo browser ek hi baar laata hai,
           `photo_ver` badle tabhi dobara
         * AI assistant ka query tool ise nahi padh sakta (main.py ka
@@ -36,17 +39,22 @@ board dekh sakte hain, aur aage ke din ki planning bhi ho sakti hai.
     joda) to poori tarah mita dete hain.
 
 Permission: page key "maintenance-attendance" (top-level, parent nahi).
-Padhna = read/full, likhna = full, admin hamesha.  Jaanch SERVER par --
-isme contact number hain, sirf sidebar chhupana permission nahi hoti.
+  read / full  -> board + saare members dekhna
+  full         -> shift badalna (ghaseetna)
+  SIRF ADMIN   -> member jodna / badalna / hatana (user 2026-09-22: "add
+                  member admin hi kar sake ... admin delete aur change kar sake")
+Jaanch SERVER par -- isme contact number hain, sirf button chhupana
+permission nahi hoti.
 
 Endpoints (prefix /api/attendance)
 ----------------------------------
 GET    /board?day=YYYY-MM-DD     us din ka board (photo ke bina)
 PUT    /board                    {day, lanes:{slot:[ids]}} -- ghaseetne ke baad
 GET    /photos?ids=1,2,3         {id: dataURL}
-POST   /staff                    naya aadmi {..., slot, day}
-PUT    /staff/{id}               details / photo / kataar badlo
-DELETE /staff/{id}?day=          us din se hatao
+GET    /members                  saare chalu member (aaj ki kataar ke saath)
+POST   /staff                    naya aadmi {..., slot, day}        (admin)
+PUT    /staff/{id}               details / photo / kataar badlo     (admin)
+DELETE /staff/{id}?day=          us din se hatao                    (admin)
 """
 import re
 from datetime import date
@@ -77,14 +85,45 @@ _LOCK_KEY = 7_202_609
 _bani = False
 
 
+def _purane_naam_badlo(cur) -> None:
+    """2026-09-22 user: "attendance wali table maintenance employee ke naam se".
+    Pehle (kuch hi ghante, deploy se pehle) naam maintenance_attendance_staff
+    / _photo tha, aur usme user ka joda hua data bhi hai -- isliye MITAO MAT,
+    NAAM BADLO.  Constraint (pkey ke saath uska index bhi) aur sequence ke naam
+    bhi naye, taaki DB me purana naam na dikhe.  Dobara chale to kuch nahi."""
+    def hai(rel):
+        cur.execute("SELECT to_regclass(%s) IS NOT NULL", (rel,))
+        return cur.fetchone()[0]
+
+    for old, new in (("maintenance_attendance_staff", "maintenance_employee"),
+                     ("maintenance_attendance_photo", "maintenance_employee_photo")):
+        if not hai(old) or hai(new):
+            continue
+        cur.execute(f"ALTER TABLE {old} RENAME TO {new}")
+        cur.execute("SELECT conname FROM pg_constraint WHERE conrelid = %s::regclass", (new,))
+        for (cn,) in cur.fetchall():
+            if not cn.startswith(old + "_"):
+                continue
+            # sirf naam ki baat hai -- koi ek na badle to baaki kaam na ruke
+            cur.execute("SAVEPOINT naam")
+            try:
+                cur.execute(f'ALTER TABLE {new} RENAME CONSTRAINT "{cn}" TO "{new}{cn[len(old):]}"')
+                cur.execute("RELEASE SAVEPOINT naam")
+            except Exception:
+                cur.execute("ROLLBACK TO SAVEPOINT naam")
+    if hai("maintenance_attendance_staff_id_seq") and not hai("maintenance_employee_id_seq"):
+        cur.execute("ALTER SEQUENCE maintenance_attendance_staff_id_seq RENAME TO maintenance_employee_id_seq")
+
+
 def _ensure() -> None:
     global _bani
     if _bani:
         return
     with get_conn() as conn:
         cur = conn.cursor()
+        _purane_naam_badlo(cur)
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS maintenance_attendance_staff (
+            CREATE TABLE IF NOT EXISTS maintenance_employee (
                 id           SERIAL PRIMARY KEY,
                 name         VARCHAR(120) NOT NULL,
                 emp_code     VARCHAR(40),
@@ -99,9 +138,9 @@ def _ensure() -> None:
             )
         """)
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS maintenance_attendance_photo (
+            CREATE TABLE IF NOT EXISTS maintenance_employee_photo (
                 staff_id    INTEGER PRIMARY KEY
-                            REFERENCES maintenance_attendance_staff(id) ON DELETE CASCADE,
+                            REFERENCES maintenance_employee(id) ON DELETE CASCADE,
                 photo       TEXT NOT NULL,
                 updated_at  TIMESTAMP NOT NULL DEFAULT NOW()
             )
@@ -110,7 +149,7 @@ def _ensure() -> None:
             CREATE TABLE IF NOT EXISTS maintenance_attendance_board (
                 day         DATE NOT NULL,
                 staff_id    INTEGER NOT NULL
-                            REFERENCES maintenance_attendance_staff(id) ON DELETE CASCADE,
+                            REFERENCES maintenance_employee(id) ON DELETE CASCADE,
                 slot        VARCHAR(10) NOT NULL,
                 pos         INTEGER NOT NULL DEFAULT 0,
                 updated_by  VARCHAR(120),
@@ -153,6 +192,17 @@ def _likh_sakta(user: dict) -> None:
         raise HTTPException(403, "You have view-only access to the Attendance Dashboard.")
 
 
+def _admin_hai(user: dict) -> bool:
+    return (user.get("role") or "") == "admin"
+
+
+def _sirf_admin(user: dict) -> None:
+    """Member jodna / badalna / hatana SIRF admin (user 2026-09-22).  Shift
+    badalna (ghaseetna) full wale bhi kar sakte hain -- wo _likh_sakta."""
+    if not _admin_hai(user):
+        raise HTTPException(403, "Only admin can add, edit or remove members.")
+
+
 def _kaun(user: dict) -> str:
     return str(user.get("username") or user.get("full_name") or "user")[:120]
 
@@ -187,8 +237,8 @@ _BOARD_SQL = """
            a.slot, a.pos, a.updated_by, a.updated_at,
            p.updated_at AS photo_at
       FROM aakhri a
-      JOIN maintenance_attendance_staff s ON s.id = a.staff_id
-      LEFT JOIN maintenance_attendance_photo p ON p.staff_id = s.id
+      JOIN maintenance_employee s ON s.id = a.staff_id
+      LEFT JOIN maintenance_employee_photo p ON p.staff_id = s.id
      WHERE s.removed_on IS NULL OR s.removed_on > %(d)s
      ORDER BY a.pos, s.name, s.id
 """
@@ -300,7 +350,7 @@ def _dohra(cur, emp: str, apna: Optional[int]) -> None:
     if not emp:
         return
     cur.execute("""
-        SELECT name FROM maintenance_attendance_staff
+        SELECT name FROM maintenance_employee
          WHERE removed_on IS NULL AND lower(emp_code) = lower(%s)
            AND (%s::int IS NULL OR id <> %s::int)
          LIMIT 1
@@ -379,15 +429,61 @@ def get_photos(ids: str = Query(""), user=Depends(get_current_user)):
         return {}
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT staff_id, photo FROM maintenance_attendance_photo"
+        cur.execute("SELECT staff_id, photo FROM maintenance_employee_photo"
                     " WHERE staff_id = ANY(%s)", (want,))
         return {str(r[0]): r[1] for r in cur.fetchall()}
+
+
+@router.get("/members")
+def get_members(user=Depends(get_current_user)):
+    """Saare CHALU member (hataye gaye nahi) -- "All Members" panel.  `slot` =
+    aaj ki kataar; aage ki tareekh se jude ho to None + `from_day`."""
+    _ensure()
+    _padh_sakta(user)
+    today = date.today()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""
+            WITH aaj AS (
+                SELECT DISTINCT ON (b.staff_id) b.staff_id, b.slot
+                  FROM maintenance_attendance_board b
+                 WHERE b.day <= %(d)s
+                 ORDER BY b.staff_id, b.day DESC
+            ), pehla AS (
+                SELECT staff_id, MIN(day) AS from_day
+                  FROM maintenance_attendance_board GROUP BY staff_id
+            )
+            SELECT s.id, s.name, s.emp_code, s.designation, s.contact, s.doj,
+                   a.slot, f.from_day, p.updated_at AS photo_at
+              FROM maintenance_employee s
+              LEFT JOIN aaj a   ON a.staff_id = s.id
+              LEFT JOIN pehla f ON f.staff_id = s.id
+              LEFT JOIN maintenance_employee_photo p ON p.staff_id = s.id
+             WHERE s.removed_on IS NULL
+             ORDER BY lower(s.name), s.id
+        """, {"d": today})
+        rows = cur.fetchall()
+    return {
+        "today": today.isoformat(),
+        "is_admin": _admin_hai(user),
+        "members": [{
+            "id": r["id"],
+            "name": r["name"],
+            "emp_code": r["emp_code"] or "",
+            "designation": r["designation"] or "",
+            "contact": r["contact"] or "",
+            "doj": r["doj"].isoformat() if r["doj"] else None,
+            "slot": r["slot"] if r["slot"] in SLOTS else None,
+            "from_day": r["from_day"].isoformat() if r["from_day"] else None,
+            "photo_ver": int(r["photo_at"].timestamp() * 1000) if r["photo_at"] else None,
+        } for r in rows],
+    }
 
 
 @router.post("/staff", status_code=201)
 def add_staff(body: StaffIn, user=Depends(get_current_user)):
     _ensure()
-    _likh_sakta(user)
+    _sirf_admin(user)
     v = _saaf(body)
     d = _din(body.day)
     _badal_sakte(d)
@@ -398,14 +494,14 @@ def add_staff(body: StaffIn, user=Depends(get_current_user)):
         cur.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
         _dohra(cur, v["emp_code"], None)
         cur.execute("""
-            INSERT INTO maintenance_attendance_staff
+            INSERT INTO maintenance_employee
                    (name, emp_code, designation, contact, doj, created_by, updated_by)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (v["name"], v["emp_code"], v["designation"], v["contact"], v["doj"], who, who))
         sid = cur.fetchone()["id"]
         if v["photo"]:
-            cur.execute("INSERT INTO maintenance_attendance_photo (staff_id, photo)"
+            cur.execute("INSERT INTO maintenance_employee_photo (staff_id, photo)"
                         " VALUES (%s, %s)", (sid, v["photo"]))
         lane = _lanes(_board(cur, d))[slot] + [sid]
         _likho(cur, d, {slot: lane}, who)
@@ -415,13 +511,13 @@ def add_staff(body: StaffIn, user=Depends(get_current_user)):
 @router.put("/staff/{sid}")
 def edit_staff(sid: int, body: StaffIn, user=Depends(get_current_user)):
     _ensure()
-    _likh_sakta(user)
+    _sirf_admin(user)
     v = _saaf(body)
     who = _kaun(user)
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
-        cur.execute("SELECT removed_on FROM maintenance_attendance_staff WHERE id = %s", (sid,))
+        cur.execute("SELECT removed_on FROM maintenance_employee WHERE id = %s", (sid,))
         r = cur.fetchone()
         if not r:
             raise HTTPException(404, "Person not found.")
@@ -429,7 +525,7 @@ def edit_staff(sid: int, body: StaffIn, user=Depends(get_current_user)):
             raise HTTPException(400, "This person has been removed from the board.")
         _dohra(cur, v["emp_code"], sid)
         cur.execute("""
-            UPDATE maintenance_attendance_staff
+            UPDATE maintenance_employee
                SET name = %s, emp_code = %s, designation = %s, contact = %s, doj = %s,
                    updated_by = %s, updated_at = NOW()
              WHERE id = %s
@@ -437,12 +533,12 @@ def edit_staff(sid: int, body: StaffIn, user=Depends(get_current_user)):
         if body.photo_change:
             if v["photo"]:
                 cur.execute("""
-                    INSERT INTO maintenance_attendance_photo (staff_id, photo) VALUES (%s, %s)
+                    INSERT INTO maintenance_employee_photo (staff_id, photo) VALUES (%s, %s)
                     ON CONFLICT (staff_id) DO UPDATE
                        SET photo = EXCLUDED.photo, updated_at = NOW()
                 """, (sid, v["photo"]))
             else:
-                cur.execute("DELETE FROM maintenance_attendance_photo WHERE staff_id = %s", (sid,))
+                cur.execute("DELETE FROM maintenance_employee_photo WHERE staff_id = %s", (sid,))
         if body.slot:
             slot = _slot(body.slot)
             d = _din(body.day)
@@ -461,13 +557,13 @@ def edit_staff(sid: int, body: StaffIn, user=Depends(get_current_user)):
 @router.delete("/staff/{sid}")
 def remove_staff(sid: int, day: Optional[str] = Query(None), user=Depends(get_current_user)):
     _ensure()
-    _likh_sakta(user)
+    _sirf_admin(user)
     d = _din(day)
     _badal_sakte(d)
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
-        cur.execute("SELECT removed_on FROM maintenance_attendance_staff WHERE id = %s", (sid,))
+        cur.execute("SELECT removed_on FROM maintenance_employee WHERE id = %s", (sid,))
         r = cur.fetchone()
         if not r:
             raise HTTPException(404, "Person not found.")
@@ -478,7 +574,7 @@ def remove_staff(sid: int, day: Optional[str] = Query(None), user=Depends(get_cu
         if cur.fetchone():
             # pehle ke din ka itihaas bache -- sirf is din se aage se hatao
             cur.execute("""
-                UPDATE maintenance_attendance_staff
+                UPDATE maintenance_employee
                    SET removed_on = %s, updated_by = %s, updated_at = NOW()
                  WHERE id = %s
             """, (d, _kaun(user), sid))
@@ -488,6 +584,6 @@ def remove_staff(sid: int, day: Optional[str] = Query(None), user=Depends(get_cu
         else:
             # kabhi kisi pichhle din par tha hi nahi -- galti se joda; poora mitao
             # (photo aur board ki row ON DELETE CASCADE se)
-            cur.execute("DELETE FROM maintenance_attendance_staff WHERE id = %s", (sid,))
+            cur.execute("DELETE FROM maintenance_employee WHERE id = %s", (sid,))
             mode = "deleted"
     return {"ok": True, "mode": mode}

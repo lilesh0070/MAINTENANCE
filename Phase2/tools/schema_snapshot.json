@@ -1422,94 +1422,6 @@
     "type": "character varying"
    }
   },
-  "maintenance_attendance_photo": {
-   "photo": {
-    "default": null,
-    "nullable": false,
-    "pos": 2,
-    "type": "text"
-   },
-   "staff_id": {
-    "default": null,
-    "nullable": false,
-    "pos": 1,
-    "type": "integer"
-   },
-   "updated_at": {
-    "default": "now()",
-    "nullable": false,
-    "pos": 3,
-    "type": "timestamp without time zone"
-   }
-  },
-  "maintenance_attendance_staff": {
-   "contact": {
-    "default": null,
-    "nullable": true,
-    "pos": 5,
-    "type": "character varying"
-   },
-   "created_at": {
-    "default": "now()",
-    "nullable": false,
-    "pos": 9,
-    "type": "timestamp without time zone"
-   },
-   "created_by": {
-    "default": null,
-    "nullable": true,
-    "pos": 8,
-    "type": "character varying"
-   },
-   "designation": {
-    "default": null,
-    "nullable": true,
-    "pos": 4,
-    "type": "character varying"
-   },
-   "doj": {
-    "default": null,
-    "nullable": true,
-    "pos": 6,
-    "type": "date"
-   },
-   "emp_code": {
-    "default": null,
-    "nullable": true,
-    "pos": 3,
-    "type": "character varying"
-   },
-   "id": {
-    "default": "nextval(<sequence>)",
-    "nullable": false,
-    "pos": 1,
-    "type": "integer"
-   },
-   "name": {
-    "default": null,
-    "nullable": false,
-    "pos": 2,
-    "type": "character varying"
-   },
-   "removed_on": {
-    "default": null,
-    "nullable": true,
-    "pos": 7,
-    "type": "date"
-   },
-   "updated_at": {
-    "default": "now()",
-    "nullable": false,
-    "pos": 11,
-    "type": "timestamp without time zone"
-   },
-   "updated_by": {
-    "default": null,
-    "nullable": true,
-    "pos": 10,
-    "type": "character varying"
-   }
-  },
   "maintenance_audit_log": {
    "action": {
     "default": null,
@@ -2576,6 +2488,94 @@
     "nullable": true,
     "pos": 7,
     "type": "character varying"
+   }
+  },
+  "maintenance_employee": {
+   "contact": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "character varying"
+   },
+   "created_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 9,
+    "type": "timestamp without time zone"
+   },
+   "created_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 8,
+    "type": "character varying"
+   },
+   "designation": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "doj": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "date"
+   },
+   "emp_code": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "name": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "character varying"
+   },
+   "removed_on": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "date"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 11,
+    "type": "timestamp without time zone"
+   },
+   "updated_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "character varying"
+   }
+  },
+  "maintenance_employee_photo": {
+   "photo": {
+    "default": null,
+    "nullable": false,
+    "pos": 2,
+    "type": "text"
+   },
+   "staff_id": {
+    "default": null,
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 3,
+    "type": "timestamp without time zone"
    }
   },
   "maintenance_escalation_config": {
@@ -5070,5 +5070,5 @@
   }
  },
  "tables": 70,
- "taken_at": "2026-09-22T12:06:37"
+ "taken_at": "2026-09-22T13:03:05"
 }
