@@ -39,7 +39,7 @@
  * Routing: /maintenance-attendance · Access: "maintenance-attendance"
  * (likhna = full).  Backend: /api/attendance
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api/client";
@@ -51,6 +51,17 @@ const PAGE_KEY = "maintenance-attendance";
 const COARSE = typeof window !== "undefined" && !!window.matchMedia
   && window.matchMedia("(pointer: coarse)").matches;
 const REFRESH_MS = 60_000;          // doosra supervisor badle to TV / doosre phone par bhi aaye
+
+/* TV par poora board UPAR KI AADHI screen me, scroll bilkul nahi, neeche ki
+   aadhi KHAALI (user 2026-09-22: "TV wali screen par attendance dashboard
+   scroll ho raha hai, na hona chahiye" + "poori screen par na karna, TV ki
+   aadhi screen par rahe, neeche poora blank rahe").
+     app  : html par `in-app-tv` (1350 ka layout, asli TV 804x1428 dp)
+     web  : TV ke browser me website -- badi khadi screen, touch nahi
+            (touch wale tablet / phone par pehle jaisa scroll)
+   `TvFit.jsx` sirf 2000px+ (4K Windows TV) par chalta hai, is TV par nahi. */
+const tvWebNow = () => typeof window !== "undefined" && !NATIVE && !COARSE
+  && window.innerWidth >= 700 && window.innerHeight >= window.innerWidth * 1.3;
 
 /* c = rang, d = gehra (gradient ka doosra sira), soft = halka pichhwada.
    `d` alag likha hai, CSS `color-mix()` se nahi: plant TV ki WebView purani
@@ -235,6 +246,8 @@ export default function AttendanceDashboard() {
   const [reloadKey, setReload]  = useState(0);
   const [photoMap, setPhotoMap] = useState({});      // id -> {ver, url}
   const [q, setQ]               = useState("");
+  const [focusIdx, setFocusIdx] = useState(-1);      // Search dabane par kaunsa match (0..)
+  const [focusId, setFocusId]   = useState(null);    // wahi card chamakta hai
   const [panel, setPanel]       = useState(null);    // {mode:"add", slot} | {mode:"edit"|"view", id}
   const [drag, setDrag]         = useState(null);    // {id, slot, index, w, h}
   const [toast, setToast]       = useState(null);    // {text, kind}
@@ -243,6 +256,8 @@ export default function AttendanceDashboard() {
 
   const boardRef   = useRef(null);
   const boardEl    = useRef(null);
+  const fitWrap    = useRef(null);
+  const fitBody    = useRef(null);
   const reqNo      = useRef(0);
   const localVer   = useRef(0);                      // apna badlav -- beech ka purana GET na chadhe
   const saveQ      = useRef(Promise.resolve());
@@ -257,6 +272,80 @@ export default function AttendanceDashboard() {
   const toastT     = useRef(0);
 
   useEffect(() => { boardRef.current = board; }, [board]);
+
+  /* ── TV: screen me samao (upar TV wali tippani) ── */
+  const [tvApp] = useState(() => typeof document !== "undefined"
+    && document.documentElement.classList.contains("in-app-tv"));
+  const [tvWeb, setTvWeb] = useState(tvWebNow);
+  useEffect(() => {
+    if (NATIVE) return undefined;
+    const on = () => setTvWeb(tvWebNow());
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  const tvMode = tvApp || tvWeb;
+
+  // page ka scroll band -- aur body ka margin 0: Layout ka 100vh + body ka 8+8px
+  // margin page ko 16px lamba banata tha (scrollHeight - innerHeight = 16)
+  useEffect(() => {
+    if (!tvMode) return undefined;
+    const h = document.documentElement, b = document.body;
+    const pehle = [h.style.overflow, b.style.overflow, b.style.margin];
+    h.style.overflow = "hidden";
+    b.style.overflow = "hidden";
+    b.style.margin = "0";
+    return () => { h.style.overflow = pehle[0]; b.style.overflow = pehle[1]; b.style.margin = pehle[2]; };
+  }, [tvMode]);
+
+  /* Board ko jagah me bithao: `.att-body` ko W/s chaudai par banao aur scale(s)
+     -- chaudai poori bhari rehti hai, oonchai jagah me.  s ka hisaab SEEDHA DOM
+     par (React state nahi) -- warna naap -> state -> naap ka chakkar (KPI page
+     par isi se React #185 hang hua tha).  Member kam hon to s > 1 (TV app par
+     1.2 tak, bada dikhe) aur kataar khinch kar screen bharti hain; zyada hon to
+     s chhota.  Binary search me hi naapte hain, band loop kahin nahi. */
+  useLayoutEffect(() => {
+    if (!tvMode) return undefined;
+    const wrap = fitWrap.current, body = fitBody.current;
+    if (!wrap || !body) return undefined;
+    const MAX = tvApp ? 1.2 : 1, MIN = 0.3;
+    let t = 0;
+    const fit = () => {
+      t = 0;
+      const W = wrap.clientWidth, H = wrap.clientHeight;
+      if (!W || !H) return;
+      body.style.minHeight = "0px";
+      const tall = (sc) => { body.style.width = `${W / sc}px`; return body.offsetHeight * sc; };
+      let sc = MAX;
+      if (tall(MAX) > H) {
+        let lo = MIN, hi = MAX;
+        for (let i = 0; i < 9; i += 1) {
+          const mid = (lo + hi) / 2;
+          if (tall(mid) <= H) lo = mid; else hi = mid;
+        }
+        sc = lo;
+      }
+      body.style.width = `${W / sc}px`;
+      body.style.minHeight = `${H / sc}px`;
+      body.style.transform = `scale(${sc})`;
+    };
+    // requestAnimationFrame NAHI -- chhupe tab / background me wo chalta hi nahi aur
+    // board load hone ke baad naap purana reh jaata (board screen se bahar).
+    // Timer har haal me chalta hai; 30ms me aaye saare badlav ek saath.
+    const kick = () => { if (!t) t = setTimeout(fit, 30); };
+    fit();
+    // member / photo / font aane par oonchai badalti hai -- dobara bithao
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(kick) : null;
+    if (ro) { ro.observe(wrap); ro.observe(body); }
+    window.addEventListener("resize", kick);
+    return () => {
+      clearTimeout(t);
+      if (ro) ro.disconnect();
+      window.removeEventListener("resize", kick);
+      body.style.width = "";
+      body.style.minHeight = "";
+      body.style.transform = "";
+    };
+  }, [tvMode, tvApp]);
 
   const editable = !!(board && board.editable && mayWrite);   // shift badalna (full)
   const adminEdit = editable && isAdmin;                        // member jodna / badalna / hatana
@@ -351,7 +440,46 @@ export default function AttendanceDashboard() {
   const ql = q.trim().toLowerCase();
   const match = (p) => !ql || [p.name, p.emp_code, p.designation, p.contact]
     .some((v) => (v || "").toLowerCase().includes(ql));
-  const hits = ql ? (board?.people || []).filter(match).length : 0;
+  /* Search (user 2026-09-22: "code, naam daal kar search dabaye to wahan chala
+     jaye automatic").  Kram: emp code BILKUL wahi -> code / naam (ya naam ka
+     koi shabd) usse shuru -> kahin bhi.  Barabar ho to board ke kram me. */
+  const found = useMemo(() => {
+    if (!ql) return [];
+    const out = [];
+    let n = 0;
+    for (const sl of SLOTS) {
+      for (const p of lanes[sl.key]) {
+        n += 1;
+        const code = (p.emp_code || "").toLowerCase();
+        const name = (p.name || "").toLowerCase();
+        let r = -1;
+        if (code && code === ql) r = 0;
+        else if (code.startsWith(ql) || name.startsWith(ql) || name.split(/\s+/).some((w) => w.startsWith(ql))) r = 1;
+        else if ([p.name, p.emp_code, p.designation, p.contact].some((v) => (v || "").toLowerCase().includes(ql))) r = 2;
+        if (r >= 0) out.push({ p, r, n });
+      }
+    }
+    out.sort((a, b) => a.r - b.r || a.n - b.n);
+    return out.map((x) => x.p);
+  }, [lanes, ql]);
+  const hits = found.length;
+
+  const typeQ = (v) => { setQ(v); setFocusIdx(-1); setFocusId(null); };
+  // Search / Enter: agle match par jao -- dobara dabao to usse agla
+  const goTo = (e) => {
+    if (e) e.preventDefault();
+    if (!found.length) return;
+    const i = (focusIdx + 1) % found.length;
+    const id = found[i].id;
+    setFocusIdx(i);
+    setFocusId(id);
+    // phone: keyboard band karo, warna aadhi screen dhaki rehti hai aur card uske neeche
+    if (COARSE && document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    setTimeout(() => {
+      const el = document.querySelector(`[data-att-id="${id}"]`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, COARSE ? 320 : 0);
+  };
 
   const counts = useMemo(() => {
     const c = Object.fromEntries(SLOTS.map((s) => [s.key, lanes[s.key].length]));
@@ -615,11 +743,23 @@ export default function AttendanceDashboard() {
         .att-chip.today  { background:#dcfce7; color:#15803d; }
         .att-chip.past   { background:#f1f5f9; color:#475569; }
         .att-chip.future { background:#ede9fe; color:#6d28d9; }
-        .att-search { position:relative; flex:0 1 280px; min-width:180px; }
-        .att-search input { width:100%; height:38px; border:1px solid #e2e8f0; border-radius:10px;
-                            padding:0 12px 0 34px; font-family:inherit; font-size:14px; background:#f8fafc;
-                            box-sizing:border-box; }
-        .att-search svg { position:absolute; left:11px; top:50%; transform:translateY(-50%); color:#94a3b8; }
+        .att-search { display:flex; flex:0 1 340px; min-width:220px; margin:0; }
+        .att-sbox { position:relative; flex:1; min-width:0; display:block; }
+        .att-search input { width:100%; height:38px; border:1px solid #e2e8f0; border-right:none;
+                            border-radius:10px 0 0 10px; padding:0 32px 0 34px; font-family:inherit; font-size:14px;
+                            background:#f8fafc; box-sizing:border-box; }
+        .att-sbox svg { position:absolute; left:11px; top:50%; transform:translateY(-50%); color:#94a3b8;
+                        pointer-events:none; }
+        .att-sclear { position:absolute; right:6px; top:50%; transform:translateY(-50%); width:24px; height:24px;
+                      min-height:0 !important; border:none; border-radius:50%; background:#e2e8f0; color:#475569;
+                      font-size:16px; line-height:1; cursor:pointer; padding:0; display:flex; align-items:center;
+                      justify-content:center; font-family:inherit; }
+        .att-sclear:hover { background:#cbd5e1; color:#0f172a; }
+        .att-sgo { height:38px; min-height:0 !important; padding:0 16px; border:1px solid ${theme.accent};
+                   border-radius:0 10px 10px 0; background:${theme.accent}; color:#fff; font-family:inherit;
+                   font-size:13px; font-weight:800; cursor:pointer; white-space:nowrap; }
+        .att-sgo:hover { filter:brightness(1.08); }
+        .att-sgo:disabled { opacity:.5; cursor:default; filter:none; }
         .att-add { height:40px; padding:0 18px; border:none; border-radius:11px; cursor:pointer;
                    background:${theme.gradient}; color:#fff; font-family:inherit; font-size:14px; font-weight:800;
                    display:flex; align-items:center; gap:8px; box-shadow:0 6px 16px rgba(37,99,235,.28);
@@ -692,6 +832,12 @@ export default function AttendanceDashboard() {
         .att-card.away { display:none; }
         .att-card.dim { opacity:.25; }
         .att-card.hit { box-shadow:0 0 0 2px #f59e0b, 0 8px 20px rgba(245,158,11,.25); }
+        /* Search se pahunche card: gaadha ghera + 3 baar chamak (ginti ki -- lagataar nahi, TV par bilkul nahi) */
+        .att-card.focus { box-shadow:0 0 0 3px #f59e0b, 0 14px 30px rgba(245,158,11,.35); transform:translateY(-3px);
+                          animation:att-flash .7s ease-out 3; }
+        @keyframes att-flash { 0% { box-shadow:0 0 0 3px #f59e0b, 0 0 0 12px rgba(245,158,11,.45); }
+                               100% { box-shadow:0 0 0 3px #f59e0b, 0 14px 30px rgba(245,158,11,.35); } }
+        body.in-app-tv .att-card.focus { animation:none; }
         .att-hole { border:2px dashed var(--c); background:var(--soft); border-radius:14px;
                     min-height:150px; }
         .att-ph { width:68px; height:68px; border-radius:50%; flex-shrink:0; margin-bottom:6px; position:relative;
@@ -699,6 +845,7 @@ export default function AttendanceDashboard() {
                   display:flex; align-items:center; justify-content:center; }
         .att-ph img { width:100%; height:100%; object-fit:cover; display:block; -webkit-user-drag:none; pointer-events:none; }
         .att-ph span { font-family:'Barlow Condensed',sans-serif; font-size:26px; font-weight:800; color:var(--c); }
+        .att-ctext { display:flex; flex-direction:column; align-items:center; gap:3px; min-width:0; max-width:100%; }
         .att-name { font-size:14px; font-weight:800; color:#0f172a; line-height:1.2; max-width:100%;
                     display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
                     word-break:break-word; }
@@ -858,6 +1005,35 @@ export default function AttendanceDashboard() {
         /* app me koi lagataar animation nahi; panel bina sarakne ke (TV par halka) */
         body.in-app-tv .att-panel { animation:none; }
 
+        /* ── TV: upar ki AADHI screen, scroll nahi, neeche khaali (hisaab upar JS me) ──
+           position:fixed -- Layout ka 100vh aur body ka margin beech me na aaye.
+           padding-bottom:50vh = neeche ki aadhi screen khaali (usi rang ki, beech
+           me koi lakeer nahi); header + board upar wale aadhe me samaate hain.
+           z-index 5: slide-nav, AI, panel, drawer sab iske UPAR rehte hain. */
+        .bd-root.att-tv { position:fixed; top:0; left:0; right:0; bottom:0; z-index:5; min-height:0;
+                          padding-bottom:50vh; box-sizing:border-box; display:flex; flex-direction:column;
+                          overflow:hidden; }
+        .att-tv .bd-topbar { position:relative; flex-shrink:0; }
+        .att-tv .att-fitwrap { flex:1; min-height:0; overflow:hidden; position:relative; }
+        .att-tv .att-body { max-width:none; margin:0; box-sizing:border-box; transform-origin:0 0;
+                            display:flex; flex-direction:column; padding:16px 24px 72px; }
+        .att-tv .att-board { flex:1 1 auto; gap:10px; margin-top:10px; }
+        .att-tv .att-lane { flex:1 1 auto; }
+        /* aadhi screen me zyada log aayein: ginti ek line, card aada (photo baayein) */
+        .att-tv .att-stats { grid-template-columns:repeat(8, minmax(0,1fr)); gap:8px; margin:10px 0 0; }
+        .att-tv .att-lane-head { width:132px; padding:10px 12px; gap:6px; }
+        .att-tv .att-badge { min-width:38px; height:38px; font-size:20px; border-radius:11px; }
+        .att-tv .att-lane-body { padding:8px; gap:8px; min-height:70px;
+                                 grid-template-columns:repeat(auto-fill, minmax(215px, 1fr)); }
+        .att-tv .att-empty { padding:10px; }
+        .att-tv .att-card { flex-direction:row; align-items:center; text-align:left; gap:10px; padding:8px 10px; }
+        .att-tv .att-card:hover { transform:none; }
+        .att-tv .att-ph { width:52px; height:52px; margin:0 0 0 2px; }
+        .att-tv .att-ph span { font-size:20px; }
+        .att-tv .att-ctext { align-items:flex-start; flex:1; gap:2px; }
+        .att-tv .att-code { margin-top:0; }
+        .att-tv .att-hole { min-height:70px; }
+
         /* ── tablet / patli khidki ── */
         @media (max-width: 1100px) {
           .att-stats { grid-template-columns:repeat(4, minmax(0,1fr)); }
@@ -900,14 +1076,15 @@ export default function AttendanceDashboard() {
         ${NATIVE ? `.att-date, .att-fld input[type=date] { -webkit-appearance:none; appearance:none; }` : ""}
       `}</style>
 
-      <div className="bd-root">
+      <div className={`bd-root${tvMode ? " att-tv" : ""}`}>
         <div className="bd-topbar">
           <div />
           <div className="bd-title">Attendance <span>Dashboard</span></div>
           {user?.username && <div className="bd-user-pill">Signed in as <b>{user.username}</b></div>}
         </div>
 
-        <div className="att-body">
+        <div ref={fitWrap} className="att-fitwrap">
+        <div ref={fitBody} className="att-body">
           <div className="att-top">
             <div className="att-dayinfo">
               <div className="att-dayname">{shownDay ? longDay(shownDay) : "Loading…"}</div>
@@ -929,12 +1106,24 @@ export default function AttendanceDashboard() {
               <button className="att-today" onClick={() => setDay(null)} disabled={day === null}>Today</button>
             </div>
 
-            <label className="att-search">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
-                   strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, emp code, designation…"
-                     aria-label="Search" />
-            </label>
+            <form className="att-search" role="search" onSubmit={goTo}>
+              <span className="att-sbox">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"
+                     strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+                <input value={q} onChange={(e) => typeQ(e.target.value)} placeholder="Name or emp code…"
+                       aria-label="Search name or emp code" enterKeyHint="search" autoComplete="off"
+                       // Enter yahin sambhalo (form ka submit bhi hai) -- preventDefault se dono ek saath nahi
+                       // chalte; kuch keyboard / automation form submit karte hi nahi.  Hindi jaise
+                       // keyboard par shabd banate waqt ka Enter chhodo.
+                       onKeyDown={(e) => {
+                         if (e.key === "Enter" && !(e.nativeEvent && e.nativeEvent.isComposing)) goTo(e);
+                       }} />
+                {q && (
+                  <button type="button" className="att-sclear" onClick={() => typeQ("")} aria-label="Clear search">×</button>
+                )}
+              </span>
+              <button type="submit" className="att-sgo" disabled={!ql}>Search</button>
+            </form>
 
             <button className="att-members" onClick={() => setMembersOpen(true)}>
               <IcoUsers /> All Members
@@ -969,8 +1158,14 @@ export default function AttendanceDashboard() {
               Planning for {shortDay(board.day)} — changes apply from this date onward (until changed again).
             </div>
           )}
-          {ql && <div className="att-note tip">{hits} match{hits === 1 ? "" : "es"} for “{q.trim()}”.</div>}
-          {!ql && editable && counts.total > 0 && (
+          {ql && (
+            <div className="att-note tip">
+              {hits === 0 ? `No one matches “${q.trim()}” on this date.`
+                : focusIdx >= 0 ? `Showing ${focusIdx + 1} of ${hits}${hits > 1 ? " — press Search again for the next" : ""}.`
+                  : `${hits} match${hits === 1 ? "" : "es"} for “${q.trim()}” — press Search to go to ${hits === 1 ? "it" : "the first"}.`}
+            </div>
+          )}
+          {!ql && editable && counts.total > 0 && !tvMode && (
             <div className="att-note tip">
               {COARSE
                 ? (isAdmin
@@ -1013,10 +1208,10 @@ export default function AttendanceDashboard() {
                       if (it.hole) return <div key="hole" className="att-hole" style={{ minHeight: drag?.h || undefined }} />;
                       const p = it.p;
                       const idx = lanes[s.key].indexOf(p);
-                      const found = ql && match(p);
+                      const found = ql && match(p);   // (upar wale `found` list se alag -- ek card ka haan/naa)
                       return (
                         <Card key={p.id} p={p} url={photoOf(p)} editable={editable}
-                              away={it.away} dim={!!ql && !found} hit={!!found}
+                              away={it.away} dim={!!ql && !found} hit={!!found} focus={p.id === focusId}
                               onPointerDown={(e) => { if (startRef.current) startRef.current(e, p, idx); }}
                               onOpen={() => openCard(p)} />
                       );
@@ -1029,6 +1224,7 @@ export default function AttendanceDashboard() {
               );
             })}
           </div>
+        </div>
         </div>
       </div>
 
@@ -1076,17 +1272,19 @@ function CardBody({ p, url }) {
   return (
     <>
       <div className="att-ph">{url ? <img src={url} alt="" draggable={false} /> : <span>{initials(p.name)}</span>}</div>
-      <div className="att-name" title={p.name}>{p.name}</div>
-      {p.emp_code && <div className="att-code">{p.emp_code}</div>}
-      {p.designation && <div className="att-desig" title={p.designation}>{p.designation}</div>}
-      {p.contact && <div className="att-tel"><IcoPhone />{p.contact}</div>}
+      <div className="att-ctext">
+        <div className="att-name" title={p.name}>{p.name}</div>
+        {p.emp_code && <div className="att-code">{p.emp_code}</div>}
+        {p.designation && <div className="att-desig" title={p.designation}>{p.designation}</div>}
+        {p.contact && <div className="att-tel"><IcoPhone />{p.contact}</div>}
+      </div>
     </>
   );
 }
 
-function Card({ p, url, editable, away, dim, hit, onPointerDown, onOpen }) {
+function Card({ p, url, editable, away, dim, hit, focus, onPointerDown, onOpen }) {
   return (
-    <div className={`att-card${editable ? " edit" : ""}${away ? " away" : ""}${dim ? " dim" : ""}${hit ? " hit" : ""}`}
+    <div className={`att-card${editable ? " edit" : ""}${away ? " away" : ""}${dim ? " dim" : ""}${hit ? " hit" : ""}${focus ? " focus" : ""}`}
          data-att-card={away ? undefined : ""} data-att-id={p.id} role="button" tabIndex={0}
          aria-label={`${p.name}${p.emp_code ? `, ${p.emp_code}` : ""}${p.designation ? `, ${p.designation}` : ""}`}
          onPointerDown={editable ? onPointerDown : undefined}
