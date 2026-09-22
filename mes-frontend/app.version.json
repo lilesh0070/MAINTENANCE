@@ -1,5 +1,5 @@
 {
-  "version": "1.4.105",
-  "notes": "3D View on the TV: sharper picture, the Cylinder stays in the middle and all parts stay on screen when you press Explode, the Auto Motion / Coil buttons are higher up, and it runs more smoothly. Phones and the website are unchanged.",
-  "released_at": "2026-09-22T09:18:53"
+  "version": "1.4.106",
+  "notes": "Maintenance Dashboard: in Pending Breakdown, the empty date box now shows mm/dd/yyyy with a calendar icon, the same as the website.",
+  "released_at": "2026-09-22T10:44:42"
 }
