@@ -234,6 +234,13 @@
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
+    /* TV (app ka ThreeDView `?tv=1` bhejta hai) -- 2026-09-22, user: "TV
+       version me sahi nahi aa raha, load me time lagta hai".  TV lambi-khadi
+       hai aur GPU kamzor.  SIRF TV par: camera itna door ki poora model
+       chaudai me aa jaaye, pixel ratio 1, shadow map 1024, aur 30 fps.
+       Phone / website par ye file bilkul pehle jaisi chalti hai. */
+    const TV = new URLSearchParams(location.search).has('tv');
+
     /* Setup Scene, Fog & Renderer */
     const scene = new THREE.Scene();
     scene.background = new THREE.Color('#050911');
@@ -242,7 +249,7 @@
     const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 1, 3200);
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(TV ? 1 : Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -260,13 +267,26 @@
     controls.dampingFactor = 0.07;
     controls.minDistance = 180;
     controls.maxDistance = 1200;
+    if (TV) controls.maxDistance = 1800;   // khadi TV par fit karne ki doori 1200 se zyada
     controls.maxPolarAngle = Math.PI * 0.49;
+
+    /* TV: camera kitna door ho ki model chaudai me aa jaaye -- khadi screen
+       par chaudai hi tang hai.  Model x = -103 (tie-rod ke nut) se +246
+       (rod poora bahar) tak, yaani beech ~70; dono taraf 215 (thodi jagah +
+       Explode ka kuch hissa).  Isliye TV par camera aur target x = 70. */
+    function tvDoori() {
+      const aadha = THREE.MathUtils.degToRad(camera.fov / 2);
+      const chaudaiKaTan = Math.tan(aadha) * camera.aspect;
+      const d = 215 / chaudaiKaTan;
+      return Math.max(controls.minDistance, Math.min(controls.maxDistance, d));
+    }
 
     function setupDefaultCamera() {
       const isMobile = window.innerWidth < 640;
       // Positioned back and angled to frame the entire height of pipes and valve
       camera.position.set(0, 70, isMobile ? 620 : 520);
-      controls.target.set(0, 16, 0);
+      if (TV) { camera.position.x = 70; camera.position.z = tvDoori(); }
+      controls.target.set(TV ? 70 : 0, 16, 0);
       controls.update();
     }
     setupDefaultCamera();
@@ -277,7 +297,7 @@
     const keyLight = new THREE.DirectionalLight(0xffffff, 2.7);
     keyLight.position.set(180, 320, 200);
     keyLight.castShadow = true;
-    keyLight.shadow.mapSize.set(2048, 2048);
+    keyLight.shadow.mapSize.set(TV ? 1024 : 2048, TV ? 1024 : 2048);
     keyLight.shadow.camera.near = 50;
     keyLight.shadow.camera.far = 800;
     keyLight.shadow.camera.left = -280;
@@ -1564,8 +1584,15 @@
     applyValveState(true);
     setStroke(50.0);
 
-    function animate() {
+    let tvPichla = 0;
+    function animate(t) {
       requestAnimationFrame(animate);
+      // TV: ~30 fps -- GPU ka aadha bojh (dt apne aap bada aata hai, chaal wahi)
+      if (TV) {
+        const ab = t || performance.now();
+        if (ab - tvPichla < 30) return;
+        tvPichla = ab;
+      }
       const dt = Math.min(clock.getDelta(), 0.05);
 
       /* 1. Piston stroke kinematics */

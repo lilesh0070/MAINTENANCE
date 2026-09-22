@@ -180,6 +180,24 @@ function ModelViewer({ m, user, onBack }) {
     h.style.overflow = "hidden"; b.style.overflow = "hidden";
     return () => { h.style.overflow = pehle[0]; b.style.overflow = pehle[1]; };
   }, []);
+
+  /* TV (2026-09-22, user: "TV version me sahi nahi aa raha, load me time").
+     TV par app 1350px ka layout banakar screen par ~0.6 guna chhota dikhati
+     hai (index.html `width=1350`; TV emulator par naapa: visualViewport.scale
+     0.5956, screen 804px).  iframe ke andar ka 3D bhi usi 1350 par banta tha
+     -- likhawat / button padhne layak nahi, aur canvas 1351x2337 = 3.2 MP
+     (zaroorat se 3 guna).  Ilaaj: iframe ko k guna chhota rakho aur 1/k se
+     bada karo -- andar ka page ASLI screen ke naap (804px) par banta hai aur
+     1:1 dikhta hai.  `?tv=1` se 3D ki file TV wale halke niyam lagaati hai
+     (camera door, pixel ratio 1, 30 fps -- dekho public/3d/cylinder.html).
+     Phone / tablet / website par kuch nahi badla. */
+  const tv = document.documentElement.classList.contains("in-app-tv");
+  const k = tv ? (window.visualViewport?.scale || 1) : 1;
+  const chhota = tv && k > 0.2 && k < 0.95;
+  const src = tv ? `${m.file}?tv=1` : m.file;
+  const frameStyle = chhota
+    ? { width: `${k * 100}%`, height: `${k * 100}%`, transform: `scale(${1 / k})`, transformOrigin: "0 0" }
+    : undefined;
   return (
     <div className="tdv-shell">
       <div className="bd-topbar">
@@ -192,7 +210,7 @@ function ModelViewer({ m, user, onBack }) {
       <div className="tdv-stage">
         {/* src ek hi baar -- badalne par iframe history me entry banata, aur
             phone ka back pehle iframe ko peechhe le jaata, page ko nahi. */}
-        <iframe className="tdv-frame" src={m.file} title={`${m.label} — 3D view`}
+        <iframe className="tdv-frame" src={src} title={`${m.label} — 3D view`} style={frameStyle}
                 onLoad={() => setChala(true)} />
         {!chala && <div className="tdv-loading">Loading 3D model…</div>}
       </div>
