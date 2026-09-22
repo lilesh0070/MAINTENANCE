@@ -1,5 +1,5 @@
 {
-  "version": "1.4.104",
-  "notes": "3D View on the TV: the Cylinder model now fits the tall screen, the buttons and labels are a readable size, and it loads faster and runs lighter. Phones and the website are unchanged.",
-  "released_at": "2026-09-22T08:24:54"
+  "version": "1.4.105",
+  "notes": "3D View on the TV: sharper picture, the Cylinder stays in the middle and all parts stay on screen when you press Explode, the Auto Motion / Coil buttons are higher up, and it runs more smoothly. Phones and the website are unchanged.",
+  "released_at": "2026-09-22T09:18:53"
 }
