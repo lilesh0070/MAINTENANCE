@@ -1,5 +1,5 @@
 {
-  "version": "1.4.106",
-  "notes": "Maintenance Dashboard: in Pending Breakdown, the empty date box now shows mm/dd/yyyy with a calendar icon, the same as the website.",
-  "released_at": "2026-09-22T10:44:42"
+  "version": "1.4.107",
+  "notes": "Maintenance Dashboard: removed the '7 AM – 6:30 AM (plant day)' line under the Today card.",
+  "released_at": "2026-09-22T10:57:44"
 }
