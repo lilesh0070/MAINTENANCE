@@ -1,5 +1,5 @@
 {
-  "version": "1.4.103",
-  "notes": "Fixes the app freezing (Close app / Wait), mostly seen on the TV with the Breakdown page or the manual Breakdown Slip open. The AI button no longer animates all the time, and the slip no longer blurs the screen behind it; this also saves battery on phones.",
-  "released_at": "2026-09-21T18:04:12"
+  "version": "1.4.104",
+  "notes": "3D View on the TV: the Cylinder model now fits the tall screen, the buttons and labels are a readable size, and it loads faster and runs lighter. Phones and the website are unchanged.",
+  "released_at": "2026-09-22T08:24:54"
 }
