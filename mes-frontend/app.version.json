@@ -1,5 +1,5 @@
 {
-  "version": "1.4.107",
-  "notes": "Maintenance Dashboard: removed the '7 AM – 6:30 AM (plant day)' line under the Today card.",
-  "released_at": "2026-09-22T10:57:44"
+  "version": "1.4.108",
+  "notes": "New Attendance Dashboard: shift-wise board (G / A / B shift, Week Off, Leave, Work From Home) with drag and drop, plus an All Members list. Only admin can add, edit or remove members.",
+  "released_at": "2026-09-22T13:07:10"
 }
