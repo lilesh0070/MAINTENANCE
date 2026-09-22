@@ -61,6 +61,11 @@
       pointer-events: none;
       transition: opacity 0.12s ease;
     }
+
+    /* TV (`?tv`, 2026-09-22 user): neeche wale button (Auto Motion...) upar */
+    body.tv footer {
+      bottom: 24%;
+    }
   </style>
   <script type="importmap">
 {
@@ -234,12 +239,20 @@
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
-    /* TV (app ka ThreeDView `?tv=1` bhejta hai) -- 2026-09-22, user: "TV
-       version me sahi nahi aa raha, load me time lagta hai".  TV lambi-khadi
-       hai aur GPU kamzor.  SIRF TV par: camera itna door ki poora model
-       chaudai me aa jaaye, pixel ratio 1, shadow map 1024, aur 30 fps.
-       Phone / website par ye file bilkul pehle jaisi chalti hai. */
+    /* TV (app ka ThreeDView `?tv=1` bhejta hai) -- 2026-09-22.  TV lambi-khadi
+       hai aur GPU kamzor.  User: pehle "sahi nahi aa raha, load me time",
+       phir "dhundhla, explode par parts bahar, button upar, chalna smooth".
+       SIRF TV par (phone / website par ye file jyon ki tyon):
+         - camera model ke beech (x 60), itna door ki poora model chaudai me;
+           Explode ke saath saath-saath door, parts screen se bahar na jaayein
+         - model header aur button ke BEECH (setViewOffset); button upar (CSS)
+         - pixel ratio TV ki screen jaisa (1.75 tak) -- 45 fps se dheema pade
+           to khud 0.25-0.25 kam (1 tak): saaf bhi, smooth bhi
+         - "transmission" wala glass saadha transparent (warna har frame me
+           poora scene DO baar banta hai), PCF shadow (soft nahi), map 1024 */
     const TV = new URLSearchParams(location.search).has('tv');
+    if (TV) document.body.classList.add('tv');
+    let tvPr = Math.min(window.devicePixelRatio || 1, 1.75);   // TV ka pixel ratio (neeche tvRaftaar)
 
     /* Setup Scene, Fog & Renderer */
     const scene = new THREE.Scene();
@@ -249,9 +262,9 @@
     const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 1, 3200);
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(TV ? 1 : Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(TV ? tvPr : Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = TV ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.35;
     document.body.appendChild(renderer.domElement);
@@ -271,22 +284,39 @@
     controls.maxPolarAngle = Math.PI * 0.49;
 
     /* TV: camera kitna door ho ki model chaudai me aa jaaye -- khadi screen
-       par chaudai hi tang hai.  Model x = -103 (tie-rod ke nut) se +246
-       (rod poora bahar) tak, yaani beech ~70; dono taraf 215 (thodi jagah +
-       Explode ka kuch hissa).  Isliye TV par camera aur target x = 70. */
-    function tvDoori() {
+       par chaudai hi tang hai.  Juda model x = -103 (tie-rod nut) se +246
+       (rod poora bahar), Explode par -170 se +311 -- beech ~60.  Dikhni
+       chahiye aadhi chaudai 200 (juda) se 265 (poora explode) tak. */
+    const TV_X = 60;
+    // Model upar-neeche -57 se +140 tak -- beech ~40 (target), camera 90 upar se
+    // (door se bhi upar ka hissa dikhe; phone/website par 70/16 hi)
+    const TV_Y = 40, TV_CAM_Y = 130;
+    let tvExplode = 0;                      // animate() bharta hai (Reset Cam ke liye)
+    const tvDisha = new THREE.Vector3();
+    const tvAadha = (e) => 200 + 65 * e;
+    function tvDoori(aadhiChaudai) {
       const aadha = THREE.MathUtils.degToRad(camera.fov / 2);
       const chaudaiKaTan = Math.tan(aadha) * camera.aspect;
-      const d = 215 / chaudaiKaTan;
+      const d = aadhiChaudai / chaudaiKaTan;
       return Math.max(controls.minDistance, Math.min(controls.maxDistance, d));
+    }
+    /* TV: model ko header aur neeche ke button ke BEECH dikhao -- camera ka
+       ghoomne ka kendra (target) wahi rehta hai, sirf tasveer khisakti hai. */
+    function tvBeechKaro() {
+      const W = window.innerWidth, H = window.innerHeight;
+      const hd = document.querySelector('header');
+      const ft = document.querySelector('footer > div');
+      const upar = hd ? hd.getBoundingClientRect().bottom : 0;
+      const neeche = ft ? ft.getBoundingClientRect().top : H;
+      camera.setViewOffset(W, H, 0, H / 2 - (upar + neeche) / 2, W, H);
     }
 
     function setupDefaultCamera() {
       const isMobile = window.innerWidth < 640;
       // Positioned back and angled to frame the entire height of pipes and valve
       camera.position.set(0, 70, isMobile ? 620 : 520);
-      if (TV) { camera.position.x = 70; camera.position.z = tvDoori(); }
-      controls.target.set(TV ? 70 : 0, 16, 0);
+      if (TV) { camera.position.set(TV_X, TV_CAM_Y, tvDoori(tvAadha(tvExplode))); tvBeechKaro(); }
+      controls.target.set(TV ? TV_X : 0, TV ? TV_Y : 16, 0);
       controls.update();
     }
     setupDefaultCamera();
@@ -368,7 +398,7 @@
       color: 0x8ecae6,
       metalness: 0.08,
       roughness: 0.05,
-      transmission: 0.92,
+      transmission: TV ? 0 : 0.92,
       transparent: true,
       opacity: 0.35,
       ior: 1.48,
@@ -381,7 +411,7 @@
       color: 0x152942,
       metalness: 0.12,
       roughness: 0.10,
-      transmission: 0.88,
+      transmission: TV ? 0 : 0.88,
       transparent: true,
       opacity: 0.48,
       depthWrite: false,
@@ -743,7 +773,7 @@
         color: 0x38bdf8,
         metalness: 0.1,
         roughness: 0.05,
-        transmission: 0.95,
+        transmission: TV ? 0 : 0.95,
         transparent: true,
         opacity: 0.25,
         depthWrite: false,
@@ -1086,7 +1116,7 @@
         color: colorHex,
         roughness: 0.08,
         metalness: 0.1,
-        transmission: 0.88,
+        transmission: TV ? 0 : 0.88,
         transparent: true,
         opacity: 0.42,
         depthWrite: false,
@@ -1460,7 +1490,7 @@
       if (isXray) {
         barrelGlassMat.transparent = true;
         barrelGlassMat.opacity = 0.35;
-        barrelGlassMat.transmission = 0.92;
+        barrelGlassMat.transmission = TV ? 0 : 0.92;
         barrelGlassMat.depthWrite = false;
         barrelGlassMat.metalness = 0.08;
         barrelGlassMat.roughness = 0.05;
@@ -1468,7 +1498,7 @@
 
         valveGlassMat.transparent = true;
         valveGlassMat.opacity = 0.48;
-        valveGlassMat.transmission = 0.88;
+        valveGlassMat.transmission = TV ? 0 : 0.88;
         valveGlassMat.depthWrite = false;
 
         cylParticlesA.points.visible = true;
@@ -1584,15 +1614,41 @@
     applyValveState(true);
     setStroke(50.0);
 
-    let tvPichla = 0;
+    /* TV: pixel ratio apne aap.  Shuru ki bheed (page / shader ban rahe) me
+       naap galat aata hai -- emulator par isi se 1, 4, 12 fps dikha kar
+       bina wajah 1 tak gir gaya tha.  Isliye 5 sec chhodo, phir 3-3 sec ka
+       naap, aur LAGATAAR DO baar 40 fps se kam aaye tabhi 0.25 kam (1 tak).
+       Ek-aadh jhatka (naya shader, explode) se nahi girta.  Sirf neeche.
+       1 par bhi dheema -> shadow har frame ki jagah har TEESRE frame (piston
+       ki parchhai 20 baar/sec -- aankh ko farak nahi, GPU ko bada). */
+    let tvNaap = 0, tvGinti = 0, tvDheema = 0;
+    let tvChhaya = 1, tvFrameNo = 0;
+    function tvRaftaar(ab) {
+      if (!tvNaap) { tvNaap = ab + 5000; return; }
+      if (ab < tvNaap) return;
+      tvGinti++;
+      const beeta = ab - tvNaap;
+      if (beeta < 3000) return;
+      const fps = tvGinti * 1000 / beeta;
+      tvNaap = ab; tvGinti = 0;
+      tvDheema = fps < 40 ? tvDheema + 1 : 0;
+      if (tvDheema < 2) return;
+      tvDheema = 0;
+      if (tvPr > 1) {
+        tvPr = Math.max(1, tvPr - 0.25);
+        renderer.setPixelRatio(tvPr);
+        console.log('[3D TV] ' + fps.toFixed(0) + ' fps -- pixel ratio ab ' + tvPr);
+      } else if (tvChhaya === 1) {
+        tvChhaya = 3;
+        renderer.shadowMap.autoUpdate = false;
+        renderer.shadowMap.needsUpdate = true;
+        console.log('[3D TV] ' + fps.toFixed(0) + ' fps -- shadow ab har 3rd frame');
+      }
+    }
+
     function animate(t) {
       requestAnimationFrame(animate);
-      // TV: ~30 fps -- GPU ka aadha bojh (dt apne aap bada aata hai, chaal wahi)
-      if (TV) {
-        const ab = t || performance.now();
-        if (ab - tvPichla < 30) return;
-        tvPichla = ab;
-      }
+      if (TV) tvRaftaar(t || performance.now());
       const dt = Math.min(clock.getDelta(), 0.05);
 
       /* 1. Piston stroke kinematics */
@@ -1633,6 +1689,15 @@
         explodeAmount += explodeDiff * Math.min(dt * explodeSpeed, 0.085);
       } else {
         explodeAmount = targetExplode;
+      }
+      /* TV: Explode ke saath model chauda hota hai -- camera saath-saath door /
+         paas.  Sirf jab explode BADAL raha ho; baaki waqt user ka zoom na chhedo. */
+      tvExplode = explodeAmount;
+      if (TV && Math.abs(explodeDiff) > 0.0006) {
+        tvDisha.copy(camera.position).sub(controls.target);
+        const d = tvDisha.length();
+        tvDisha.setLength(d + (tvDoori(tvAadha(explodeAmount)) - d) * Math.min(dt * 4, 0.3));
+        camera.position.copy(controls.target).add(tvDisha);
       }
 
       sliderExplode.value = (explodeAmount * 100).toFixed(1);
@@ -1699,7 +1764,7 @@
       /* Dynamic Slow-Motion Camera adaptive zoom & framing */
       const isMobile = window.innerWidth < 640;
       const targetCamDist = (isMobile ? 620 : 520) + explodeAmount * 65;
-      const targetCamY = 70 + explodeAmount * 22;
+      const targetCamY = (TV ? TV_CAM_Y : 70) + explodeAmount * 22;
       camera.position.y += (targetCamY - camera.position.y) * Math.min(dt * 1.6, 0.06);
 
       /* 4. Glowing Air Flow Particles in Polyurethane Lines */
@@ -1817,6 +1882,10 @@
       handlePartInspection();
 
       controls.update();
+      if (TV && tvChhaya > 1) {
+        tvFrameNo = (tvFrameNo + 1) % tvChhaya;
+        if (tvFrameNo === 0) renderer.shadowMap.needsUpdate = true;
+      }
       renderer.render(scene, camera);
     }
 
@@ -1825,7 +1894,10 @@
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
+      if (TV) tvBeechKaro();
     });
+    // TV: icon ka font der se aaye to button ki oonchai badalti hai -- tab dobara
+    if (TV) window.addEventListener('load', tvBeechKaro);
 
     /* Launch Simulation Loop */
     animate();
