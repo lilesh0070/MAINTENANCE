@@ -1,6 +1,18 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
 import { PROD_ZONES } from "../../constants/zones";
 import { Btn, api, fmtDuration, fmtClock, usePortrait } from "./shared";
+import { isNativeApp } from "../../constants/apiBase";
+
+/* APP me khaali date par "mm/dd/yyyy" (2026-09-22, user: "Pending Breakdown
+ * ki default date kuch nahi -- website par mm/dd/yyyy aata hai, Android app
+ * me BLANK; wahan bhi yahi aana chahiye").  Chrome desktop khaali
+ * `type=date` me khud "mm/dd/yyyy" + calendar ka nishaan dikhata hai;
+ * Android WebView (phone / tablet / TV) kuch nahi dikhata.  Input ko kisi
+ * dabbe me NAHI lapeta -- phone ke niyam (responsive.css `.kp-filters >
+ * input`) seedhe usi par lage hain.  Isliye usi ke upar ek likhawat
+ * (pointer-events none -- tap input par hi jaata hai), input ka asli naap
+ * aur font JS se naap kar.  Website par kuch nahi. */
+const NATIVE = isNativeApp();
 
 // Chaalu mahina: [pehli tarikh, aakhri tarikh] (YYYY-MM-DD) aur "Sep 2026".
 // Har baar `new Date()` se -- 24 ghante chalne wala TV 1 tarikh ko khud naye
@@ -23,6 +35,30 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
   // check kar sakte hain") -- date chuno to sirf wahi din, date ke picker me
   // "Clear" dabao to wapas poora mahina.
   const [fDate,   setFDate]   = useState("");
+  // App me khaali date ki likhawat kahan baithe (upar NATIVE wali tippani)
+  const dateRef = useRef(null);
+  const [phJagah, setPhJagah] = useState(null);
+  useLayoutEffect(() => {
+    if (!NATIVE) return undefined;
+    const naapo = () => {
+      const el = dateRef.current;
+      if (!el) return;
+      const cs = getComputedStyle(el);
+      const px = (v) => parseFloat(v) || 0;
+      const andar = px(cs.borderLeftWidth) + px(cs.paddingLeft);
+      setPhJagah({
+        left: el.offsetLeft + andar,
+        right: el.offsetLeft + el.offsetWidth - px(cs.borderRightWidth) - px(cs.paddingRight),
+        top: el.offsetTop + el.offsetHeight / 2,
+        width: el.clientWidth - px(cs.paddingLeft) - px(cs.paddingRight),
+        font: `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`,
+        size: px(cs.fontSize),
+      });
+    };
+    naapo();
+    window.addEventListener("resize", naapo);
+    return () => window.removeEventListener("resize", naapo);
+  }, [fDate]);
   const [fZone,   setFZone]   = useState("");
   const [fLine,   setFLine]   = useState("");
   const [zoneSel, setZoneSel] = useState("SEAT_SLIDER");   // clicked zone tile → shows its slips
@@ -133,9 +169,31 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
             {fDate || monthLabel()} · {fZone || "All zones"}{fLine ? ` · ${fLine}` : ""}
           </div>
         </div>
-        <div className="kp-filters" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <input type="date" value={fDate} onChange={(e) => setFDate(e.target.value)}
-                 style={kpiSelect} title="Empty = whole current month. Pick a date to see only that day." />
+        <div className="kp-filters" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", position: "relative" }}>
+          {/* App me `appearance: none` -- Android date ke khaane par select jaisa
+              neeche-teer (⌄) banata hai; uski jagah website jaisa calendar. */}
+          <input type="date" ref={dateRef} value={fDate} onChange={(e) => setFDate(e.target.value)}
+                 style={NATIVE ? { ...kpiSelect, WebkitAppearance: "none", appearance: "none" } : kpiSelect}
+                 title="Empty = whole current month. Pick a date to see only that day." />
+          {NATIVE && phJagah && (
+            <>
+              {!fDate && (
+                <span aria-hidden="true" style={{
+                  position: "absolute", left: phJagah.left, top: phJagah.top, transform: "translateY(-50%)",
+                  maxWidth: Math.max(0, phJagah.width - phJagah.size - 4), overflow: "hidden", whiteSpace: "nowrap",
+                  font: phJagah.font, lineHeight: 1, color: "#334155", pointerEvents: "none",
+                }}>mm/dd/yyyy</span>
+              )}
+              {/* calendar ka nishaan (hamesha) -- website par Chrome khud dikhata hai */}
+              <svg aria-hidden="true" width={phJagah.size} height={phJagah.size} viewBox="0 0 24 24"
+                   fill="none" stroke="#334155" strokeWidth="2" strokeLinecap="round"
+                   style={{ position: "absolute", left: phJagah.right - phJagah.size,
+                            top: phJagah.top, transform: "translateY(-50%)", pointerEvents: "none" }}>
+                <rect x="3" y="5" width="18" height="16" rx="2" />
+                <path d="M16 3v4M8 3v4M3 10h18" />
+              </svg>
+            </>
+          )}
           <select value={fZone} onChange={(e) => onZone(e.target.value)} style={kpiSelect}>
             <option value="">All Zones</option>
             {zoneOpts.map(z => <option key={z} value={z}>{z}</option>)}
