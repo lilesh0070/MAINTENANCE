@@ -437,7 +437,8 @@ Wapas nahi aayegi.  Aage badhein?`)) return;
                 <div className="md-col-a" style={{ flex: "1 1 620px", minWidth: 0 }}>
                   <div className="md-tiles">
                     <StatCard label="Active calls"       value={andonActive}                color={andonActive ? "#dc2626" : "#16a34a"}/>
-                    <StatCard label="Today"              value={andonToday}                 color="#1e40af" sub="7 AM – 6:30 AM (plant day)" onClick={openToday}/>
+                    {/* "Today" ke neeche "7 AM – 6:30 AM (plant day)" wali line hatayi (user 2026-09-22) */}
+                    <StatCard label="Today"              value={andonToday}                 color="#1e40af" onClick={openToday}/>
                     <StatCard label="Awaiting response"  value={andonAwaiting}              color="#b45309" sub="Call open, no ack yet"/>
                     <StatCard label="Longest active"     value={fmtDuration(longestActive)} color="#7c3aed"/>
                   </div>
