@@ -19,8 +19,12 @@ export function UsersPage({ toast, readOnly = false }) {
   const [modal,       setModal]       = useState(false);
   const [assignModal, setAssignModal] = useState(null);
   const [form,        setForm]        = useState({
-    username:"", password:"", role:"", department_id:"",
+    username:"", password:"", role:"", department_id:"", emp_code:"",
   });
+  /* Employee ID list me hi bhara ja sake (user 2026-09-23: "ek baar tum do,
+     abhi main sab me daal deta hu").  Jo khaana abhi type ho raha hai wahi
+     yahan rehta hai; Enter ya bahar click karte hi save. */
+  const [codeDraft, setCodeDraft] = useState({});
   const [saving,      setSaving]      = useState(false);
   const [selLines,    setSelLines]    = useState([]);
   const [revealed,    setRevealed]    = useState(() => new Set());  // kin users ka password dikhana hai
@@ -48,23 +52,41 @@ export function UsersPage({ toast, readOnly = false }) {
 
   const createUser = async () => {
     const uname = form.username.trim();
+    const code  = form.emp_code.trim().toUpperCase();
     if (!uname||!form.password) { toast("Username and password required","err"); return; }
     if (!form.role) { toast("Select a role","err"); return; }
+    /* Employee ID naye user par ZAROORI (user 2026-09-23) -- isi se Attendance
+       ka aadmi aur app ka user jude rehte hain.  Server bhi yahi rokta hai. */
+    if (!code) { toast("Employee ID is required","err"); return; }
     // Duplicate username — frontend pe turant rok (backend bhi 400 deta hai).
     if (users.some(u => (u.username||"").toLowerCase() === uname.toLowerCase())) {
       toast("Username already exists — pick another","err"); return;
     }
+    const dohra = users.find(u => (u.emp_code||"").toUpperCase() === code);
+    if (dohra) { toast(`Employee ID ${code} already used by "${dohra.username}"`,"err"); return; }
     setSaving(true);
     try {
-      const body = { username: uname, password: form.password, role: form.role };
+      const body = { username: uname, password: form.password, role: form.role, emp_code: code };
       await api.post("/api/users/", body, token);
       toast("User created ✓");
       setModal(false);
-      setForm({ username:"", password:"", role:"", department_id:"" });
+      setForm({ username:"", password:"", role:"", department_id:"", emp_code:"" });
       load();
     }
     catch(e) { toast(e.message,"err"); }
     finally { setSaving(false); }
+  };
+
+  /* List me se Employee ID bharna / badalna. */
+  const saveCode = async (u) => {
+    const naya = (codeDraft[u.id] ?? "").trim().toUpperCase();
+    setCodeDraft(d => { const n = { ...d }; delete n[u.id]; return n; });
+    if (naya === (u.emp_code || "").toUpperCase()) return;      // kuch badla hi nahi
+    try {
+      await api.put(`/api/users/${u.id}/role`, { emp_code: naya }, token);
+      toast(naya ? `Employee ID ${naya} saved ✓` : "Employee ID cleared");
+      load();
+    } catch(e) { toast(e.message,"err"); load(); }
   };
 
   const deleteUser = async (u) => {
@@ -211,7 +233,7 @@ export function UsersPage({ toast, readOnly = false }) {
               khiskana kaafi nahi tha. */}
           <table className="ap-stack" style={{ width:"100%", minWidth:640, borderCollapse:"collapse", fontSize:13 }}>
             <thead>
-              <tr>{["ID","Username","Role","Password","Last Login","Actions"].map(h=>(
+              <tr>{["ID","Username","Emp ID","Role","Password","Last Login","Actions"].map(h=>(
                 <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:10, fontWeight:700, letterSpacing:".08em", textTransform:"uppercase", color:"#64748b", borderBottom:"2px solid #e2e8f0" }}>{h}</th>
               ))}</tr>
             </thead>
@@ -222,6 +244,20 @@ export function UsersPage({ toast, readOnly = false }) {
                 <tr key={u.id} style={{ borderBottom:"1px solid #f1f5f9" }}>
                   <td data-lbl="ID" style={{ padding:"12px 14px", fontFamily:"monospace", color:"#64748b" }}>{u.id}</td>
                   <td className="an-stk-hdr" style={{ padding:"12px 14px", fontWeight:600, color:"#0f172a" }}>{u.username}</td>
+                  {/* Employee ID -- yahin bhar do (Enter ya bahar click = save).
+                      Attendance ka Add Member isi code se aadmi uthata hai. */}
+                  <td data-lbl="Emp ID" style={{ padding:"12px 14px" }}>
+                    <input
+                      value={codeDraft[u.id] ?? (u.emp_code || "")}
+                      onChange={e=>setCodeDraft(d=>({ ...d, [u.id]: e.target.value }))}
+                      onBlur={()=>{ if (codeDraft[u.id] !== undefined) saveCode(u); }}
+                      onKeyDown={e=>{ if (e.key === "Enter") e.currentTarget.blur();
+                                      if (e.key === "Escape") setCodeDraft(d=>{ const n={...d}; delete n[u.id]; return n; }); }}
+                      placeholder="—" maxLength={40} readOnly={readOnly}
+                      style={{ ...inputStyle, padding:"4px 8px", fontSize:12, width:90,
+                               fontFamily:"monospace",
+                               ...(u.emp_code ? {} : { borderColor:"#fca5a5", background:"#fef2f2" }) }} />
+                  </td>
                   <td data-lbl="Role" style={{ padding:"12px 14px" }}>
                     {u.username==="admin"
                       ? <span style={{ padding:"3px 9px", borderRadius:99, fontSize:10, fontWeight:700, background:rp.bg||"#f1f5f9", color:rp.fg||"#475569", textTransform:"uppercase", letterSpacing:".05em" }}>admin</span>
@@ -270,6 +306,12 @@ export function UsersPage({ toast, readOnly = false }) {
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
           <FF label="Username *"><Input value={form.username} onChange={e=>setForm(f=>({...f,username:e.target.value}))} placeholder="login id"
                                         name="mes-new-username" autoComplete="off" /></FF>
+          {/* Employee ID ZAROORI -- Attendance ka Add Member isi se aadmi
+              uthata hai, aur aage buzz bhi isi rishte par chalega. */}
+          <FF label="Employee ID *" hint="Attendance → Add Member picks the person by this code.">
+            <Input value={form.emp_code} onChange={e=>setForm(f=>({...f,emp_code:e.target.value}))}
+                   placeholder="e.g. 487" name="mes-new-empcode" autoComplete="off" />
+          </FF>
           <FF label="Password *">
             <div style={{ position:"relative" }}>
               <Input type={showPw?"text":"password"} value={form.password}

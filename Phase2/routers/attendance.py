@@ -48,6 +48,7 @@ permission nahi hoti.
 
 Endpoints (prefix /api/attendance)
 ----------------------------------
+GET    /app-users                app ke user (id/username/emp code) -- Add Member ke liye (admin)
 GET    /on-duty                  abhi ki shift ke log -- SIRF NAAM (dashboard)
 GET    /board?day=YYYY-MM-DD     us din ka board (photo ke bina)
 PUT    /board                    {day, lanes:{slot:[ids]}} -- ghaseetne ke baad
@@ -370,6 +371,28 @@ def _slot(s: Optional[str]) -> str:
 
 
 # ── Endpoints ───────────────────────────────────────────────────────────
+# ── Add Member ke liye app ke user ──────────────────────────────────────
+# User 2026-09-23: "user banate waqt Employee ID zaroori, phir Attendance ke
+# Add Member me wahin se utha lenge."  Isliye ye chhoti list -- SIRF id,
+# username aur emp code.  `/api/users/` jaan-boojh kar nahi bulate: wo password
+# bhi lautaata hai, aur use is page par laane ki koi zaroorat nahi.
+@router.get("/app-users")
+def app_users(user=Depends(get_current_user)):
+    """App ke user, Add Member ke picker ke liye.  Sirf admin (member jodna bhi
+    sirf admin ka kaam hai)."""
+    if not _admin_hai(user):
+        raise HTTPException(403, "Only admin can add members.")
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("ALTER TABLE maintenance_users ADD COLUMN IF NOT EXISTS emp_code VARCHAR(40)")
+        cur.execute("""SELECT id, username, COALESCE(full_name, '') AS full_name,
+                              COALESCE(emp_code, '') AS emp_code, role
+                         FROM maintenance_users
+                        WHERE COALESCE(is_active, TRUE)
+                        ORDER BY username""")
+        return {"users": cur.fetchall()}
+
+
 # ── Abhi duty par kaun ──────────────────────────────────────────────────
 # Maintenance Dashboard ke daayin taraf wale khaane ke liye (user 2026-09-23):
 #     subah 7 se shaam 6       ->  G aur A shift wale

@@ -37,15 +37,63 @@ class UserCreate(BaseModel):
     username: str
     password: str
     role:     str = "engineer"
+    # Employee ID -- naya user banate waqt ZAROORI (user 2026-09-23).  Isi se
+    # Attendance Dashboard ka aadmi aur app ka user ek doosre se jude rehte
+    # hain; aage buzz bhi isi rishte par chalega.
+    emp_code: str = ""
 
 
 class UserUpdate(BaseModel):
     role: Optional[str] = None
+    # purane user me emp code bharne ke liye (list me hi badal sakte hain)
+    emp_code: Optional[str] = None
 
 
 def _validate_role(role: Optional[str]) -> None:
     if role is not None and role not in VALID_ROLES:
         raise HTTPException(400, f"role must be one of {sorted(VALID_ROLES)}")
+
+
+def _saaf_code(v) -> str:
+    """Employee ID ek hi shakl me rakhte hain -- aage-peeche ki jagah hatao
+    aur BADE akshar.  Warna ' 97' aur '97' do alag aadmi ban jaate."""
+    return " ".join(str(v or "").split()).upper()
+
+
+def _ensure_emp_code_col(conn) -> None:
+    """`emp_code` ka khaana + uska ek-jaisa-na-ho wala pehra.  Idempotent.
+
+    Pehra PARTIAL index se hai (`WHERE emp_code <> ''`) -- purane user jinka
+    code abhi khaali hai wo sab ek saath rah sakein, par bhar dene ke baad do
+    logon ka ek code na ho."""
+    cur = conn.cursor()
+    cur.execute("ALTER TABLE maintenance_users ADD COLUMN IF NOT EXISTS emp_code VARCHAR(40)")
+    cur.execute("UPDATE maintenance_users SET emp_code = '' WHERE emp_code IS NULL")
+    cur.execute("""CREATE UNIQUE INDEX IF NOT EXISTS maintenance_users_emp_code_uniq
+                     ON maintenance_users (emp_code)
+                  WHERE emp_code IS NOT NULL AND emp_code <> ''""")
+    conn.commit()
+
+
+def _code_khaali_ya_dohra(cur, code: str, chhodo_id=None, zaroori: bool = True) -> None:
+    """Code kisi aur ke paas na ho.  `zaroori` ho to khaali bhi na ho.
+
+    ⚠ Badalte waqt `zaroori=False` -- warna galat type ho gaya code KABHI
+    hataya hi nahi ja sakta (pehli baar yahi galti ki thi: list me se code
+    khaali karne par 'Employee ID is required' aa jaata tha)."""
+    if not code:
+        if zaroori:
+            raise HTTPException(400, "Employee ID is required.")
+        return
+    if chhodo_id is None:
+        cur.execute("SELECT username FROM maintenance_users WHERE emp_code = %s", (code,))
+    else:
+        cur.execute("SELECT username FROM maintenance_users WHERE emp_code = %s AND id <> %s",
+                    (code, chhodo_id))
+    r = cur.fetchone()
+    if r:
+        naam = r[0] if not isinstance(r, dict) else r.get("username")
+        raise HTTPException(400, f"Employee ID {code} is already used by '{naam}'.")
 
 
 def _ensure_pw_plain_col(conn) -> None:
@@ -68,9 +116,10 @@ def list_users(admin=Depends(require_admin)):
     with get_conn() as conn:
         _ensure_pw_plain_col(conn)
         cur = dict_cursor(conn)
+        _ensure_emp_code_col(conn)
         cur.execute("""
             SELECT id, username, role, full_name, is_active, last_login, created_at,
-                   password_plain
+                   password_plain, COALESCE(emp_code, '') AS emp_code
               FROM maintenance_users
              ORDER BY username
         """)
@@ -81,17 +130,22 @@ def list_users(admin=Depends(require_admin)):
 def create_user(body: UserCreate, admin=Depends(require_admin)):
     """Naya user banao."""
     _validate_role(body.role)
+    code = _saaf_code(body.emp_code)
     with get_conn() as conn:
         _ensure_pw_plain_col(conn)
+        _ensure_emp_code_col(conn)
         cur = dict_cursor(conn)
         cur.execute("SELECT 1 FROM maintenance_users WHERE username = %s", (body.username,))
         if cur.fetchone():
             raise HTTPException(400, "Username already exists")
+        # NAYE user par Employee ID zaroori (purane bina code ke chalte rahenge
+        # jab tak admin unme bhar na de -- warna update ke din sab atak jaate).
+        _code_khaali_ya_dohra(conn.cursor(), code)
         cur.execute("""
-            INSERT INTO maintenance_users (username, password_hash, role, password_plain)
-            VALUES (%s, %s, %s, %s)
-            RETURNING id, username, role, is_active, created_at
-        """, (body.username, hash_password(body.password), body.role, body.password))
+            INSERT INTO maintenance_users (username, password_hash, role, password_plain, emp_code)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id, username, role, is_active, created_at, emp_code
+        """, (body.username, hash_password(body.password), body.role, body.password, code))
         row = cur.fetchone()
         conn.commit()
         return row
@@ -189,6 +243,19 @@ def update_user_role(user_id: int, body: UserUpdate, admin=Depends(require_admin
     """Role badlo.  (Naam `/role` hi rakha hai taaki AdminPanel ke purane
     calls waise ke waise chalte rahein.)"""
     _validate_role(body.role)
+    # Sirf emp code bhejo -> sirf wahi badlega (list me se seedha bharne ke liye)
+    if body.emp_code is not None:
+        code = _saaf_code(body.emp_code)
+        with get_conn() as conn:
+            _ensure_emp_code_col(conn)
+            cur = conn.cursor()
+            _code_khaali_ya_dohra(cur, code, chhodo_id=user_id, zaroori=False)
+            cur.execute("UPDATE maintenance_users SET emp_code = %s WHERE id = %s", (code, user_id))
+            if cur.rowcount == 0:
+                raise HTTPException(404, "User not found")
+            conn.commit()
+        if body.role is None:
+            return {"ok": True, "updated": True}
     if body.role is None:
         return {"ok": True, "updated": False}
     with get_conn() as conn:

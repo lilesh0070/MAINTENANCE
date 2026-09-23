@@ -905,6 +905,11 @@ export default function AttendanceDashboard() {
         .att-fld input { width:100%; height:42px; box-sizing:border-box; border:1px solid #cbd5e1; border-radius:10px;
                          padding:0 12px; font-family:inherit; font-size:15px; color:#0f172a; background:#fff; }
         .att-fld input:disabled { background:#f8fafc; color:#334155; -webkit-text-fill-color:#334155; opacity:1; }
+        /* Add Member ka "app user se uthao" wala khaana -- input jaisa hi dikhe */
+        .att-fld select { width:100%; height:42px; box-sizing:border-box; border:1px solid #cbd5e1;
+                          border-radius:10px; padding:0 10px; font-family:inherit; font-size:15px;
+                          color:#0f172a; background:#fff; }
+        .att-fld select:focus { outline:none; border-color:${theme.accent}; box-shadow:0 0 0 3px ${theme.soft}; }
         .att-dwrap { position:relative; }
         .att-dph { position:absolute; left:13px; top:50%; transform:translateY(-50%); color:#94a3b8;
                    font-size:15px; pointer-events:none; }
@@ -1329,6 +1334,34 @@ function MemberPanel({ mode, slot0, person, photo0, day, today, editable, showSl
   const s = SLOT[f.slot] || SLOT.G;
   const set = (k) => (e) => setF((o) => ({ ...o, [k]: e && e.target ? e.target.value : e }));
 
+  /* Add Member: app ke user me se uthao (user 2026-09-23 -- "user banate waqt
+     Employee ID zaroori, phir yahan se utha lenge").  Naam aur emp code wahin
+     se bhar jaate hain; photo, contact, designation aur DOJ phir bhi yahin
+     bharne padte hain -- wo khaane user wali table me hote hi nahi.
+     List sirf admin ko milti hai; na mile to picker dikhta hi nahi aur naam
+     haath se bharne wala purana raasta jyon ka tyon chalta hai. */
+  const [appUsers, setAppUsers] = useState([]);
+  const [pickUser, setPickUser] = useState("");
+  useEffect(() => {
+    if (!(form && mode === "add" && token)) return undefined;
+    let ruk = false;
+    api.get("/api/attendance/app-users", token)
+      .then((d) => { if (!ruk) setAppUsers(Array.isArray(d?.users) ? d.users : []); })
+      .catch(() => { /* admin nahi / purana backend -- picker chhupa rahega */ });
+    return () => { ruk = true; };
+  }, [form, mode, token]);
+
+  const chunoUser = (id) => {
+    setPickUser(id);
+    const u = appUsers.find((x) => String(x.id) === String(id));
+    if (!u) return;
+    setF((o) => ({
+      ...o,
+      name: (u.full_name || u.username || "").toUpperCase(),
+      emp_code: u.emp_code || o.emp_code,
+    }));
+  };
+
   // Esc = band
   useEffect(() => {
     const k = (e) => { if (e.key === "Escape") onClose(); };
@@ -1449,6 +1482,19 @@ function MemberPanel({ mode, slot0, person, photo0, day, today, editable, showSl
 
           {!view && (
             <>
+              {mode === "add" && appUsers.length > 0 && (
+                <label className="att-fld"><span>From app user</span>
+                  <select value={pickUser} onChange={(e) => chunoUser(e.target.value)}>
+                    <option value="">— type by hand —</option>
+                    {appUsers.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {(u.full_name || u.username)}
+                        {u.emp_code ? ` · ${u.emp_code}` : " · no emp ID"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="att-fld"><span>Name <i>*</i></span>
                 <input value={f.name} onChange={set("name")} maxLength={120} placeholder="Full name"
                        autoFocus={!NATIVE && mode === "add"} />
