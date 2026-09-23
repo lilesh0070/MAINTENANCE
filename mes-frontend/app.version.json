@@ -1,5 +1,5 @@
 {
-  "version": "1.4.115",
-  "notes": "Maintenance Dashboard: a Today Present Person panel now sits beside PM This Month. From 7 AM to 6 PM it lists the G and A shift people, and from 6 PM to 7 AM the B shift, picked automatically from the attendance board.",
-  "released_at": "2026-09-23T15:54:42"
+  "version": "1.4.116",
+  "notes": "3D View: a new Servo Motor model. Hover or tap a part to read about it, use Explore for the exploded view, X-Ray to see inside, and the slider to set the shaft position.",
+  "released_at": "2026-09-23T16:23:13"
 }
