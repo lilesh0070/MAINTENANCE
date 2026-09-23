@@ -1,5 +1,5 @@
 {
-  "version": "1.4.117",
-  "notes": "Today Present Person now also works while the server backend is still on the older build - it falls back to the attendance board.",
-  "released_at": "2026-09-23T16:48:03"
+  "version": "1.4.118",
+  "notes": "Users now carry an Employee ID (required for new users, editable right in the list), and Attendance - Add Member can pick a person straight from the app users, filling the name and employee code for you.",
+  "released_at": "2026-09-23T17:25:15"
 }
