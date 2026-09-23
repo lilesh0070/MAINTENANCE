@@ -128,22 +128,31 @@ def get_user_from_db(kaun: str) -> Optional[dict]:
     ⚠ Ek hi text kisi ka username aur kisi DOOSRE ka emp code na bane -- wo
     rok `routers/users.py` me hai (dono taraf jaanchi jaati hai).  Isi liye
     yahan "pehle username" ka niyam kabhi kisi ko galat aadmi nahi deta.
+
+    Phone ka keyboard (aur password manager ka autofill) aksar aage-peechhe
+    space jod deta hai -- "1001 " likh kar login karne wale ko "galat password"
+    dikhta tha.  Isliye trim kiya hua text BHI milaya jaata hai.  Bina-trim
+    wala mel pehle rehta hai taaki kisi ka asli username kabhi na badle.
     """
+    saaf = " ".join(str(kaun or "").split())
     with get_conn() as conn:
         cur = dict_cursor(conn)
         try:
             cur.execute("""
                 SELECT * FROM maintenance_users
                  WHERE username = %(k)s
-                    OR (COALESCE(emp_code, '') <> '' AND UPPER(emp_code) = UPPER(%(k)s))
-                 ORDER BY (username = %(k)s) DESC
+                    OR username = %(s)s
+                    OR (COALESCE(emp_code, '') <> '' AND UPPER(emp_code) = UPPER(%(s)s))
+                 ORDER BY (username = %(k)s) DESC, (username = %(s)s) DESC
                  LIMIT 1
-            """, {"k": kaun})
+            """, {"k": kaun, "s": saaf})
             return cur.fetchone()
         except Exception:
             # Purane DB me `emp_code` ka khaana hai hi nahi -- tab sirf username.
             conn.rollback()
-            cur.execute("SELECT * FROM maintenance_users WHERE username = %s", (kaun,))
+            cur.execute("""SELECT * FROM maintenance_users
+                            WHERE username IN (%s, %s)
+                            ORDER BY (username = %s) DESC LIMIT 1""", (kaun, saaf, kaun))
             return cur.fetchone()
 
 
@@ -169,6 +178,13 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     user = get_user_from_db(username)
     if not user:
         raise creds_exc
+    # Khaata band hote hi purana token bhi turant bekaar -- warna aadmi ko
+    # band karne ke baad bhi wo poore TOKEN_EXPIRE_HOURS tak ghoomta rehta.
+    if not user.get("is_active", True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account is disabled. Please contact the administrator.",
+        )
     # Password badalne par us se PEHLE bane SAB token turant invalid — user har
     # device/tab se logout ho jaata hai.  JWT stateless hai isliye token ka `iat`
     # ko user ke `pwd_changed_at` (unix-ts, password badalte hi set) se compare
@@ -205,7 +221,10 @@ def get_current_user_optional(token: Optional[str] = Depends(oauth2_scheme_optio
     except JWTError:
         return None
     user = get_user_from_db(username)
-    return dict(user) if user else None
+    # Band khaata = jaise koi token hai hi nahi (yahan 401 nahi phenkte).
+    if not user or not user.get("is_active", True):
+        return None
+    return dict(user)
 
 
 def require_admin(user: dict = Depends(get_current_user)):
@@ -388,6 +407,18 @@ def login(request: Request, form: OAuth2PasswordRequestForm = Depends()):
             detail="Incorrect username or password",
         )
     _LOGIN_FAILS.pop(_tkey, None)          # sahi password -> counter saaf
+
+    # `is_active` ab tak sirf DB me pada tha, kahin lagu nahi hota tha -- band
+    # kiya hua user bhi andar aa jaata aur uska token bhi chalta rehta.
+    # DHYAN: ye jaanch password SAHI hone ke BAAD hai.  Pehle rakhte to galat
+    # password aur band khaate ka jawab alag-alag hota, aur bahar se koi bhi
+    # ye taad leta ki kaun sa khaata hai hi nahi.
+    if not user.get("is_active", True):
+        print(f"[LOGIN] band khaata  user={user['username']!r}  ip={_tkey[1]}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account is disabled. Please contact the administrator.",
+        )
 
     # Update last_login + write AUTH_LOGIN audit row in one round-trip
     # 2026-05-18 — Operator audit-log spec: every successful login lands
