@@ -179,6 +179,11 @@ app.include_router(attendance_router)         # Attendance Dashboard (shift-wise
 @app.on_event("startup")
 def _start_pm_mail_worker():
     """Server-side PM reminder mailer (Mon=this-week / Sat=next-week)."""
+    from database import via_alt_host
+    if via_alt_host():
+        # laptop ghar par (DB Tailscale se) -- mail server bhejta hai, yahan se nahi
+        print("[STARTUP] DB LAN ke bahar se (Tailscale) -- PM / escalation mail worker nahi chalaye")
+        return
     try:
         import threading
         from routers.pm_mail import pm_mail_worker
@@ -198,6 +203,11 @@ def start_andon_workers():
     """ANDON PLC bit-poller.  Start at boot, independent of the DB — the poller
     connects OUT to each PLC and applies bit changes; persistence retries once
     the DB is back."""
+    from database import via_alt_host
+    if via_alt_host():
+        # ghar par PLC tak pahunch hi nahi, aur output ka lock server rakhta hai
+        print("[STARTUP] DB LAN ke bahar se (Tailscale) -- ANDON worker nahi chalaye")
+        return
     try:
         from routers.andon import start_workers
         start_workers()
@@ -215,10 +225,18 @@ def run_migrations():
     # Fast TCP probe first; if unreachable, skip — migrations re-run on the
     # next startup once the DB is back.  The API now boots regardless, so the
     # login can return its "Server not connected" 503.
-    from database import db_reachable
+    from database import db_reachable, via_alt_host
     if not db_reachable():
         print("[STARTUP] DB unreachable — skipping migrations (API boots anyway; "
               "migrations re-run on next startup once DB is back)")
+        return
+    # 2026-09-22: laptop ghar par (DB Tailscale se) -- ~50 migration har ek
+    # Tailscale par 2-3 MINUTE lete the aur tab tak port band (site "Loading").
+    # Dhancha shared DB ka hai aur server / office wala start pehle hi bana deta
+    # hai.  Laptop par naya column / table chahiye to office me ek baar chalao.
+    if via_alt_host():
+        print("[STARTUP] DB LAN ke bahar se (Tailscale) -- migration chhode "
+              "(server / office start par chalte hain)")
         return
     # Ensure the maintenance_breakdown_data table (manual Break Down Slip store) exists
     # Idempotent + best-effort.

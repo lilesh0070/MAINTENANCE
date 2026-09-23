@@ -1681,6 +1681,18 @@ def _ensure_tables():
     global _ensured
     if _ensured:
         return
+    # 2026-09-22 -- LAPTOP GHAR PAR (DB Tailscale se): yahan ke
+    # `ALTER TABLE andon_* ADD COLUMN IF NOT EXISTS` column pehle se hone par
+    # BHI table par AccessExclusiveLock maangte hain, aur andon_system /
+    # andon_history ko server ka poller har second likh raha hota hai.  Ek baar
+    # DEADLOCK mila (today-calls -> 500), aur jab tak aisa ALTER lock ke
+    # intezaar me khada rehta hai, SERVER ka ANDON bhi ruka rehta hai.
+    # Dhancha server / office wala start banata hai -- ghar se sirf padho-likho,
+    # koi DDL nahi.
+    from database import via_alt_host
+    if via_alt_host():
+        _ensured = True
+        return
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""

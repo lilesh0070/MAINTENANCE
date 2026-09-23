@@ -1,12 +1,91 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { readFileSync } from 'node:fs'
+import net from 'node:net'
 
 // App ko apna version pata hona chahiye, taaki wo server wale se mila sake.
 // `app.version.json` release script badalti hai — yahan se wo build me chala
 // jaata hai.  Website par ye bas ek string hai, koi asar nahi.
 let APP_VERSION = '0.0.0'
 try { APP_VERSION = JSON.parse(readFileSync('./app.version.json', 'utf-8')).version || '0.0.0' } catch { /* pehli baar */ }
+
+// ── Office ke bahar (Tailscale) laptop ki site tez chale — 2026-09-22 ───────
+// Laptop ka apna backend (8892) DB se Tailscale ke raaste baat kare to har
+// request me DB ke kai chakkar lagte hain — mobile hotspot par 5-20 SECOND, aur
+// Dashboard ki ANDON calls tak nahi aati thi.  Isliye jab office ka DB
+// (192.168.30.15:5432) na mile, `/api` SEEDHA server ke backend par jaata hai
+// (Tailscale se): ek hi chakkar, ~1 second.  Office me pehle jaisa — laptop ka
+// apna backend.  Har 15s me dobara dekhta hai, to network badle to khud badle.
+//
+// SIRF LAPTOP PAR chalu: `mes-frontend/.env.local` (git me nahi jaati, *.local) me
+//     API_FALLBACK=http://100.121.68.19:8892
+// Server par wo file nahi hai -> neeche ka `/api` proxy BILKUL purana (koi hook
+// nahi), isliye website par koi asar nahi.
+// Dhyan: server aur laptop ka login secret alag hai — raasta badalte hi ek baar
+// dobara login maangega.
+function localEnv(key) {
+  try {
+    const txt = readFileSync(new URL('./.env.local', import.meta.url), 'utf-8')
+    const m = txt.match(new RegExp(`^\\s*${key}\\s*=\\s*(.*?)\\s*$`, 'm'))
+    return m ? m[1].replace(/^['"]|['"]$/g, '') : ''
+  } catch { return '' }
+}
+const API_LOCAL = 'http://localhost:8892'
+const API_FALLBACK = localEnv('API_FALLBACK')
+const [LAN_HOST, LAN_PORT] = (localEnv('API_LAN_PROBE') || '192.168.30.15:5432').split(':')
+
+const apiProxy = {
+  target: API_LOCAL,
+  changeOrigin: true,
+  // Walkie-Talkie ka live audio `/api/walkie/ws` par chalta hai.  Bina
+  // `ws: true` ke Vite WebSocket ka upgrade request aage bhejta hi nahi
+  // -- dev par socket chup-chaap fail hota hai (build/APK me proxy hai
+  // hi nahi, isliye wahan ye dikkat kabhi aati hi nahi).
+  ws: true,
+  // Jis browser se baat hui uska IP X-Forwarded-For ke AAKHIR me jod do
+  // (2026-09-21).  Iske bina backend ko har website user 127.0.0.1 dikhta
+  // tha, aur login ki rok sab par ek saath lag jaati thi -- koi bhi kisi
+  // ka account band karwa sakta tha.  Backend sirf AAKHRI entry maanta
+  // hai (auth.py `_asli_ip`), jo yahi Vite likhta hai.
+  xfwd: true,
+}
+
+if (API_FALLBACK) {
+  // Vite (8.x) har request se pehle `bypass` bulata hai aur phir usi options
+  // object se target padhta hai jo `configure` ko milta hai — isliye target
+  // wahin badalte hain.  `bypass` kuch na lautaye = proxy karte raho.
+  let asli = null
+  let abhi = API_LOCAL
+  let jaanchaKab = 0
+  let jaanch = null
+  const lanMila = () => new Promise((ok) => {
+    const s = net.connect({ host: LAN_HOST, port: Number(LAN_PORT) || 5432 })
+    const bas = (v) => { s.destroy(); ok(v) }
+    s.setTimeout(1200, () => bas(false))
+    s.once('connect', () => bas(true))
+    s.once('error', () => bas(false))
+  })
+  const taazaKaro = () => {
+    if (jaanch) return jaanch
+    jaanch = lanMila().then((mila) => {
+      const naya = mila ? API_LOCAL : API_FALLBACK
+      if (naya !== abhi || !jaanchaKab) {
+        console.log(`[api-proxy] office DB ${mila ? 'mila' : 'nahi mila'} -> /api ab ${naya}`)
+      }
+      abhi = naya
+      jaanchaKab = Date.now()
+      if (asli) asli.target = abhi
+    }).finally(() => { jaanch = null })
+    return jaanch
+  }
+  taazaKaro()
+  apiProxy.configure = (_proxy, opts) => { asli = opts; opts.target = abhi }
+  apiProxy.bypass = async () => {
+    if (!jaanchaKab) await taazaKaro()                        // pehli baar: jawab aane do (1.2s tak)
+    else if (Date.now() - jaanchaKab > 15000) taazaKaro()     // baad me peeche se, request nahi rukti
+    if (asli) asli.target = abhi
+  }
+}
 
 export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(APP_VERSION) },
@@ -31,21 +110,7 @@ export default defineConfig({
     // bhi rakha hai, taaki dono chalte rahein.
     allowedHosts: ['maintenance.tbdi.in', 'maintenance.dxtbdi.com'],
     proxy: {
-      '/api': {
-        target: 'http://localhost:8892',
-        changeOrigin: true,
-        // Walkie-Talkie ka live audio `/api/walkie/ws` par chalta hai.  Bina
-        // `ws: true` ke Vite WebSocket ka upgrade request aage bhejta hi nahi
-        // -- dev par socket chup-chaap fail hota hai (build/APK me proxy hai
-        // hi nahi, isliye wahan ye dikkat kabhi aati hi nahi).
-        ws: true,
-        // Jis browser se baat hui uska IP X-Forwarded-For ke AAKHIR me jod do
-        // (2026-09-21).  Iske bina backend ko har website user 127.0.0.1 dikhta
-        // tha, aur login ki rok sab par ek saath lag jaati thi -- koi bhi kisi
-        // ka account band karwa sakta tha.  Backend sirf AAKHRI entry maanta
-        // hai (auth.py `_asli_ip`), jo yahi Vite likhta hai.
-        xfwd: true,
-      },
+      '/api': apiProxy,
       '/cms-api': {
         target: 'http://localhost:5555',
         changeOrigin: true,

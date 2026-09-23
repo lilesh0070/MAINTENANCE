@@ -16,6 +16,8 @@ Resolution order:
 """
 
 import os
+import threading
+import time
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
@@ -62,6 +64,10 @@ DB_HOST_ALT   = (os.getenv("DB_HOST_ALT") or "").strip()
 _ALT_HOSTS    = [h.strip() for h in DB_HOST_ALT.split(",") if h.strip()]
 _HOST_PROBE_S = float(os.getenv("DB_HOST_PROBE_TIMEOUT", "1.5") or 1.5)
 _active_host  = None            # abhi kaunsa host chal raha hai
+# Alt host par hain to itne second me ek baar LAN (DB_HOST) phir dekhte hain
+_RECHECK_S    = float(os.getenv("DB_PRIMARY_RECHECK_S", "60") or 60)
+_last_recheck = 0.0
+_recheck_lock = threading.Lock()
 
 
 def _tcp_ok(host, port, timeout):
@@ -95,6 +101,48 @@ def _pick_host(force=False):
     return _active_host
 
 
+def via_alt_host() -> bool:
+    """DB LAN (DB_HOST) ke BAJAAY kisi DB_HOST_ALT raaste (WiFi / Tailscale) se
+    juda hai?  Laptop ghar par ho tab haan.  Server par DB_HOST_ALT hota hi
+    nahi, to wahan hamesha False -- bina koi probe kiye.  (2026-09-22: ghar par
+    shuruaat ke ~50 migration + worker Tailscale par 2-3 minute kha jaate the.)"""
+    return bool(_ALT_HOSTS) and _pick_host() != DB_CONFIG["host"]
+
+
+def _lan_wapas_dekho():
+    """Alt host par hain to har _RECHECK_S second me PEECHE se LAN dekho; mil
+    jaaye to agli request se LAN par (naya pool).  Pehle ek baar Tailscale par
+    gaye to Ethernet laut aane par bhi restart tak wahin (dheema) rehte the.
+    Request kabhi nahi rukti -- jaanch alag thread me.  Server par
+    _ALT_HOSTS khaali, to ye pehli line par hi laut jaata hai."""
+    global _last_recheck
+    if not _ALT_HOSTS or _active_host in (None, DB_CONFIG["host"]):
+        return
+    now = time.monotonic()
+    if now - _last_recheck < _RECHECK_S or not _recheck_lock.acquire(blocking=False):
+        return
+    _last_recheck = now
+
+    def jaancho():
+        global _pool, _active_host
+        try:
+            if _tcp_ok(DB_CONFIG["host"], DB_CONFIG["port"], _HOST_PROBE_S):
+                print(f"[DB] {DB_CONFIG['host']} wapas mila -> LAN par laut rahe hain")
+                _active_host = DB_CONFIG["host"]
+                # purane pool ke chalte connection apne pool me lautenge (har
+                # get_conn apna pool yaad rakhta hai), fir GC se band
+                _pool = None
+        except Exception:
+            pass
+        finally:
+            _recheck_lock.release()
+
+    try:
+        threading.Thread(target=jaancho, daemon=True, name="db-lan-recheck").start()
+    except Exception:
+        _recheck_lock.release()
+
+
 def db_reachable(timeout: float = 2.0) -> bool:
     """Fast TCP probe of the DB host:port (no auth, no pool).  Used to skip
     DB-dependent startup work (migrations) and to gate the JSON write-buffer
@@ -125,6 +173,7 @@ def _get_pool():
 
 @contextmanager
 def get_conn():
+    _lan_wapas_dekho()          # alt host par hon to kabhi-kabhi LAN (peeche se)
     pool = _get_pool()          # keep reference to the pool
     try:
         conn = pool.getconn()
