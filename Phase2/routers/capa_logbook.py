@@ -38,11 +38,12 @@ import json
 import re
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from database import get_conn, dict_cursor
 from auth import get_current_user, require_admin
+import bd_source
 
 router = APIRouter(prefix="/api/capa-lb", tags=["capa-logbook"])
 
@@ -211,6 +212,14 @@ def reset_min_month(month: str, admin=Depends(require_admin)):
         return _min_config(cur)
 
 
+# ⚠ /summary aur /start JAAN-BOOJH KAR SIRF MANUAL par hain (2026-09-23).
+# Dono `maintenance_qpr.logbook_id` se chalte hain, jisme sirf id rakhi jaati
+# hai (uspar UNIQUE index bhi hai) -- source ka khaana hai hi nahi.  Auto slip
+# jodne par manual #192 aur auto #192 ek doosre ki QPR khol dete.  CAPA page ka
+# asli list /pending hai (wo source-aware hai); /summary sirf Maintenance
+# Overview ke gine-chune cards ke liye hai aur /start ko UI kahin bulata hi
+# nahi.  Zaroorat pade to pehle maintenance_qpr me bd_source + composite unique
+# index daalna hoga -- tabhi inme src add karna.
 @router.get("/summary")
 def summary(user=Depends(get_current_user)):
     _ensure_qpr()
@@ -373,6 +382,14 @@ def _ensure_capa_sheet():
         """)
         # link a saved QPR sheet back to the ≥60-min breakdown it belongs to
         cur.execute("ALTER TABLE maintenance_capa_sheet ADD COLUMN IF NOT EXISTS breakdown_id INTEGER")
+        # ⚠ `breakdown_id` AKELA kaafi nahi hai (2026-09-23).  CAPA ab auto slip
+        # par bhi ban sakti hai, aur dono table ki id takra jaati hai (naapa:
+        # auto ki saari id manual me bhi maujood thi).  Isliye har sheet ke
+        # saath ye bhi rakha jaata hai ki wo KIS register ki breakdown ki hai.
+        # Purani saari sheets manual slip ki hi hain -> DEFAULT 'manual' se wo
+        # apne-aap sahi bhar jaati hain.
+        cur.execute("ALTER TABLE maintenance_capa_sheet "
+                    "ADD COLUMN IF NOT EXISTS bd_source VARCHAR(10) NOT NULL DEFAULT 'manual'")
         # Blank QPR (jiska koi breakdown nahi) ko Breakdown-QPR ki report me
         # dikhana hai ya nahi -- user KHUD tick karta hai (2026-09-20).  Nishaan
         # sheet ke saath hi rehta hai, isliye jis bhi month / zone / line /
@@ -385,18 +402,24 @@ def _ensure_capa_sheet():
 
 
 @router.get("/pending")
-def capa_pending(user=Depends(get_current_user)):
-    """Every manual-slip breakdown whose repair took at least the CAPA down-time
+def capa_pending(src: str = Query("manual", description="manual | auto | all"),
+                 user=Depends(get_current_user)):
+    """Every breakdown whose repair took at least the CAPA down-time
     limit (default 55 min, per-month overrides — GET /min-config) is a CAPA.
     Returns each with machine_no / machine_name / date / model + whether
-    its QPR sheet is started (sheet_id) yet."""
+    its QPR sheet is started (sheet_id) yet.
+
+    Slip Type (`src`, user 2026-09-23): manual / auto / all — niyam
+    `bd_source.py` me hai (auto slip sirf POORI BHARNE ke baad).  Default
+    "manual", yaani bina `src` ke bartaav bilkul pehle jaisa."""
     _ensure_capa_sheet()
     with get_conn() as conn:
         # hadd + "ya jiski sheet pehle se hai" (bhari CAPA kabhi gayab na ho)
         shart = _min_where(conn, "bd.", "s.id IS NOT NULL")
         cur = dict_cursor(conn)
+        _SRC = bd_source.raw(src, cur)
         cur.execute(f"""
-            SELECT bd.id AS bd_id, bd.machine_no, bd.machine_name,
+            SELECT bd.id AS bd_id, bd.bd_source, bd.machine_no, bd.machine_name,
                    COALESCE(bd.slip_date, bd.bd_start_date) AS bd_date,
                    bd.model_no, bd.mc_down_time_minutes AS duration_min,
                    bd.zone AS zone_name, bd.line AS line_name,
@@ -408,10 +431,14 @@ def capa_pending(user=Depends(get_current_user)):
                    COALESCE(NULLIF(bd.problem_observed_by_maintenance,''),
                             bd.problem_reported_by_production, '') AS problem,
                    s.id AS sheet_id, s.status AS sheet_status, s.qpr_no
-              FROM maintenance_breakdown_data bd
+              FROM {_SRC}
               LEFT JOIN LATERAL (
+                   -- id ke SAATH source bhi milana zaroori hai: manual #192 aur
+                   -- auto #192 do alag breakdown hain.
                    SELECT id, status, qpr_no FROM maintenance_capa_sheet
-                    WHERE breakdown_id = bd.id ORDER BY id DESC LIMIT 1
+                    WHERE breakdown_id = bd.id
+                      AND COALESCE(bd_source, 'manual') = bd.bd_source
+                    ORDER BY id DESC LIMIT 1
               ) s ON TRUE
              WHERE {shart}
              ORDER BY COALESCE(bd.slip_date, bd.bd_start_date) DESC NULLS LAST, bd.id DESC
@@ -435,6 +462,8 @@ class CapaSheet(BaseModel):
     title:        Optional[str] = ""
     status:       Optional[str] = "DRAFT"
     breakdown_id: Optional[int] = None
+    # kis register ki breakdown -- 'manual' ya 'auto' (id akeli pehchaan nahi)
+    bd_source:    Optional[str] = "manual"
 
 
 @router.get("/sheets")
@@ -446,7 +475,8 @@ def list_capa_sheets(user=Depends(get_current_user)):
         # `qpr_date` = sheet me bhari hui QPR DATE (grid ka `f_2_13`) -- Breakdown
         # QPR ki report isi se mahina milati hai; na bhari ho to created_at.
         cur.execute("""SELECT id, qpr_no, machine_no, title, status,
-                              breakdown_id, COALESCE(in_qpr, FALSE) AS in_qpr,
+                              breakdown_id, COALESCE(bd_source, 'manual') AS bd_source,
+                              COALESCE(in_qpr, FALSE) AS in_qpr,
                               NULLIF(data->>'f_2_13', '')                 AS qpr_date,
                               NULLIF(data->>'f_mname', '')                AS machine_name,
                               -- purani sheet me ye khaane khaali reh gaye the:
@@ -539,12 +569,15 @@ def save_capa_sheet(body: CapaSheet, user=Depends(get_current_user)):
                 raise HTTPException(404, "QPR sheet not found")
             sid = row[0]
         else:
+            # 'all' ek sheet ka source nahi ho sakta -- wo sirf list ka filter
+            # hai; isliye yahan sirf auto/manual.
+            bsrc = "auto" if str(body.bd_source or "").strip().lower() == "auto" else "manual"
             cur.execute("""INSERT INTO maintenance_capa_sheet
                               (qpr_no, machine_no, zone, line, title, status, data,
-                               breakdown_id, created_by, updated_by)
-                            VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s) RETURNING id""",
+                               breakdown_id, bd_source, created_by, updated_by)
+                            VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s) RETURNING id""",
                         (qpr_no, machine, zone, line, title, status,
-                         json.dumps(d), body.breakdown_id, who, who))
+                         json.dumps(d), body.breakdown_id, bsrc, who, who))
             sid = cur.fetchone()[0]
         conn.commit()
     return {"ok": True, "id": sid}
@@ -605,8 +638,10 @@ def closed_capa(user=Depends(get_current_user)):
     _ensure_capa_sheet()
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("""
+        _SRC = bd_source.raw("all", cur)
+        cur.execute(f"""
             SELECT s.id, s.qpr_no, s.title, s.status, s.breakdown_id,
+                   COALESCE(s.bd_source, 'manual') AS bd_source,
                    COALESCE(NULLIF(TRIM(s.machine_no),''), bd.machine_no) AS machine_no,
                    -- zone_name / line_name naam se bhejte hain: Historical Data ka
                    -- `planMatch()` inhi naamo par filter karta hai (baaki sab section
@@ -621,7 +656,12 @@ def closed_capa(user=Depends(get_current_user)):
                    s.updated_by AS closed_by, s.updated_at AS closed_at,
                    s.created_by, s.created_at
               FROM maintenance_capa_sheet s
-              LEFT JOIN maintenance_breakdown_data bd ON bd.id = s.breakdown_id
+              -- Dono register ek saath, aur jod id + source DONO par -- warna
+              -- auto #192 ki sheet manual #192 ka data dikha deti.  Jinki
+              -- bd_source = 'manual' (yaani aaj tak ki saari sheets) unke liye
+              -- ye bilkul wahi jod hai jo pehle thi.
+              LEFT JOIN {_SRC} ON bd.id = s.breakdown_id
+                              AND bd.bd_source = COALESCE(s.bd_source, 'manual')
              WHERE UPPER(COALESCE(s.status,'')) = 'CLOSED'
              ORDER BY COALESCE(bd.slip_date, bd.bd_start_date, s.created_at::date) DESC NULLS LAST,
                       s.id DESC

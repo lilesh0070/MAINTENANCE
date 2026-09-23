@@ -25,6 +25,8 @@ import { useAuth } from "../context/AuthContext";
 import { onlyProdZones } from "../constants/zones";
 import SheetPrintBtn from "../components/SheetPrintBtn";
 import ExcelBtn from "../components/ExcelBtn";
+import SlipTypeTabs from "../components/SlipTypeTabs";
+import { SLIP_DEFAULT } from "../constants/slipType";
 import { aajKaNaam, tableReportCss } from "../constants/sheetTools";
 
 const api = {
@@ -103,10 +105,6 @@ const COLUMNS = [
   ["quality_engineer_name",              (r) => r.quality_engineer],
 ];
 
-// Slip Type ke teen button.  Value wahi jo backend `src` me leta hai.
-// "Auto Slip" = sirf poori bhari hui (COMPLETED) auto slips -- chhant backend me.
-const SRC_OPTS = [["manual", "Manual Slip"], ["auto", "Auto Slip"], ["all", "All"]];
-
 export default function BDHistory() {
   const { token, theme, user } = useAuth();
   const nav = useNavigate();
@@ -124,8 +122,9 @@ export default function BDHistory() {
   const [fMachineNo, setFMachineNo]     = useState("");
   const [fMachineName, setFMachineName] = useState("");
   const [fCat, setFCat]                 = useState("");   // A / B (slip ka B/D category)
-  // Slip Type -- shuru me "All", yaani manual + auto dono ek saath.
-  const [fSrc, setFSrc]                 = useState("all");
+  // Slip Type -- manual / auto / all.  Default "manual" (user 2026-09-23),
+  // yaani page pehle jaisa hi khulta hai; auto slip sirf poori bhari hui aati hai.
+  const [fSrc, setFSrc] = useState(SLIP_DEFAULT);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -211,7 +210,7 @@ export default function BDHistory() {
 
   const clearFilters = () => { autoMonth.current = false; setFFy(""); setFMonth(""); setFDate("");
     setFZone(""); setFLine(""); setFMachineNo(""); setFMachineName(""); setFCat("");
-    setFSrc("all"); setQ(""); };
+    setFSrc(SLIP_DEFAULT); setQ(""); };
 
   const filtered = rows.filter((r) => {
     const d = r.bd_date ? String(r.bd_date).slice(0, 10) : "";
@@ -262,15 +261,6 @@ export default function BDHistory() {
         /* date input ko baaki dropdown jaisi hi lambai -- warna wo chhota
            reh jaata hai aur pankti tedhi dikhti hai. */
         .bh-date { min-width:150px; }
-        /* Slip Type ke teen jude hue button -- dropdown ke barabar oonchai. */
-        .bh-seg { display:flex; border:1.5px solid #cbd5e1; border-radius:9px; overflow:hidden; background:#fff; }
-        .bh-seg-b { border:0; border-right:1px solid #e2e8f0; background:#fff; color:#475569;
-                    font-family:'Barlow',sans-serif; font-size:13px; font-weight:700;
-                    padding:9px 14px; cursor:pointer; white-space:nowrap; }
-        .bh-seg-b:last-child { border-right:0; }
-        .bh-seg-b:hover { background:#f1f5f9; }
-        .bh-seg-b.on { background:${theme.accent}; color:#fff; }
-        .bh-seg-b.on:hover { background:${theme.accent}; }
         .bh-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden;
                    box-shadow:0 1px 4px rgba(15,23,42,.06); }
         .bh-card-head { background:#0f172a; color:#fff; font-weight:800; font-size:13px;
@@ -320,16 +310,7 @@ export default function BDHistory() {
           <div className="bh-filters">
             {/* Slip Type sabse pehle -- yahi tay karta hai qatarein kahan se
                 aayengi.  Header/khaane isse nahi badalte. */}
-            <div className="bh-fld">
-              <label>Slip Type</label>
-              <div className="bh-seg">
-                {SRC_OPTS.map(([v, lbl]) => (
-                  <button key={v} type="button"
-                          className={"bh-seg-b" + (fSrc === v ? " on" : "")}
-                          onClick={() => setFSrc(v)}>{lbl}</button>
-                ))}
-              </div>
-            </div>
+            <SlipTypeTabs cls="bh-fld" value={fSrc} onChange={setFSrc} />
             <div className="bh-fld">
               <label>Financial Year</label>
               <select className="bh-sel" value={fFy} onChange={(e) => onFy(e.target.value)}>

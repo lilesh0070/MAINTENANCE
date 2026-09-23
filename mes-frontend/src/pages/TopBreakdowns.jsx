@@ -7,13 +7,17 @@
  * (e.g. 4 in Seat Slider, 2 in Recliner …).  Filters (FY / Month / Zone /
  * Line / Machine) sirf set ko narrow karte hain; unit hamesha ek breakdown.
  *
- * Data: GET /api/breakdowns/log  (maintenance_breakdown_data — MANUAL slip,
+ * Slip Type (upar ka switch, 2026-09-23): manual / auto / all -- auto slip
+ * sirf poori bhar kar submit hone ke baad aati hai (chhant server par).
+ * Data: GET /api/breakdowns/log  (default maintenance_breakdown_data — MANUAL slip,
  *       same source as BD History).  AUTO slip yahan nahi aata.
  * Routing: /maintenance-breakdown/top-10
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import SlipTypeTabs from "../components/SlipTypeTabs";
+import { SLIP_DEFAULT, SLIP_SUB } from "../constants/slipType";
 import { onlyProdZones } from "../constants/zones";
 
 const api = {
@@ -68,6 +72,9 @@ export default function TopBreakdowns() {
   const [fLine, setFLine]   = useState("");
   const [fMachineNo, setFMachineNo]     = useState("");
   const [fMachineName, setFMachineName] = useState("");
+  // Slip Type -- manual / auto / all.  Default "manual" (user 2026-09-23),
+  // yaani page pehle jaisa hi khulta hai; auto slip sirf poori bhari hui aati hai.
+  const [fSrc, setFSrc] = useState(SLIP_DEFAULT);
   // ── the ranking ──
   const [rows, setRows]       = useState([]);   // individual breakdown rows from /log
   const [topN, setTopN]       = useState(10);   // 5 | 10 | 20 | 0 (=All)
@@ -101,7 +108,8 @@ export default function TopBreakdowns() {
   const monthOpts = useMemo(() => fFy ? fyMonths(fFy) : [], [fFy]);
   const onZone = (v) => { setFZone(v); setFLine(""); setFMachineNo(""); setFMachineName(""); };
   const onLine = (v) => { setFLine(v); setFMachineNo(""); setFMachineName(""); };
-  const clearFilters = () => { setFFy(""); setFMonth(""); setFZone(""); setFLine(""); setFMachineNo(""); setFMachineName(""); };
+  const clearFilters = () => { setFFy(""); setFMonth(""); setFZone(""); setFLine(""); setFMachineNo(""); setFMachineName("");
+    setFSrc(SLIP_DEFAULT); };
 
   // ── fetch individual breakdowns (manual slip) for the FY/month/zone/line window ──
   useEffect(() => {
@@ -112,12 +120,13 @@ export default function TopBreakdowns() {
     if (dt)    p.set("date_to", dt);
     if (fZone) p.set("zone", fZone);
     if (fLine) p.set("line", fLine);
+    p.set("src", fSrc);
     setLoading(true);
     api.get(`/api/breakdowns/log?${p.toString()}`, token)
       .then((d) => setRows(Array.isArray(d?.rows) ? d.rows : []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, [token, fFy, fMonth, fZone, fLine]);
+  }, [token, fFy, fMonth, fZone, fLine, fSrc]);
 
   // Machine No / Name filter client-side (endpoint machine filter machine_name par
   // hai; No client-side saaf rehta), phir down-time se sort → top-N.
@@ -206,7 +215,7 @@ export default function TopBreakdowns() {
             <button className="pa-back" onClick={() => nav("/maintenance-breakdown")}>← Back</button>
             <div>
               <div className="pa-title">Top 10 <span>BD</span></div>
-              <div className="pa-sub">Longest breakdowns by down time — manual slip</div>
+              <div className="pa-sub">Longest breakdowns by down time — {SLIP_SUB[fSrc] || SLIP_SUB.manual}</div>
             </div>
           </div>
           {user?.username && <span className="app-user" style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{user.username}</span>}
@@ -214,6 +223,7 @@ export default function TopBreakdowns() {
 
         {/* ── the single filter bar (same as BD History / BD Analysis / Pareto) ── */}
         <div className="pa-filters">
+          <SlipTypeTabs cls="pa-fld" value={fSrc} onChange={setFSrc} />
           <div className="pa-fld">
             <label>Financial Year</label>
             <select className="pa-sel" value={fFy}

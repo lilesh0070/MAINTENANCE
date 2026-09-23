@@ -21,6 +21,8 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import SlipTypeTabs from "../components/SlipTypeTabs";
+import { SLIP_DEFAULT } from "../constants/slipType";
 import { onlyProdZones } from "../constants/zones";
 import {
   ResponsiveContainer, ComposedChart, Bar, XAxis, YAxis,
@@ -303,6 +305,8 @@ export default function MaintenanceKPI() {
   const [machineNo, setMachineNo] = useState("");
   // Breakdown category — "" = All, warna "A" / "B"
   const [category, setCategory]   = useState("");
+  // Slip Type -- manual / auto / all (default manual, user 2026-09-23)
+  const [src, setSrc]             = useState(SLIP_DEFAULT);
   // Saved KPI targets (maintenance_kpi_target) for the current FY + scope.
   const [targets, setTargets]     = useState({});   // {kpi_key: target_value}
   const timer = useRef(null);
@@ -587,6 +591,7 @@ export default function MaintenanceKPI() {
       if (lineName)  qp.set("line_name", lineName);
       if (machineNo) qp.set("machine_no", machineNo);
       if (category)  qp.set("category", category);
+      qp.set("src", src);
       const qs = qp.toString();
       const [d, t] = await Promise.all([
         api.get(`/api/maintenance-kpi/summary?${qs}`, token),
@@ -601,7 +606,7 @@ export default function MaintenanceKPI() {
     } finally {
       setLoading(false);
     }
-  }, [token, fy, zoneName, lineName, machineNo, category]);
+  }, [token, fy, zoneName, lineName, machineNo, category, src]);
 
   // Fetch on FY change + poll live.
   useEffect(() => {
@@ -773,6 +778,14 @@ export default function MaintenanceKPI() {
                   Label zaroori hai: "All / A / B" se apne aap pata nahi
                   chalta ki kis cheez ka filter hai (baaki dropdown khud
                   bata dete hain -- "All Zones", "All Lines"). */}
+              {/* Slip Type -- fybar ek hi pankti hai, isliye label yahin ki
+                  class se aur component sirf buttons deta hai.  Dono ek hi
+                  span me hain taaki pankti tootne par label upar aur button
+                  neeche na bat jaayein. */}
+              <span style={{ display:"inline-flex", alignItems:"center", gap:8 }}>
+                <span className="mk-fy-label">Slip Type</span>
+                <SlipTypeTabs label={null} value={src} onChange={setSrc} />
+              </span>
               <span className="mk-fy-label">Category</span>
               <select className="mk-fy-select mk-filter" value={category}
                       onChange={(e) => setCategory(e.target.value)}

@@ -34,6 +34,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+import bd_source
+
 _AUTO_SLIP_TBL = "maintenance_auto_breakdown_slip"
 
 # 2-STAGE gate: jis slip me production ne apni half abhi nahi bhari
@@ -377,6 +379,7 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
                line_name:  Optional[str] = Query(None),
                machine_no: Optional[str] = Query(None),
                category:   Optional[str] = Query(None, description="breakdown category: A / B"),
+               src:        str = Query("manual", description="manual | auto | all"),
                user=Depends(get_current_user)):
     """Six headline maintenance KPIs for a financial year (Apr → Mar):
     MTTR, MTBF, LTTR, breakdowns > 1 hour, total breakdown frequency,
@@ -428,8 +431,13 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
         where += " AND TRIM(category) = %s"; params.append(category.strip())
 
     st = "mc_down_time_minutes"
+    # Slip Type (user 2026-09-23): manual / auto / all -- niyam `bd_source.py`
+    # me hai.  Auto slip sirf POORI BHARNE (prod_stage='COMPLETED') ke baad
+    # ginti jaati hai; default "manual", isliye jo page `src` nahi bhejte
+    # (Maintenance Overview, Annual Index) unka aankda bilkul nahi badla.
     with get_conn() as conn:
         cur = dict_cursor(conn)
+        _SRC = bd_source.raw(src, cur)
         cur.execute(f"""
             SELECT
                 -- Total Breakdown Frequency = SUM of the `frequency` column
@@ -440,7 +448,7 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
                 COALESCE(MAX({st}), 0)                    AS max_min,
                 -- >1hr count is frequency-weighted too (not a bare row count)
                 COALESCE(SUM(COALESCE(frequency, 1)) FILTER (WHERE ({st}) >= 60), 0) AS over_1hr
-              FROM maintenance_breakdown_data
+              FROM {_SRC}
              WHERE {where}
         """, params)
         row = cur.fetchone() or {}
@@ -471,7 +479,7 @@ def fy_summary(fy:         Optional[str] = Query(None, description="e.g. 2025-26
             SELECT date_trunc('month', COALESCE(slip_date, bd_start_date))::date AS m,
                    COALESCE(SUM({st}), 0) / 60.0            AS bd_hours,
                    COALESCE(SUM(COALESCE(frequency, 1)), 0) AS bd_freq
-              FROM maintenance_breakdown_data
+              FROM {_SRC}
              WHERE {where}
              GROUP BY 1
         """, params)
@@ -539,6 +547,7 @@ def fy_trend(fy:         Optional[str] = Query(None, description="e.g. 2025-26")
              line_name:  Optional[str] = Query(None),
              machine_no: Optional[str] = Query(None),
              category:   Optional[str] = Query(None, description="breakdown category: A / B"),
+             src:        str = Query("manual", description="manual | auto | all"),
              user=Depends(get_current_user)):
     """Month-by-month series (Apr → Mar, 12 buckets) for the same six
     KPIs as /summary.  Source: maintenance_breakdown_data (the breakdown register),
@@ -563,8 +572,13 @@ def fy_trend(fy:         Optional[str] = Query(None, description="e.g. 2025-26")
         where += " AND TRIM(category) = %s"; params.append(category.strip())
 
     st = "mc_down_time_minutes"
+    # Slip Type (user 2026-09-23): manual / auto / all -- niyam `bd_source.py`
+    # me hai.  Auto slip sirf POORI BHARNE (prod_stage='COMPLETED') ke baad
+    # ginti jaati hai; default "manual", isliye jo page `src` nahi bhejte
+    # (Maintenance Overview, Annual Index) unka aankda bilkul nahi badla.
     with get_conn() as conn:
         cur = dict_cursor(conn)
+        _SRC = bd_source.raw(src, cur)
         cur.execute(f"""
             SELECT date_trunc('month', COALESCE(slip_date, bd_start_date))::date           AS m,
                    -- frequency column summed (see /summary) — not a row count
@@ -572,7 +586,7 @@ def fy_trend(fy:         Optional[str] = Query(None, description="e.g. 2025-26")
                    COALESCE(SUM({st}), 0)                        AS total_min,
                    COALESCE(MAX({st}), 0)                        AS max_min,
                    COALESCE(SUM(COALESCE(frequency, 1)) FILTER (WHERE ({st}) >= 60), 0) AS over_1hr
-              FROM maintenance_breakdown_data
+              FROM {_SRC}
              WHERE {where}
              GROUP BY 1
         """, params)
@@ -650,6 +664,7 @@ def breakdown_by(group:        str = Query("zone", description="zone | line | ma
                  line_name:    Optional[str] = Query(None),
                  machine_no:   Optional[str] = Query(None),
                  machine_name: Optional[str] = Query(None),
+                 src:          str = Query("manual", description="manual | auto | all"),
                  user=Depends(get_current_user)):
     """Grouped breakdown totals for the BD-Analysis drill-down charts:
     total breakdown FREQUENCY (count) and total breakdown HOURS
@@ -683,14 +698,19 @@ def breakdown_by(group:        str = Query("zone", description="zone | line | ma
         where.append("machine_name = %s"); params.append(machine_name)
 
     st = "mc_down_time_minutes"
+    # Slip Type (user 2026-09-23): manual / auto / all -- niyam `bd_source.py`
+    # me hai.  Auto slip sirf POORI BHARNE (prod_stage='COMPLETED') ke baad
+    # ginti jaati hai; default "manual", isliye jo page `src` nahi bhejte
+    # (Maintenance Overview, Annual Index) unka aankda bilkul nahi badla.
     with get_conn() as conn:
         cur = dict_cursor(conn)
+        _SRC = bd_source.raw(src, cur)
         cur.execute(f"""
             SELECT {col}                                        AS key,
                    COALESCE(SUM(COALESCE(frequency, 1)), 0)     AS frequency,
                    ROUND(COALESCE(SUM({st}), 0) / 60.0, 2)      AS hours,
                    ROUND(COALESCE(SUM({st}), 0))                AS minutes
-              FROM maintenance_breakdown_data
+              FROM {_SRC}
              WHERE {' AND '.join(where)}
              GROUP BY 1
              ORDER BY 1

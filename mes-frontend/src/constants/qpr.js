@@ -131,6 +131,9 @@ export function qprQuery(f) {
   if (f.zone)  p.set("zone", f.zone);
   if (f.line)  p.set("line", f.line);
   if (f.mc)    p.set("mc", f.mc);
+  // Slip Type sirf tab URL me jaata hai jab manual se alag ho -- purane link
+  // (jinme src hai hi nahi) waise ke waise manual par khulte hain.
+  if (f.src && f.src !== "manual") p.set("src", f.src);
   return p;
 }
 
@@ -140,5 +143,6 @@ export function qprFromQuery(sp) {
     fromUrl: sp.has("fy"),
     fy: sp.get("fy") ?? "", month: sp.get("month") ?? "", date: sp.get("date") ?? "",
     zone: sp.get("zone") ?? "", line: sp.get("line") ?? "", mc: sp.get("mc") ?? "",
+    src: sp.get("src") || "manual",
   };
 }

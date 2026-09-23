@@ -28,6 +28,8 @@ import {
   CartesianGrid, Tooltip, Legend, LabelList,
 } from "recharts";
 import { useAuth } from "../context/AuthContext";
+import SlipTypeTabs from "../components/SlipTypeTabs";
+import { SLIP_DEFAULT } from "../constants/slipType";
 import { onlyProdZones } from "../constants/zones";
 
 const api = {
@@ -69,6 +71,9 @@ export default function ParetoAnalysis() {
   const [fLine, setFLine]   = useState("");
   const [fMachineNo, setFMachineNo]     = useState("");
   const [fMachineName, setFMachineName] = useState("");
+  // Slip Type -- manual / auto / all.  Default "manual" (user 2026-09-23),
+  // yaani page pehle jaisa hi khulta hai; auto slip sirf poori bhari hui aati hai.
+  const [fSrc, setFSrc] = useState(SLIP_DEFAULT);
   // ── the pareto ──
   const [rows, setRows]       = useState([]);   // machine-wise rows from /breakdown-by
   const topN = 0;   // show ALL (the Top-N "Show" selector was removed)
@@ -130,12 +135,13 @@ export default function ParetoAnalysis() {
     if (fLine)        p.set("line_name", fLine);
     if (fMachineNo)   p.set("machine_no", fMachineNo);
     if (fMachineName) p.set("machine_name", fMachineName);
+    p.set("src", fSrc);
     setLoading(true);
     api.get(`/api/maintenance-kpi/breakdown-by?${p.toString()}`, token)
       .then((d) => setRows(Array.isArray(d?.rows) ? d.rows : []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, [token, ready, group, fFy, fMonth, fZone, fLine, fMachineNo, fMachineName]);
+  }, [token, ready, group, fFy, fMonth, fZone, fLine, fMachineNo, fMachineName, fSrc]);
 
   // Pareto: machines sorted by downtime desc; CUMM% over the FULL filtered
   // total (so a Top-N view honestly shows how much of the whole it covers).
@@ -227,6 +233,7 @@ export default function ParetoAnalysis() {
 
         {/* ── the single filter bar (same as BD History / BD Analysis / CAPA) ── */}
         <div className="pa-filters">
+          <SlipTypeTabs cls="pa-fld" value={fSrc} onChange={setFSrc} />
           <div className="pa-fld">
             <label>Financial Year</label>
             <select className="pa-sel" value={fFy}

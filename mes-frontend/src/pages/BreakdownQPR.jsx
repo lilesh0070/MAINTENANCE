@@ -45,6 +45,8 @@ import {
 } from "recharts";
 import { useAuth } from "../context/AuthContext";
 import { onlyProdZones } from "../constants/zones";
+import SlipTypeTabs from "../components/SlipTypeTabs";
+import { SLIP_DEFAULT } from "../constants/slipType";
 import {
   QPR_MACHINE_PATH, pad2, mahineKaAnt, fyMonths, fyWindow,
   kabLabel, qprSlips, qprQuery, qprFromQuery,
@@ -184,6 +186,9 @@ export default function BreakdownQPR() {
   const [fZone, setFZone]   = useState(shuru.zone);
   const [fLine, setFLine]   = useState(shuru.line);
   const [fMachineNo, setFMachineNo] = useState(shuru.mc);
+  // Slip Type -- manual / auto / all.  URL se aata hai (machine wale page se
+  // wapas aane par wahi rehta), warna default "manual".
+  const [fSrc, setFSrc] = useState(shuru.src || SLIP_DEFAULT);
   const [master, setMaster] = useState([]);
   const [ready, setReady]   = useState(false);   // FY/Month tay hone ke BAAD hi data maango
   const booted = useRef(shuru.fromUrl);           // FY/Month ka default sirf EK baar (URL ho to bilkul nahi)
@@ -224,7 +229,7 @@ export default function BreakdownQPR() {
   // Slips FY ki khidki ke hisaab se aati hain (BD History jaisa); baaki
   // filter aur hadd yahin lagte hain.  `key` se pata chalta hai ki jo data
   // haath me hai wo ABHI wali FY ka hai ya purana -- isi se "Loading…".
-  const reqKey = ready ? (fFy || "ALL") : "";
+  const reqKey = ready ? `${fSrc}|${fFy || "ALL"}` : "";
   const [got, setGot] = useState({ key: "", rows: [], err: "" });
   useEffect(() => {
     if (!token || !reqKey) return;
@@ -232,11 +237,12 @@ export default function BreakdownQPR() {
     const qs = new URLSearchParams({ limit: "3000" });
     const w = fFy ? fyWindow(fFy) : null;
     if (w) { qs.set("date_from", w.start); qs.set("date_to", w.last); }
+    qs.set("src", fSrc);
     api.get(`/api/breakdowns/log?${qs.toString()}`, token)
       .then((r) => { if (!band) setGot({ key: reqKey, rows: (r?.rows || []).filter((x) => x.bd_date), err: "" }); })
       .catch((e) => { if (!band) setGot({ key: reqKey, rows: [], err: e?.message || "Could not load breakdowns" }); });
     return () => { band = true; };
-  }, [token, reqKey, fFy]);
+  }, [token, reqKey, fFy, fSrc]);
   const loading = cfg === null || !reqKey || got.key !== reqKey;
   // Har slip APNE mahine ki hadd se -- (ym) => minute
   const hadd = useMemo(() => haddOf(cfg || haddCfg(null)), [cfg]);
@@ -255,7 +261,7 @@ export default function BreakdownQPR() {
   const onZone = (v) => { setFZone(v); setFLine(""); setFMachineNo(""); };
   const onLine = (v) => { setFLine(v); setFMachineNo(""); };
 
-  const filters = { fy: fFy, month: fMonth, date: fDate, zone: fZone, line: fLine, mc: fMachineNo };
+  const filters = { fy: fFy, month: fMonth, date: fDate, zone: fZone, line: fLine, mc: fMachineNo, src: fSrc };
   const query = qprQuery(filters).toString();
   // Filter badle to URL bhi (`replace` -- har chuni cheez ki history me alag
   // entry nahi chahiye).  Boot se PEHLE nahi, warna default FY aane se pehle
@@ -421,6 +427,7 @@ export default function BreakdownQPR() {
           {/* `bq-filters` -- phone par isi page ki grid (responsive.css); BD
               History ki `bh-filters` par koi asar nahi. */}
           <div className="bh-filters bq-filters">
+            <SlipTypeTabs cls="bh-fld" value={fSrc} onChange={setFSrc} />
             <div className="bh-fld">
               <label>Financial Year</label>
               <select className="bh-sel" value={fFy} onChange={(e) => onFy(e.target.value)}>

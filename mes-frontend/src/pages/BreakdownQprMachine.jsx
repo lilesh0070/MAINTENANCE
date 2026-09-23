@@ -130,7 +130,8 @@ export default function BreakdownQprMachine() {
 
   // Slips -- sirf samay ki khidki server se; baaki `qprSlips` yahin.
   const win = apiWindow(f);
-  const reqKey = `${win.from}|${win.to}`;
+  // Slip Type bhi key ka hissa -- warna switch badalne par purana data dikhta rehta.
+  const reqKey = `${f.src}|${win.from}|${win.to}`;
   const [got, setGot] = useState({ key: null, rows: [], err: "" });
   useEffect(() => {
     if (!token) return;
@@ -138,11 +139,12 @@ export default function BreakdownQprMachine() {
     const qs = new URLSearchParams({ limit: "3000" });
     if (win.from) qs.set("date_from", win.from);
     if (win.to)   qs.set("date_to", win.to);
+    qs.set("src", f.src || "manual");
     api.get(`/api/breakdowns/log?${qs.toString()}`, token)
       .then((r) => { if (!band) setGot({ key: reqKey, rows: (r?.rows || []).filter((x) => x.bd_date), err: "" }); })
       .catch((e) => { if (!band) setGot({ key: reqKey, rows: [], err: e?.message || "Could not load breakdowns" }); });
     return () => { band = true; };
-  }, [token, reqKey, win.from, win.to]);
+  }, [token, reqKey, win.from, win.to, f.src]);
   const loading = cfg === null || got.key !== reqKey;
   const hadd = useMemo(() => haddOf(cfg || haddCfg(null)), [cfg]);   // (ym) => minute
   const bayan = cfg ? haddBayan(cfg, f) : null;
@@ -376,7 +378,8 @@ export default function BreakdownQprMachine() {
                             {capaHai(r) ? (
                               <button type="button" className="bqm-capa"
                                       title="Open this breakdown's CAPA"
-                                      onClick={() => nav(`/maintenance-capa?bd=${r.id}`)}>
+                                      onClick={() => nav(`/maintenance-capa?bd=${r.id}`
+                                        + (String(r.source).toLowerCase().includes("auto") ? "&src=auto" : ""))}>
                                 View
                               </button>
                             ) : "—"}

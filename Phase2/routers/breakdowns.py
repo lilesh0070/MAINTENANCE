@@ -29,6 +29,7 @@ from pydantic import BaseModel
 
 from database import get_conn, dict_cursor
 from auth import get_current_user, require_admin
+import bd_source
 
 router = APIRouter(prefix="/api/breakdowns", tags=["breakdowns"])
 
@@ -86,49 +87,13 @@ _BD_SRC_TPL = """
       FROM {tbl}{filt}"""
 
 
-# BD History ka "Slip Type" (user 2026-09-23): manual / auto / all.
-#   manual = maintenance_breakdown_data      (haath se bhari slip)
-#   auto   = maintenance_auto_breakdown_slip (ANDON call se bani slip)
-# DONO table ke khaane BILKUL EK JAISE hain (34 column, wahi naam/naap), isliye
-# upar wala hi template dono par chalta hai aur BD History ka header / Excel /
-# print kuch nahi badalta -- sirf qatarein badhti hain.
-# ⚠ DEFAULT "manual" hi rehna chahiye: yahi endpoint Top 10 BD, Breakdown QPR
-#   aur Historical Data bhi bulate hain, unka matlab manual register hai.
-# ⚠ id dono table me 1 se shuru hoti hai, yaani "all" me id dohra sakti hai --
-#   isliye har row ke saath `source` jaata hai (frontend usi se row pehchanta hai).
-#
-# ⚠ AUTO SLIP SIRF FINAL SUBMIT HONE KE BAAD (user 2026-09-23: "puri fill hone
-#   ke baad hi aayegi, aise na aayega data yahan par").  ANDON call par slip
-#   apne-aap ban jaati hai -- us waqt usme sirf zone/line/time/down-time hota
-#   hai, problem/action/attended-by/category sab khaali.  Aisi adhoori qatar
-#   BD History me nahi aani chahiye.
-#   Nishaan `prod_stage` hai (breakdown_slips.py ka 2-stage flow):
-#       PENDING_PRODUCTION -> PENDING_MAINTENANCE -> COMPLETED
-#   COMPLETED = maintenance ne poori bhar kar submit kar di.  NULL ko bhi
-#   "poori nahi" maana jaata hai (wahi COALESCE idiom jo breakdown_slips.py
-#   me hai) -- yaani shak ho to qatar dikhti NAHI.
-#   Manual table (maintenance_breakdown_data) par `prod_stage` hai hi nahi --
-#   wo slip ek hi baar me poori bhar kar save hoti hai, isliye uspar koi shart
-#   nahi (warna saari 362 qatarein gayab ho jaatin).
-_SRC_TABLES_BD = {
-    # naam: (table, source ka label, us table par lagne wali shart)
-    "manual": ("maintenance_breakdown_data", "Manual Slip", ""),
-    "auto":   ("maintenance_auto_breakdown_slip", "Auto Slip",
-               "\n     WHERE COALESCE(prod_stage, 'PENDING_MAINTENANCE') = 'COMPLETED'"),
-}
-
-
-def _bd_src(src: str = "manual") -> str:
-    """`src` ke hisaab se wahi aliased subquery -- ek table ki ya dono ka UNION."""
-    s = (src or "manual").strip().lower()
-    if s not in ("manual", "auto", "all"):
-        s = "manual"
-    keys = ("manual", "auto") if s == "all" else (s,)
-    parts = []
-    for k in keys:
-        tbl, label, filt = _SRC_TABLES_BD[k]
-        parts.append(_BD_SRC_TPL.format(tbl=tbl, label=label, filt=filt))
-    return "(" + " UNION ALL ".join(parts) + ") AS bd"
+# Upar wala SELECT dono table par jyon ka tyon chalta hai (dono ke khaane
+# bilkul ek jaise hain), isliye "Slip Type" -- manual / auto / all -- ka poora
+# niyam ek hi jagah rehta hai: `bd_source.py`.  Wahan likha hai ki auto slip
+# sirf POORI BHARNE (prod_stage='COMPLETED') ke baad ginti jaati hai, default
+# hamesha "manual" hai, aur id akeli pehchaan nahi hai.
+bd_source.register_aliased_tpl(_BD_SRC_TPL)
+_bd_src = bd_source.aliased
 
 _BDLOG_COLS = (
     "id, source, src_row_no, zone_code, line_code, machine_no, machine_name, "

@@ -24,6 +24,8 @@ import {
   CartesianGrid, Tooltip, LabelList, Cell,
 } from "recharts";
 import { useAuth } from "../context/AuthContext";
+import SlipTypeTabs from "../components/SlipTypeTabs";
+import { SLIP_DEFAULT } from "../constants/slipType";
 import { PROD_ZONES, onlyProdZones } from "../constants/zones";
 
 const api = {
@@ -65,6 +67,9 @@ export default function BDAnalysis() {
   const [fLine, setFLine]   = useState("");
   const [fMachineNo, setFMachineNo]     = useState("");
   const [fMachineName, setFMachineName] = useState("");
+  // Slip Type -- manual / auto / all.  Default "manual" (user 2026-09-23),
+  // yaani page pehle jaisa hi khulta hai; auto slip sirf poori bhari hui aati hai.
+  const [fSrc, setFSrc] = useState(SLIP_DEFAULT);
   // ── the analysis ──
   const [metric, setMetric]       = useState("hours");   // "hours" | "frequency"
   const [chartRows, setChartRows] = useState([]);        // rows from /breakdown-by
@@ -108,7 +113,8 @@ export default function BDAnalysis() {
   const monthOpts = useMemo(() => fFy ? fyMonths(fFy) : [], [fFy]);
   const onZone = (v) => { setFZone(v); setFLine(""); setFMachineNo(""); setFMachineName(""); };
   const onLine = (v) => { setFLine(v); setFMachineNo(""); setFMachineName(""); };
-  const clearFilters = () => { setFFy(""); setFMonth(""); setFZone(""); setFLine(""); setFMachineNo(""); setFMachineName(""); };
+  const clearFilters = () => { setFFy(""); setFMonth(""); setFZone(""); setFLine(""); setFMachineNo(""); setFMachineName("");
+    setFSrc(SLIP_DEFAULT); };
 
   // ── drill level follows the filters: zone → line → machine ──
   const group = fLine ? "machine" : fZone ? "line" : "zone";
@@ -120,12 +126,13 @@ export default function BDAnalysis() {
     if (fMonth) p.set("month", fMonth);
     if (fZone)  p.set("zone_name", fZone);
     if (fLine)  p.set("line_name", fLine);
+    p.set("src", fSrc);
     setLoading(true);
     api.get(`/api/maintenance-kpi/breakdown-by?${p.toString()}`, token)
       .then((d) => setChartRows(Array.isArray(d?.rows) ? d.rows : []))
       .catch(() => setChartRows([]))
       .finally(() => setLoading(false));
-  }, [token, ready, group, fFy, fMonth, fZone, fLine]);
+  }, [token, ready, group, fFy, fMonth, fZone, fLine, fSrc]);
 
   // Machine No selected directly, or resolved from the Machine Name pick —
   // used to highlight that machine's bar in the machine-wise chart.
@@ -220,6 +227,7 @@ export default function BDAnalysis() {
 
         {/* ── the single filter bar ── */}
         <div className="ba-filters">
+          <SlipTypeTabs cls="ba-fld" value={fSrc} onChange={setFSrc} />
           <div className="ba-fld">
             <label>Financial Year</label>
             <select className="ba-sel" value={fFy} onChange={(e) => {

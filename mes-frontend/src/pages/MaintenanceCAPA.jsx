@@ -1,7 +1,11 @@
 /* ───────────────────────────────────────────────────────────────────
  * MaintenanceCAPA.jsx  —  CAPA / Quality Problem Report (QPR)
  * ───────────────────────────────────────────────────────────────────
- * Every manual-slip breakdown that reaches the CAPA down-time limit
+ * Upar "Slip Type" ka switch (2026-09-23): manual / auto / all -- auto slip
+ * sirf poori bhar kar submit hone ke baad ginti hai.  Sheet ke saath
+ * `bd_source` bhi save hota hai, kyunki dono register ki id takra jaati hai.
+ *
+ * Every breakdown that reaches the CAPA down-time limit
  * (maintenance_breakdown_data.mc_down_time_minutes; 55 min by default, an admin
  * can set a different limit for any one month) is a CAPA.  This page has two views:
  *   • LIST  — the pending / filled CAPAs (Machine No / Name / Date / Model /
@@ -17,6 +21,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import SlipTypeTabs from "../components/SlipTypeTabs";
+import { SLIP_DEFAULT } from "../constants/slipType";
 import { CAPA_QPR_GRID } from "./capaGrid";
 import { CapaAttach } from "./capa/CapaAttach";
 import { ojtBhara } from "./skill/OjtForm";
@@ -161,6 +167,9 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
   const [fZone, setFZone] = useState("");
   const [fLine, setFLine] = useState("");
   const [fMno, setFMno]   = useState("");
+  // Slip Type -- manual / auto / all.  Deep link (`?bd=..&src=auto`) se bhi
+  // aa sakta hai, warna default "manual".
+  const [fSrc, setFSrc] = useState(() => qs.get("src") || SLIP_DEFAULT);
   const [master, setMaster] = useState([]);
 
   /* Hadd (minute): `null` = abhi server se aayi nahi.  `minDraft.k` = kis
@@ -178,6 +187,9 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
   const [sid, setSid] = useState(null);            // current saved-sheet id
   const [sStatus, setSStatus] = useState("DRAFT"); // khuli hui sheet ka status
   const [bdId, setBdId] = useState(null);          // current breakdown id
+  // ...aur wo kis register ki hai ('manual'/'auto').  id akeli pehchaan nahi:
+  // dono table ki id takra jaati hai, isliye sheet ke saath source bhi jaata hai.
+  const [bdSrc, setBdSrc] = useState("manual");
   const [prefill, setPrefill] = useState({});      // {cell: value} to apply on open
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -197,13 +209,13 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
 
   const loadPending = useCallback(() => {
     setLoading(true);
-    api(`/pending`)
+    api(`/pending?src=${fSrc}`)
       // ginti ab client par `shown` se banti hai (filter ke hisaab se), isliye
       // API ke total/pending/done ki zaroorat nahi rahi.
       .then((d) => setRows(d.rows || []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, [api]);
+  }, [api, fSrc]);
   useEffect(() => { if (!viewOnly) loadPending(); }, [loadPending, viewOnly]);
 
   // Hadd -- sirf list wale mode me chahiye (sirf-dekhne me list hai hi nahi).
@@ -877,10 +889,12 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
       try {
         const s = await api(`/sheet/${row.sheet_id}`);
         setPrefill(s.data || {}); setSid(s.id); setBdId(s.breakdown_id || row.bd_id);
+        setBdSrc(s.bd_source || row.bd_source || "manual");
         setSStatus((s.status || "DRAFT").toUpperCase());
       } catch (e) { flash("Open failed: " + (e.message || "")); return; }
     } else {                                       // fresh → pre-fill from the breakdown
       setPrefill(PREFILL(row)); setSid(null); setBdId(row.bd_id); setSStatus("DRAFT");
+      setBdSrc(row.bd_source || "manual");
     }
     setView("form");
   };
@@ -912,14 +926,18 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
         if (sheet) {
           const d = await api(`/sheet/${sheet}`);
           setPrefill(d.data || {}); setSid(d.id); setBdId(d.breakdown_id || null);
+          setBdSrc(d.bd_source || "manual");
           setSStatus((d.status || "DRAFT").toUpperCase());
           setView("form");
           return;
         }
         // Pending ki list me se wahi breakdown dhoondo -- `fillQpr` dono
         // haalat (sheet hai / nahi) khud sambhal leta hai.
-        const d = await api(`/pending`);
-        const row = (d.rows || []).find((x) => String(x.bd_id) === String(bd));
+        // deep link ka apna src (Breakdown QPR ki table se aaya) -- warna page ka switch
+        const dsrc = qs.get("src") || fSrc;
+        const d = await api(`/pending?src=${dsrc}`);
+        const row = (d.rows || []).find((x) => String(x.bd_id) === String(bd)
+                          && (!qs.get("src") || (x.bd_source || "manual") === dsrc));
         if (!row) { flash("That breakdown is not a CAPA.", true); return; }
         setRows(d.rows || []);        // list bhi taaza rahe (Back par wahi dikhe)
         await fillQpr(row);
@@ -942,7 +960,8 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
       const { arr, gadbad } = await ojtSync(att);
       setAtt(arr);
       const r = await api(`/sheet`, { method: "POST",
-        body: JSON.stringify({ id: sid, breakdown_id: bdId, data: collect(arr), status }) });
+        body: JSON.stringify({ id: sid, breakdown_id: bdId, bd_source: bdSrc,
+                              data: collect(arr), status }) });
       setSid(r.id); setSStatus(status);
       if (gadbad) flash(`Saved ✓ (QPR #${r.id}) — but the OJT record could not be sent to Skill & Training`, true);
       else flash(status === "CLOSED" ? `Closed ✓ (QPR #${r.id})` : `Saved ✓ (QPR #${r.id})`);
@@ -957,7 +976,8 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
   };
   const reopenCapa = async () => { await saveWith("DRAFT"); };
 
-  const backToList = () => { setView("list"); setSid(null); setBdId(null); setSStatus("DRAFT"); setPrefill({}); loadPending(); };
+  const backToList = () => { setView("list"); setSid(null); setBdId(null); setBdSrc("manual");
+    setSStatus("DRAFT"); setPrefill({}); loadPending(); };
 
   const btn = { border:"1px solid #cbd5e1", background:"#fff", cursor:"pointer", borderRadius:8, padding:"8px 14px", fontSize:13, fontWeight:700, color:"#334155" };
   // Machine master — zone/line/machine ke dropdown iske hi bharte hain.
@@ -1328,6 +1348,7 @@ export default function MaintenanceCAPA({ viewId = null, onClose = null } = {}) 
             {/* ── Filters — default CHAALU MAHINA.  Zone/Line/Machine ke
                    option Machine Master se aate hain. ── */}
             <div className="cp-filters" style={{ display:"flex", gap:12, flexWrap:"wrap", alignItems:"flex-end", marginBottom:16 }}>
+              <SlipTypeTabs cls="cp-fld" value={fSrc} onChange={setFSrc} />
               <div className="cp-fld">
                 <label>Financial Year</label>
                 <select className="cp-sel" value={fFy}
