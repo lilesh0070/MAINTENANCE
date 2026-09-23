@@ -184,6 +184,53 @@ export function haalatKoAttributeBanao(clone, live) {
  * Naap LIVE element se lete hain (clone kabhi DOM me laga hi nahi, uska
  * computed style khali hota hai), aur span par wahi font/padding/align
  * chipka dete hain taaki dekhne me koi farak na pade. */
+/* Date / time ke khaane me `value` WO NAHI hota jo screen par dikhta hai.
+ * `<input type="date">` ka value hamesha ISO rehta hai (2026-09-19) aur
+ * `type="time"` ka 24-ghante ka (13:10), jabki browser unhe "09/19/2026" aur
+ * "01:10 PM" dikhata hai.  Seedha value chhapne par kaagaz/PDF par tareekh
+ * aur samay SCREEN SE ALAG aate the -- aur slip me AM/PM to gayab hi ho jaata
+ * tha (01:10 PM kaagaz par "13:10").  Isliye yahan wahi shakl banate hain jo
+ * aankh ne screen par dekhi thi.
+ *
+ * Browser ka apna locale hi lagate hain -- wahi to screen par bhi laga tha.
+ * Locale kisi wajah se na chale to value jyon ki tyon (kuch na dikhne se
+ * behtar hai galat shakl me dikhna). */
+function jaisaDikhta(kism, v) {
+  if (!v) return "";
+  try {
+    if (kism === "date") {
+      const [y, m, d] = String(v).split("-").map(Number);
+      // `2-digit` isliye ki screen par bhi padded aata hai (09/19/2026).
+      // Bina iske PDF me "9/19/2026" likha jaata -- bas itna sa farq bhi
+      // "format alag hai" jaisa lagta hai.
+      if (y && m && d) {
+        return new Date(y, m - 1, d).toLocaleDateString([], {
+          year: "numeric", month: "2-digit", day: "2-digit" });
+      }
+    }
+    if (kism === "time") {
+      const [h, mi] = String(v).split(":").map(Number);
+      if (!Number.isNaN(h)) {
+        return new Date(2000, 0, 1, h, mi || 0)
+          .toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      }
+    }
+    if (kism === "datetime-local") {
+      const dd = new Date(v);
+      if (!Number.isNaN(dd.getTime())) {
+        return dd.toLocaleString([], { year: "numeric", month: "2-digit", day: "2-digit",
+                                       hour: "2-digit", minute: "2-digit" });
+      }
+    }
+    if (kism === "month") {
+      const [y, m] = String(v).split("-").map(Number);
+      if (y && m) return new Date(y, m - 1, 1)
+        .toLocaleDateString([], { year: "numeric", month: "short" });
+    }
+  } catch { /* locale na chale to jyon ka tyon */ }
+  return v;
+}
+
 export function inputonKoTextBanao(clone, live) {
   const CHUNAV = "input, textarea, select";
   const zinda = Array.from(live.querySelectorAll(CHUNAV));
@@ -226,7 +273,7 @@ export function inputonKoTextBanao(clone, live) {
       ? (z && z.value
           ? ((z.options[z.selectedIndex] || {}).text || z.value)
           : "")
-      : ((z && z.value) || el.getAttribute("value") || el.textContent || "");
+      : jaisaDikhta(kism, (z && z.value) || el.getAttribute("value") || el.textContent || "");
 
     const sp = clone.ownerDocument.createElement("span");
     sp.className = el.className;
@@ -637,7 +684,7 @@ const blobBase64 = (blob) => new Promise((res, rej) => {
  * gin kar dekha) -- bade flat hisse aur teekhe kinare.  Deflate ise dabata
  * hai; JPEG ka DCT ulta har akshar ke kinare par bits kharch karta hai aur
  * dhundhla bhi kar deta hai.  Yahan file chhoti BHI hai aur text saaf BHI. */
-function canvasSePdf(jsPDF, canvas, khada, margin = 6) {
+function canvasSePdf(jsPDF, canvas, khada, margin = 6, tode = null) {
   // ⚠ `compress: true` LAZMI HAI -- upar ke aankde dekhein.  Iske bina
   // jsPDF PNG ko kholkar RAW pixel bhar deta hai aur sheet 14 MB ki ho
   // jaati hai.
@@ -650,19 +697,88 @@ function canvasSePdf(jsPDF, canvas, khada, margin = 6) {
   // Tasveer ki poori chaudai panne ki chaudai par baithti hai; usi anupaat
   // se uski poori lambai mm me nikal aati hai.
   const pooriMm = (canvas.height / canvas.width) * pw;
-  const panne   = Math.max(1, Math.ceil((pooriMm - 0.5) / ph));   // 0.5mm ki dhil, warna
-                                                                  // seedhi-saadi sheet par
-                                                                  // ek khali panna aa jaata
   const url   = canvas.toDataURL("image/png");
   // Naam dene se jsPDF tasveer ko EK BAAR store karta hai aur har panne par
   // usi ka hawala deta hai -- bina iske wo har baar dobara hisaab lagata.
   const alias = "tb-sheet";
 
-  for (let i = 0; i < panne; i += 1) {
-    if (i) pdf.addPage();
-    pdf.addImage(url, "PNG", M, M - i * ph, pw, pooriMm, alias, "FAST");
+  // ⚠ PEHLE YAHAN SEEDHA `i * ph` PAR KAATA JAATA THA -- yaani har panna
+  // theek 198mm par khatam, chahe wahan row ke BEECH ho.  25-point wali PM
+  // check sheet par naap kar dekha: tasveer 272mm ki, panna 198mm ka, aur
+  // toota point 17 ki row ke beecho-beech padta tha -- aadhi line panne 1 ke
+  // neeche, aadhi panne 2 ke upar.  Kaagaz par yahi "shabd idhar-udhar" dikhta
+  // hai.  Ab `tode` (row ki seema, sheet ki lambai ka hissa) me se wo sabse
+  // neechla toota chunte hain jo panne me aa jaye.
+  const seema = (tode || [])
+    .map((f) => f * pooriMm)
+    .filter((v) => v > 1 && v < pooriMm - 1)
+    .sort((a, b) => a - b);
+  const kagazW = khada ? 210 : 297;
+  const kagazH = khada ? 297 : 210;
+
+  let shuru = 0, ginti = 0;
+  while (shuru < pooriMm - 0.5) {
+    const adhikatam = shuru + ph;
+    let ant;
+    if (adhikatam >= pooriMm - 0.5) {
+      ant = pooriMm;                                   // aakhri panna
+    } else {
+      // Panne me aane wali sabse NEECHLI row-seema.  `shuru + 5` isliye ki
+      // ek panne par kam se kam kuch to aaye -- warna ek chhoti row par
+      // atak kar panne banne ka silsila chalta rehta.
+      let b = -1;
+      for (const v of seema) if (v > shuru + 5 && v <= adhikatam) b = v;
+      // Koi seema na mile (ek hi row panne se lambi) to majboori me seedha
+      // kaatte hain -- pehle jaisa.  Isse behtar kuch hai bhi nahi.
+      ant = b > 0 ? b : adhikatam;
+    }
+
+    if (ginti) pdf.addPage();
+    ginti += 1;
+    pdf.addImage(url, "PNG", M, M - shuru, pw, pooriMm, alias, "FAST");
+
+    // Is panne ke hisse ke BAHAR ka sab safed se dhak do.  Tasveer poori ki
+    // poori har panne par jaati hai (ek hi baar store hoti hai, isi liye tez
+    // hai), to bina dhake agle panne ka content is panne ke neeche bhi chhap
+    // jaata -- aur phir agle panne par DOBARA.
+    pdf.setFillColor(255, 255, 255);
+    const bacha = kagazH - (M + (ant - shuru));
+    if (bacha > 0.2) pdf.rect(0, M + (ant - shuru), kagazW, bacha, "F");
+    if (M > 0.2 || shuru > 0) pdf.rect(0, 0, kagazW, M, "F");   // upar ka hissa
+    shuru = ant;
   }
-  return { blob: pdf.output("blob"), panne };
+  return { blob: pdf.output("blob"), panne: ginti };
+}
+
+/* Panna kahan toda ja sakta hai -- row ki seemayein, sheet ki poori lambai ke
+ * HISSE me (0..1).  Hisse isliye ki baad me canvas/scale ka koi hisaab na
+ * lagana pade: tasveer chahe kitni bhi badi bane, hissa wahi rehta hai.
+ *
+ * `tr` hi dhoondte hain (DMC, PM check sheet, report -- sab table hain).
+ * Andar wali (nested) table ki row CHHOD dete hain: uski seema par toda to
+ * bahar wali row phir bhi beech se kat jaati.  Table hi na ho to seedhe
+ * bachche le lete hain. */
+function todneKiJagah(el, r) {
+  try {
+    const H = r.height;
+    if (!H || !el.querySelectorAll) return [];
+    let qatarein = Array.from(el.querySelectorAll("tr"));
+    qatarein = qatarein.filter((n) => {
+      const p = n.parentElement;
+      return !(p && p.closest && p.closest("tr"));
+    });
+    if (!qatarein.length) qatarein = Array.from(el.children || []);
+    const out = [];
+    for (const n of qatarein) {
+      const b = n.getBoundingClientRect();
+      if (!b.height) continue;
+      const f = (b.bottom - r.top) / H;
+      if (f > 0.02 && f < 0.995) out.push(Math.round(f * 1e4) / 1e4);
+    }
+    return Array.from(new Set(out)).sort((a, b) => a - b);
+  } catch {
+    return [];                       // na mile to pehle jaisa seedha kaat
+  }
 }
 
 /* Bani hui PDF user tak pahuncha do.
@@ -728,6 +844,9 @@ export async function pdfDocSe(doc, { naam = "sheet", khada = false, margin = 6,
         const r = el.getBoundingClientRect();
         const naapW = Math.ceil(r.width  || ctx.px);
         const naapH = Math.ceil(r.height || ctx.pxH);
+        // Row ki seemayein ABHI naapte hain -- `taiyaar` ke baad, yaani jo
+        // scale slip khud lagata hai wo pehle hi lag chuka hota hai.
+        const tode = todneKiJagah(el, r);
 
         // ⚠ BAHUT LAMBI SHEET PAR SCALE KHUD KAM KAR DETE HAIN.
         // Browser ka canvas ek hadd ke baad CHUP-CHAAP khali lauta deta hai
@@ -751,7 +870,7 @@ export async function pdfDocSe(doc, { naam = "sheet", khada = false, margin = 6,
           scrollX: 0, scrollY: 0,
         });
         if (!canvas.width || !canvas.height) throw new Error("The sheet could not be captured");
-        return canvasSePdf(jsPDF, canvas, khada, margin);
+        return canvasSePdf(jsPDF, canvas, khada, margin, tode);
       } finally {
         hatao();
       }
