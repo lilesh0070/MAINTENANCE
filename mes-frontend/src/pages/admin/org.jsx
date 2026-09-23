@@ -10,7 +10,7 @@ import {
 import { PAGE_PERM_GROUPS, PERM_LEVELS, ROLE_PILL, ROLE_OPTIONS } from "./mailconfig";
 
 export function UsersPage({ toast, readOnly = false }) {
-  const { token } = useAuth();
+  const { token, user: me } = useAuth();
   const [users,       setUsers]       = useState([]);
   const [khoj,        setKhoj]        = useState("");   // username se dhoondho
   const [lines,       setLines]       = useState([]);
@@ -25,6 +25,9 @@ export function UsersPage({ toast, readOnly = false }) {
      abhi main sab me daal deta hu").  Jo khaana abhi type ho raha hai wahi
      yahan rehta hai; Enter ya bahar click karte hi save. */
   const [codeDraft, setCodeDraft] = useState({});
+  /* Username bhi list me hi badal sake (user 2026-09-23: "admin ke paas access
+     do ki username change kar sake").  Wahi tareeqa jo Emp ID ka hai. */
+  const [nameDraft, setNameDraft] = useState({});
   const [saving,      setSaving]      = useState(false);
   const [selLines,    setSelLines]    = useState([]);
   const [revealed,    setRevealed]    = useState(() => new Set());  // kin users ka password dikhana hai
@@ -75,6 +78,22 @@ export function UsersPage({ toast, readOnly = false }) {
     }
     catch(e) { toast(e.message,"err"); }
     finally { setSaving(false); }
+  };
+
+  /* List me se username badalna.  ⚠ Jiska naam badla uska chalu token turant
+     bekaar ho jaata hai (token me purana naam hai) -- wo apne aap logout ho
+     jaayega.  Isliye apne hi naam par pehle poochhte hain. */
+  const saveName = async (u) => {
+    const naya = (nameDraft[u.id] ?? "").trim();
+    setNameDraft(d => { const n = { ...d }; delete n[u.id]; return n; });
+    if (!naya || naya === u.username) return;
+    if (u.username === me?.username &&
+        !confirm(`Change your own username to "${naya}"? You will be signed out.`)) return;
+    try {
+      await api.put(`/api/users/${u.id}/username`, { username: naya }, token);
+      toast(`Username changed to ${naya} ✓`);
+      load();
+    } catch(e) { toast(e.message,"err"); load(); }
   };
 
   /* List me se Employee ID bharna / badalna. */
@@ -243,7 +262,17 @@ export function UsersPage({ toast, readOnly = false }) {
                 return (
                 <tr key={u.id} style={{ borderBottom:"1px solid #f1f5f9" }}>
                   <td data-lbl="ID" style={{ padding:"12px 14px", fontFamily:"monospace", color:"#64748b" }}>{u.id}</td>
-                  <td className="an-stk-hdr" style={{ padding:"12px 14px", fontWeight:600, color:"#0f172a" }}>{u.username}</td>
+                  {/* Username yahin badal sakte hain (Enter/blur = save, Esc = chhodo). */}
+                  <td className="an-stk-hdr" style={{ padding:"12px 14px", fontWeight:600, color:"#0f172a" }}>
+                    <input
+                      value={nameDraft[u.id] ?? (u.username || "")}
+                      onChange={e=>setNameDraft(d=>({ ...d, [u.id]: e.target.value }))}
+                      onBlur={()=>{ if (nameDraft[u.id] !== undefined) saveName(u); }}
+                      onKeyDown={e=>{ if (e.key === "Enter") e.currentTarget.blur();
+                                      if (e.key === "Escape") setNameDraft(d=>{ const n={...d}; delete n[u.id]; return n; }); }}
+                      maxLength={80} readOnly={readOnly} title="Login name — can be changed"
+                      style={{ ...inputStyle, padding:"4px 8px", fontSize:13, width:130, fontWeight:600 }} />
+                  </td>
                   {/* Employee ID -- yahin bhar do (Enter ya bahar click = save).
                       Attendance ka Add Member isi code se aadmi uthata hai. */}
                   <td data-lbl="Emp ID" style={{ padding:"12px 14px" }}>

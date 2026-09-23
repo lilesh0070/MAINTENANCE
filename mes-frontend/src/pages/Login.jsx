@@ -35,7 +35,7 @@ export default function Login() {
 
   const handleSubmit = async (e) => {
     e?.preventDefault();
-    if (!username.trim() || !password) { setError("Enter username and password."); return; }
+    if (!username.trim() || !password) { setError("Enter your username or employee ID, and password."); return; }
     setError("");
     setLoading(true);
     try {
@@ -468,12 +468,15 @@ export default function Login() {
 
               <form onSubmit={handleSubmit}>
                 <div className="login-field">
-                  <label>Username</label>
+                  {/* Login ab username YA Employee ID -- dono se hota hai
+                      (user 2026-09-23).  Emp code jinka bhara hai wo code se
+                      aa sakte hain; baaki purane naam se. */}
+                  <label>Username or Employee ID</label>
                   <div className="login-input-wrap">
                     <input
                       className="login-input"
                       type="text"
-                      placeholder="username"
+                      placeholder="username or emp ID"
                       autoComplete="off"
                       value={username}
                       onChange={e => { setUsername(e.target.value); setError(""); }}

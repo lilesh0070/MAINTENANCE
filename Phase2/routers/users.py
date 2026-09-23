@@ -43,6 +43,10 @@ class UserCreate(BaseModel):
     emp_code: str = ""
 
 
+class UserNameIn(BaseModel):
+    username: str
+
+
 class UserUpdate(BaseModel):
     role: Optional[str] = None
     # purane user me emp code bharne ke liye (list me hi badal sakte hain)
@@ -75,6 +79,33 @@ def _ensure_emp_code_col(conn) -> None:
     conn.commit()
 
 
+def _naam_jaancho(cur, uname: str, chhodo_id=None) -> None:
+    """Username khaali na ho, kisi aur ka username na ho, aur kisi aur ka
+    EMPLOYEE ID bhi na ho.
+
+    ⚠ Aakhri shart isliye: login ab username YA emp id -- dono se chalta hai.
+    Agar Ram ka username '354' ho aur Shyam ka emp code bhi '354', to '354'
+    type karne wala kis khaate me jaayega, ye pakka nahi rehta.  Isliye dono
+    taraf se rok yahin lagti hai."""
+    if not uname:
+        raise HTTPException(400, "Username is required.")
+    if chhodo_id is None:
+        cur.execute("SELECT id FROM maintenance_users WHERE LOWER(username) = LOWER(%s)", (uname,))
+    else:
+        cur.execute("SELECT id FROM maintenance_users WHERE LOWER(username) = LOWER(%s) AND id <> %s",
+                    (uname, chhodo_id))
+    if cur.fetchone():
+        raise HTTPException(400, "Username already exists")
+    cur.execute("""SELECT username FROM maintenance_users
+                    WHERE COALESCE(emp_code, '') <> '' AND UPPER(emp_code) = UPPER(%s)
+                      AND (%s::int IS NULL OR id <> %s::int)""",
+                (uname, chhodo_id, chhodo_id))
+    r = cur.fetchone()
+    if r:
+        kiska = r[0] if not isinstance(r, dict) else r.get("username")
+        raise HTTPException(400, f"'{uname}' is already the Employee ID of user '{kiska}'.")
+
+
 def _code_khaali_ya_dohra(cur, code: str, chhodo_id=None, zaroori: bool = True) -> None:
     """Code kisi aur ke paas na ho.  `zaroori` ho to khaali bhi na ho.
 
@@ -94,6 +125,13 @@ def _code_khaali_ya_dohra(cur, code: str, chhodo_id=None, zaroori: bool = True) 
     if r:
         naam = r[0] if not isinstance(r, dict) else r.get("username")
         raise HTTPException(400, f"Employee ID {code} is already used by '{naam}'.")
+    # ...aur ye code kisi DOOSRE ka username bhi na ho (login dono se hota hai)
+    cur.execute("""SELECT username FROM maintenance_users
+                    WHERE LOWER(username) = LOWER(%s)
+                      AND (%s::int IS NULL OR id <> %s::int)""",
+                (code, chhodo_id, chhodo_id))
+    if cur.fetchone():
+        raise HTTPException(400, f"'{code}' is already a username — pick another Employee ID.")
 
 
 def _ensure_pw_plain_col(conn) -> None:
@@ -135,9 +173,7 @@ def create_user(body: UserCreate, admin=Depends(require_admin)):
         _ensure_pw_plain_col(conn)
         _ensure_emp_code_col(conn)
         cur = dict_cursor(conn)
-        cur.execute("SELECT 1 FROM maintenance_users WHERE username = %s", (body.username,))
-        if cur.fetchone():
-            raise HTTPException(400, "Username already exists")
+        _naam_jaancho(conn.cursor(), body.username)
         # NAYE user par Employee ID zaroori (purane bina code ke chalte rahenge
         # jab tak admin unme bhar na de -- warna update ke din sab atak jaate).
         _code_khaali_ya_dohra(conn.cursor(), code)
@@ -236,6 +272,40 @@ def force_logout_by_name(username: str, admin=Depends(require_admin)):
                      uid, uname))
         conn.commit()
     return {"ok": True, "username": uname, "user_existed": existed}
+
+
+@router.put("/{user_id}/username")
+def update_username(user_id: int, body: UserNameIn, admin=Depends(require_admin)):
+    """Username badlo -- SIRF admin (user 2026-09-23).
+
+    ⚠ Jiska naam badla, uska chalu token TURANT bekaar ho jaata hai: token me
+    `sub` = purana username hai aur `get_current_user` usi se aadmi dhoondta
+    hai.  Yaani wo aadmi apne aap logout ho jaayega aur naye naam (ya apne emp
+    id) se dobara login karega.  Ye jaan-boojh kar hai -- naam badal kar purana
+    session chalte rehna zyada ulta hota."""
+    naya = " ".join(str(body.username or "").split())
+    with get_conn() as conn:
+        _ensure_emp_code_col(conn)
+        cur = conn.cursor()
+        cur.execute("SELECT username FROM maintenance_users WHERE id = %s", (user_id,))
+        r = cur.fetchone()
+        if not r:
+            raise HTTPException(404, "User not found")
+        purana = r[0]
+        if purana == naya:
+            return {"ok": True, "updated": False, "username": naya}
+        _naam_jaancho(cur, naya, chhodo_id=user_id)
+        cur.execute("UPDATE maintenance_users SET username = %s WHERE id = %s", (naya, user_id))
+        try:
+            cur.execute("""INSERT INTO maintenance_audit_log
+                               (action, entity_type, entity_id, details, user_id, username)
+                           VALUES ('USER_RENAME', 'user', %s, %s, %s, %s)""",
+                        (user_id, f"'{purana}' -> '{naya}' (by {admin.get('username')})",
+                         user_id, naya))
+        except Exception as _e:
+            print(f"[AUDIT] rename write failed: {_e}")
+        conn.commit()
+    return {"ok": True, "updated": True, "username": naya, "was": purana}
 
 
 @router.put("/{user_id}/role")

@@ -113,14 +113,38 @@ def create_token(username: str, role: str, user_id: int) -> str:
     )
 
 
-def get_user_from_db(username: str) -> Optional[dict]:
+def get_user_from_db(kaun: str) -> Optional[dict]:
+    """Login / token ka aadmi -- USERNAME se, aur na mile to EMPLOYEE ID se.
+
+    User 2026-09-23: "login jo hoga wo emp id se hoga".  Dono chalte hain,
+    sirf emp id NAHI -- kyunki emp code abhi sirf NAYE user par zaroori hai
+    aur purane kai users ka khaali pada hai; sirf emp id maangte to wo sab
+    ussi din bahar ho jaate.  Code bhar jaane par emp id se login khud chalne
+    lagta hai, kuch aur karna nahi padta.
+
+    Token ka `sub` username hi rehta hai (`create_token`), isliye mel pehle
+    USERNAME par dekha jaata hai -- warna har request par do-matlab ho jaata.
+
+    ⚠ Ek hi text kisi ka username aur kisi DOOSRE ka emp code na bane -- wo
+    rok `routers/users.py` me hai (dono taraf jaanchi jaati hai).  Isi liye
+    yahan "pehle username" ka niyam kabhi kisi ko galat aadmi nahi deta.
+    """
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute(
-            "SELECT * FROM maintenance_users WHERE username = %s",
-            (username,)
-        )
-        return cur.fetchone()
+        try:
+            cur.execute("""
+                SELECT * FROM maintenance_users
+                 WHERE username = %(k)s
+                    OR (COALESCE(emp_code, '') <> '' AND UPPER(emp_code) = UPPER(%(k)s))
+                 ORDER BY (username = %(k)s) DESC
+                 LIMIT 1
+            """, {"k": kaun})
+            return cur.fetchone()
+        except Exception:
+            # Purane DB me `emp_code` ka khaana hai hi nahi -- tab sirf username.
+            conn.rollback()
+            cur.execute("SELECT * FROM maintenance_users WHERE username = %s", (kaun,))
+            return cur.fetchone()
 
 
 # ── Dependencies ───────────────────────────────────────────────
@@ -370,11 +394,20 @@ def login(request: Request, form: OAuth2PasswordRequestForm = Depends()):
     # in maintenance_audit_log so the "every user · last login" top card on the
     # Audit page and the per-user activity trail both work.  user_id +
     # username columns were added in the same release.
+    # ⚠ Yahan se aage ASLI username hi chalta hai (`user["username"]`), wo NAHI
+    # jo form me type hua -- kyunki login ab EMPLOYEE ID se bhi hota hai.
+    # Pehle `form.username` lagta tha, to emp id se login karne par:
+    #   * `last_login` kabhi update hi nahi hota (WHERE username = '1000' me
+    #     koi qatar milti hi nahi),
+    #   * audit me naam ki jagah code chadh jaata,
+    #   * token ka `sub` bhi code ban jaata -- aur emp code badalte hi wo token
+    #     bekaar ho jaata.
+    asli_naam = user["username"]
     with get_conn() as conn:
         c = conn.cursor()
         c.execute(
-            "UPDATE maintenance_users SET last_login = NOW() WHERE username = %s",
-            (form.username,)
+            "UPDATE maintenance_users SET last_login = NOW() WHERE id = %s",
+            (user["id"],)
         )
         try:
             c.execute(
@@ -384,17 +417,17 @@ def login(request: Request, form: OAuth2PasswordRequestForm = Depends()):
                    VALUES (%s, %s, %s, %s, %s, %s)""",
                 ("AUTH_LOGIN", "user", user["id"],
                  f"role={user['role']}",
-                 user["id"], form.username)
+                 user["id"], asli_naam)
             )
         except Exception as _exc:
             # Audit failure must never block login — log and continue
             print(f"[AUDIT] login write failed: {_exc}")
 
-    token = create_token(form.username, user["role"], user["id"])
+    token = create_token(asli_naam, user["role"], user["id"])
     return Token(
         access_token=token,
         token_type="bearer",
-        username=form.username,
+        username=asli_naam,
         user_id=user["id"],
         role=user["role"],
         expires_in=TOKEN_EXPIRE_HOURS * 3600,

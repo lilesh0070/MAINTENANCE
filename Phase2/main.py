@@ -274,6 +274,15 @@ def run_migrations():
         # password badalne par us se purane sab token invalid ho jaayein — is
         # column me unix-ts (UTC seconds) set hota hai jab bhi password badle.
         "ALTER TABLE maintenance_users ADD COLUMN IF NOT EXISTS pwd_changed_at BIGINT",
+        # Employee ID (2026-09-23) -- login username YA isse hota hai, aur
+        # Attendance ka Add Member isi code se aadmi uthata hai.  Pehra PARTIAL
+        # hai: khaali code wale purane user saath rah sakte hain.
+        "ALTER TABLE maintenance_users ADD COLUMN IF NOT EXISTS emp_code VARCHAR(40)",
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS maintenance_users_emp_code_uniq
+            ON maintenance_users (emp_code)
+         WHERE emp_code IS NOT NULL AND emp_code <> ''
+        """,
         """
         CREATE TABLE IF NOT EXISTS maintenance_user_permissions (
             id          SERIAL PRIMARY KEY,
