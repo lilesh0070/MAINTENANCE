@@ -69,13 +69,15 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
   const [fZone,   setFZone]   = useState("");
   const [fLine,   setFLine]   = useState("");
   const [zoneSel, setZoneSel] = useState("SEAT_SLIDER");   // clicked zone tile → shows its slips
-  /* Upar ke do card ab CLICK hote hain aur neeche ki list ko chhaanute hain
+  /* Upar ke do card CLICK hote hain aur neeche ki list ko chhaanute hain
      (user 2026-09-23):
-        "total"   -> saari breakdown slips     (DEFAULT -- bilkul pehle jaisa)
-        "pending" -> sirf wo jo maintenance ki taraf se baaki hain
-     Default jaan-boojh kar "total" hai: dashboard khulte hi khaali list na
-     dikhe. */
-  const [cardSel, setCardSel] = useState("total");
+        "total"   -> saari breakdown slips
+        "pending" -> sirf wo jo MAINTENANCE ki taraf se baaki hain  (DEFAULT)
+     Default "pending" hai -- user ka faisla: panel ka naam hi "Pending
+     Breakdown" hai, to khulte hi wahi dikhna chahiye jo abhi karna baaki
+     hai.  Kuch pending na ho to list khaali rehti hai (yahi maqsad hai);
+     saari slips dekhni hon to Total Breakdowns par click. */
+  const [cardSel, setCardSel] = useState("pending");
   const [master,  setMaster]  = useState([]);
   const [dashZones, setDashZones] = useState(PROD_ZONES);   // dashboard zone tiles (admin-curated whitelist)
   const [addOpen, setAddOpen] = useState(false);            // "+ Add Zone" picker toggle (admin)
