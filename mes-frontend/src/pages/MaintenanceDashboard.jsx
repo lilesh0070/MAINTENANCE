@@ -30,6 +30,7 @@ import { useAuth } from "../context/AuthContext";
 import { api, StatCard, fmtDuration, usePortrait } from "./breakdown/shared";
 import AndonTable from "./breakdown/AndonTable";
 import PmThisMonth from "./breakdown/PmThisMonth";
+import PresentPeople from "./breakdown/PresentPeople";
 import KpiPanel from "./breakdown/KpiPanel";
 import DmcNgPanel from "./breakdown/DmcNgPanel";
 import { ClosureFormModal } from "./breakdown/ClosureFormModal";
@@ -484,8 +485,10 @@ Wapas nahi aayegi.  Aage badhein?`)) return;
                   <div className="md-col-b" style={{ flex: "7 1 0%", minWidth: 0 }}>
                     <PmThisMonth token={token} />
                   </div>
-                  {/* khaali 30% — yahan aage kuch aur panel aayega */}
-                  <div className="md-col-c" style={{ flex: "3 1 0%", minWidth: 0 }} />
+                  {/* 30% — abhi ki shift ke haazir log */}
+                  <div className="md-col-c" style={{ flex: "3 1 0%", minWidth: 0 }}>
+                    <PresentPeople token={token} />
+                  </div>
                 </div>
               </div>
 

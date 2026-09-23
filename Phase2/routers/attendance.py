@@ -48,6 +48,7 @@ permission nahi hoti.
 
 Endpoints (prefix /api/attendance)
 ----------------------------------
+GET    /on-duty                  abhi ki shift ke log -- SIRF NAAM (dashboard)
 GET    /board?day=YYYY-MM-DD     us din ka board (photo ke bina)
 PUT    /board                    {day, lanes:{slot:[ids]}} -- ghaseetne ke baad
 GET    /photos?ids=1,2,3         {id: dataURL}
@@ -57,7 +58,7 @@ PUT    /staff/{id}               details / photo / kataar badlo     (admin)
 DELETE /staff/{id}?day=          us din se hatao                    (admin)
 """
 import re
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 import psycopg2.extras
@@ -369,6 +370,46 @@ def _slot(s: Optional[str]) -> str:
 
 
 # ── Endpoints ───────────────────────────────────────────────────────────
+# ── Abhi duty par kaun ──────────────────────────────────────────────────
+# Maintenance Dashboard ke daayin taraf wale khaane ke liye (user 2026-09-23):
+#     subah 7 se shaam 6       ->  G aur A shift wale
+#     shaam 6 se agli subah 7  ->  B shift wale
+# Waqt SERVER ka lagta hai, TV/phone ka nahi -- warna har screen apni ghadi se
+# alag jawab deti.  Raat 12 se subah 7 wali duty PICHHLE din ke board ki hai,
+# isliye us khidki me din ek peeche kar dete hain (wahi "plant day" wali soch
+# jo ANDON ke Today card me hai).
+#
+# ⚠ Yahan page-permission JAAN-BOOJH KAR nahi maangi jaati: jawab me sirf naam,
+#   emp code, designation aur shift jaate hain -- contact number, photo aur
+#   date-of-joining kuch NAHI.  Attendance Dashboard (jisme wo sab hai) par rok
+#   bilkul pehle jaisi hai.  Yahan kuch aur khaana jodna ho to pehle ye soch
+#   lena.
+DUTY_DIN_SE, DUTY_RAAT_SE = 7, 18          # ghante (24 wali ghadi)
+
+
+@router.get("/on-duty")
+def on_duty(user=Depends(get_current_user)):
+    """Abhi jo shift chal rahi hai uske logon ke naam."""
+    _ensure()
+    ab = datetime.now()
+    din = ab.date()
+    if DUTY_DIN_SE <= ab.hour < DUTY_RAAT_SE:
+        slots, label = ("G", "A"), "G + A"
+    else:
+        slots, label = ("B",), "B"
+        if ab.hour < DUTY_DIN_SE:           # aadhi raat ke baad = kal ki raat
+            din = din - timedelta(days=1)
+    with get_conn() as conn:
+        rows = _board(dict_cursor(conn), din)
+    log = [{"id": r["id"], "name": r["name"], "emp_code": r["emp_code"] or "",
+            "designation": r["designation"] or "",
+            "slot": r["slot"] if r["slot"] in SLOTS else "G"}
+           for r in rows
+           if (r["slot"] if r["slot"] in SLOTS else "G") in slots]
+    return {"shift": label, "slots": list(slots), "day": din.isoformat(),
+            "now": ab.strftime("%H:%M"), "count": len(log), "people": log}
+
+
 @router.get("/board")
 def get_board(day: Optional[str] = Query(None), user=Depends(get_current_user)):
     _ensure()
