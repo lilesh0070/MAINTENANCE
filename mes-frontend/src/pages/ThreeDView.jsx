@@ -34,6 +34,9 @@ const MODELS = [
   { key: "cylinder", label: "Cylinder", icon: "🛢️",
     desc: "Double-acting cylinder with 5/2 solenoid valve",
     file: "/3d/cylinder.html" },
+  { key: "servo", label: "Servo Motor", icon: "⚙️",
+    desc: "PMSM servo — stator, rotor, magnets and encoder",
+    file: "/3d/servo.html" },
 ];
 
 export default function ThreeDView() {

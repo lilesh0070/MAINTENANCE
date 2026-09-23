@@ -1,0 +1,3669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Servo Motor | Interactive 3D Engineering Explorer</title>
+
+<style>
+*{
+    box-sizing:border-box;
+}
+
+:root{
+    color-scheme:dark;
+    --accent:#ffae64;
+    --accent2:#68d8bd;
+    --muted:#93a4bb;
+}
+
+html,
+body{
+    width:100%;
+    height:100%;
+}
+
+body{
+    margin:0;
+    overflow:hidden;
+    background:#0b111c;
+    color:#eff5ff;
+    font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+
+canvas{
+    display:block;
+    width:100%;
+    height:100%;
+    touch-action:none;
+}
+
+/* =========================================================
+   HEADER
+========================================================= */
+
+header{
+    position:absolute;
+    top:25px;
+    left:28px;
+    z-index:10;
+    pointer-events:none;
+    max-width:470px;
+}
+
+.eyebrow{
+    color:var(--accent);
+    font-size:9px;
+    letter-spacing:2.5px;
+    font-weight:700;
+}
+
+h1{
+    margin:7px 0;
+    font-size:clamp(27px,4vw,44px);
+    letter-spacing:-1.5px;
+    line-height:1.05;
+}
+
+.subtitle{
+    color:var(--muted);
+    font-size:12px;
+}
+
+.badge{
+    display:inline-block;
+    margin-top:13px;
+    padding:6px 9px;
+    border:1px solid #344254;
+    border-radius:30px;
+    color:#bccbdd;
+    font-size:9px;
+    letter-spacing:1px;
+}
+
+/* =========================================================
+   STATUS
+========================================================= */
+
+#status{
+    position:absolute;
+    top:27px;
+    right:25px;
+    z-index:10;
+    font-size:10px;
+    color:#7fdbc1;
+    pointer-events:none;
+}
+
+/* =========================================================
+   PART INFORMATION
+========================================================= */
+
+#partInfo{
+    position:absolute;
+    top:90px;
+    right:25px;
+    z-index:25;
+
+    width:265px;
+    padding:13px 14px;
+
+    background:rgba(12,20,32,.91);
+    border:1px solid #394a61;
+    border-radius:12px;
+
+    box-shadow:
+        0 15px 45px rgba(0,0,0,.4);
+
+    backdrop-filter:blur(15px);
+    -webkit-backdrop-filter:blur(15px);
+
+    opacity:0;
+    transform:translateY(-6px);
+    pointer-events:none;
+
+    transition:
+        opacity .18s ease,
+        transform .18s ease;
+}
+
+#partInfo.show{
+    opacity:1;
+    transform:translateY(0);
+}
+
+.part-title{
+    color:var(--accent);
+    font-size:13px;
+    font-weight:700;
+    letter-spacing:.3px;
+}
+
+.part-type{
+    margin-top:2px;
+    color:#7fdbc1;
+    font-size:8px;
+    letter-spacing:1.2px;
+    text-transform:uppercase;
+}
+
+.part-line{
+    height:1px;
+    background:#2d3b4e;
+    margin:9px 0;
+}
+
+.part-description{
+    color:#c7d3e3;
+    font-size:10px;
+    line-height:1.5;
+}
+
+.part-specs{
+    margin-top:9px;
+    display:grid;
+    gap:4px;
+}
+
+.spec-row{
+    display:flex;
+    justify-content:space-between;
+    gap:10px;
+    color:#8fa2b9;
+    font-size:8px;
+}
+
+.spec-row strong{
+    color:#e2ebf7;
+    font-weight:600;
+}
+
+/* =========================================================
+   EXPLORE INFO
+========================================================= */
+
+#exploreInfo{
+    position:absolute;
+
+    top:65px;
+    left:50%;
+    transform:translateX(-50%);
+
+    z-index:20;
+
+    padding:7px 12px;
+
+    border-radius:20px;
+
+    background:rgba(12,20,32,.82);
+    border:1px solid #3b4c62;
+
+    color:#c9d6e8;
+
+    font-size:9px;
+
+    opacity:0;
+
+    transition:opacity .25s;
+}
+
+#exploreInfo.show{
+    opacity:1;
+}
+
+/* =========================================================
+   CONTROL PANEL
+========================================================= */
+
+.panel{
+    position:absolute;
+
+    left:50%;
+    bottom:8px;
+
+    transform:translateX(-50%);
+
+    z-index:30;
+
+    width:min(530px,calc(100% - 30px));
+
+    padding:9px 11px;
+
+    background:rgba(19,30,46,.94);
+
+    border:1px solid #334156;
+    border-radius:14px;
+
+    box-shadow:0 12px 45px rgba(0,0,0,.45);
+
+    backdrop-filter:blur(18px);
+    -webkit-backdrop-filter:blur(18px);
+}
+
+/* =========================================================
+   BUTTONS
+========================================================= */
+
+.buttons{
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    gap:5px;
+    flex-wrap:wrap;
+}
+
+button{
+    flex:0 1 auto;
+
+    min-width:72px;
+
+    padding:5px 8px;
+
+    border:1px solid #394c65;
+    border-radius:7px;
+
+    background:#1d2c40;
+    color:#e4edfa;
+
+    font:inherit;
+    font-size:9px;
+    font-weight:600;
+
+    line-height:1.2;
+
+    white-space:nowrap;
+
+    cursor:pointer;
+
+    transition:
+        background .2s ease,
+        border-color .2s ease,
+        transform .15s ease;
+}
+
+button:hover{
+    border-color:var(--accent);
+    transform:translateY(-1px);
+}
+
+button:active{
+    transform:translateY(0);
+}
+
+button.active{
+    background:#68401f;
+    border-color:#e59a55;
+    color:#ffe2c7;
+}
+
+/* =========================================================
+   READOUTS
+========================================================= */
+
+.readouts{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+
+    gap:5px;
+
+    margin:7px 0 6px;
+}
+
+.metric{
+    background:rgba(11,20,33,.55);
+
+    padding:6px 8px;
+
+    border-radius:7px;
+
+    border:1px solid rgba(60,80,105,.25);
+}
+
+.metric span{
+    display:block;
+
+    font-size:7px;
+
+    color:var(--muted);
+
+    letter-spacing:1px;
+
+    margin-bottom:2px;
+}
+
+.metric output{
+    font-size:16px;
+    font-variant-numeric:tabular-nums;
+}
+
+#actual{
+    color:var(--accent);
+}
+
+#rpm{
+    color:#7fdbc1;
+}
+
+/* =========================================================
+   SLIDER
+========================================================= */
+
+.slider-label{
+    display:flex;
+    justify-content:space-between;
+
+    gap:8px;
+
+    color:#c2d0e2;
+
+    font-size:9px;
+}
+
+input{
+    width:100%;
+    accent-color:var(--accent);
+    margin:5px 0;
+}
+
+/* =========================================================
+   HINT
+========================================================= */
+
+.hint{
+    font-size:8px;
+    color:var(--muted);
+    line-height:1.4;
+    text-align:center;
+}
+
+/* =========================================================
+   MOBILE
+========================================================= */
+
+@media(max-width:600px){
+
+    header{
+        top:16px;
+        left:17px;
+        max-width:300px;
+    }
+
+    .eyebrow{
+        font-size:7px;
+        letter-spacing:2px;
+    }
+
+    h1{
+        font-size:28px;
+        margin:5px 0;
+    }
+
+    .subtitle{
+        font-size:10px;
+    }
+
+    .badge{
+        margin-top:7px;
+        padding:5px 7px;
+        font-size:7px;
+    }
+
+    #status{
+        top:16px;
+        right:15px;
+        font-size:8px;
+    }
+
+    #partInfo{
+        top:68px;
+        right:15px;
+        width:220px;
+        padding:10px;
+    }
+
+    .part-title{
+        font-size:11px;
+    }
+
+    .part-description{
+        font-size:8px;
+    }
+
+    #exploreInfo{
+        top:70px;
+        font-size:8px;
+    }
+
+    .panel{
+        width:calc(100% - 12px);
+        bottom:5px;
+        padding:7px 8px;
+        border-radius:11px;
+    }
+
+    button{
+        min-width:60px;
+        padding:4px 6px;
+        font-size:8px;
+    }
+
+    .readouts{
+        gap:4px;
+        margin:5px 0;
+    }
+
+    .metric{
+        padding:5px 6px;
+    }
+
+    .metric span{
+        font-size:6px;
+    }
+
+    .metric output{
+        font-size:12px;
+    }
+
+    .hint{
+        font-size:7px;
+    }
+}
+
+@media(max-width:400px){
+
+    header{
+        top:12px;
+        left:13px;
+    }
+
+    h1{
+        font-size:24px;
+    }
+
+    .subtitle{
+        max-width:210px;
+    }
+
+    .panel{
+        width:calc(100% - 8px);
+    }
+
+    button{
+        min-width:54px;
+        font-size:7px;
+        padding:4px 5px;
+    }
+
+    .hint{
+        display:none;
+    }
+
+    #partInfo{
+        width:190px;
+    }
+}
+</style>
+
+
+<!-- Plant ka LAN internet se KATA hai -- isliye three.js yahin lib/ me
+     rakhi hai (wahi 0.169.0 jo cylinder.html use karti hai).  User ki file me
+     sirf yahi do link badle gaye hain, aur koi badlaav NAHI.
+     Naya model jode to yahi karna: CDN ka pata ./lib/ par mod do. -->
+<script type="importmap">
+{
+    "imports":{
+        "three":"./lib/three/three.module.min.js",
+        "three/addons/":"./lib/three/addons/"
+    }
+}
+</script>
+
+</head>
+
+
+<body>
+
+
+<header>
+
+    <div class="eyebrow">
+        PRECISION MOTION / INTERACTIVE ENGINEERING
+    </div>
+
+    <h1>
+        Servo Motor<span style="color:#ffae64">.</span>
+    </h1>
+
+    <div class="subtitle">
+        Industrial PMSM concept · Position-control demonstration
+    </div>
+
+    <div class="badge">
+        STATOR / ROTOR / MAGNETS / ENCODER
+    </div>
+
+</header>
+
+
+<div id="status">
+    ● LIVE 3D / INITIALIZING
+</div>
+
+
+<div id="exploreInfo">
+    EXPLODED VIEW ACTIVE
+</div>
+
+
+<!-- PART INFORMATION -->
+
+<div id="partInfo">
+
+    <div class="part-title" id="partTitle">
+        Servo Motor
+    </div>
+
+    <div class="part-type" id="partType">
+        Component
+    </div>
+
+    <div class="part-line"></div>
+
+    <div class="part-description" id="partDescription">
+        Move your cursor over a component to inspect it.
+    </div>
+
+    <div class="part-specs" id="partSpecs"></div>
+
+</div>
+
+
+<!-- CONTROL PANEL -->
+
+<section class="panel">
+
+    <div class="buttons">
+
+        <button
+            id="auto"
+            class="active"
+            aria-pressed="true">
+            Auto ON
+        </button>
+
+        <button
+            id="xray"
+            aria-pressed="false">
+            X-Ray
+        </button>
+
+        <button
+            id="explode"
+            aria-pressed="false">
+            Explore
+        </button>
+
+        <button id="reset">
+            Reset
+        </button>
+
+    </div>
+
+
+    <div class="readouts">
+
+        <div class="metric">
+
+            <span>
+                TARGET
+            </span>
+
+            <output id="target">
+                0.0°
+            </output>
+
+        </div>
+
+
+        <div class="metric">
+
+            <span>
+                SHAFT ANGLE
+            </span>
+
+            <output id="actual">
+                0.0°
+            </output>
+
+        </div>
+
+
+        <div class="metric">
+
+            <span>
+                POSITION ERROR
+            </span>
+
+            <output id="error">
+                0.0°
+            </output>
+
+        </div>
+
+
+        <div class="metric">
+
+            <span>
+                RPM
+            </span>
+
+            <output id="rpm">
+                0
+            </output>
+
+        </div>
+
+    </div>
+
+
+    <div class="slider-label">
+
+        <label for="angle">
+            Set shaft position
+        </label>
+
+        <span>
+            −180° ↔ +180°
+        </span>
+
+    </div>
+
+
+    <input
+        id="angle"
+        type="range"
+        min="-180"
+        max="180"
+        step="0.1"
+        value="0">
+
+
+    <div class="hint">
+
+        Drag: rotate · Scroll/pinch: zoom · Right-drag: pan · Hover: inspect part · Click: lock details
+
+        <br>
+
+        Explore opens the complete motor assembly in one smooth exploded animation.
+
+    </div>
+
+</section>
+
+
+<script type="module">
+
+import * as THREE from 'three';
+
+import {
+    OrbitControls
+} from 'three/addons/controls/OrbitControls.js';
+
+import {
+    RoomEnvironment
+} from 'three/addons/environments/RoomEnvironment.js';
+
+
+/* =========================================================
+   DOM HELPER
+========================================================= */
+
+const $ = id =>
+    document.getElementById(id);
+
+
+/* =========================================================
+   SCENE
+========================================================= */
+
+const scene =
+    new THREE.Scene();
+
+scene.background =
+    new THREE.Color('#0b111c');
+
+scene.fog =
+    new THREE.Fog(
+        '#0b111c',
+        800,
+        1800
+    );
+
+
+/* =========================================================
+   CAMERA
+========================================================= */
+
+const camera =
+    new THREE.PerspectiveCamera(
+        39,
+        innerWidth / innerHeight,
+        1,
+        2500
+    );
+
+
+/* =========================================================
+   RENDERER
+========================================================= */
+
+const renderer =
+    new THREE.WebGLRenderer({
+        antialias:true
+    });
+
+renderer.setSize(
+    innerWidth,
+    innerHeight
+);
+
+renderer.setPixelRatio(
+    Math.min(devicePixelRatio,2)
+);
+
+renderer.shadowMap.enabled =
+    true;
+
+renderer.shadowMap.type =
+    THREE.PCFSoftShadowMap;
+
+renderer.toneMapping =
+    THREE.ACESFilmicToneMapping;
+
+renderer.toneMappingExposure =
+    1.18;
+
+renderer.outputColorSpace =
+    THREE.SRGBColorSpace;
+
+document.body.appendChild(
+    renderer.domElement
+);
+
+
+/* =========================================================
+   ENVIRONMENT
+========================================================= */
+
+const pmrem =
+    new THREE.PMREMGenerator(
+        renderer
+    );
+
+const room =
+    new RoomEnvironment();
+
+scene.environment =
+    pmrem.fromScene(
+        room,
+        0.04
+    ).texture;
+
+room.dispose();
+
+pmrem.dispose();
+
+
+/* =========================================================
+   CONTROLS
+========================================================= */
+
+const controls =
+    new OrbitControls(
+        camera,
+        renderer.domElement
+    );
+
+controls.enableDamping =
+    true;
+
+controls.dampingFactor =
+    0.08;
+
+controls.minDistance =
+    180;
+
+controls.maxDistance =
+    1200;
+
+controls.maxPolarAngle =
+    Math.PI * 0.49;
+
+
+/* =========================================================
+   RESET CAMERA
+========================================================= */
+
+function resetView(){
+
+    const portrait =
+        innerWidth < 650;
+
+    camera.position.set(
+        330,
+        215,
+        portrait
+            ? 660
+            : 440
+    );
+
+    controls.target.set(
+        5,
+        -15,
+        0
+    );
+
+    controls.update();
+}
+
+resetView();
+
+
+/* =========================================================
+   LIGHTING
+========================================================= */
+
+scene.add(
+    new THREE.HemisphereLight(
+        0xcfe5ff,
+        0x273447,
+        2.2
+    )
+);
+
+
+function light(
+    color,
+    intensity,
+    x,
+    y,
+    z
+){
+
+    const l =
+        new THREE.DirectionalLight(
+            color,
+            intensity
+        );
+
+    l.position.set(
+        x,
+        y,
+        z
+    );
+
+    scene.add(l);
+
+    return l;
+}
+
+
+const key =
+    light(
+        0xffedda,
+        3.3,
+        170,
+        300,
+        200
+    );
+
+key.castShadow =
+    true;
+
+key.shadow.mapSize.set(
+    2048,
+    2048
+);
+
+Object.assign(
+    key.shadow.camera,
+    {
+        left:-320,
+        right:320,
+        top:280,
+        bottom:-280,
+        near:1,
+        far:900
+    }
+);
+
+key.shadow.normalBias =
+    0.4;
+
+
+light(
+    0x70baff,
+    2.4,
+    -150,
+    120,
+    -230
+);
+
+light(
+    0xffad65,
+    0.9,
+    80,
+    20,
+    -140
+);
+
+
+/* =========================================================
+   MATERIALS
+========================================================= */
+
+const metal = (
+    color,
+    metalness=.8,
+    roughness=.25
+) =>
+    new THREE.MeshStandardMaterial({
+        color,
+        metalness,
+        roughness
+    });
+
+
+const silver =
+    metal(
+        0xb8c5d5,
+        .9,
+        .25
+    );
+
+const chrome =
+    metal(
+        0xe2efff,
+        1,
+        .13
+    );
+
+const graphite =
+    metal(
+        0x233245,
+        .8,
+        .32
+    );
+
+const black =
+    metal(
+        0x111820,
+        .25,
+        .48
+    );
+
+const copper =
+    metal(
+        0xd67d3c,
+        .88,
+        .22
+    );
+
+const iron =
+    metal(
+        0x778390,
+        .85,
+        .34
+    );
+
+const blueMagnet =
+    metal(
+        0x368baf,
+        .65,
+        .27
+    );
+
+const redMagnet =
+    metal(
+        0xde7555,
+        .65,
+        .27
+    );
+
+const gold =
+    metal(
+        0xcfa35f,
+        .83,
+        .25
+    );
+
+const pcb =
+    metal(
+        0x166957,
+        .25,
+        .45
+    );
+
+const accent =
+    metal(
+        0xffac59,
+        .55,
+        .25
+    );
+
+
+const shellMat =
+    new THREE.MeshPhysicalMaterial({
+        color:0x21364b,
+        metalness:.85,
+        roughness:.3,
+        transparent:false,
+        opacity:1,
+        side:THREE.DoubleSide
+    });
+
+
+const capMat =
+    silver.clone();
+
+
+/* =========================================================
+   HOVER MATERIAL
+========================================================= */
+
+const hoverMaterial =
+    new THREE.MeshStandardMaterial({
+        color:0xffc27f,
+        metalness:.8,
+        roughness:.2,
+        emissive:0x6d3512,
+        emissiveIntensity:.35
+    });
+
+
+/* =========================================================
+   MAIN MODEL GROUPS
+========================================================= */
+
+const model =
+    new THREE.Group();
+
+scene.add(model);
+
+
+const shellGroup =
+    new THREE.Group();
+
+const frontGroup =
+    new THREE.Group();
+
+const statorGroup =
+    new THREE.Group();
+
+const rotorGroup =
+    new THREE.Group();
+
+const shaftGroup =
+    new THREE.Group();
+
+const rearGroup =
+    new THREE.Group();
+
+const encoderGroup =
+    new THREE.Group();
+
+
+model.add(
+    shellGroup,
+    frontGroup,
+    statorGroup,
+    rotorGroup,
+    shaftGroup,
+    rearGroup,
+    encoderGroup
+);
+
+
+/* =========================================================
+   PART REGISTRY
+========================================================= */
+
+const parts = [];
+
+function registerPart(
+    mesh,
+    data
+){
+
+    mesh.userData.part =
+        data;
+
+    mesh.userData.originalMaterial =
+        mesh.material;
+
+    parts.push(mesh);
+
+    return mesh;
+}
+
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+function add(
+    geometry,
+    material,
+    parent=model,
+    partData=null
+){
+
+    const mesh =
+        new THREE.Mesh(
+            geometry,
+            material
+        );
+
+    mesh.castShadow =
+        true;
+
+    mesh.receiveShadow =
+        true;
+
+    parent.add(mesh);
+
+    if(partData){
+        registerPart(
+            mesh,
+            partData
+        );
+    }
+
+    return mesh;
+}
+
+
+function box(
+    w,
+    h,
+    d,
+    x,
+    y,
+    z,
+    material,
+    parent=model,
+    partData=null
+){
+
+    const m =
+        add(
+            new THREE.BoxGeometry(
+                w,
+                h,
+                d
+            ),
+            material,
+            parent,
+            partData
+        );
+
+    m.position.set(
+        x,
+        y,
+        z
+    );
+
+    return m;
+}
+
+
+function cylinder(
+    r,
+    length,
+    x,
+    y,
+    z,
+    material,
+    parent=model,
+    sides=64,
+    partData=null
+){
+
+    const m =
+        add(
+            new THREE.CylinderGeometry(
+                r,
+                r,
+                length,
+                sides
+            ),
+            material,
+            parent,
+            partData
+        );
+
+    m.rotation.z =
+        -Math.PI/2;
+
+    m.position.set(
+        x,
+        y,
+        z
+    );
+
+    return m;
+}
+
+
+function tube(
+    ro,
+    ri,
+    length,
+    x,
+    material,
+    parent=model,
+    partData=null
+){
+
+    const shape =
+        new THREE.Shape();
+
+    shape.absarc(
+        0,
+        0,
+        ro,
+        0,
+        Math.PI*2,
+        false
+    );
+
+
+    const hole =
+        new THREE.Path();
+
+    hole.absarc(
+        0,
+        0,
+        ri,
+        0,
+        Math.PI*2,
+        true
+    );
+
+    shape.holes.push(
+        hole
+    );
+
+
+    const g =
+        new THREE.ExtrudeGeometry(
+            shape,
+            {
+                depth:length,
+                bevelEnabled:false,
+                curveSegments:48
+            }
+        );
+
+    g.translate(
+        0,
+        0,
+        -length/2
+    );
+
+    g.rotateY(
+        Math.PI/2
+    );
+
+
+    const m =
+        add(
+            g,
+            material,
+            parent,
+            partData
+        );
+
+    m.position.x =
+        x;
+
+    return m;
+}
+
+
+function plate(
+    size,
+    depth,
+    x,
+    bore,
+    material,
+    parent,
+    mountingHoles=false,
+    partData=null
+){
+
+    const s =
+        new THREE.Shape();
+
+    const h =
+        size/2;
+
+    const r =
+        5;
+
+
+    s.moveTo(
+        -h+r,
+        -h
+    );
+
+    s.lineTo(
+        h-r,
+        -h
+    );
+
+    s.quadraticCurveTo(
+        h,
+        -h,
+        h,
+        -h+r
+    );
+
+    s.lineTo(
+        h,
+        h-r
+    );
+
+    s.quadraticCurveTo(
+        h,
+        h,
+        h-r,
+        h
+    );
+
+    s.lineTo(
+        -h+r,
+        h
+    );
+
+    s.quadraticCurveTo(
+        -h,
+        h,
+        -h,
+        h-r
+    );
+
+    s.lineTo(
+        -h,
+        -h+r
+    );
+
+    s.quadraticCurveTo(
+        -h,
+        -h,
+        -h+r,
+        -h
+    );
+
+
+    function hole(
+        a,
+        b,
+        radius
+    ){
+
+        const p =
+            new THREE.Path();
+
+        p.absarc(
+            a,
+            b,
+            radius,
+            0,
+            Math.PI*2,
+            true
+        );
+
+        s.holes.push(p);
+    }
+
+
+    if(bore){
+        hole(
+            0,
+            0,
+            bore
+        );
+    }
+
+
+    if(mountingHoles){
+
+        for(
+            const a of [-34,34]
+        ){
+
+            for(
+                const b of [-34,34]
+            ){
+
+                hole(
+                    a,
+                    b,
+                    4.5
+                );
+            }
+        }
+    }
+
+
+    const g =
+        new THREE.ExtrudeGeometry(
+            s,
+            {
+                depth,
+                bevelEnabled:true,
+                bevelThickness:.6,
+                bevelSize:.6,
+                bevelSegments:2,
+                curveSegments:40
+            }
+        );
+
+    g.translate(
+        0,
+        0,
+        -depth/2
+    );
+
+    g.rotateY(
+        Math.PI/2
+    );
+
+
+    const m =
+        add(
+            g,
+            material,
+            parent,
+            partData
+        );
+
+    m.position.x =
+        x;
+
+    return m;
+}
+
+
+/* =========================================================
+   PART DATA
+========================================================= */
+
+const info = {
+
+    housing:{
+        title:"Motor Housing",
+        type:"Mechanical / Protection",
+        description:
+            "Outer aluminium-style motor shell. Protects the internal stator, rotor and winding assembly while providing structural rigidity and thermal surface area.",
+        specs:[
+            ["Material","Aluminium / alloy"],
+            ["Outer Ø","84 mm"],
+            ["Function","Protection + heat dissipation"]
+        ]
+    },
+
+    front:{
+        title:"Front Flange",
+        type:"Mechanical Mounting",
+        description:
+            "Precision front flange used to mount the servo motor to the machine or gearbox. The central bore supports the rotating shaft assembly.",
+        specs:[
+            ["Mounting","4-bolt pattern"],
+            ["Function","Machine mounting"],
+            ["Bore","10 mm concept"]
+        ]
+    },
+
+    stator:{
+        title:"Stator Core",
+        type:"Electromagnetic Assembly",
+        description:
+            "Stationary laminated iron core containing the copper windings. The rotating magnetic field is produced here when the motor phases are energized.",
+        specs:[
+            ["Poles / teeth","12 concept"],
+            ["Material","Electrical steel"],
+            ["Function","Generate magnetic field"]
+        ]
+    },
+
+    winding:{
+        title:"Copper Winding",
+        type:"Electrical / Phase Winding",
+        description:
+            "Copper conductors wrapped around stator teeth. Current through the windings creates the rotating magnetic field that drives the permanent-magnet rotor.",
+        specs:[
+            ["Material","Copper"],
+            ["Phase","U / V / W concept"],
+            ["Function","Electromagnetic torque"]
+        ]
+    },
+
+    rotor:{
+        title:"Rotor Core",
+        type:"Rotating Assembly",
+        description:
+            "Rotating electromagnetic core mounted to the shaft. Permanent magnets are positioned around the rotor to interact with the stator field.",
+        specs:[
+            ["Rotor Ø","34 mm concept"],
+            ["Segments","8 magnet positions"],
+            ["Function","Produce torque"]
+        ]
+    },
+
+    magnet:{
+        title:"Permanent Magnet",
+        type:"Rotor Magnetic Element",
+        description:
+            "Alternating-polarity permanent magnets mounted around the rotor surface. Their magnetic field interacts with the stator winding field.",
+        specs:[
+            ["Polarity","Alternating N / S"],
+            ["Positions","8 concept"],
+            ["Function","Rotor excitation"]
+        ]
+    },
+
+    shaft:{
+        title:"Servo Shaft",
+        type:"Mechanical Output",
+        description:
+            "Precision rotating shaft transferring motor torque to the machine. The shaft also carries the position indicator and encoder interface elements.",
+        specs:[
+            ["Diameter","16 mm concept"],
+            ["Length","199 mm concept"],
+            ["Function","Torque transmission"]
+        ]
+    },
+
+    rear:{
+        title:"Rear Housing",
+        type:"Mechanical / Encoder Support",
+        description:
+            "Rear-end assembly closes the motor and provides mounting space for the encoder feedback system.",
+        specs:[
+            ["Function","Rear protection"],
+            ["Support","Encoder assembly"],
+            ["Mounting","4-bolt pattern"]
+        ]
+    },
+
+    pcb:{
+        title:"Encoder PCB",
+        type:"Feedback Electronics",
+        description:
+            "Encoder electronics board containing sensing and signal-conditioning components used to determine shaft position.",
+        specs:[
+            ["Technology","Position feedback"],
+            ["Signal","Digital / sensor concept"],
+            ["Function","Position measurement"]
+        ]
+    },
+
+    wheel:{
+        title:"Encoder Code Wheel",
+        type:"Position Sensing",
+        description:
+            "Rotating optical / magnetic code wheel coupled to the shaft. Its repeating marks represent angular position information for the controller.",
+        specs:[
+            ["Marks","40 concept"],
+            ["Rotation","Coupled to shaft"],
+            ["Function","Angular feedback"]
+        ]
+    },
+
+    connector:{
+        title:"Motor Connector",
+        type:"Electrical Interface",
+        description:
+            "Electrical connector used for motor power and control wiring. The concept model shows multiple connector interfaces on top of the housing.",
+        specs:[
+            ["Interface","Industrial connector"],
+            ["Use","Power / control"],
+            ["Location","Motor top"]
+        ]
+    },
+
+    bolt:{
+        title:"Mounting Bolt",
+        type:"Mechanical Fastener",
+        description:
+            "Fastener used to secure the motor assembly to the machine structure.",
+        specs:[
+            ["Type","Hex / mounting"],
+            ["Function","Mechanical fastening"]
+        ]
+    },
+
+    indicator:{
+        title:"Position Indicator",
+        type:"Mechanical Reference",
+        description:
+            "Reference marker on the shaft used to visually indicate shaft angular movement.",
+        specs:[
+            ["Function","Angular reference"],
+            ["Coupling","Shaft"]
+        ]
+    }
+};
+
+
+/* =========================================================
+   1. MOTOR HOUSING
+========================================================= */
+
+tube(
+    42,
+    38,
+    108,
+    -2,
+    shellMat,
+    shellGroup,
+    info.housing
+);
+
+
+for(
+    let i=0;
+    i<20;
+    i++
+){
+
+    const theta =
+        i*Math.PI*2/20;
+
+    const rib =
+        box(
+            102,
+            4,
+            3,
+            -2,
+            0,
+            0,
+            shellMat,
+            shellGroup,
+            info.housing
+        );
+
+    rib.position.y =
+        Math.cos(theta)*43;
+
+    rib.position.z =
+        Math.sin(theta)*43;
+
+    rib.rotation.x =
+        theta;
+}
+
+
+/* =========================================================
+   2. FRONT ASSEMBLY
+========================================================= */
+
+plate(
+    88,
+    12,
+    59,
+    10,
+    capMat,
+    frontGroup,
+    true,
+    info.front
+);
+
+
+tube(
+    25,
+    10,
+    5,
+    67.5,
+    silver,
+    frontGroup,
+    info.front
+);
+
+tube(
+    14,
+    8.2,
+    3,
+    71.5,
+    black,
+    frontGroup,
+    info.front
+);
+
+tube(
+    11.5,
+    8.1,
+    1.5,
+    73.5,
+    chrome,
+    frontGroup,
+    info.front
+);
+
+
+for(
+    const y of [-24,24]
+){
+
+    for(
+        const z of [-24,24]
+    ){
+
+        cylinder(
+            3.3,
+            2,
+            66.5,
+            y,
+            z,
+            graphite,
+            frontGroup,
+            6,
+            info.bolt
+        );
+    }
+}
+
+
+/* =========================================================
+   3. STATOR
+========================================================= */
+
+tube(
+    37,
+    34,
+    84,
+    -2,
+    iron,
+    statorGroup,
+    info.stator
+);
+
+
+const windingGeometry =
+    new THREE.TorusGeometry(
+        8,
+        .65,
+        7,
+        48
+    );
+
+
+for(
+    let i=0;
+    i<12;
+    i++
+){
+
+    const tooth =
+        new THREE.Group();
+
+    tooth.userData.part =
+        info.stator;
+
+    statorGroup.add(
+        tooth
+    );
+
+    box(
+        78,
+        9,
+        6,
+        -2,
+        29.5,
+        0,
+        iron,
+        tooth,
+        info.stator
+    );
+
+    box(
+        78,
+        3,
+        9,
+        -2,
+        24.5,
+        0,
+        iron,
+        tooth,
+        info.stator
+    );
+
+
+    for(
+        let turn=0;
+        turn<7;
+        turn++
+    ){
+
+        const winding =
+            add(
+                windingGeometry,
+                copper,
+                tooth,
+                info.winding
+            );
+
+        winding.rotation.x =
+            Math.PI/2;
+
+        winding.scale.set(
+            4.9,
+            .61,
+            1
+        );
+
+        winding.position.set(
+            -2,
+            26.5+turn*1.05,
+            0
+        );
+    }
+
+
+    tooth.rotation.x =
+        i*Math.PI*2/12;
+}
+
+
+/* =========================================================
+   4. ROTOR
+========================================================= */
+
+cylinder(
+    17,
+    78,
+    -2,
+    0,
+    0,
+    iron,
+    rotorGroup,
+    64,
+    info.rotor
+);
+
+
+for(
+    let i=0;
+    i<8;
+    i++
+){
+
+    const segment =
+        new THREE.Group();
+
+    segment.rotation.x =
+        i*Math.PI*2/8;
+
+    rotorGroup.add(
+        segment
+    );
+
+
+    box(
+        74,
+        3.5,
+        10.5,
+        -2,
+        18,
+        0,
+        i%2
+            ? blueMagnet
+            : redMagnet,
+        segment,
+        info.magnet
+    );
+}
+
+
+cylinder(
+    20,
+    3,
+    -43,
+    0,
+    0,
+    graphite,
+    rotorGroup,
+    64,
+    info.rotor
+);
+
+cylinder(
+    20,
+    3,
+    39,
+    0,
+    0,
+    graphite,
+    rotorGroup,
+    64,
+    info.rotor
+);
+
+
+/* =========================================================
+   5. SHAFT
+========================================================= */
+
+cylinder(
+    8,
+    199,
+    17.5,
+    0,
+    0,
+    chrome,
+    shaftGroup,
+    64,
+    info.shaft
+);
+
+
+box(
+    29,
+    2.2,
+    4,
+    94,
+    8,
+    0,
+    silver,
+    shaftGroup,
+    info.indicator
+);
+
+
+cylinder(
+    4,
+    1,
+    117.5,
+    0,
+    0,
+    black,
+    shaftGroup,
+    32,
+    info.shaft
+);
+
+
+tube(
+    19,
+    8.1,
+    3,
+    112,
+    accent,
+    shaftGroup,
+    info.indicator
+);
+
+box(
+    4,
+    15,
+    4,
+    112,
+    23,
+    0,
+    accent,
+    shaftGroup,
+    info.indicator
+);
+
+cylinder(
+    3,
+    4,
+    112,
+    32,
+    0,
+    chrome,
+    shaftGroup,
+    32,
+    info.indicator
+);
+
+
+/* =========================================================
+   6. REAR HOUSING
+========================================================= */
+
+plate(
+    80,
+    10,
+    -62,
+    9,
+    capMat,
+    rearGroup,
+    false,
+    info.rear
+);
+
+
+tube(
+    32,
+    28,
+    24,
+    -80,
+    shellMat,
+    rearGroup,
+    info.rear
+);
+
+
+cylinder(
+    32,
+    4,
+    -94,
+    0,
+    0,
+    capMat,
+    rearGroup,
+    64,
+    info.rear
+);
+
+
+for(
+    const y of [-26,26]
+){
+
+    for(
+        const z of [-26,26]
+    ){
+
+        cylinder(
+            3,
+            2,
+            -68,
+            y,
+            z,
+            chrome,
+            rearGroup,
+            6,
+            info.bolt
+        );
+    }
+}
+
+
+/* =========================================================
+   7. ENCODER PCB
+========================================================= */
+
+tube(
+    25,
+    9,
+    2,
+    -73,
+    pcb,
+    encoderGroup,
+    info.pcb
+);
+
+
+for(
+    let i=0;
+    i<8;
+    i++
+){
+
+    const a =
+        i*Math.PI/4;
+
+    box(
+        2.5,
+        4,
+        5,
+        -75,
+        Math.cos(a)*19,
+        Math.sin(a)*19,
+        black,
+        encoderGroup,
+        info.pcb
+    );
+}
+
+
+for(
+    let i=0;
+    i<6;
+    i++
+){
+
+    box(
+        3,
+        1,
+        1,
+        -74,
+        -15+i*6,
+        0,
+        gold,
+        encoderGroup,
+        info.pcb
+    );
+}
+
+
+/* =========================================================
+   8. ENCODER CODE WHEEL
+========================================================= */
+
+const encoderWheel =
+    new THREE.Group();
+
+encoderGroup.add(
+    encoderWheel
+);
+
+encoderWheel.userData.part =
+    info.wheel;
+
+
+tube(
+    21,
+    8.1,
+    1.6,
+    -79,
+    gold,
+    encoderWheel,
+    info.wheel
+);
+
+
+for(
+    let i=0;
+    i<40;
+    i++
+){
+
+    const a =
+        i*Math.PI*2/40;
+
+    const mark =
+        box(
+            .7,
+            4.5,
+            .8,
+            -80,
+            Math.cos(a)*17,
+            Math.sin(a)*17,
+            black,
+            encoderWheel,
+            info.wheel
+        );
+
+    mark.rotation.x =
+        a;
+}
+
+
+/* =========================================================
+   ENCODER CONNECTOR
+========================================================= */
+
+box(
+    10,
+    7,
+    8,
+    -73,
+    27,
+    0,
+    graphite,
+    encoderGroup,
+    info.connector
+);
+
+
+/* =========================================================
+   TOP CONNECTORS
+========================================================= */
+
+function connector(
+    x,
+    radius
+){
+
+    const g =
+        new THREE.Group();
+
+    g.position.set(
+        x,
+        43,
+        0
+    );
+
+    shellGroup.add(g);
+
+    g.userData.part =
+        info.connector;
+
+
+    box(
+        19,
+        4,
+        21,
+        0,
+        0,
+        0,
+        graphite,
+        g,
+        info.connector
+    );
+
+
+    function vertical(
+        r,
+        h,
+        y,
+        material,
+        sides=48
+    ){
+
+        const m =
+            add(
+                new THREE.CylinderGeometry(
+                    r,
+                    r,
+                    h,
+                    sides
+                ),
+                material,
+                g,
+                info.connector
+            );
+
+        m.position.y =
+            y;
+    }
+
+
+    vertical(
+        radius+2,
+        5,
+        4,
+        silver,
+        6
+    );
+
+    vertical(
+        radius,
+        10,
+        11,
+        graphite
+    );
+
+    vertical(
+        radius+.8,
+        3,
+        17,
+        gold
+    );
+
+    vertical(
+        radius-1,
+        1,
+        19,
+        black
+    );
+
+
+    for(
+        let i=0;
+        i<5;
+        i++
+    ){
+
+        const a =
+            i*Math.PI*2/5;
+
+        const pin =
+            add(
+                new THREE.CylinderGeometry(
+                    .65,
+                    .65,
+                    2,
+                    10
+                ),
+                gold,
+                g,
+                info.connector
+            );
+
+        pin.position.set(
+            Math.cos(a)*3.5,
+            20,
+            Math.sin(a)*3.5
+        );
+    }
+}
+
+
+connector(
+    20,
+    8
+);
+
+connector(
+    -32,
+    6
+);
+
+
+/* =========================================================
+   NAME PLATE
+========================================================= */
+
+const labelCanvas =
+    document.createElement(
+        'canvas'
+    );
+
+labelCanvas.width =
+    512;
+
+labelCanvas.height =
+    256;
+
+
+const ctx =
+    labelCanvas.getContext('2d');
+
+
+ctx.fillStyle =
+    '#0c1622';
+
+ctx.fillRect(
+    0,
+    0,
+    512,
+    256
+);
+
+
+ctx.fillStyle =
+    '#ffad65';
+
+ctx.fillRect(
+    24,
+    24,
+    7,
+    208
+);
+
+
+ctx.fillStyle =
+    '#eaf2ff';
+
+ctx.font =
+    'bold 42px sans-serif';
+
+ctx.fillText(
+    'SERVO / PMSM',
+    54,
+    83
+);
+
+
+ctx.fillStyle =
+    '#9fb4cb';
+
+ctx.font =
+    '23px sans-serif';
+
+ctx.fillText(
+    'PRECISION MOTION',
+    54,
+    132
+);
+
+
+ctx.font =
+    '18px sans-serif';
+
+ctx.fillText(
+    'INTERACTIVE ENGINEERING',
+    54,
+    190
+);
+
+
+const labelTexture =
+    new THREE.CanvasTexture(
+        labelCanvas
+    );
+
+labelTexture.colorSpace =
+    THREE.SRGBColorSpace;
+
+
+const label =
+    add(
+        new THREE.PlaneGeometry(
+            58,
+            29
+        ),
+
+        new THREE.MeshStandardMaterial({
+            map:labelTexture,
+            roughness:.45,
+            metalness:.25
+        }),
+
+        shellGroup
+    );
+
+
+label.position.set(
+    -2,
+    0,
+    46
+);
+
+label.castShadow =
+    false;
+
+
+/* =========================================================
+   FLOOR
+========================================================= */
+
+const floor =
+    add(
+        new THREE.PlaneGeometry(
+            2600,
+            2600
+        ),
+
+        metal(
+            0x101a28,
+            .15,
+            .75
+        ),
+
+        scene
+    );
+
+floor.rotation.x =
+    -Math.PI/2;
+
+floor.position.y =
+    -49;
+
+floor.castShadow =
+    false;
+
+
+const grid =
+    new THREE.GridHelper(
+        1400,
+        56,
+        0x31435b,
+        0x1d2a3b
+    );
+
+grid.position.y =
+    -48.8;
+
+grid.material.transparent =
+    true;
+
+grid.material.opacity =
+    .27;
+
+scene.add(grid);
+
+
+/* =========================================================
+   STATE
+========================================================= */
+
+let automatic =
+    true;
+
+let xray =
+    false;
+
+let targetAngle =
+    0;
+
+let shaftAngle =
+    0;
+
+/*
+    Continuous motor angle.
+
+    IMPORTANT:
+    This is NOT sine-wave based.
+
+    It continuously increases in one direction.
+*/
+
+let continuousAngle =
+    0;
+
+let lastContinuousAngle =
+    0;
+
+let rotationRPM =
+    42;
+
+
+/* =========================================================
+   EXPLORE STATE
+========================================================= */
+
+let explored =
+    false;
+
+let exploreProgress =
+    0;
+
+
+/* =========================================================
+   ORIGINAL POSITIONS
+========================================================= */
+
+const originalPositions = {
+
+    shell:[0,0,0],
+    front:[0,0,0],
+    stator:[0,0,0],
+    rotor:[0,0,0],
+    shaft:[0,0,0],
+    rear:[0,0,0],
+    encoder:[0,0,0],
+    wheel:[0,0,0]
+};
+
+
+/* =========================================================
+   EXPLODED POSITIONS
+========================================================= */
+
+const explodedPositions = {
+
+    /*
+        Housing goes UP.
+        This opens the complete internal area.
+    */
+
+    shell:[
+        0,
+        92,
+        0
+    ],
+
+    /*
+        Front assembly goes right.
+    */
+
+    front:[
+        108,
+        0,
+        0
+    ],
+
+    /*
+        Stator moves left.
+    */
+
+    stator:[
+        -62,
+        0,
+        0
+    ],
+
+    /*
+        Rotor is pulled out and slightly down.
+        Magnets become clearly visible.
+    */
+
+    rotor:[
+        4,
+        -10,
+        18
+    ],
+
+    /*
+        Shaft moves far right.
+    */
+
+    shaft:[
+        165,
+        0,
+        0
+    ],
+
+    /*
+        Rear assembly moves far left.
+    */
+
+    rear:[
+        -125,
+        0,
+        0
+    ],
+
+    /*
+        Encoder PCB moves away from rear.
+    */
+
+    encoder:[
+        -205,
+        5,
+        62
+    ],
+
+    /*
+        Code wheel moves even farther from PCB.
+    */
+
+    wheel:[
+        -32,
+        0,
+        0
+    ]
+};
+
+
+/* =========================================================
+   EASING
+========================================================= */
+
+function easeInOutCubic(t){
+
+    t =
+        THREE.MathUtils.clamp(
+            t,
+            0,
+            1
+        );
+
+    return t < .5
+        ? 4*t*t*t
+        : 1-Math.pow(-2*t+2,3)/2;
+}
+
+
+/* =========================================================
+   APPLY EXPLORE POSITIONS
+========================================================= */
+
+function updateExplore(dt){
+
+    const target =
+        explored
+            ? 1
+            : 0;
+
+    exploreProgress =
+        THREE.MathUtils.damp(
+            exploreProgress,
+            target,
+            5.2,
+            dt
+        );
+
+    /*
+        Snap very close values.
+    */
+
+    if(
+        Math.abs(
+            exploreProgress-target
+        ) < .001
+    ){
+        exploreProgress =
+            target;
+    }
+
+
+    const e =
+        easeInOutCubic(
+            exploreProgress
+        );
+
+
+    function move(
+        group,
+        original,
+        destination
+    ){
+
+        group.position.set(
+
+            THREE.MathUtils.lerp(
+                original[0],
+                destination[0],
+                e
+            ),
+
+            THREE.MathUtils.lerp(
+                original[1],
+                destination[1],
+                e
+            ),
+
+            THREE.MathUtils.lerp(
+                original[2],
+                destination[2],
+                e
+            )
+        );
+    }
+
+
+    move(
+        shellGroup,
+        originalPositions.shell,
+        explodedPositions.shell
+    );
+
+    move(
+        frontGroup,
+        originalPositions.front,
+        explodedPositions.front
+    );
+
+    move(
+        statorGroup,
+        originalPositions.stator,
+        explodedPositions.stator
+    );
+
+    move(
+        rotorGroup,
+        originalPositions.rotor,
+        explodedPositions.rotor
+    );
+
+    move(
+        shaftGroup,
+        originalPositions.shaft,
+        explodedPositions.shaft
+    );
+
+    move(
+        rearGroup,
+        originalPositions.rear,
+        explodedPositions.rear
+    );
+
+    move(
+        encoderGroup,
+        originalPositions.encoder,
+        explodedPositions.encoder
+    );
+
+
+    /*
+        Encoder code wheel separation.
+
+        PCB and wheel become individually visible.
+    */
+
+    encoderWheel.position.set(
+
+        THREE.MathUtils.lerp(
+            originalPositions.wheel[0],
+            explodedPositions.wheel[0],
+            e
+        ),
+
+        THREE.MathUtils.lerp(
+            originalPositions.wheel[1],
+            explodedPositions.wheel[1],
+            e
+        ),
+
+        THREE.MathUtils.lerp(
+            originalPositions.wheel[2],
+            explodedPositions.wheel[2],
+            e
+        )
+    );
+
+
+    if(
+        exploreProgress > .02
+    ){
+
+        $('exploreInfo')
+            .classList.add(
+                'show'
+            );
+
+        $('exploreInfo').textContent =
+            explored
+                ? 'EXPLODED VIEW · ALL COMPONENTS'
+                : 'ASSEMBLING MOTOR...';
+
+    }else{
+
+        $('exploreInfo')
+            .classList.remove(
+                'show'
+            );
+    }
+}
+
+
+/* =========================================================
+   EXPLORE BUTTON
+========================================================= */
+
+$('explode').onclick =
+    () => {
+
+        explored =
+            !explored;
+
+        pressed(
+            'explode',
+            explored,
+            explored
+                ? 'Assemble'
+                : 'Explore'
+        );
+    };
+
+
+/* =========================================================
+   BUTTON STATE
+========================================================= */
+
+function pressed(
+    id,
+    active,
+    text
+){
+
+    const b =
+        $(id);
+
+    b.classList.toggle(
+        'active',
+        active
+    );
+
+    b.setAttribute(
+        'aria-pressed',
+        String(active)
+    );
+
+    b.textContent =
+        text;
+}
+
+
+/* =========================================================
+   XRAY
+========================================================= */
+
+function updateMaterials(){
+
+    const transparent =
+        xray;
+
+
+    shellMat.transparent =
+        transparent;
+
+    shellMat.opacity =
+        transparent
+            ? .08
+            : 1;
+
+    shellMat.depthWrite =
+        !transparent;
+
+    shellMat.metalness =
+        transparent
+            ? .12
+            : .85;
+
+    shellMat.color.set(
+        transparent
+            ? 0x81bdd8
+            : 0x21364b
+    );
+
+    shellMat.needsUpdate =
+        true;
+
+
+    capMat.transparent =
+        transparent;
+
+    capMat.opacity =
+        transparent
+            ? .12
+            : 1;
+
+    capMat.depthWrite =
+        !transparent;
+
+    capMat.needsUpdate =
+        true;
+
+
+    label.visible =
+        !transparent;
+}
+
+
+$('xray').onclick =
+    () => {
+
+        xray =
+            !xray;
+
+        pressed(
+            'xray',
+            xray,
+            xray
+                ? 'X-Ray ON'
+                : 'X-Ray'
+        );
+
+        updateMaterials();
+    };
+
+
+/* =========================================================
+   AUTO ROTATION
+========================================================= */
+
+$('auto').onclick =
+    () => {
+
+        automatic =
+            !automatic;
+
+        if(automatic){
+
+            /*
+                Start continuous rotation exactly
+                from current shaft position.
+            */
+
+            continuousAngle =
+                shaftAngle;
+
+            lastContinuousAngle =
+                shaftAngle;
+
+        }
+
+        pressed(
+            'auto',
+            automatic,
+            automatic
+                ? 'Auto ON'
+                : 'Auto OFF'
+        );
+    };
+
+
+/* =========================================================
+   MANUAL ANGLE
+========================================================= */
+
+$('angle').oninput =
+    () => {
+
+        automatic =
+            false;
+
+        pressed(
+            'auto',
+            false,
+            'Auto OFF'
+        );
+
+        targetAngle =
+            Number(
+                $('angle').value
+            );
+
+        continuousAngle =
+            targetAngle;
+
+        lastContinuousAngle =
+            targetAngle;
+    };
+
+
+/* =========================================================
+   RESET
+========================================================= */
+
+$('reset').onclick =
+    () => {
+
+        automatic =
+            true;
+
+        xray =
+            false;
+
+        explored =
+            false;
+
+        exploreProgress =
+            0;
+
+        targetAngle =
+            0;
+
+        shaftAngle =
+            0;
+
+        continuousAngle =
+            0;
+
+        lastContinuousAngle =
+            0;
+
+        $('angle').value =
+            0;
+
+        pressed(
+            'auto',
+            true,
+            'Auto ON'
+        );
+
+        pressed(
+            'xray',
+            false,
+            'X-Ray'
+        );
+
+        pressed(
+            'explode',
+            false,
+            'Explore'
+        );
+
+        updateMaterials();
+
+        resetView();
+
+        clearPartInfo();
+    };
+
+
+/* =========================================================
+   PART DETAIL UI
+========================================================= */
+
+let selectedPart =
+    null;
+
+let hoveredPart =
+    null;
+
+
+function showPartInfo(
+    data
+){
+
+    if(!data){
+        return;
+    }
+
+    $('partTitle').textContent =
+        data.title;
+
+    $('partType').textContent =
+        data.type;
+
+    $('partDescription').textContent =
+        data.description;
+
+
+    $('partSpecs').innerHTML =
+        data.specs
+            .map(
+                item =>
+                    `
+                    <div class="spec-row">
+                        <span>${item[0]}</span>
+                        <strong>${item[1]}</strong>
+                    </div>
+                    `
+            )
+            .join('');
+
+
+    $('partInfo')
+        .classList.add(
+            'show'
+        );
+}
+
+
+function clearPartInfo(){
+
+    selectedPart =
+        null;
+
+    hoveredPart =
+        null;
+
+    $('partInfo')
+        .classList.remove(
+            'show'
+        );
+}
+
+
+function restorePart(
+    mesh
+){
+
+    if(
+        mesh &&
+        mesh.userData.originalMaterial
+    ){
+
+        mesh.material =
+            mesh.userData.originalMaterial;
+    }
+}
+
+
+function highlightPart(
+    mesh
+){
+
+    if(!mesh){
+        return;
+    }
+
+    /*
+        Do not permanently replace material.
+    */
+
+    mesh.material =
+        hoverMaterial;
+}
+
+
+/* =========================================================
+   RAYCASTER
+========================================================= */
+
+const raycaster =
+    new THREE.Raycaster();
+
+const mouse =
+    new THREE.Vector2();
+
+
+function getIntersectedPart(
+    event
+){
+
+    const rect =
+        renderer.domElement.getBoundingClientRect();
+
+    mouse.x =
+        ((event.clientX-rect.left)/rect.width)*2-1;
+
+    mouse.y =
+        -((event.clientY-rect.top)/rect.height)*2+1;
+
+
+    raycaster.setFromCamera(
+        mouse,
+        camera
+    );
+
+
+    const intersects =
+        raycaster.intersectObjects(
+            parts,
+            false
+        );
+
+    if(
+        intersects.length
+    ){
+
+        return intersects[0].object;
+    }
+
+    return null;
+}
+
+
+/* =========================================================
+   MOUSE MOVE
+========================================================= */
+
+renderer.domElement.addEventListener(
+    'pointermove',
+    event => {
+
+        const part =
+            getIntersectedPart(
+                event
+            );
+
+
+        if(
+            hoveredPart &&
+            hoveredPart !== part &&
+            hoveredPart !== selectedPart
+        ){
+
+            restorePart(
+                hoveredPart
+            );
+        }
+
+
+        if(
+            part &&
+            part !== selectedPart
+        ){
+
+            hoveredPart =
+                part;
+
+            highlightPart(
+                part
+            );
+
+            showPartInfo(
+                part.userData.part
+            );
+
+            renderer.domElement.style.cursor =
+                'pointer';
+
+        }else if(
+            !part &&
+            !selectedPart
+        ){
+
+            hoveredPart =
+                null;
+
+            $('partInfo')
+                .classList.remove(
+                    'show'
+                );
+
+            renderer.domElement.style.cursor =
+                'default';
+
+        }else{
+
+            renderer.domElement.style.cursor =
+                'default';
+        }
+    }
+);
+
+
+/* =========================================================
+   CLICK PART
+========================================================= */
+
+renderer.domElement.addEventListener(
+    'click',
+    event => {
+
+        const part =
+            getIntersectedPart(
+                event
+            );
+
+
+        if(
+            selectedPart &&
+            selectedPart !== part
+        ){
+
+            restorePart(
+                selectedPart
+            );
+
+            selectedPart =
+                null;
+        }
+
+
+        if(part){
+
+            selectedPart =
+                part;
+
+            highlightPart(
+                part
+            );
+
+            showPartInfo(
+                part.userData.part
+            );
+
+            renderer.domElement.style.cursor =
+                'pointer';
+
+        }else{
+
+            if(selectedPart){
+
+                restorePart(
+                    selectedPart
+                );
+            }
+
+            clearPartInfo();
+        }
+    }
+);
+
+
+/* =========================================================
+   POINTER OUT
+========================================================= */
+
+renderer.domElement.addEventListener(
+    'pointerleave',
+    () => {
+
+        if(
+            hoveredPart &&
+            hoveredPart !== selectedPart
+        ){
+
+            restorePart(
+                hoveredPart
+            );
+        }
+
+        hoveredPart =
+            null;
+    }
+);
+
+
+/* =========================================================
+   RESIZE
+========================================================= */
+
+addEventListener(
+    'resize',
+    () => {
+
+        camera.aspect =
+            innerWidth /
+            innerHeight;
+
+        camera.updateProjectionMatrix();
+
+        renderer.setSize(
+            innerWidth,
+            innerHeight
+        );
+    }
+);
+
+
+/* =========================================================
+   WEBGL ERROR
+========================================================= */
+
+renderer.domElement.addEventListener(
+    'webglcontextlost',
+    event => {
+
+        event.preventDefault();
+
+        $('status').textContent =
+            'Graphics paused — reload to restart';
+    }
+);
+
+
+/* =========================================================
+   STATUS
+========================================================= */
+
+$('status').textContent =
+    '● LIVE 3D / HOVER PARTS TO INSPECT';
+
+$('status').style.color =
+    '#7fdbc1';
+
+
+/* =========================================================
+   ANIMATION CLOCK
+========================================================= */
+
+const clock =
+    new THREE.Clock();
+
+
+/* =========================================================
+   CONTINUOUS MOTOR ROTATION
+========================================================= */
+
+function updateMotorRotation(
+    dt
+){
+
+    if(automatic){
+
+        /*
+            CONTINUOUS ONE-DIRECTION ROTATION
+
+            42 RPM
+            =
+            42 revolutions per minute
+
+            degrees / second =
+            42 * 360 / 60
+            =
+            252 deg/sec
+        */
+
+        const degreesPerSecond =
+            rotationRPM *
+            360 /
+            60;
+
+
+        continuousAngle +=
+            degreesPerSecond *
+            dt;
+
+
+        /*
+            Never use Math.sin() here.
+
+            Therefore the motor never goes:
+            forward → backward → forward.
+
+            It continuously rotates:
+            → → → → →
+        */
+
+
+        targetAngle =
+            ((continuousAngle + 180) % 360) - 180;
+
+
+        $('angle').value =
+            targetAngle;
+
+
+        shaftAngle =
+            continuousAngle;
+
+    }else{
+
+        /*
+            Manual mode:
+            smoothly move to selected target.
+        */
+
+        shaftAngle =
+            THREE.MathUtils.damp(
+                shaftAngle,
+                targetAngle,
+                8,
+                dt
+            );
+
+        continuousAngle =
+            shaftAngle;
+    }
+
+
+    /*
+        Rotate all rotating components.
+    */
+
+    const rotation =
+        THREE.MathUtils.degToRad(
+            shaftAngle
+        );
+
+
+    rotorGroup.rotation.x =
+        rotation;
+
+    shaftGroup.rotation.x =
+        rotation;
+
+    encoderWheel.rotation.x =
+        rotation;
+
+
+    /*
+        Calculate RPM from actual angle change.
+    */
+
+    const deltaAngle =
+        Math.abs(
+            shaftAngle -
+            lastContinuousAngle
+        );
+
+    const actualRPM =
+        automatic
+            ? Math.min(
+                9999,
+                deltaAngle /
+                360 /
+                Math.max(dt,0.0001) *
+                60
+            )
+            : 0;
+
+
+    lastContinuousAngle =
+        shaftAngle;
+
+
+    $('rpm').textContent =
+        actualRPM.toFixed(0);
+
+
+    /*
+        Readouts
+    */
+
+    $('target').textContent =
+        `${targetAngle.toFixed(1)}°`;
+
+
+    const normalizedActual =
+        ((shaftAngle % 360)+360)%360;
+
+
+    $('actual').textContent =
+        `${normalizedActual.toFixed(1)}°`;
+
+
+    const error =
+        automatic
+            ? 0
+            : Math.abs(
+                targetAngle -
+                shaftAngle
+            );
+
+
+    $('error').textContent =
+        `${error.toFixed(1)}°`;
+}
+
+
+/* =========================================================
+   MAIN LOOP
+========================================================= */
+
+renderer.setAnimationLoop(
+    () => {
+
+        const dt =
+            Math.min(
+                clock.getDelta(),
+                .05
+            );
+
+
+        /*
+            Smooth exploded animation
+        */
+
+        updateExplore(
+            dt
+        );
+
+
+        /*
+            Continuous motor rotation
+        */
+
+        updateMotorRotation(
+            dt
+        );
+
+
+        /*
+            Keep controls smooth.
+        */
+
+        controls.update();
+
+
+        /*
+            Render.
+        */
+
+        renderer.render(
+            scene,
+            camera
+        );
+    }
+);
+
+</script>
+
+</body>
+</html>
