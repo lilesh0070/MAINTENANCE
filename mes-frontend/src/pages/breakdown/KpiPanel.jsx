@@ -265,10 +265,13 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
           const pendingCard = data.kpis.find((c) => c.kpi_key === "pending_closures");
           const totalBdCard = data.kpis.find((c) => c.kpi_key === "breakdowns_count");
           const selLabel = (ZONES.find(([k]) => k === zoneSel) || [null, zoneSel === "_OTHER" ? "Other / Unzoned" : zoneSel])[1];
-          // One continuous S.No for the whole zone (not per-line serials):
-          // order chronologically by start time, then number 1..N in the table.
+          // One continuous S.No for the whole zone (not per-line serials).
+          // Kram: NAYI DATE SABSE UPAR (user 2026-09-23) -- yaani ulta, naye se
+          // purane ki taraf.  `started_at` ISO hai (YYYY-MM-DDTHH:MM), isliye
+          // seedhi text ki tulna hi sahi kram deti hai (date + time dono).
+          // S.No usi kram me 1..N padta hai, to 1 = sabse naya.
           const selSlips = (bdByZone[zoneSel] || []).slice().sort((a, b) =>
-            String(a.started_at || "").localeCompare(String(b.started_at || "")));
+            String(b.started_at || "").localeCompare(String(a.started_at || "")));
           return (
             <>
               <div style={{ display: "grid",
@@ -369,7 +372,7 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
                     <table className="kp-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                       <thead>
                         <tr>
-                          {["S.No", "Line", "Shift", "Start", "End", "Status", "Duration", "Reason", "Slip"].map((h) => (
+                          {["S.No", "Date", "Line", "Shift", "Start", "End", "Status", "Duration", "Reason", "Slip"].map((h) => (
                             <th key={h} style={{ textAlign: "left", padding: "9px 12px", fontSize: 9.5, fontWeight: 800,
                                                  letterSpacing: ".05em", textTransform: "uppercase", color: "#64748b",
                                                  borderBottom: "2px solid #e2e8f0", whiteSpace: "nowrap",
@@ -411,6 +414,13 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
                                   )}
                                   {i + 1}
                                 </span>
+                              </td>
+                              {/* Slip ki date (breakdown kis din hua).  `started_at`
+                                  = bd_start_date + bd_start_time, isliye pehle 10
+                                  akshar hi date hain. */}
+                              <td style={{ padding: "8px 12px", fontFamily: "monospace",
+                                           color: "#475569", whiteSpace: "nowrap" }}>
+                                {String(b.started_at || "").slice(0, 10) || "—"}
                               </td>
                               <td style={{ padding: "8px 12px", fontWeight: 700, color: "#0f172a" }}>{b.line_name || "—"}</td>
                               <td style={{ padding: "8px 12px" }}>{b.shift_name || "—"}</td>
