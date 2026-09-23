@@ -1,5 +1,5 @@
 {
-  "version": "1.4.120",
-  "notes": "Users list: Edit button on every row to change username and employee ID",
-  "released_at": "2026-09-23T18:22:27"
+  "version": "1.4.121",
+  "notes": "You now stay signed in after closing and reopening the browser, the same way the app already worked. The AI Assistant also works inside the app now - it was never receiving your sign-in token there.",
+  "released_at": "2026-09-23T18:49:42"
 }
