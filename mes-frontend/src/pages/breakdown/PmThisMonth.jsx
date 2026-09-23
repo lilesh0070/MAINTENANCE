@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { api } from "./shared";
 
 /* ════════════════════════════════════════════════════════════════════
@@ -90,8 +90,10 @@ function PmThisMonth({ token }) {
   const [fLine, setFLine]     = useState("");
   const [fStatus, setFStatus] = useState("");
   const [page, setPage]       = useState(1);
-  // Kaun si line khuli hui hai (khaali = koi nahi).  Ek waqt me ek hi.
-  const [openLine, setOpenLine] = useState("");
+  // Kis line ka POPUP khula hai (khaali = koi nahi).  Pehle qatar usi jagah
+  // khul jaati thi, par usse table lamba ho kar dashboard kha jaata tha --
+  // user 2026-09-23: "line par click karne par pop jaisa aana chahiye".
+  const [modalGid, setModalGid] = useState("");
   const PER = 10;
   // Har jagah POORA table (saare column).  Jagah kam padi to table apne aap
   // side me scroll ho jaata hai — pehle width ke hisaab se column chhupte the
@@ -113,6 +115,15 @@ function PmThisMonth({ token }) {
       .catch(() => { if (alive) setErr(true); });
     return () => { alive = false; };
   }, [token, ym]);
+
+  // Esc se popup band (website ki aadat).  App me peechhe wala button apna
+  // kaam karta hai, isliye wahan ye chalta hi nahi -- nuksaan koi nahi.
+  useEffect(() => {
+    if (!modalGid) return undefined;
+    const onKey = (e) => { if (e.key === "Escape") setModalGid(""); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [modalGid]);
 
   const rows = useMemo(() => {
     if (!data?.weeks) return [];
@@ -194,6 +205,11 @@ function PmThisMonth({ token }) {
   const pages = Math.max(1, Math.ceil(groups.length / PER));
   const pageGroups = groups.slice((Math.min(page, pages) - 1) * PER, Math.min(page, pages) * PER);
 
+  /* Popup me kaun si line.  Har render par dhoondte hain (id yaad rakhte hain,
+     poora group nahi) -- warna filter badalne ya data refresh hone par popup
+     purana data dikhata rehta.  Group na mile to popup apne aap band. */
+  const modalGroup = modalGid ? groups.find((g) => g.gid === modalGid) : null;
+
   // "01–07 Sep" / ek hi din ho to "05 Sep"
   const dateTxt = (w) => w.start === w.end
     ? `${String(w.start).padStart(2, "0")} ${monAbbr}`
@@ -218,17 +234,17 @@ function PmThisMonth({ token }) {
       <div style={{ display: "flex", gap: 10, padding: inModal ? "13px 22px" : "12px 16px",
                     borderBottom: "1px solid #eef2f7", flexWrap: "wrap", alignItems: "center" }}>
         <select style={selSt} value={fZone}
-                onChange={(e) => { setFZone(e.target.value); setFLine(""); setPage(1); setOpenLine(""); }}>
+                onChange={(e) => { setFZone(e.target.value); setFLine(""); setPage(1); setModalGid(""); }}>
           <option value="">All Zones</option>
           {zones.map((z) => <option key={z} value={z}>{z}</option>)}
         </select>
         <select style={selSt} value={fLine} disabled={!fZone}
-                onChange={(e) => { setFLine(e.target.value); setPage(1); setOpenLine(""); }}>
+                onChange={(e) => { setFLine(e.target.value); setPage(1); setModalGid(""); }}>
           <option value="">All Lines</option>
           {lines.map((l) => <option key={l} value={l}>{l}</option>)}
         </select>
         <select style={selSt} value={fStatus}
-                onChange={(e) => { setFStatus(e.target.value); setPage(1); setOpenLine(""); }}>
+                onChange={(e) => { setFStatus(e.target.value); setPage(1); setModalGid(""); }}>
           <option value="">All Status</option>
           {ORDER.map((k) => <option key={k} value={k}>{S[k].label}</option>)}
         </select>
@@ -244,60 +260,32 @@ function PmThisMonth({ token }) {
               .map((h) => <th key={h} style={{ ...th, padding: inModal ? "9px 10px" : "9px 16px" }}>{h}</th>)}
           </tr></thead>
           <tbody>
-            {pageGroups.map((g) => {
-              const open = openLine === g.gid;
-              return (
-                <Fragment key={g.gid}>
-                  {/* LINE ki qatar — click karne par uski machine khulti hain */}
-                  <tr onClick={() => setOpenLine(open ? "" : g.gid)}
-                      title={open ? "Hide machines" : "Show machines of this line"}
-                      style={{ cursor: "pointer", background: open ? "#f8fafc" : "transparent" }}>
-                    <td style={{ ...td, paddingLeft: inModal ? 10 : 16 }}><_ZoneTag z={g.zone_name} /></td>
-                    <td style={{ ...td, fontWeight: 700, color: "#0f172a" }}>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                        <span style={{ color: "#94a3b8", fontSize: 11 }}>{open ? "▾" : "▸"}</span>
-                        {g.line || "—"}
-                        <span style={{ fontSize: 10.5, fontWeight: 700, color: "#8a94a6",
-                                       background: "#f1f5f9", borderRadius: 6, padding: "1px 7px" }}>
-                          {g.n} {g.n === 1 ? "m/c" : "m/c"}
-                        </span>
-                      </span>
-                    </td>
-                    <td style={td}>{dateTxt(g.win)}</td>
-                    <td style={td}><_Pill k={g.key} /></td>
-                    <td style={{ ...td, fontWeight: 800, color: daysColor(g.daysLeft, g.allDone) }}>
-                      {daysTxt(g.daysLeft, g.allDone)}
-                    </td>
-                    <td style={{ ...td, fontWeight: 700, color: g.filled === g.n ? "#15803d" : "#8a94a6" }}>
-                      {g.filled}/{g.n}
-                    </td>
-                  </tr>
-
-                  {/* us line ki machine — wahi khaane, thoda andar khiska kar */}
-                  {open && g.items.map((r, i) => (
-                    <tr key={`${g.gid}-${r.machine_code || i}`} style={{ background: "#fcfdfe" }}>
-                      <td style={{ ...td, paddingLeft: inModal ? 10 : 16 }} />
-                      <td style={{ ...td, paddingLeft: 34, fontWeight: 700, color: "#0f172a" }}
-                          title={r.machine_name || ""}>
-                        {r.machine_code || "—"}
-                        {r.machine_name && (
-                          <span style={{ fontWeight: 600, color: "#8a94a6", fontSize: 11 }}>
-                            {"  "}· {r.machine_name}
-                          </span>
-                        )}
-                      </td>
-                      <td style={td}>{dateTxt(r.win)}</td>
-                      <td style={td}><_Pill k={r.key} /></td>
-                      <td style={{ ...td, fontWeight: 700,
-                                   color: daysColor(r.daysLeft, r.key === "COMPLETED") }}>
-                        {daysTxt(r.daysLeft, r.key === "COMPLETED")}
-                      </td>
-                      <td style={td}><_Sheet filled={r.sheet_filled} /></td>
-                    </tr>
-                  ))}
-                </Fragment>
-              );
-            })}
+            {pageGroups.map((g) => (
+              /* LINE ki qatar — click par uski machine POPUP me khulti hain */
+              <tr key={g.gid} onClick={() => setModalGid(g.gid)}
+                  title="Open this line's machines"
+                  style={{ cursor: "pointer" }}>
+                <td style={{ ...td, paddingLeft: inModal ? 10 : 16 }}><_ZoneTag z={g.zone_name} /></td>
+                <td style={{ ...td, fontWeight: 700, color: "#0f172a" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+                    {g.line || "—"}
+                    <span style={{ fontSize: 10.5, fontWeight: 700, color: "#8a94a6",
+                                   background: "#f1f5f9", borderRadius: 6, padding: "1px 7px" }}>
+                      {g.n} m/c
+                    </span>
+                    <span style={{ color: "#94a3b8", fontSize: 13, fontWeight: 800 }}>›</span>
+                  </span>
+                </td>
+                <td style={td}>{dateTxt(g.win)}</td>
+                <td style={td}><_Pill k={g.key} /></td>
+                <td style={{ ...td, fontWeight: 800, color: daysColor(g.daysLeft, g.allDone) }}>
+                  {daysTxt(g.daysLeft, g.allDone)}
+                </td>
+                <td style={{ ...td, fontWeight: 700, color: g.filled === g.n ? "#15803d" : "#8a94a6" }}>
+                  {g.filled}/{g.n}
+                </td>
+              </tr>
+            ))}
             {pageGroups.length === 0 && (
               <tr><td colSpan={6} style={{ ...td, textAlign: "center", color: "#94a3b8",
                                            padding: 26 }}>Nothing matches this filter.</td></tr>
@@ -315,18 +303,18 @@ function PmThisMonth({ token }) {
               `${Math.min(Math.min(page, pages) * PER, groups.length)} of ${groups.length} lines`}
         </span>
         <div style={{ display: "flex", gap: 5, marginLeft: "auto", alignItems: "center" }}>
-          <button onClick={() => { setPage((p) => Math.max(1, p - 1)); setOpenLine(""); }} disabled={page <= 1}
+          <button onClick={() => { setPage((p) => Math.max(1, p - 1)); setModalGid(""); }} disabled={page <= 1}
                   style={{ ...selSt, padding: "6px 11px", cursor: page <= 1 ? "default" : "pointer",
                            opacity: page <= 1 ? .45 : 1 }}>‹</button>
           {Array.from({ length: pages }, (_, i) => i + 1).slice(0, 7).map((p) => (
-            <button key={p} onClick={() => { setPage(p); setOpenLine(""); }}
+            <button key={p} onClick={() => { setPage(p); setModalGid(""); }}
                     style={{ ...selSt, padding: "6px 11px", cursor: "pointer",
                              ...(p === Math.min(page, pages)
                                  ? { background: "#2563eb", color: "#fff", borderColor: "#2563eb" } : {}) }}>
               {p}
             </button>
           ))}
-          <button onClick={() => { setPage((p) => Math.min(pages, p + 1)); setOpenLine(""); }} disabled={page >= pages}
+          <button onClick={() => { setPage((p) => Math.min(pages, p + 1)); setModalGid(""); }} disabled={page >= pages}
                   style={{ ...selSt, padding: "6px 11px", cursor: page >= pages ? "default" : "pointer",
                            opacity: page >= pages ? .45 : 1 }}>›</button>
         </div>
@@ -413,6 +401,73 @@ function PmThisMonth({ token }) {
           ))}
         </div>}
       </div>
+
+      {/* ── LINE ka POPUP — us line ki saari machine ──────────────────
+          Bahar kahin bhi click, ✕, ya Esc se band.  `inset` jaan-boojh kar
+          nahi (purana plant TV ka WebView use nahi samajhta) -- left/top/
+          right/bottom alag-alag likhe hain. */}
+      {modalGroup && (
+        <div onClick={() => setModalGid("")}
+             style={{ position: "fixed", left: 0, top: 0, right: 0, bottom: 0,
+                      background: "rgba(15,23,42,.55)", display: "flex",
+                      alignItems: "center", justifyContent: "center",
+                      zIndex: 9999, padding: 20 }}>
+          <div onClick={(e) => e.stopPropagation()}
+               style={{ background: "#fff", borderRadius: 16, width: "min(880px, 96vw)",
+                        maxHeight: "86vh", display: "flex", flexDirection: "column",
+                        boxShadow: "0 20px 60px rgba(0,0,0,.3)", overflow: "hidden" }}>
+            <div style={{ padding: "14px 20px", borderBottom: "1px solid #e2e8f0",
+                          background: "#f8fafc", display: "flex", alignItems: "center",
+                          justifyContent: "space-between", gap: 12 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+                  <_ZoneTag z={modalGroup.zone_name} />
+                  <span style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 21,
+                                 fontWeight: 800, color: "#0f172a" }}>{modalGroup.line || "—"}</span>
+                  <_Pill k={modalGroup.key} />
+                </div>
+                <div style={{ fontSize: 11.5, color: "#8a94a6", fontWeight: 600, marginTop: 3 }}>
+                  {modalGroup.n} {modalGroup.n === 1 ? "machine" : "machines"} · {monthLbl}
+                  {" · "}{modalGroup.filled}/{modalGroup.n} sheet filled
+                </div>
+              </div>
+              <button onClick={() => setModalGid("")} title="Close"
+                      style={{ border: "1px solid #cbd5e1", background: "#fff", borderRadius: 8,
+                               width: 34, height: 34, cursor: "pointer", fontSize: 16,
+                               color: "#475569", flexShrink: 0, fontFamily: "inherit" }}>✕</button>
+            </div>
+            <div style={{ overflow: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 520 }}>
+                <thead><tr>
+                  {["Machine No.", "Machine Name", "Date", "Status", "Days Left", "Sheet"].map((h) => (
+                    <th key={h} style={{ ...th, padding: "9px 14px", position: "sticky", top: 0,
+                                         background: "#f1f5f9" }}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {modalGroup.items.map((r, i) => (
+                    <tr key={r.machine_code || i}>
+                      <td style={{ ...td, padding: "9px 14px", fontWeight: 800, color: "#0f172a" }}>
+                        {r.machine_code || "—"}
+                      </td>
+                      <td style={{ ...td, padding: "9px 14px", whiteSpace: "normal", color: "#475569" }}>
+                        {r.machine_name || "—"}
+                      </td>
+                      <td style={{ ...td, padding: "9px 14px" }}>{dateTxt(r.win)}</td>
+                      <td style={{ ...td, padding: "9px 14px" }}><_Pill k={r.key} /></td>
+                      <td style={{ ...td, padding: "9px 14px", fontWeight: 800,
+                                   color: daysColor(r.daysLeft, r.key === "COMPLETED") }}>
+                        {daysTxt(r.daysLeft, r.key === "COMPLETED")}
+                      </td>
+                      <td style={{ ...td, padding: "9px 14px" }}><_Sheet filled={r.sheet_filled} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
