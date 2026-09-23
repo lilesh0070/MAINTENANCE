@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { isNativeApp } from "../constants/apiBase";
+import { authStore as ss } from "../authStore";
 import { walkieNative } from "../constants/walkieNative";
 import { walkieLink } from "../constants/walkieLink";
 
@@ -82,44 +82,13 @@ export const SUBPAGE_PARENT = {
   "maintenance-pm-yearly":    "maintenance-pm",
 };
 
-// ── Auth storage = sessionStorage (per-tab) ────────────────────────
-// Operator's policy: "har naya browser tab → fresh login mandatory.
-// URL-only access without id/password should NEVER reach a page."
+// -- Login kahan yaad rehta hai --------------------------------------------
+// Asli jagah ab EK hi file me: src/authStore.js  (api/client.jsx aur
+// AIAssistant.jsx bhi wahi use karte hain -- teen alag copy nahi).
 //
-// sessionStorage isolates the token to ONE browser tab.  Closing the
-// tab kills the session; opening a new tab → no token → Protected
-// route bounces to /login.  This blocks the URL-only-access path that
-// localStorage allowed (any tab on the same browser inherited the
-// token).  Old localStorage keys are cleared on first run for a clean
-// migration.
-const AUTH_KEYS = ["mes_token","mes_username","user_role","user_id","user_dept_slug"];
-
-// APP ME ALAG — aur sirf app me.
-// Upar wali policy BROWSER TABS ke liye hai: ek tab me login karke doosre tab
-// me URL se andar ghus jaana rokna tha.  APK me tab hote hi nahi — wo aadmi ke
-// apne phone par akela app hai.  Wahan sessionStorage ka matlab sirf itna tha
-// ki app band karte hi logout ho jaata tha, aur har baar dobara login karna
-// padta tha.  Isliye app me localStorage.
-//
-// WEBSITE PAR KUCH NAHI BADLA — wahan `NATIVE` false hai, sessionStorage hi
-// chalta hai aur purani localStorage keys pehle jaisi saaf hoti rehti hain.
-const NATIVE_AUTH = isNativeApp();
-const store = () => (NATIVE_AUTH ? localStorage : sessionStorage);
-
-(function migrateOldLocalStorage() {
-  if (NATIVE_AUTH) return;          // app me localStorage HI ghar hai, use mat mitao
-  try {
-    for (const k of AUTH_KEYS) {
-      if (localStorage.getItem(k) !== null) localStorage.removeItem(k);
-    }
-  } catch {}
-})();
-
-const ss = {
-  get:    (k) => { try { return store().getItem(k); } catch { return null; } },
-  set:    (k,v) => { try { store().setItem(k, v); } catch {} },
-  remove: (k) => { try { store().removeItem(k); } catch {} },
-};
+// 2026-09-23: website bhi ab localStorage par (pehle sessionStorage thi).
+// Iska matlab purana niyam "har naya browser tab -> dobara login" khatam.
+// Wajah, majboori aur baaki pehre -- sab authStore.js ke upar likhe hain.
 
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => ss.get("mes_token") || "");
@@ -162,7 +131,7 @@ export function AuthProvider({ children }) {
       try {
         const r = await fetch(`${API}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
         if (r.status === 401) {                       // genuine auth failure → logout
-          if (!cancelled) { setToken(""); for (const k of AUTH_KEYS) ss.remove(k); setLoading(false); }
+          if (!cancelled) { setToken(""); ss.clear(); setLoading(false); }
           return;
         }
         if (!r.ok) throw new Error(`me ${r.status}`); // transient → retry (keep session)
@@ -206,7 +175,7 @@ export function AuthProvider({ children }) {
         .then((r) => {
           if (r.status === 401) {                 // token invalid (force-logout / pw change)
             setToken(""); setUser(null);
-            for (const k of AUTH_KEYS) ss.remove(k);
+            ss.clear();
             if (typeof window !== "undefined" && window.location) window.location.replace("/login");
             return null;
           }
@@ -278,7 +247,7 @@ export function AuthProvider({ children }) {
     }
     setToken("");
     setUser(null);
-    for (const k of AUTH_KEYS) ss.remove(k);
+    ss.clear();
   };
 
   // Sirf `admin` → sab pages ka poora access.  Baaki designations

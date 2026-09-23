@@ -1,3 +1,5 @@
+import { authStore } from "../authStore";
+
 // Central API client — wraps fetch with auth headers
 // Usage: import { api } from "../api/client"
 // Then: api.get("/api/plants/", token)  or  api.post("/api/plants/", body, token)
@@ -41,12 +43,10 @@ function redirectToLogin() {
   if (_redirectingTo401) return;          // dedupe burst of parallel 401s
   _redirectingTo401 = true;
   try {
-    // Clear sessionStorage auth keys so the next render of Protected
+    // Clear the stored auth keys (localStorage + purane tab ka
+    // sessionStorage) so the next render of Protected
     // routes treats us as logged-out.
-    const KEYS = ["mes_token","mes_username","user_role","user_id","user_dept_slug"];
-    for (const k of KEYS) {
-      try { sessionStorage.removeItem(k); } catch {}
-    }
+    authStore.clear();
     if (typeof window !== "undefined" && window.location) {
       // Use replace() so the broken page isn't in history (back button
       // would just throw the user back into a 401 loop).

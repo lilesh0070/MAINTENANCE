@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import axios from "axios";
 import { isNativeApp } from "../constants/apiBase";
+import { authStore } from "../authStore";
 
 /* APP me floating button ki animation GINTI ki (2026-09-21) -- kuch second
  * tair / chamak kar ruk jaata hai.  Wajah naap kar mili: TV ki app me din
@@ -18,7 +19,7 @@ const baar = (n) => (NATIVE ? String(n) : "infinite");
 
 const api = axios.create({ baseURL: "" });
 api.interceptors.request.use(cfg => {
-  const t = sessionStorage.getItem("mes_token");
+  const t = authStore.get("mes_token");
   if (t) cfg.headers.Authorization = `Bearer ${t}`;
   return cfg;
 });
@@ -26,8 +27,7 @@ api.interceptors.request.use(cfg => {
 api.interceptors.response.use(r => r, err => {
   if (err?.response?.status === 401) {
     try {
-      ["mes_token","mes_username","user_role","user_id","user_dept_slug"]
-        .forEach(k => sessionStorage.removeItem(k));
+      authStore.clear();
     } catch {}
     if (window.location.pathname !== "/login") window.location.replace("/login");
   }
@@ -36,7 +36,7 @@ api.interceptors.response.use(r => r, err => {
 
 // Per-user key — session only (clears on refresh, persists on page switch)
 const getStorageKey = () => {
-  const uid = sessionStorage.getItem("user_id") || "guest";
+  const uid = authStore.get("user_id") || "guest";
   return `mes_ai_chat_session_${uid}`;
 };// Quick commands — SIRF MAINTENANCE ke.  `text` button par dikhta hai,
 // `prompt` asal me AI ko jaata hai (label chhota, sawaal poora).
@@ -296,7 +296,7 @@ function Bubble({ msg, isLatest }) {
           fontSize:12, fontWeight:800, color:"#93c5fd",
           boxShadow:"0 0 12px #3b82f640",
         }}>
-          {(sessionStorage.getItem("mes_username")||"U")[0].toUpperCase()}
+          {(authStore.get("mes_username")||"U")[0].toUpperCase()}
         </div>
       )}
     </div>
