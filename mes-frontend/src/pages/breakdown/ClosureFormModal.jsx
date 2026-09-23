@@ -753,7 +753,21 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
      Tighter padding + smaller fonts than the on-screen modal so the
      full slip fits on a single A4 landscape page.  The JS scale-to-fit
      handles edge cases where it's still slightly too tall. */
-  .bds-letterhead { border-bottom-width: 1.5px !important; }
+  /* ⚠ LETTERHEAD KA POORA BOX -- sirf yahan (kaagaz/PDF par).
+     Base CSS me .bds-letterhead par SIRF border-bottom tha, isliye logo
+     aur naam wale hisse ke upar/daayen/baayen koi lakeer aati hi nahi thi:
+     sheet ka dabba ZONE wali row se shuru hota dikhta tha (user 2026-09-23:
+     "yahan border nahi aa raha").  Neeche ka poora sheet 1.5px #0f172a par
+     hai, to wahi naap yahan bhi.
+     Parde wale modal me JAAN-BOOJH KAR nahi daala -- wahan is patti me
+     Print / PDF / Edit / X button baithte hain (kaagaz par wo display:none
+     hote hain, upar dekho), aur unke charon taraf dabba galat lagta. */
+  .bds-letterhead {
+    border-bottom-width: 1.5px !important;
+    border-top: 1.5px solid #0f172a !important;
+    border-left: 1.5px solid #0f172a !important;
+    border-right: 1.5px solid #0f172a !important;
+  }
   .bds-logo { width: 90px !important; padding: 4px 6px !important; }
   .bds-logo img { max-height: 50px !important; }
   .bds-logo-sub { font-size: 7px !important; }
