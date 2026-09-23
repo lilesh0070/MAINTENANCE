@@ -1,5 +1,5 @@
 {
-  "version": "1.4.123",
-  "notes": "The breakdown slip PDF now matches the form on screen exactly - clean text spacing and properly round tick circles",
-  "released_at": "2026-09-23T21:05:19"
+  "version": "1.4.124",
+  "notes": "The breakdown slip now prints with a complete border around the letterhead, matching the paper form",
+  "released_at": "2026-09-23T21:25:44"
 }
