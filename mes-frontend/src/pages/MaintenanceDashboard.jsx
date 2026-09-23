@@ -377,8 +377,24 @@ Wapas nahi aayegi.  Aage badhein?`)) return;
         .md-portrait .md-tiles   { grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px; margin-bottom:12px; }
         .md-portrait .md-section { margin-bottom:12px; }
         .md-portrait .md-cols    { margin-bottom:12px !important; gap:12px !important; }
-        /* both columns full-width — no empty space beside PM This Month */
-        .md-portrait .md-col-a, .md-portrait .md-col-b { flex:1 1 100% !important; max-width:none !important; min-width:0 !important; }
+        /* ANDON wala column aur PM ki PANKTI poori chaudai par; PM aur uske
+           bagal ki khaali jagah ka 70/30 us pankti ke ANDAR hota hai
+           (user 2026-09-23: "70% me PM, uske aage 30% blank — TV ke liye").
+           ⚠ .md-col-b yahan se JAAN-BOOJH KAR hataya: use 100% karte hi
+           khaali dabba neeche chala jaata tha aur TV par bagal wali jagah
+           banti hi nahi thi. */
+        .md-portrait .md-col-a, .md-portrait .md-pmrow { flex:1 1 100% !important; max-width:none !important; min-width:0 !important; }
+
+        /* PM aur uske bagal ki khaali jagah PATLI screen par upar-neeche
+           (phone, aur chhoti browser window).  860 = PM ki table 560 + khaali
+           240 + 16 gap + thoda hashiya.  Isse chaudi har jagah -- TV, tablet,
+           website -- dono saath 70/30 me rehte hain.
+           Yahan media query hi sahi hai: inline style par min-width lagate to
+           phone par PM 560px ka hi reh jaata aur screen se bahar nikal jaata
+           (412px ki screen par naap kar dekha). */
+        @media (max-width:860px) {
+          .md-col-b, .md-col-c { flex:1 1 100% !important; }
+        }
         /* Portrait TV par title ko jagah dene ke liye sirf user-pill hata dete
            hain — title BEECH me hi rehta hai (dono taraf ke flex:1 spacer barabar
            hain, isliye 9:16 aur 16:9 dono me center aata hai). */
@@ -449,28 +465,28 @@ Wapas nahi aayegi.  Aage badhein?`)) return;
                     toggleFullscreen={toggleFullscreen}
                   />
                 </div>
-                {/* PM This Month — ANDON ke neeche, apni line par, par ab
-                    AADHE SE THODA JYADA chaudai me (user 2026-09-23); daayin
-                    taraf ki jagah JAAN-BOOJH KAR khaali chhodi hai, wahan aage
-                    kuch aur aayega.
-                    Naap `flex-basis` se hai, media query se nahi: 560 + 260 +
-                    16 (gap) = 836px, yaani ~840px se chaudi har screen par dono
-                    ek hi line me aate hain -- PM ~63-65% aur khaali dabba baaki
-                    (1120px ki row me PM ~702px, 929px me ~606px).  560 isliye
-                    ki table ki sabse kam chaudai bhi 560 hai.  Isse patli
-                    screen par jod line me nahi samaata, to PM apne aap poori
-                    chaudai le leta hai aur khaali dabba neeche chala jaata hai
-                    (dikhta wo waise bhi nahi).
-                    Table ab 560px me aa jaata hai (Machine No. aur Window ke
-                    khaane hat gaye), isliye kuch katta nahi.
-                    ⚠ Portrait TV par `responsive` wala niyam
-                    (.md-portrait .md-col-b) abhi bhi 100% karta hai — wahan
-                    poori chaudai hi chahiye, use chhedna nahi. */}
-                <div className="md-col-b" style={{ flex: "1 1 560px", minWidth: 0 }}>
-                  <PmThisMonth token={token} />
+                {/* PM This Month + uske bagal ki KHAALI jagah — ek hi pankti,
+                    70 / 30 (user 2026-09-23 ka naksha).  Website aur TV dono
+                    par yahi; khaali hisse me aage kuch aur aayega.
+
+                    70/30 `flex-grow` se hai (`7 1 0%` aur `3 1 0%`), chaudai ke
+                    percent se NAHI — warna 70% + 30% + 16px gap 100% se bada ho
+                    jaata aur pankti toot jaati.  grow me gap pehle kat-ta hai,
+                    bachi jagah theek 70:30 me bant-ti hai.
+
+                    PHONE par khaali dabba PM ke NEECHE chala jaata hai — wo
+                    upar `@media (max-width:860px)` se hota hai, min-width se
+                    NAHI: min-width lagate to phone par PM 560px ka hi reh jaata
+                    aur 412px ki screen se bahar nikal jaata (naap kar dekha). */}
+                <div className="md-pmrow" style={{ flex: "1 1 100%", minWidth: 0,
+                              display: "flex", gap: 16, alignItems: "flex-start",
+                              flexWrap: "wrap" }}>
+                  <div className="md-col-b" style={{ flex: "7 1 0%", minWidth: 0 }}>
+                    <PmThisMonth token={token} />
+                  </div>
+                  {/* khaali 30% — yahan aage kuch aur panel aayega */}
+                  <div className="md-col-c" style={{ flex: "3 1 0%", minWidth: 0 }} />
                 </div>
-                {/* khaali jagah — yahan aage kuch aur panel aayega */}
-                <div className="md-col-c" style={{ flex: "1 1 260px", minWidth: 0 }} />
               </div>
 
               <div className="md-section">
