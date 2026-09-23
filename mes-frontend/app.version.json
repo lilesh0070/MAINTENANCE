@@ -1,5 +1,5 @@
 {
-  "version": "1.4.113",
-  "notes": "PM This Month is now line-wise: tap a line to open a popup with that line's machines, each with its own date, status and days left. The Window column is gone, the date now reads like 15-21 Sep, and Days Left is green when days remain and red once the window has passed.",
-  "released_at": "2026-09-23T15:02:50"
+  "version": "1.4.114",
+  "notes": "Maintenance Dashboard: PM This Month now takes 70% of the row with the space beside it kept free for what comes next. On a phone that space moves below PM instead.",
+  "released_at": "2026-09-23T15:36:53"
 }
