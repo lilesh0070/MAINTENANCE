@@ -1,10 +1,20 @@
 /* ───────────────────────────────────────────────────────────────────
  * BDHistory.jsx
  * ───────────────────────────────────────────────────────────────────
- * "BD History" — read-only history of the Manual Break Down Slips, shown in
+ * "BD History" — read-only history of the Break Down Slips, shown in
  * the same table format as the Log Book → List view.  Source:
- * /api/breakdowns/log (→ maintenance_breakdown_data, the table the Break Down Slip
- * saves into).  This is a SEPARATE register from the Log Book / History Card
+ * /api/breakdowns/log, with a "Slip Type" switch at the top (user 2026-09-23):
+ *    Manual Slip → maintenance_breakdown_data       (haath se bhari slip)
+ *    Auto Slip   → maintenance_auto_breakdown_slip  (ANDON call se bani slip)
+ *    All         → dono (backend UNION ALL karta hai)
+ * Auto slip yahan SIRF FINAL SUBMIT hone ke baad aati hai (user 2026-09-23:
+ * "puri fill hone ke baad hi aayegi") -- ANDON par jo adhoori slip banti hai
+ * (prod_stage = PENDING_PRODUCTION / PENDING_MAINTENANCE) wo BD History me
+ * nahi dikhti.  Ye chhant backend `_bd_src()` me hai, yahan kuch nahi karna.
+ * Dono table ke khaane BILKUL EK JAISE hain, isliye table ka header / Excel /
+ * print JYON KA TYON hai -- sirf qatarein badalti hain (user: "ek jaise khaane
+ * hain na, wahi aayega; header me kuch change na karna").
+ * This is a SEPARATE register from the Log Book / History Card
  * (those read maintenance_logbook_db_history).
  *
  * Routing: /maintenance-breakdown/bd-history
@@ -93,6 +103,10 @@ const COLUMNS = [
   ["quality_engineer_name",              (r) => r.quality_engineer],
 ];
 
+// Slip Type ke teen button.  Value wahi jo backend `src` me leta hai.
+// "Auto Slip" = sirf poori bhari hui (COMPLETED) auto slips -- chhant backend me.
+const SRC_OPTS = [["manual", "Manual Slip"], ["auto", "Auto Slip"], ["all", "All"]];
+
 export default function BDHistory() {
   const { token, theme, user } = useAuth();
   const nav = useNavigate();
@@ -110,16 +124,19 @@ export default function BDHistory() {
   const [fMachineNo, setFMachineNo]     = useState("");
   const [fMachineName, setFMachineName] = useState("");
   const [fCat, setFCat]                 = useState("");   // A / B (slip ka B/D category)
+  // Slip Type -- shuru me "All", yaani manual + auto dono ek saath.
+  const [fSrc, setFSrc]                 = useState("all");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Source = maintenance_breakdown_data — the SAME table the Maintenance KPI /
-      // MTTR-MTBF pages compute from, so counts always match.
+      // Source = Slip Type wala switch (manual / auto / all).  "manual" wahi
+      // maintenance_breakdown_data hai jis par Maintenance KPI / MTTR-MTBF
+      // ginti karte hain, isliye un pages se aankde tab bhi milte hain.
       // FY chuni ho to sirf USI saal ki qatarein aati hain.  FY khali ho
       // (yaani user ne Clear dabaya) to SAB aata hai -- "Last 7 Days" wala
       // period filter hata diya gaya hai, user ko poora register chahiye.
-      const qs = new URLSearchParams({ limit: "3000" });
+      const qs = new URLSearchParams({ limit: "3000", src: fSrc });
       if (fFy) {
         const w = fyWindow(fFy);                     // FY selected → load that FY
         if (w) {
@@ -138,7 +155,7 @@ export default function BDHistory() {
       setRows(bd);
     } catch { setRows([]); }
     finally { setLoading(false); }
-  }, [token, fFy]);
+  }, [token, fFy, fSrc]);
   useEffect(() => { load(); }, [load]);
 
   // FY list + Machine Master List (maintenance_machines — the single master for
@@ -193,7 +210,8 @@ export default function BDHistory() {
   }, [rows, fFy]);
 
   const clearFilters = () => { autoMonth.current = false; setFFy(""); setFMonth(""); setFDate("");
-    setFZone(""); setFLine(""); setFMachineNo(""); setFMachineName(""); setFCat(""); setQ(""); };
+    setFZone(""); setFLine(""); setFMachineNo(""); setFMachineName(""); setFCat("");
+    setFSrc("all"); setQ(""); };
 
   const filtered = rows.filter((r) => {
     const d = r.bd_date ? String(r.bd_date).slice(0, 10) : "";
@@ -244,6 +262,15 @@ export default function BDHistory() {
         /* date input ko baaki dropdown jaisi hi lambai -- warna wo chhota
            reh jaata hai aur pankti tedhi dikhti hai. */
         .bh-date { min-width:150px; }
+        /* Slip Type ke teen jude hue button -- dropdown ke barabar oonchai. */
+        .bh-seg { display:flex; border:1.5px solid #cbd5e1; border-radius:9px; overflow:hidden; background:#fff; }
+        .bh-seg-b { border:0; border-right:1px solid #e2e8f0; background:#fff; color:#475569;
+                    font-family:'Barlow',sans-serif; font-size:13px; font-weight:700;
+                    padding:9px 14px; cursor:pointer; white-space:nowrap; }
+        .bh-seg-b:last-child { border-right:0; }
+        .bh-seg-b:hover { background:#f1f5f9; }
+        .bh-seg-b.on { background:${theme.accent}; color:#fff; }
+        .bh-seg-b.on:hover { background:${theme.accent}; }
         .bh-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden;
                    box-shadow:0 1px 4px rgba(15,23,42,.06); }
         .bh-card-head { background:#0f172a; color:#fff; font-weight:800; font-size:13px;
@@ -291,6 +318,18 @@ export default function BDHistory() {
         <div className="bh-body">
           {/* filter bar — same style as the Maintenance KPI page */}
           <div className="bh-filters">
+            {/* Slip Type sabse pehle -- yahi tay karta hai qatarein kahan se
+                aayengi.  Header/khaane isse nahi badalte. */}
+            <div className="bh-fld">
+              <label>Slip Type</label>
+              <div className="bh-seg">
+                {SRC_OPTS.map(([v, lbl]) => (
+                  <button key={v} type="button"
+                          className={"bh-seg-b" + (fSrc === v ? " on" : "")}
+                          onClick={() => setFSrc(v)}>{lbl}</button>
+                ))}
+              </div>
+            </div>
             <div className="bh-fld">
               <label>Financial Year</label>
               <select className="bh-sel" value={fFy} onChange={(e) => onFy(e.target.value)}>
@@ -400,8 +439,12 @@ export default function BDHistory() {
                     <tr>{COLUMNS.map(([h], i) => <th key={i}>{h}</th>)}</tr>
                   </thead>
                   <tbody>
+                    {/* key me `source` zaroori: manual aur auto dono table ki
+                        id 1 se shuru hoti hai, "All" me id dohri pad jaati hai
+                        (naapa: 15 qatarein) -- akeli id par React qatarein
+                        gadbad kar deta. */}
                     {filtered.map((r) => (
-                      <tr key={r.id}>
+                      <tr key={`${r.source || "m"}-${r.id}`}>
                         {COLUMNS.map(([, fn], i) => {
                           const v = fn(r);
                           const show = (v === null || v === undefined || v === "") ? "—" : v;

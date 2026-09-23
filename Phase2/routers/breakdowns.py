@@ -39,10 +39,10 @@ router = APIRouter(prefix="/api/breakdowns", tags=["breakdowns"])
 # no separate DB view object exists.  (Columns absent on the slip table — dept,
 # nature_of_work, remarks, handover_to, src_row_no, line_id, zone_id — surface as
 # NULL, exactly as the view did.)
-_BD_SRC = """(
+_BD_SRC_TPL = """
     SELECT
         id,
-        'Manual Slip'::text                            AS source,
+        '{label}'::text                                AS source,
         NULL::int                                      AS src_row_no,
         zone                                           AS zone_code,
         line                                           AS line_code,
@@ -83,8 +83,52 @@ _BD_SRC = """(
         received_by_name                               AS received_by,
         line_leader_operator_name                      AS line_leader_operator,
         quality_engineer_name                          AS quality_engineer
-      FROM maintenance_breakdown_data
-) AS bd"""
+      FROM {tbl}{filt}"""
+
+
+# BD History ka "Slip Type" (user 2026-09-23): manual / auto / all.
+#   manual = maintenance_breakdown_data      (haath se bhari slip)
+#   auto   = maintenance_auto_breakdown_slip (ANDON call se bani slip)
+# DONO table ke khaane BILKUL EK JAISE hain (34 column, wahi naam/naap), isliye
+# upar wala hi template dono par chalta hai aur BD History ka header / Excel /
+# print kuch nahi badalta -- sirf qatarein badhti hain.
+# ⚠ DEFAULT "manual" hi rehna chahiye: yahi endpoint Top 10 BD, Breakdown QPR
+#   aur Historical Data bhi bulate hain, unka matlab manual register hai.
+# ⚠ id dono table me 1 se shuru hoti hai, yaani "all" me id dohra sakti hai --
+#   isliye har row ke saath `source` jaata hai (frontend usi se row pehchanta hai).
+#
+# ⚠ AUTO SLIP SIRF FINAL SUBMIT HONE KE BAAD (user 2026-09-23: "puri fill hone
+#   ke baad hi aayegi, aise na aayega data yahan par").  ANDON call par slip
+#   apne-aap ban jaati hai -- us waqt usme sirf zone/line/time/down-time hota
+#   hai, problem/action/attended-by/category sab khaali.  Aisi adhoori qatar
+#   BD History me nahi aani chahiye.
+#   Nishaan `prod_stage` hai (breakdown_slips.py ka 2-stage flow):
+#       PENDING_PRODUCTION -> PENDING_MAINTENANCE -> COMPLETED
+#   COMPLETED = maintenance ne poori bhar kar submit kar di.  NULL ko bhi
+#   "poori nahi" maana jaata hai (wahi COALESCE idiom jo breakdown_slips.py
+#   me hai) -- yaani shak ho to qatar dikhti NAHI.
+#   Manual table (maintenance_breakdown_data) par `prod_stage` hai hi nahi --
+#   wo slip ek hi baar me poori bhar kar save hoti hai, isliye uspar koi shart
+#   nahi (warna saari 362 qatarein gayab ho jaatin).
+_SRC_TABLES_BD = {
+    # naam: (table, source ka label, us table par lagne wali shart)
+    "manual": ("maintenance_breakdown_data", "Manual Slip", ""),
+    "auto":   ("maintenance_auto_breakdown_slip", "Auto Slip",
+               "\n     WHERE COALESCE(prod_stage, 'PENDING_MAINTENANCE') = 'COMPLETED'"),
+}
+
+
+def _bd_src(src: str = "manual") -> str:
+    """`src` ke hisaab se wahi aliased subquery -- ek table ki ya dono ka UNION."""
+    s = (src or "manual").strip().lower()
+    if s not in ("manual", "auto", "all"):
+        s = "manual"
+    keys = ("manual", "auto") if s == "all" else (s,)
+    parts = []
+    for k in keys:
+        tbl, label, filt = _SRC_TABLES_BD[k]
+        parts.append(_BD_SRC_TPL.format(tbl=tbl, label=label, filt=filt))
+    return "(" + " UNION ALL ".join(parts) + ") AS bd"
 
 _BDLOG_COLS = (
     "id, source, src_row_no, zone_code, line_code, machine_no, machine_name, "
@@ -195,6 +239,7 @@ def list_breakdown_log(
     from_date:  Optional[str] = Query(None),
     to_date:    Optional[str] = Query(None),
     state:      Optional[str] = Query(None),
+    src:        str = Query("manual"),      # manual | auto | all  (BD History ka Slip Type)
     user=Depends(get_current_user),
 ):
     """Master breakdown log — all-lines or filtered.  Accepts BOTH the master
@@ -206,25 +251,27 @@ def list_breakdown_log(
     z, ln, mc = (zone or zone_id), (line or line_id), (machine or machine_no)
     df, dt = _bdlog_window(days, date_from, from_date, date_to, to_date)
     wsql, params = _bdlog_where(z, ln, mc, df, dt, dept, category, q)
+    _src = _bd_src(src)
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute(f"SELECT {_BDLOG_COLS} FROM {_BD_SRC} WHERE {wsql} "
+        cur.execute(f"SELECT {_BDLOG_COLS} FROM {_src} WHERE {wsql} "
                     f"ORDER BY bd_date DESC NULLS LAST, id DESC LIMIT %s", params + [limit])
         rows = [_bdlog_serialize(r) for r in (cur.fetchall() or [])]
         cur.execute(f"SELECT COUNT(*) n, COALESCE(SUM(solve_time_hours),0) hrs "
-                    f"FROM {_BD_SRC} WHERE {wsql}", params)
+                    f"FROM {_src} WHERE {wsql}", params)
         agg = cur.fetchone()
     return {"rows": rows, "total": agg["n"], "total_hours": round(float(agg["hrs"]), 1)}
 
 
 @router.get("/log/master")
-def breakdown_log_master(user=Depends(get_current_user)):
+def breakdown_log_master(src: str = Query("manual"), user=Depends(get_current_user)):
     """Zone → line → machine universe + dept/category lists for dropdowns,
     derived from the master table itself."""
+    _src = _bd_src(src)
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute(f"SELECT DISTINCT zone_code, line_code, machine_name "
-                    f"FROM {_BD_SRC} WHERE zone_code IS NOT NULL "
+                    f"FROM {_src} WHERE zone_code IS NOT NULL "
                     f"ORDER BY zone_code, line_code, machine_name")
         tree = {}
         for r in cur.fetchall() or []:
@@ -234,9 +281,9 @@ def breakdown_log_master(user=Depends(get_current_user)):
                 tree[z].setdefault(ln, set())
                 if m:
                     tree[z][ln].add(m)
-        cur.execute(f"SELECT DISTINCT dept FROM {_BD_SRC} WHERE dept IS NOT NULL ORDER BY 1")
+        cur.execute(f"SELECT DISTINCT dept FROM {_src} WHERE dept IS NOT NULL ORDER BY 1")
         depts = [r["dept"] for r in cur.fetchall()]
-        cur.execute(f"SELECT DISTINCT category FROM {_BD_SRC} WHERE category IS NOT NULL ORDER BY 1")
+        cur.execute(f"SELECT DISTINCT category FROM {_src} WHERE category IS NOT NULL ORDER BY 1")
         cats = [r["category"] for r in cur.fetchall()]
     zones = [{"zone": z,
               "lines": [{"line": ln, "machines": sorted(tree[z][ln])} for ln in sorted(tree[z])]}
@@ -247,7 +294,7 @@ def breakdown_log_master(user=Depends(get_current_user)):
 # NOTE: the old POST /api/breakdowns/log (add_breakdown_log) has been REMOVED.
 # Manual breakdowns are now raised via the Break Down Slip (→ maintenance_breakdown_data),
 # and every reader (KPI / History / Analysis / CAPA) reads maintenance_breakdown_data
-# DIRECTLY (via the _BD_SRC alias subquery above — no DB view).
+# DIRECTLY (via the _bd_src() alias subquery above — no DB view).
 
 
 @router.get("/log/stats")
@@ -267,6 +314,7 @@ def breakdown_log_stats(
     from_date:  Optional[str] = Query(None),
     to_date:    Optional[str] = Query(None),
     state:      Optional[str] = Query(None),
+    src:        str = Query("manual"),      # manual | auto | all
     user=Depends(get_current_user),
 ):
     """Zone/line/machine MTBF·MTTR·LTTR roll-up from the MASTER table — same
@@ -285,19 +333,20 @@ def breakdown_log_stats(
                 if r.get(k) is not None:
                     r[k] = float(r[k])
         return rows
+    _src = _bd_src(src)
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute(f"""SELECT zone_code AS zone_name, zone_code AS zone_id,
                           COUNT(*) AS breakdowns_count, AVG(solve_time_min) AS mttr_minutes,
                           MAX(solve_time_min) AS lttr_minutes, {MTBF} AS mtbf_hours
-                        FROM {_BD_SRC} WHERE {wsql} AND zone_code IS NOT NULL
+                        FROM {_src} WHERE {wsql} AND zone_code IS NOT NULL
                         GROUP BY zone_code ORDER BY breakdowns_count DESC""", params)
         zones = _fl(cur.fetchall() or [])
         cur.execute(f"""SELECT line_code AS line_name, line_code AS line_id,
                           zone_code AS zone_name, COUNT(*) AS breakdowns_count,
                           AVG(solve_time_min) AS mttr_minutes, MAX(solve_time_min) AS lttr_minutes,
                           {MTBF} AS mtbf_hours
-                        FROM {_BD_SRC} WHERE {wsql} AND line_code IS NOT NULL
+                        FROM {_src} WHERE {wsql} AND line_code IS NOT NULL
                         GROUP BY line_code, zone_code ORDER BY breakdowns_count DESC""", params)
         lines = _fl(cur.fetchall() or [])
         cur.execute(f"""SELECT COALESCE(machine_no, machine_name) AS machine_no,
@@ -305,7 +354,7 @@ def breakdown_log_stats(
                           zone_code AS zone_name, COUNT(*) AS breakdowns_count,
                           AVG(solve_time_min) AS mttr_minutes, MAX(solve_time_min) AS lttr_minutes,
                           {MTBF} AS mtbf_hours
-                        FROM {_BD_SRC} WHERE {wsql} AND machine_name IS NOT NULL
+                        FROM {_src} WHERE {wsql} AND machine_name IS NOT NULL
                         GROUP BY machine_name, machine_no, line_code, zone_code
                         ORDER BY breakdowns_count DESC""", params)
         machines = _fl(cur.fetchall() or [])
