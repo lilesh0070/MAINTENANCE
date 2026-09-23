@@ -57,7 +57,30 @@ const nativePul = () =>
  * (link ki jagah) ki APK ki print-WebView Capacitor ke local server se
  * judi nahi hoti; wahan `<link href="/assets/...">` khulta hi nahi. */
 const pageKeStyles = () => {
+  // ⚠ `@import` SABSE UPAR HI CHALTA HAI -- CSS ka niyam hai ki wo kisi bhi
+  // asli rule ke BAAD aaye to browser use CHUP-CHAAP nazarandaaz kar deta hai.
+  //
+  // App ka Barlow font ek inline <style> ke andar
+  // `@import url('https://fonts.googleapis.com/...Barlow...')` se aata hai.
+  // Pehle yahan saari sheets ka text seedha jod diya jaata tha, to wo @import
+  // beech me chala jaata aur chhupe iframe me font aata hi NAHI -- naap kar
+  // dekha: iframe me font-face ki ginti 0 thi.
+  //
+  // Nateeja ye tha ki JAGAH to fallback (chaudi) font se tay hoti thi, par
+  // html2canvas apna canvas MAIN PAGE me banata hai jahan Barlow (patli)
+  // maujood hai -- to har shabd apni jagah se patla chhapta aur uske baad
+  // khaali jagah bach jaati.  Kaagaz par yahi "shabd idhar-udhar" dikhta tha:
+  // DB me "SS-08 RR. UPPER END CAP CYLINDER NOT WORK." aur PDF me
+  // "SS -08 RR . UPPER  END  CAP ...".  Ek hi line ka naap: iframe ka DOM
+  // 303.2px, main page ka canvas 264.4px -- 14.7% ka farq.
+  //
+  // Isliye @import alag chhaan kar SABSE UPAR rakhte hain.
+  const aayat = [];
   const tukde = [];
+  const jodo = (text) => {
+    if (!text) return;
+    tukde.push(String(text).replace(/@import\s+[^;]+;/g, (m) => { aayat.push(m); return ""; }));
+  };
   for (const sheet of Array.from(document.styleSheets)) {
     let rules = null;
     try {
@@ -68,14 +91,15 @@ const pageKeStyles = () => {
     if (rules) {
       let t = "";
       for (const r of rules) t += r.cssText + "\n";
-      tukde.push(t);
+      jodo(t);
     } else if (sheet.ownerNode?.tagName === "STYLE") {
       // Google Fonts jaisa koi @import andar ho to cssRules mana kar deta
       // hai — aise me tag ka apna text hi le lo.
-      tukde.push(sheet.ownerNode.innerHTML);
+      jodo(sheet.ownerNode.innerHTML);
     }
   }
-  return tukde.join("\n");
+  // Ek hi @import kai sheets me ho sakta hai -- dohra bhejne ka fayda nahi.
+  return Array.from(new Set(aayat)).join("\n") + "\n" + tukde.join("\n");
 };
 
 /* Tasveeron ko HTML ke ANDAR bitha do (data: URI bana kar).
@@ -249,17 +273,41 @@ export function inputonKoTextBanao(clone, live) {
     if (tag === "input" && /^(checkbox|radio)$/.test(kism)) {
       const gol  = kism === "radio";
       const naap = (v, d) => { const n = parseFloat(v); return n > 0 ? n : d; };
-      const w = naap(cs && cs.width, 13), h = naap(cs && cs.height, 13);
+      let w = naap(cs && cs.width, 13), h = naap(cs && cs.height, 13);
+      // ⚠ RADIO HAMESHA GOL.  Slip me jagah kam padne par browser ek radio
+      // ko 13x16 kar deta hai; wahi naap `border-radius:50%` ke saath ANDE
+      // jaisa dabba bana deti thi (user 2026-09-23: "circle dekho").  Chhoti
+      // taraf le lete hain -- gol bhi rahega aur apni jagah se bahar bhi
+      // nahi nikalega.
+      if (gol) { const ek = Math.min(w, h); w = ek; h = ek; }
       const sp = clone.ownerDocument.createElement("span");
       sp.className = el.className;
-      if (z && z.checked) sp.textContent = gol ? "●" : "✓";
+      if (z && z.checked) {
+        if (gol) {
+          // ⚠ Beech ka dot GLYPH ("●") se NAHI banate.  Us glyph ka apna
+          // baseline hota hai, aur wo font ke hisaab se circle me upar-neeche
+          // khisak jaata hai.  Asli chhota gol dabba hamesha theek beech me
+          // baithta hai -- font ka koi lena-dena hi nahi rehta.
+          const d = Math.max(3, Math.round(h * 0.5));
+          const dot = clone.ownerDocument.createElement("span");
+          dot.setAttribute("style", [
+            "position:absolute", "left:50%", "top:50%",
+            "width:" + d + "px", "height:" + d + "px",
+            "margin-left:" + (-d / 2) + "px", "margin-top:" + (-d / 2) + "px",
+            "border-radius:50%", "background:#000",
+          ].join(";"));
+          sp.appendChild(dot);
+        } else {
+          sp.textContent = "✓";
+        }
+      }
       sp.setAttribute("style", [
-        "display:inline-block", "box-sizing:border-box",
+        "display:inline-block", "box-sizing:border-box", "position:relative",
         "width:" + w + "px", "height:" + h + "px",
         "border:1px solid #555", "border-radius:" + (gol ? "50%" : "2px"),
         "background:#fff", "color:#000", "text-align:center",
         "line-height:" + Math.max(1, h - 3) + "px",
-        "font-size:" + Math.max(8, Math.round(h * (gol ? 0.8 : 0.9))) + "px",
+        "font-size:" + Math.max(8, Math.round(h * 0.9)) + "px",
         "vertical-align:middle", "overflow:hidden",
         cs ? "margin:" + cs.margin : "",
       ].filter(Boolean).join(";"));
@@ -461,6 +509,34 @@ function kaagazParBithao(doc, khada, kaam,
     const chalao = async () => {
       try {
         const w = f.contentWindow;
+        // ⚠⚠ IFRAME KO MAIN PAGE KE FONT DO -- warna PDF me shabd bikhar
+        // jaate hain.
+        //
+        // App ka Barlow ek `@import url(fonts.googleapis.com...)` se aata hai.
+        // Chhupa iframe apna alag document hai: wahan wo font pahunchta hi
+        // nahi (naap kar dekha -- iframe me font-face ki ginti 0), to JAGAH
+        // fallback (chaudi) font se tay hoti hai.  Par html2canvas apna canvas
+        // MAIN PAGE me banata hai, jahan Barlow (patli) maujood hai -- to har
+        // shabd apni jagah se patla chhapta hai aur uske baad khaali jagah
+        // bach jaati hai.  DB me "SS-08 RR. UPPER END CAP CYLINDER NOT WORK."
+        // tha aur PDF me "SS -08 RR . UPPER  END  CAP ..." aa raha tha.
+        //
+        // Ek hi line ka naap:  iframe ka DOM 303.2px  |  main ka canvas 264.4px
+        // Font copy karne ke baad:  dono 264.4px -- farq ZERO.
+        //
+        // `@import` dobara bhejne se kaam nahi chalta (aazma kar dekha, iframe
+        // me phir bhi 0 font aaye), aur plant ka LAN internet se kata bhi hai.
+        // Ye tareeqa network par tika hi nahi -- font main page me pehle se
+        // utra hua hai, bas wahi dobara istemal ho jaata hai.
+        try {
+          const apne = w?.document?.fonts;
+          if (apne && document.fonts) {
+            document.fonts.forEach((ek) => {
+              if (ek.status === "loaded") { try { apne.add(ek); } catch { /* ye font chhod do */ } }
+            });
+          }
+        } catch { /* font set na mile to pehle jaisa chalega */ }
+
         // ⚠ FONT UTARNE KA INTEZAAR -- warna naap GALAT aati hai.
         // Neeche saara hisaab (scale, lambai) text ki naap par tika hai, aur
         // font badalte hi wo naap badal jaati hai.  Breakdown Slip par yahi
@@ -859,6 +935,20 @@ export async function pdfDocSe(doc, { naam = "sheet", khada = false, margin = 6,
         while (sc > 1 && naapW * naapH * sc * sc > PX_HADD) sc -= 0.25;
 
         const canvas = await html2canvas(el, {
+          // ⚠ html2canvas APNA TEESRA DOCUMENT banata hai (clone) aur naap
+          // WAHAN leta hai, jabki akshar MAIN PAGE ke canvas par likhta hai.
+          // Font sirf hamare iframe me daalna kaafi nahi -- clone me bhi wahi
+          // font chahiye, warna naap aur likhawat phir alag ho jaate hain aur
+          // shabd bikhar jaate hain.
+          onclone: (naklDoc) => {
+            try {
+              if (naklDoc && naklDoc.fonts && document.fonts) {
+                document.fonts.forEach((ek) => {
+                  if (ek.status === "loaded") { try { naklDoc.fonts.add(ek); } catch { /* ye font chhod do */ } }
+                });
+              }
+            } catch { /* font set na mile to pehle jaisa */ }
+          },
           backgroundColor: "#ffffff",
           scale: sc,                // 2 = ~180dpi (naap kar chuna)
           useCORS: true,
