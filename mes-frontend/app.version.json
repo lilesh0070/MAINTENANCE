@@ -1,5 +1,5 @@
 {
-  "version": "1.4.118",
-  "notes": "Users now carry an Employee ID (required for new users, editable right in the list), and Attendance - Add Member can pick a person straight from the app users, filling the name and employee code for you.",
-  "released_at": "2026-09-23T17:25:15"
+  "version": "1.4.119",
+  "notes": "Login ab Employee ID se bhi; admin username badal sakta hai",
+  "released_at": "2026-09-23T17:48:50"
 }
