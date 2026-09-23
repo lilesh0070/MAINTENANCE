@@ -1,5 +1,5 @@
 {
-  "version": "1.4.122",
-  "notes": "PDF pages now break at a row border instead of slicing a row in half, and dates and times print exactly as they appear on screen",
-  "released_at": "2026-09-23T20:21:22"
+  "version": "1.4.123",
+  "notes": "The breakdown slip PDF now matches the form on screen exactly - clean text spacing and properly round tick circles",
+  "released_at": "2026-09-23T21:05:19"
 }
