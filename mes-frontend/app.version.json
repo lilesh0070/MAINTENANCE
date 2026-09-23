@@ -1,5 +1,5 @@
 {
-  "version": "1.4.116",
-  "notes": "3D View: a new Servo Motor model. Hover or tap a part to read about it, use Explore for the exploded view, X-Ray to see inside, and the slider to set the shaft position.",
-  "released_at": "2026-09-23T16:23:13"
+  "version": "1.4.117",
+  "notes": "Today Present Person now also works while the server backend is still on the older build - it falls back to the attendance board.",
+  "released_at": "2026-09-23T16:48:03"
 }
