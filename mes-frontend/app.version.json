@@ -1,5 +1,5 @@
 {
-  "version": "1.4.109",
-  "notes": "Attendance Dashboard: type a name or emp code and press Search to jump to that person's card. On TV the board now fits in the top half of the screen with no scrolling.",
-  "released_at": "2026-09-22T14:13:42"
+  "version": "1.4.110",
+  "notes": "Pending Breakdown: tap Total Breakdowns or Pending Closures to filter the list below. New Slip Type switch (Manual / Auto / All) on BD History, BD Analysis, Pareto Analysis, Top 10 BD, Breakdown QPR, CAPA and Maintenance KPI - auto slips count only after they are fully submitted.",
+  "released_at": "2026-09-23T12:53:28"
 }
