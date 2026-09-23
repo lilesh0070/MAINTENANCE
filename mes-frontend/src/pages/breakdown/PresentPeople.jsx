@@ -20,15 +20,52 @@ import { api } from "./shared";
  *        Attendance Dashboard ki permission na hone par bhi ye dikhta hai.
  * ════════════════════════════════════════════════════════════════════ */
 
+/* Shift ka faisla YAHAN sirf PURANE server ke liye hai (neeche `board` wala
+   raasta).  Naya server khud batata hai -- wahi sahi hai, kyunki TV / phone
+   ki apni ghadi aksar galat chalti hai. */
+const pad2 = (n) => String(n).padStart(2, "0");
+function abKiShift() {
+  const now = new Date();
+  const h = now.getHours();
+  const raat = h < 7 || h >= 18;
+  const d = new Date(now);
+  if (h < 7) d.setDate(d.getDate() - 1);   // aadhi raat ke baad = kal ki raat
+  return {
+    slots: raat ? ["B"] : ["G", "A"],
+    shift: raat ? "B" : "G + A",
+    day: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
+  };
+}
+
 function PresentPeople({ token }) {
   const [d, setD]     = useState(null);
   const [err, setErr] = useState(false);
 
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
     if (!token) return;
-    api.get("/api/attendance/on-duty", token)
-      .then((r) => { setD(r); setErr(false); })
-      .catch(() => setErr(true));
+    /* 1) Naya raasta: server khud shift aur naam de deta hai. */
+    try {
+      setD(await api.get("/api/attendance/on-duty", token));
+      setErr(false);
+      return;
+    } catch {
+      /* Server ka backend abhi purana hai (endpoint 2026-09-23 ko bana) --
+         neeche wala raasta lete hain.  `git pull` ke baad site to turant nayi
+         ho jaati hai, par backend tab tak purana rehta hai jab tak use restart
+         na karo; tab tak ye panel khaali na dikhe, isliye ye intezaam. */
+    }
+    /* 2) Purana raasta: wahi board jo Attendance Dashboard padhta hai, aur
+          chhant yahin.  Dhyan: yahan waqt BROWSER ka lagta hai. */
+    try {
+      const w = abKiShift();
+      const b = await api.get(`/api/attendance/board?day=${w.day}`, token);
+      const log = (b?.people || [])
+        .filter((p) => w.slots.includes(p.slot))
+        .map((p) => ({ id: p.id, name: p.name, emp_code: p.emp_code,
+                       designation: p.designation, slot: p.slot }));
+      setD({ shift: w.shift, day: w.day, count: log.length, people: log });
+      setErr(false);
+    } catch { setErr(true); }
   }, [token]);
 
   useEffect(() => { load(); }, [load]);
