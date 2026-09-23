@@ -1,5 +1,5 @@
 {
-  "version": "1.4.119",
-  "notes": "Login ab Employee ID se bhi; admin username badal sakta hai",
-  "released_at": "2026-09-23T17:48:50"
+  "version": "1.4.120",
+  "notes": "Users list: Edit button on every row to change username and employee ID",
+  "released_at": "2026-09-23T18:22:27"
 }
