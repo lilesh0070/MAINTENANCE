@@ -1,5 +1,5 @@
 {
-  "version": "1.4.111",
-  "notes": "Pending Breakdown slip table now shows the breakdown Date next to S.No, with the newest date on top. Tap the Total Breakdowns or Pending Closures card to filter the list. Slip Type switch (Manual / Auto / All) on BD History, BD Analysis, Pareto Analysis, Top 10 BD, Breakdown QPR, CAPA and Maintenance KPI - auto slips are counted only after the slip is fully submitted.",
-  "released_at": "2026-09-23T13:01:18"
+  "version": "1.4.112",
+  "notes": "Pending Breakdown now opens on Pending Closures - the work still left from the maintenance side. Tap Total Breakdowns to see all slips. The slip table shows the breakdown Date next to S.No with the newest date on top.",
+  "released_at": "2026-09-23T13:14:33"
 }
