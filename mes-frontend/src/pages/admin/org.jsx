@@ -28,6 +28,13 @@ export function UsersPage({ toast, readOnly = false }) {
   /* Username bhi list me hi badal sake (user 2026-09-23: "admin ke paas access
      do ki username change kar sake").  Wahi tareeqa jo Emp ID ka hai. */
   const [nameDraft, setNameDraft] = useState({});
+  /* Har row ke aage saaf "Edit" button -- ek hi popup me Username + Employee
+     ID dono.  Upar wale input rehne diye hain (jaldi badalne ke liye), par wo
+     plain text jaise dikhte the aur kisi ko pata hi nahi chalta tha ki click
+     karke badla ja sakta hai -- user 2026-09-23: "username and emp id change
+     krne ka option de na admin panel me vhi hr id ke aage". */
+  const [editModal,  setEditModal]  = useState(null);
+  const [editSaving, setEditSaving] = useState(false);
   const [saving,      setSaving]      = useState(false);
   const [selLines,    setSelLines]    = useState([]);
   const [revealed,    setRevealed]    = useState(() => new Set());  // kin users ka password dikhana hai
@@ -106,6 +113,42 @@ export function UsersPage({ toast, readOnly = false }) {
       toast(naya ? `Employee ID ${naya} saved ✓` : "Employee ID cleared");
       load();
     } catch(e) { toast(e.message,"err"); load(); }
+  };
+
+  const openEdit = (u) => setEditModal({
+    id: u.id, username: u.username || "", emp_code: u.emp_code || "",
+    wasName: u.username || "", wasCode: u.emp_code || "",
+  });
+
+  /* Dono alag endpoint par jaate hain, isliye jo BADLA hai sirf wahi bheja
+     jaata hai.  Kram jaan-boojh kar hai: pehle EMP CODE, phir USERNAME --
+     apna hi naam badalne par token ussi waqt bekaar ho jaata hai, to uske
+     baad koi bhi call 401 khaati.  Ulta kram rakhte to emp code chup-chaap
+     gir jaata. */
+  const saveEdit = async () => {
+    const m = editModal;
+    if (!m) return;
+    const naam = (m.username || "").trim();
+    const code = (m.emp_code || "").trim().toUpperCase();
+    if (!naam) { toast("Username is required","err"); return; }
+    const naamBadla = naam !== m.wasName;
+    const codeBadla = code !== (m.wasCode || "").toUpperCase();
+    if (!naamBadla && !codeBadla) { setEditModal(null); return; }
+    if (naamBadla && m.wasName === me?.username &&
+        !confirm(`Change your own username to "${naam}"? You will be signed out.`)) return;
+    setEditSaving(true);
+    try {
+      if (codeBadla) await api.put(`/api/users/${m.id}/role`,     { emp_code: code }, token);
+      if (naamBadla) await api.put(`/api/users/${m.id}/username`, { username: naam }, token);
+      toast("Saved");
+      setEditModal(null);
+      load();
+    } catch(e) {
+      // Ho sakta hai ek chal gaya ho aur doosra nahi -- list dobara padho
+      // taaki screen par wahi dikhe jo sach me DB me hai.
+      toast(e.message,"err");
+      load();
+    } finally { setEditSaving(false); }
   };
 
   const deleteUser = async (u) => {
@@ -318,6 +361,7 @@ export function UsersPage({ toast, readOnly = false }) {
                   <td data-lbl="Last Login" style={{ padding:"12px 14px", fontFamily:"monospace", fontSize:11, color:"#64748b" }}>{u.last_login?new Date(u.last_login).toLocaleString("en-IN"):"Never"}</td>
                   <td style={{ padding:"12px 14px" }}>
                     <div className="ap-act" style={{ display:"flex", gap:8 }}>
+                      {!readOnly && <Btn size="sm" onClick={()=>openEdit(u)}>Edit</Btn>}
                       <Btn size="sm" onClick={()=>resetPassword(u)}>Reset PW</Btn>
                       {u.username!=="admin" && <Btn size="sm" onClick={()=>openPerms(u)}>Permissions</Btn>}
                       {u.username!=="admin" && <Btn size="sm" variant="danger" onClick={()=>deleteUser(u)}>Delete</Btn>}
@@ -330,6 +374,34 @@ export function UsersPage({ toast, readOnly = false }) {
           </div>
         )}
       </Card>
+
+      {/* Username + Employee ID -- dono ek hi jagah (har row ke "Edit" se). */}
+      <Modal open={!!editModal} onClose={()=>setEditModal(null)}
+             title={`Edit User - ${editModal?.wasName || ""}`}>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+          <FF label="Username *" hint="Login name. This user can sign in with it or with the Employee ID.">
+            <Input value={editModal?.username || ""} maxLength={80}
+                   onChange={e=>setEditModal(m=>({ ...m, username:e.target.value }))}
+                   placeholder="login id" name="mes-edit-username" autoComplete="off" />
+          </FF>
+          <FF label="Employee ID" hint="Works as a login ID too. Leave blank to clear it.">
+            <Input value={editModal?.emp_code || ""} maxLength={40}
+                   onChange={e=>setEditModal(m=>({ ...m, emp_code:e.target.value }))}
+                   placeholder="e.g. 487" name="mes-edit-empcode" autoComplete="off" />
+          </FF>
+        </div>
+        <div style={{ marginTop:14, padding:"10px 12px", borderRadius:8, background:"#fffbeb",
+                      border:"1px solid #fde68a", fontSize:12, color:"#92400e", lineHeight:1.5 }}>
+          Changing the username signs that user out on every device. They can sign back in
+          with the new username or with their Employee ID.
+        </div>
+        <ModalActions>
+          <Btn onClick={()=>setEditModal(null)}>Cancel</Btn>
+          <Btn variant="primary" onClick={saveEdit} disabled={editSaving}>
+            {editSaving ? "Saving..." : "Save"}
+          </Btn>
+        </ModalActions>
+      </Modal>
 
       <Modal open={modal} onClose={()=>setModal(false)} title="Add User">
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
