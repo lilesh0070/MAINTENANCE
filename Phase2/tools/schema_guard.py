@@ -50,8 +50,18 @@ def _connect():
     import psycopg2
     from dotenv import load_dotenv
     load_dotenv(os.path.join(_PHASE2, ".env"), override=True)
+    # Ghar se (Tailscale) bhi chale: wahi host jo app khud chunti hai -- DB_HOST
+    # (office LAN) na mile to DB_HOST_ALT wala raasta (2026-09-23).  database.py
+    # na mile to purana bartaav.
+    host = os.getenv("DB_HOST")
+    try:
+        sys.path.insert(0, _PHASE2)
+        from database import _pick_host
+        host = _pick_host()
+    except Exception:
+        pass
     return psycopg2.connect(
-        host=os.getenv("DB_HOST"), port=os.getenv("DB_PORT"),
+        host=host, port=os.getenv("DB_PORT"),
         dbname=os.getenv("DB_NAME"), user=os.getenv("DB_USER"),
         password=os.getenv("DB_PASS"), connect_timeout=8)
 
