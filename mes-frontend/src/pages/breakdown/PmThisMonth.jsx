@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { Fragment, useState, useEffect, useMemo } from "react";
 import { api } from "./shared";
 
 /* ════════════════════════════════════════════════════════════════════
@@ -10,14 +10,20 @@ import { api } from "./shared";
  *              week_index, done, done_date, sheet_filled}
  *        top: {total, done, pending, sheet_pending}
  *
- *      Layout HAMESHA ek jaisa: poora table (Zone / Line / Machine / Date /
- *      Status / Days Left / Window / Sheet) + filters + paging + legend.  Jagah
- *      kam padi to table side me scroll ho jaata hai.  (Pehle width ke hisaab se
- *      column chhupte the — TV par "Window column kahan gaya?" wali dikkat hui,
- *      isliye ab koi width-guess nahi.)
+ *      Table ab LINE-WISE hai (user 2026-09-23): Zone / Line / Date / Status /
+ *      Days Left / Sheet.  Machine No. ka apna khaana NAHI -- LINE par click
+ *      karo to usi ke neeche us line ki saari machine khul jaati hai, har ek ka
+ *      apna date, status, days-left aur sheet.  Ek waqt me ek hi line khulti
+ *      hai (accordion), warna table lamba ho kar dashboard kha jaata hai.
  *
- *      Status / days-left / window% sab ISI data se nikalte hain (week ka
- *      din-range vs aaj) — kahin koi banaya hua number nahi.
+ *      "Window" wala khaana HATA diya gaya.  Wo sirf batata tha ki khidki ka
+ *      kitna samay beet chuka -- log use "kaam 100% ho gaya" samajh lete the,
+ *      jabki wo waqt ka hisaab tha.  Jo kaam ka haal hai wo Status aur Days
+ *      Left pehle se bata dete hain.
+ *
+ *      Status aur days-left dono ISI data se nikalte hain (hafte ka din-range
+ *      vs aaj) -- kahin koi banaya hua number nahi.  Days Left ka rang: din
+ *      bache hon to HARA, nikal chuke hon to LAAL.
  * ════════════════════════════════════════════════════════════════════ */
 
 const S = {
@@ -28,6 +34,18 @@ const S = {
   ON_TRACK:  { label: "ON TRACK",  fg: "#15803d", bg: "#f0fdf4", bar: "#22c55e", dot: "#22c55e" },
 };
 const ORDER = ["OVERDUE", "DUE", "DUE_SOON", "ON_TRACK", "COMPLETED"];
+
+/* Mahine ka chhota naam KHUD ka -- `toLocaleString("en-GB")` September ke liye
+   "Sept" deta hai (4 akshar), baaki sab ke liye 3.  Table me wo tedha dikhta
+   tha, isliye yahi list. */
+const MON3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// Days Left ka rang: din bache hon (ya kaam ho chuka ho) to hara, nikal gaye
+// to laal.  Ek hi jagah tay hai -- line ki qatar aur machine ki qatar dono yahi
+// use karti hain.
+const DAYS_GREEN = "#15803d", DAYS_RED = "#b91c1c";
+const daysColor = (days, done) => (done || days >= 0 ? DAYS_GREEN : DAYS_RED);
 
 // Ye chhote tukde MODULE level par hain — render ke andar banate to React
 // har render par inhe naya component maanta aur andar ke <select> remount ho
@@ -49,15 +67,10 @@ function _Pill({ k }) { return (
   </span>
 ); }
 
-function _Bar({ r }) { return (
-  <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-    <span style={{ width: 62, height: 5, borderRadius: 99, background: "#eef2f7", overflow: "hidden" }}>
-      <span style={{ display: "block", height: "100%", width: `${r.used}%`, background: S[r.key].bar }} />
-    </span>
-    <span style={{ fontSize: 10.5, fontWeight: 700, color: "#64748b", minWidth: 26 }}>{r.used}%</span>
-  </span>
-); }
-
+function _Sheet({ filled }) { return filled
+  ? <span style={{ color: "#15803d", fontWeight: 800, fontSize: 11.5 }}>✓ Filled</span>
+  : <span style={{ color: "#94a3b8", fontWeight: 700, fontSize: 11.5 }}>—</span>;
+}
 
 function _Stat({ n, label, color, sub }) { return (
   <div style={{ minWidth: 0, background: "#fff", border: "1px solid #e8edf3",
@@ -77,19 +90,17 @@ function PmThisMonth({ token }) {
   const [fLine, setFLine]     = useState("");
   const [fStatus, setFStatus] = useState("");
   const [page, setPage]       = useState(1);
+  // Kaun si line khuli hui hai (khaali = koi nahi).  Ek waqt me ek hi.
+  const [openLine, setOpenLine] = useState("");
   const PER = 10;
-  // Card ko jitni jagah milti hai usi hisaab se layout: chaudi jagah -> poora
-  // table (filters + pagination), patli -> compact list.  Dashboard me kabhi ye
-  // saath wali column me hota hai, kabhi poori chaudai me — isliye naap kar tay
-  // karte hain, andaaze se nahi.
   // Har jagah POORA table (saare column).  Jagah kam padi to table apne aap
   // side me scroll ho jaata hai — pehle width ke hisaab se column chhupte the
-  // aur TV par "Window column kahan gaya?" wali dikkat aa jaati thi.
-  const wide = true, roomy = true;
+  // aur TV par "column kahan gaya?" wali dikkat aa jaati thi.
+  const wide = true;
 
   const now      = new Date();
   const ym       = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const monAbbr  = now.toLocaleString("en-GB", { month: "short" });
+  const monAbbr  = MON3[now.getMonth()];
   const monthLbl = now.toLocaleString("en-GB", { month: "long", year: "numeric" });
   const lastDay  = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const today    = now.getDate();
@@ -119,11 +130,7 @@ function PmThisMonth({ token }) {
         else if (daysLeft === 0) key = "DUE";
         else if (daysLeft <= 7)  key = "DUE_SOON";
         else key = "ON_TRACK";
-        // window kitna beet chuka (0-100) — done ho to poora
-        const span = w.end - w.start + 1;
-        const used = m.done ? 100
-          : Math.max(0, Math.min(100, Math.round(((today - w.start + 1) / span) * 100)));
-        out.push({ ...m, wno: Number(wno), win: w, daysLeft, key, used });
+        out.push({ ...m, wno: Number(wno), win: w, daysLeft, key });
       }));
     return out.sort((a, b) => ORDER.indexOf(a.key) - ORDER.indexOf(b.key)
       || a.wno - b.wno
@@ -147,16 +154,54 @@ function PmThisMonth({ token }) {
   const shown = useMemo(() => rows.filter((r) =>
     (!fZone || r.zone_name === fZone) && (!fLine || r.line === fLine) &&
     (!fStatus || r.key === fStatus)), [rows, fZone, fLine, fStatus]);
-  const pages = Math.max(1, Math.ceil(shown.length / PER));
-  const pageRows = shown.slice((Math.min(page, pages) - 1) * PER, Math.min(page, pages) * PER);
 
-  const dateTxt = (r) => r.win.start === r.win.end
-    ? `${String(r.win.start).padStart(2, "0")} ${monAbbr}`
-    : `${String(r.win.start).padStart(2, "0")}–${String(r.win.end).padStart(2, "0")} ${monAbbr}`;
-  const daysTxt = (r) => r.key === "COMPLETED" ? "done"
-    : r.daysLeft < 0 ? `${r.daysLeft} days`
-    : r.daysLeft === 0 ? "today"
-    : r.daysLeft === 1 ? "1 day" : `${r.daysLeft} days`;
+  /* Ek LINE = ek qatar.  Us line ki saari machine uske andar.
+     - status  : jo sabse bura ho (ORDER ka pehla)
+     - days    : jo machine sabse jaldi wali ho (sabse chhota daysLeft);
+                 saari ho chuki hon to "done"
+     - date    : us line ki khidkiyon ka jod (sabse pehla din – sabse aakhri)
+     - sheet   : kitni sheet bhari / kul  */
+  const groups = useMemo(() => {
+    const m = new Map();
+    shown.forEach((r) => {
+      const gid = `${r.zone_name || "—"}||${r.line || "—"}`;
+      if (!m.has(gid)) m.set(gid, { gid, zone_name: r.zone_name, line: r.line, items: [] });
+      m.get(gid).items.push(r);
+    });
+    const out = [];
+    m.forEach((g) => {
+      const items = [...g.items].sort((a, b) => ORDER.indexOf(a.key) - ORDER.indexOf(b.key)
+        || a.win.start - b.win.start
+        || String(a.machine_code || "").localeCompare(String(b.machine_code || "")));
+      const pend = items.filter((x) => x.key !== "COMPLETED");
+      out.push({
+        ...g,
+        items,
+        n: items.length,
+        key: items.reduce((a, b) => (ORDER.indexOf(a.key) <= ORDER.indexOf(b.key) ? a : b)).key,
+        allDone: pend.length === 0,
+        daysLeft: pend.length ? Math.min(...pend.map((x) => x.daysLeft)) : 0,
+        win: { start: Math.min(...items.map((x) => x.win.start)),
+               end:   Math.max(...items.map((x) => x.win.end)) },
+        filled: items.filter((x) => x.sheet_filled).length,
+      });
+    });
+    return out.sort((a, b) => ORDER.indexOf(a.key) - ORDER.indexOf(b.key)
+      || String(a.zone_name || "").localeCompare(String(b.zone_name || ""))
+      || String(a.line || "").localeCompare(String(b.line || "")));
+  }, [shown]);
+
+  const pages = Math.max(1, Math.ceil(groups.length / PER));
+  const pageGroups = groups.slice((Math.min(page, pages) - 1) * PER, Math.min(page, pages) * PER);
+
+  // "01–07 Sep" / ek hi din ho to "05 Sep"
+  const dateTxt = (w) => w.start === w.end
+    ? `${String(w.start).padStart(2, "0")} ${monAbbr}`
+    : `${String(w.start).padStart(2, "0")}–${String(w.end).padStart(2, "0")} ${monAbbr}`;
+  const daysTxt = (days, done) => done ? "done"
+    : days < 0 ? `${days} days`
+    : days === 0 ? "today"
+    : days === 1 ? "1 day" : `${days} days`;
 
   const th = { textAlign: "left", padding: "9px 10px", fontSize: 9.5, fontWeight: 800,
                letterSpacing: ".07em", textTransform: "uppercase", color: "#8a94a6",
@@ -167,62 +212,94 @@ function PmThisMonth({ token }) {
                   fontWeight: 600, color: "#334155", background: "#fff", fontFamily: "inherit" };
 
 
-  // Filters + table + paging + legend — EK hi jagah likha, inline (chaudi jagah)
-  // aur modal dono yahi use karte hain.
+  // Filters + table + paging + legend — EK hi jagah likha.
   const fullBlock = (inModal) => (
     <>
       <div style={{ display: "flex", gap: 10, padding: inModal ? "13px 22px" : "12px 16px",
                     borderBottom: "1px solid #eef2f7", flexWrap: "wrap", alignItems: "center" }}>
         <select style={selSt} value={fZone}
-                onChange={(e) => { setFZone(e.target.value); setFLine(""); setPage(1); }}>
+                onChange={(e) => { setFZone(e.target.value); setFLine(""); setPage(1); setOpenLine(""); }}>
           <option value="">All Zones</option>
           {zones.map((z) => <option key={z} value={z}>{z}</option>)}
         </select>
         <select style={selSt} value={fLine} disabled={!fZone}
-                onChange={(e) => { setFLine(e.target.value); setPage(1); }}>
+                onChange={(e) => { setFLine(e.target.value); setPage(1); setOpenLine(""); }}>
           <option value="">All Lines</option>
           {lines.map((l) => <option key={l} value={l}>{l}</option>)}
         </select>
         <select style={selSt} value={fStatus}
-                onChange={(e) => { setFStatus(e.target.value); setPage(1); }}>
+                onChange={(e) => { setFStatus(e.target.value); setPage(1); setOpenLine(""); }}>
           <option value="">All Status</option>
           {ORDER.map((k) => <option key={k} value={k}>{S[k].label}</option>)}
         </select>
         <span style={{ marginLeft: "auto", fontSize: 12, color: "#8a94a6", fontWeight: 600 }}>
-          {shown.length} of {rows.length}
+          {groups.length} {groups.length === 1 ? "line" : "lines"} · {shown.length} of {rows.length} machines
         </span>
       </div>
 
       <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse",
-                        minWidth: (roomy || inModal) ? 880 : 560 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
           <thead><tr style={{ background: "#f8fafc" }}>
-            {["Zone", "Line", "Machine No.", "Date", "Status", "Days Left"]
-              .concat(roomy || inModal ? ["Window", "Sheet"] : [])
+            {["Zone", "Line", "Date", "Status", "Days Left", "Sheet"]
               .map((h) => <th key={h} style={{ ...th, padding: inModal ? "9px 10px" : "9px 16px" }}>{h}</th>)}
           </tr></thead>
           <tbody>
-            {pageRows.map((r, i) => (
-              <tr key={i}>
-                <td style={{ ...td, paddingLeft: inModal ? 10 : 16 }}><_ZoneTag z={r.zone_name} /></td>
-                <td style={{ ...td, fontWeight: 700, color: "#0f172a" }}>{r.line || "—"}</td>
-                <td style={{ ...td, fontWeight: 700, color: "#0f172a" }}
-                    title={r.machine_name || ""}>{r.machine_code || "—"}</td>
-                <td style={td}>{dateTxt(r)}</td>
-                <td style={td}><_Pill k={r.key} /></td>
-                <td style={{ ...td, fontWeight: 700, color: S[r.key].fg }}>{daysTxt(r)}</td>
-                {(roomy || inModal) && <td style={td}><_Bar r={r} /></td>}
-                {(roomy || inModal) && (
-                  <td style={td}>
-                    {r.sheet_filled
-                      ? <span style={{ color: "#15803d", fontWeight: 800, fontSize: 11.5 }}>✓ Filled</span>
-                      : <span style={{ color: "#94a3b8", fontWeight: 700, fontSize: 11.5 }}>—</span>}
-                  </td>
-                )}
-              </tr>
-            ))}
-            {pageRows.length === 0 && (
-              <tr><td colSpan={roomy || inModal ? 8 : 6} style={{ ...td, textAlign: "center", color: "#94a3b8",
+            {pageGroups.map((g) => {
+              const open = openLine === g.gid;
+              return (
+                <Fragment key={g.gid}>
+                  {/* LINE ki qatar — click karne par uski machine khulti hain */}
+                  <tr onClick={() => setOpenLine(open ? "" : g.gid)}
+                      title={open ? "Hide machines" : "Show machines of this line"}
+                      style={{ cursor: "pointer", background: open ? "#f8fafc" : "transparent" }}>
+                    <td style={{ ...td, paddingLeft: inModal ? 10 : 16 }}><_ZoneTag z={g.zone_name} /></td>
+                    <td style={{ ...td, fontWeight: 700, color: "#0f172a" }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+                        <span style={{ color: "#94a3b8", fontSize: 11 }}>{open ? "▾" : "▸"}</span>
+                        {g.line || "—"}
+                        <span style={{ fontSize: 10.5, fontWeight: 700, color: "#8a94a6",
+                                       background: "#f1f5f9", borderRadius: 6, padding: "1px 7px" }}>
+                          {g.n} {g.n === 1 ? "m/c" : "m/c"}
+                        </span>
+                      </span>
+                    </td>
+                    <td style={td}>{dateTxt(g.win)}</td>
+                    <td style={td}><_Pill k={g.key} /></td>
+                    <td style={{ ...td, fontWeight: 800, color: daysColor(g.daysLeft, g.allDone) }}>
+                      {daysTxt(g.daysLeft, g.allDone)}
+                    </td>
+                    <td style={{ ...td, fontWeight: 700, color: g.filled === g.n ? "#15803d" : "#8a94a6" }}>
+                      {g.filled}/{g.n}
+                    </td>
+                  </tr>
+
+                  {/* us line ki machine — wahi khaane, thoda andar khiska kar */}
+                  {open && g.items.map((r, i) => (
+                    <tr key={`${g.gid}-${r.machine_code || i}`} style={{ background: "#fcfdfe" }}>
+                      <td style={{ ...td, paddingLeft: inModal ? 10 : 16 }} />
+                      <td style={{ ...td, paddingLeft: 34, fontWeight: 700, color: "#0f172a" }}
+                          title={r.machine_name || ""}>
+                        {r.machine_code || "—"}
+                        {r.machine_name && (
+                          <span style={{ fontWeight: 600, color: "#8a94a6", fontSize: 11 }}>
+                            {"  "}· {r.machine_name}
+                          </span>
+                        )}
+                      </td>
+                      <td style={td}>{dateTxt(r.win)}</td>
+                      <td style={td}><_Pill k={r.key} /></td>
+                      <td style={{ ...td, fontWeight: 700,
+                                   color: daysColor(r.daysLeft, r.key === "COMPLETED") }}>
+                        {daysTxt(r.daysLeft, r.key === "COMPLETED")}
+                      </td>
+                      <td style={td}><_Sheet filled={r.sheet_filled} /></td>
+                    </tr>
+                  ))}
+                </Fragment>
+              );
+            })}
+            {pageGroups.length === 0 && (
+              <tr><td colSpan={6} style={{ ...td, textAlign: "center", color: "#94a3b8",
                                            padding: 26 }}>Nothing matches this filter.</td></tr>
             )}
           </tbody>
@@ -233,23 +310,23 @@ function PmThisMonth({ token }) {
                     padding: inModal ? "12px 22px" : "12px 16px",
                     borderTop: "1px solid #eef2f7", flexWrap: "wrap" }}>
         <span style={{ fontSize: 12, color: "#8a94a6", fontWeight: 600 }}>
-          {shown.length === 0 ? "0 entries"
+          {groups.length === 0 ? "0 lines"
             : `Showing ${(Math.min(page, pages) - 1) * PER + 1} to ` +
-              `${Math.min(Math.min(page, pages) * PER, shown.length)} of ${shown.length}`}
+              `${Math.min(Math.min(page, pages) * PER, groups.length)} of ${groups.length} lines`}
         </span>
         <div style={{ display: "flex", gap: 5, marginLeft: "auto", alignItems: "center" }}>
-          <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}
+          <button onClick={() => { setPage((p) => Math.max(1, p - 1)); setOpenLine(""); }} disabled={page <= 1}
                   style={{ ...selSt, padding: "6px 11px", cursor: page <= 1 ? "default" : "pointer",
                            opacity: page <= 1 ? .45 : 1 }}>‹</button>
           {Array.from({ length: pages }, (_, i) => i + 1).slice(0, 7).map((p) => (
-            <button key={p} onClick={() => setPage(p)}
+            <button key={p} onClick={() => { setPage(p); setOpenLine(""); }}
                     style={{ ...selSt, padding: "6px 11px", cursor: "pointer",
                              ...(p === Math.min(page, pages)
                                  ? { background: "#2563eb", color: "#fff", borderColor: "#2563eb" } : {}) }}>
               {p}
             </button>
           ))}
-          <button onClick={() => setPage((p) => Math.min(pages, p + 1))} disabled={page >= pages}
+          <button onClick={() => { setPage((p) => Math.min(pages, p + 1)); setOpenLine(""); }} disabled={page >= pages}
                   style={{ ...selSt, padding: "6px 11px", cursor: page >= pages ? "default" : "pointer",
                            opacity: page >= pages ? .45 : 1 }}>›</button>
         </div>
@@ -336,8 +413,6 @@ function PmThisMonth({ token }) {
           ))}
         </div>}
       </div>
-
-      {/* ── FULL VIEW ─────────────────────────────────────────────── */}
     </>
   );
 }

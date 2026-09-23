@@ -449,19 +449,28 @@ Wapas nahi aayegi.  Aage badhein?`)) return;
                     toggleFullscreen={toggleFullscreen}
                   />
                 </div>
-                {/* PM This Month — HAMESHA apni poori line par (ANDON ke neeche).
-                    Pehle ye daayin taraf 500px ke column me baithta tha, par
-                    landscape me .md-body sirf 1280px (padding hata kar 1200px)
-                    hai — PM ka poora table 880px maangta hai, to 380px kat
-                    jaata tha.  TV par TvFit body ka overflow hidden kar deta
-                    hai, yaani us kate hue hisse tak pahunchne ka koi zariya
-                    hi nahi — Status/Days Left/Window/Sheet gayab.  flex-basis
-                    100% se ye apne aap agli line par chala jaata hai (wahi
-                    behaviour jo portrait me pehle se tha), aur poore 1200px
-                    milte hain.  Yahan maxWidth mat lagana. */}
-                <div className="md-col-b" style={{ flex: "1 1 100%", minWidth: 0 }}>
+                {/* PM This Month — ANDON ke neeche, apni line par, par ab
+                    AADHE SE THODA JYADA chaudai me (user 2026-09-23); daayin
+                    taraf ki jagah JAAN-BOOJH KAR khaali chhodi hai, wahan aage
+                    kuch aur aayega.
+                    Naap `flex-basis` se hai, media query se nahi: 560 + 260 +
+                    16 (gap) = 836px, yaani ~840px se chaudi har screen par dono
+                    ek hi line me aate hain -- PM ~63-65% aur khaali dabba baaki
+                    (1120px ki row me PM ~702px, 929px me ~606px).  560 isliye
+                    ki table ki sabse kam chaudai bhi 560 hai.  Isse patli
+                    screen par jod line me nahi samaata, to PM apne aap poori
+                    chaudai le leta hai aur khaali dabba neeche chala jaata hai
+                    (dikhta wo waise bhi nahi).
+                    Table ab 560px me aa jaata hai (Machine No. aur Window ke
+                    khaane hat gaye), isliye kuch katta nahi.
+                    ⚠ Portrait TV par `responsive` wala niyam
+                    (.md-portrait .md-col-b) abhi bhi 100% karta hai — wahan
+                    poori chaudai hi chahiye, use chhedna nahi. */}
+                <div className="md-col-b" style={{ flex: "1 1 560px", minWidth: 0 }}>
                   <PmThisMonth token={token} />
                 </div>
+                {/* khaali jagah — yahan aage kuch aur panel aayega */}
+                <div className="md-col-c" style={{ flex: "1 1 260px", minWidth: 0 }} />
               </div>
 
               <div className="md-section">
