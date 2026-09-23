@@ -24,6 +24,13 @@ const monthWindow = () => {
 };
 const monthLabel = () => new Date().toLocaleString("en-US", { month: "short", year: "numeric" });
 
+/* Ek slip "pending closure" kab hai -- yaani MAINTENANCE ki taraf se baaki.
+   Server bhi yahi ginta hai: jis auto slip me maintenance ne problem/action
+   nahi bhara wo PENDING aati hai (purane OPEN/RESOLVED bhi yahin gine jaate
+   hain taaki purana data theek dikhe).  Ye paribhasha EK hi jagah rehni
+   chahiye -- card ki ginti, zone tile aur qatar ka rang, teeno isi se. */
+const slipPending = (b) => b.state === "PENDING" || b.state === "RESOLVED" || b.state === "OPEN";
+
 /* ════════════════════════════════════════════════════════════════════
  * 2.5) Maintenance KPI panel (auto-computed + target compare + CSV
  *      download).  Sits between History and Zone&Line Stats.
@@ -62,6 +69,13 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
   const [fZone,   setFZone]   = useState("");
   const [fLine,   setFLine]   = useState("");
   const [zoneSel, setZoneSel] = useState("SEAT_SLIDER");   // clicked zone tile → shows its slips
+  /* Upar ke do card ab CLICK hote hain aur neeche ki list ko chhaanute hain
+     (user 2026-09-23):
+        "total"   -> saari breakdown slips     (DEFAULT -- bilkul pehle jaisa)
+        "pending" -> sirf wo jo maintenance ki taraf se baaki hain
+     Default jaan-boojh kar "total" hai: dashboard khulte hi khaali list na
+     dikhe. */
+  const [cardSel, setCardSel] = useState("total");
   const [master,  setMaster]  = useState([]);
   const [dashZones, setDashZones] = useState(PROD_ZONES);   // dashboard zone tiles (admin-curated whitelist)
   const [addOpen, setAddOpen] = useState(false);            // "+ Add Zone" picker toggle (admin)
@@ -220,18 +234,30 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
         ) : (() => {
           // zone name from tickets ("SEAT SLIDER" / "Recliner") → section key
           const norm = (s) => String(s || "").toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "");
-          // per-zone TOTAL breakdowns (all states) so tile-sum = Total card
-          const counts = {};
-          (data.zone_totals || []).forEach((z) => {
-            const k = norm(z.zone_name);
-            counts[k] = (counts[k] || 0) + Number(z.total || 0);
-          });
+          // Chuna hua card hi tay karta hai ki neeche kya dikhega.
+          const onlyPending = cardSel === "pending";
+          const shownBds = onlyPending
+            ? (data.breakdowns || []).filter(slipPending)
+            : (data.breakdowns || []);
           // individual breakdown "slips" grouped by zone (shown on tile click)
           const bdByZone = {};
-          (data.breakdowns || []).forEach((b) => {
+          shownBds.forEach((b) => {
             const k = norm(b.zone_name);
             (bdByZone[k] = bdByZone[k] || []).push(b);
           });
+          // per-zone ginti: "total" par server ke zone_totals (all states) se,
+          // taaki tile ka jod Total card ke barabar rahe.  "pending" par usi
+          // chhanti hui list se -- warna tile 13 dikhata aur khol kar dekho to
+          // list khaali aati.
+          const counts = {};
+          if (onlyPending) {
+            Object.keys(bdByZone).forEach((k) => { counts[k] = bdByZone[k].length; });
+          } else {
+            (data.zone_totals || []).forEach((z) => {
+              const k = norm(z.zone_name);
+              counts[k] = (counts[k] || 0) + Number(z.total || 0);
+            });
+          }
           // Zone tiles come straight from the admin-curated dashboard list —
           // the label IS the maintenance_machines spelling (e.g. SEAT_SLIDER),
           // and norm() gives the grouping key that matches the ticket zones.
@@ -248,14 +274,19 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
               <div style={{ display: "grid",
                             gridTemplateColumns: portrait ? "repeat(auto-fill, minmax(140px, 1fr))" : "repeat(auto-fill, minmax(200px, 1fr))",
                             gap: portrait ? 10 : 14 }}>
-                {totalBdCard && <KpiCard card={totalBdCard} />}
-                {pendingCard && <KpiCard card={pendingCard} />}
+                {/* Dono card click hote hain -- neeche ki list inhi se chhanti hai. */}
+                {totalBdCard && <KpiCard card={totalBdCard} active={!onlyPending}
+                                         onClick={() => setCardSel("total")}
+                                         hint="Show all breakdown slips" />}
+                {pendingCard && <KpiCard card={pendingCard} active={onlyPending}
+                                         onClick={() => setCardSel("pending")}
+                                         hint="Show only slips pending from the maintenance side" />}
               </div>
               <div style={{ margin: "16px 0 10px", display: "flex", alignItems: "center",
                             justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                 <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".07em",
                               textTransform: "uppercase", color: "#64748b" }}>
-                  Zone-wise Breakdowns
+                  {onlyPending ? "Zone-wise Pending Closures" : "Zone-wise Breakdowns"}
                   <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: 0, color: "#94a3b8" }}>
                     &nbsp;— click a zone to see its slips
                   </span>
@@ -284,7 +315,7 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
                 {(() => {
                   const zoneKeys = ZONES.map(([k]) => k);
                   const mapped = zoneKeys.reduce((s, k) => s + (counts[k] || 0), 0);
-                  const totalBd = Number(totalBdCard?.value || 0);
+                  const totalBd = Number((onlyPending ? pendingCard : totalBdCard)?.value || 0);
                   const other = Math.max(0, totalBd - mapped);   // anything not in the 6 zones
                   const tiles = ZONES.map(([key, label]) => [key, label, counts[key] || 0]);
                   if (other > 0) tiles.push(["_OTHER", "Other / Unzoned", other]);
@@ -310,7 +341,9 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
                                       textTransform: "uppercase", color: "#64748b" }}>{label}</div>
                         <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: portrait ? 22 : 30,
                                       fontWeight: 800, color: accent, lineHeight: 1.15 }}>{n}</div>
-                        <div style={{ fontSize: portrait ? 9 : 10.5, color: "#94a3b8" }}>breakdowns</div>
+                        <div style={{ fontSize: portrait ? 9 : 10.5, color: "#94a3b8" }}>
+                          {onlyPending ? "pending" : "breakdowns"}
+                        </div>
                       </button>
                     );
                   });
@@ -321,13 +354,13 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
               <div style={{ marginTop: 18 }}>
                 <style>{`@keyframes blinkDot { 0%,100% { opacity: 1 } 50% { opacity: 0.35 } }`}</style>
                 <div style={{ fontSize: 12, fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>
-                  🧾 {selLabel} — Breakdown Slips
+                  🧾 {selLabel} — {onlyPending ? "Pending Closures" : "Breakdown Slips"}
                   <span style={{ color: "#94a3b8", fontWeight: 600 }}> ({selSlips.length})</span>
                 </div>
                 {selSlips.length === 0 ? (
                   <div style={{ padding: "22px", textAlign: "center", color: "#94a3b8", fontSize: 12.5,
                                 fontStyle: "italic", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10 }}>
-                    No breakdown slips for {selLabel} in this window.
+                    No {onlyPending ? "pending closures" : "breakdown slips"} for {selLabel} in this window.
                   </div>
                 ) : (
                   <div style={{ overflowX: "auto", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10,
@@ -436,7 +469,10 @@ const kpiSelect = {
   cursor: "pointer", color: "#334155", fontWeight: 600,
 };
 
-function KpiCard({ card }) {
+/* `onClick` diya ho to card BUTTON banta hai (div par tap app me bharosemand
+   nahi hota aur keyboard se bhi nahi khulta).  Chuna hua card zone tile jaisi
+   hi ghera-lakeer (outline) se pata chalta hai -- wahi tareeka poore panel me. */
+function KpiCard({ card, onClick, active, hint }) {
   const v = card.verdict;          // 'pass' | 'fail' | 'na'
   const accent = v === "pass" ? "#16a34a" : v === "fail" ? "#dc2626" : "#94a3b8";
   const arrow  = card.direction === "higher" ? "↑" : "↓";
@@ -445,13 +481,18 @@ function KpiCard({ card }) {
     if (typeof x !== "number") return String(x);
     return Number.isInteger(x) ? x.toString() : x.toFixed(2);
   };
+  const Tag = onClick ? "button" : "div";
   return (
-    <div style={{
+    <Tag {...(onClick ? { type: "button", onClick, title: hint, "aria-pressed": !!active } : {})}
+         style={{
       background: "#fff", border: `1px solid ${v === "fail" ? "rgba(220,38,38,.25)" : "#e2e8f0"}`,
       borderLeft: `4px solid ${accent}`,
       borderRadius: 10, padding: "14px 16px",
       boxShadow: "0 1px 2px rgba(0,0,0,.03)",
       position: "relative",
+      ...(onClick ? { cursor: "pointer", fontFamily: "inherit", textAlign: "left",
+                      width: "100%", display: "block" } : {}),
+      ...(active ? { outline: `2px solid ${accent}`, outlineOffset: 0 } : {}),
     }}>
       <div style={{ fontSize: 10, fontWeight: 700, color: "#64748b",
                        letterSpacing: ".08em", textTransform: "uppercase" }}>
@@ -482,7 +523,7 @@ function KpiCard({ card }) {
           {v === "pass" ? "✓ on target" : v === "fail" ? "✗ off target" : "—"}
         </span>
       </div>
-    </div>
+    </Tag>
   );
 }
 
