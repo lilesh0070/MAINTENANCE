@@ -36,7 +36,19 @@ from auth import get_current_user, require_admin
 router = APIRouter(prefix="/api/daily-plan", tags=["daily-plan"])
 
 
+# _ensure_table ek process me EK HI BAAR.  Pehle har request par chalta tha --
+# ab isme 8 ALTER + 2 CREATE hain, aur Tailscale (ghar se) par har statement ek
+# chakkar hai: naap kar dekha, "Assigned To" jodne ke baad list dobara aane me
+# 10+ second lag rahe the.  Har ALTER table par taala bhi leta hai, jo server ke
+# baaki kaam se takra sakta hai (dekho memory: Tailscale ghar se DB).  Table ek
+# baar ban gayi to bani rehti hai -- har baar poochhne ki zaroorat nahi.
+_TAIYAAR = False
+
+
 def _ensure_table() -> None:
+    global _TAIYAAR
+    if _TAIYAAR:
+        return
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
@@ -77,6 +89,7 @@ def _ensure_table() -> None:
             )
         """)
         conn.commit()
+    _TAIYAAR = True          # commit ke BAAD -- beech me toota to agli baar phir koshish
 
 
 def _author(user) -> str:
@@ -108,8 +121,10 @@ class SundayPlanCreate(BaseModel):
     machine_no:   str
     machine_name: Optional[str] = ""
     problem:      str
-    # "Assigned To" -- list me se chuna hua aadmi.  Naam client se NAHI lete,
-    # id se server par hi nikalte hain (warna koi bhi naam likh kar bhej de).
+    # "Assigned To" -- list me se chuna hua aadmi, ZAROORI (create_plan me
+    # jaanch).  Naam client se NAHI lete, id se server par hi nikalte hain
+    # (warna koi bhi naam likh kar bhej de).  Optional sirf isliye ki khaali
+    # aane par saaf 400 sandesh jaaye, pydantic ka 422 nahi.
     assigned_user_id: Optional[int] = None
 
 
@@ -191,19 +206,23 @@ def create_plan(body: SundayPlanCreate, user=Depends(get_current_user)):
     _ensure_table()
     if not body.problem.strip():
         raise HTTPException(400, "problem / work description is required")
+    # Naam ZAROORI (user 2026-09-24: "naam zaroori kar do").  Server par bhi
+    # rok -- sirf form ke bharose nahi.  DHYAN: purani APK (v1.4.124 tak) me
+    # ye dropdown hai hi nahi, to wo naya kaam assign nahi kar paayegi jab tak
+    # app update na ho.
+    if not body.assigned_user_id:
+        raise HTTPException(400, "Assigned To is required — select who will do this work.")
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        naam, uid = None, None
-        if body.assigned_user_id:
-            # Sirf list me chuna hua aadmi hi chalega -- aur naam yahin DB se.
-            cur.execute("""SELECT u.id, u.username, u.full_name
-                             FROM maintenance_daily_assignee a
-                             JOIN maintenance_users u ON u.id = a.user_id
-                            WHERE a.user_id = %s""", (body.assigned_user_id,))
-            p = cur.fetchone()
-            if not p:
-                raise HTTPException(400, "This person is not in the Assigned To list.")
-            naam, uid = _dikhne_wala_naam(p), p["id"]
+        # Sirf list me chuna hua aadmi hi chalega -- aur naam yahin DB se.
+        cur.execute("""SELECT u.id, u.username, u.full_name
+                         FROM maintenance_daily_assignee a
+                         JOIN maintenance_users u ON u.id = a.user_id
+                        WHERE a.user_id = %s""", (body.assigned_user_id,))
+        p = cur.fetchone()
+        if not p:
+            raise HTTPException(400, "This person is not in the Assigned To list.")
+        naam, uid = _dikhne_wala_naam(p), p["id"]
         cur.execute("""INSERT INTO maintenance_daily_plan_work
                        (plan_date, zone_name, line_name, machine_no, machine_name,
                         problem, created_by, assigned_to, assigned_user_id)

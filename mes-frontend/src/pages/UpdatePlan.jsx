@@ -241,6 +241,7 @@ const DAILY_CFG = {
   // "Assigned To" -- DROPDOWN, haath se likhna nahi (Shutdown wala `assignee`
   // free-text hai).  Naam wahi aate hain jo admin ne "Names" se chune, aur chunne
   // ke liye sirf wahi log milte hain jinki login ID bani hai (user 2026-09-24).
+  // ZAROORI hai -- bina naam ke kaam assign nahi hota (form + server dono).
   assigneePick: true,
 };
 const SHUTDOWN_CFG = {
@@ -377,6 +378,16 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
   const assign = async () => {
     if (!fDate || !zone || !line || !effMno || !problem.trim()) {
       setMsg({ ok: false, text: "Fill everything — date, zone, line, machine and the problem/work." });
+      return;
+    }
+    // Daily: naam ZAROORI (user 2026-09-24: "naam zaroori kar do").  List
+    // khaali ho to saaf batao ki pehle naam jodne hain -- warna "select karo"
+    // bol kar user khaali dropdown ke saamne atak jaata.
+    if (cfg.assigneePick && !assigneeId) {
+      setMsg({ ok: false, text: people.length
+        ? "Select who this work is assigned to."
+        : (isAdmin ? "No names in the Assigned To list yet — add them with ⚙ Names first."
+                   : "No names in the Assigned To list yet — ask an admin to add them.") });
       return;
     }
     setSaving(true); setMsg(null);
