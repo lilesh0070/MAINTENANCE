@@ -60,6 +60,8 @@ export default function SlideNav() {
           { key: "maintenance-deviations",  label: "Deviations",            icon: "⚠",                    path: "/maintenance-deviations" },
           { key: "maintenance-logbook",     label: "Log Book",              icon: "📒",                   path: "/maintenance-logbook" },
           { key: "maintenance-history-card", label: "History Card",         icon: "🗂",                   path: "/maintenance-history-card" },
+          // Sabke liye khula (koi permission key nahi) -- `open` dekho, neeche filter.
+          { key: "work-records",             label: "Work Records",       icon: "🧾",                   path: "/work-records", open: true },
           { key: "maintenance-pm",          label: "Preventive Maint.",     icon: "🛠",                   path: "/maintenance-pm" },
           { key: "maintenance-machine-manual", label: "Machine Manual",     icon: "📖",                   path: "/maintenance-machine-manual" },
           { key: "maintenance-study-material", label: "Study Material",   icon: "🎓",                   path: "/maintenance-study-material" },
@@ -95,6 +97,8 @@ export default function SlideNav() {
         { key: "maintenance-deviations",  label: "Deviations",            icon: "⚠",                    path: "/maintenance-deviations" },
         { key: "maintenance-logbook",     label: "Log Book",              icon: "📒",                   path: "/maintenance-logbook" },
         { key: "maintenance-history-card", label: "History Card",         icon: "🗂",                   path: "/maintenance-history-card" },
+        // Sabke liye khula (koi permission key nahi) -- `open` dekho, neeche filter.
+        { key: "work-records",             label: "Work Records",       icon: "🧾",                   path: "/work-records", open: true },
         { key: "maintenance-pm",          label: "Preventive Maint.",     icon: "🛠",                   path: "/maintenance-pm" },
         { key: "maintenance-machine-manual", label: "Machine Manual",     icon: "📖",                   path: "/maintenance-machine-manual" },
           { key: "maintenance-study-material", label: "Study Material",   icon: "🎓",                   path: "/maintenance-study-material" },
@@ -293,7 +297,9 @@ export default function SlideNav() {
             if (group.adminOnly && !isAdmin) return null;
 
             // Filter items by role
-            const visibleItems = group.items.filter(item => canAccess(item.key));
+            // `open: true` = sabke liye khula page (jaise Work Records) -- uski
+            // koi permission key hi nahi, isliye canAccess se nahi chhaante.
+            const visibleItems = group.items.filter(item => item.open || canAccess(item.key));
             if (visibleItems.length === 0) return null;
 
             return (

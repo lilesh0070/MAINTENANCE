@@ -7,7 +7,7 @@ first use (no main.py bootstrap needed).
 
 Endpoints (prefix /api/breakdown-logbook)
 -----------------------------------------
-GET    /            List entries (optional ?date=YYYY-MM-DD, newest first)
+GET    /            List entries (optional ?date=YYYY-MM-DD, or ?date_from/date_to; newest first)
 POST   /            Create one entry
 DELETE /{id}        Delete one entry
 """
@@ -114,13 +114,21 @@ def _author(user) -> str:
 
 @router.get("/")
 def list_entries(date: Optional[str] = Query(None, description="bd_date YYYY-MM-DD"),
+                 # Work Records page (sabke liye) FY / mahina ki khidki bhejta
+                 # hai -- warna LIMIT 2000 sirf NAYI 2000 laata aur purana saal
+                 # chup-chaap khaali dikhta.  Dono optional: Log Book page jaisa
+                 # tha waisa hi chalta hai (wo sirf `date` bhejta hai).
+                 date_from: Optional[str] = Query(None, description="bd_date >= YYYY-MM-DD"),
+                 date_to:   Optional[str] = Query(None, description="bd_date <= YYYY-MM-DD"),
                  user=Depends(get_current_user)):
     _ensure_table()
     sql = "SELECT * FROM maintenance_logbook_db_history"
-    params: list = []
-    if date:
-        sql += " WHERE bd_date = %s"
-        params.append(date)
+    where, params = [], []
+    if date:      where.append("bd_date = %s");  params.append(date)
+    if date_from: where.append("bd_date >= %s"); params.append(date_from)
+    if date_to:   where.append("bd_date <= %s"); params.append(date_to)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY created_at DESC, id DESC LIMIT 2000"
     with get_conn() as conn:
         cur = dict_cursor(conn)

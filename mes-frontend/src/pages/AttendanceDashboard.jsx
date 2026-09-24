@@ -44,6 +44,7 @@ import { createPortal } from "react-dom";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api/client";
 import { isNativeApp } from "../constants/apiBase";
+import DashBack from "../components/DashBack";
 
 const NATIVE = isNativeApp();
 const PAGE_KEY = "maintenance-attendance";
@@ -1083,7 +1084,10 @@ export default function AttendanceDashboard() {
 
       <div className={`bd-root${tvMode ? " att-tv" : ""}`}>
         <div className="bd-topbar">
-          <div />
+          {/* "← Back" -> main Dashboard (website + TV; phone/tablet app me
+              chhupa).  Header 60px hi rehta hai -- TV ka aadhi-screen hisaab
+              nahi badalta. */}
+          <div><DashBack /></div>
           <div className="bd-title">Attendance <span>Dashboard</span></div>
           {user?.username && <div className="bd-user-pill">Signed in as <b>{user.username}</b></div>}
         </div>

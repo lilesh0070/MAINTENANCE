@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import SlipTypeTabs from "../components/SlipTypeTabs";
+import DashBack from "../components/DashBack";
 import { SLIP_DEFAULT } from "../constants/slipType";
 import { onlyProdZones } from "../constants/zones";
 import {
@@ -736,7 +737,9 @@ export default function MaintenanceKPI() {
 
       <div className={"mk-root" + (portrait ? " mk-portrait" : "")}>
         <div className="mk-topbar">
-          <div />
+          {/* "← Back" -> main Dashboard (website + TV; phone/tablet app me
+              chhupa).  Div rehne do -- button chhupe to bhi pill daayein rahe. */}
+          <div><DashBack /></div>
           <div className="mk-title">
             Maintenance <span>KPI</span>
           </div>

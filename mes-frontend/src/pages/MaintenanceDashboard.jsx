@@ -31,6 +31,7 @@ import { api, StatCard, fmtDuration, usePortrait } from "./breakdown/shared";
 import AndonTable from "./breakdown/AndonTable";
 import PmThisMonth from "./breakdown/PmThisMonth";
 import PresentPeople from "./breakdown/PresentPeople";
+import QuickAccess from "./breakdown/QuickAccess";
 import KpiPanel from "./breakdown/KpiPanel";
 import DmcNgPanel from "./breakdown/DmcNgPanel";
 import { ClosureFormModal } from "./breakdown/ClosureFormModal";
@@ -459,12 +460,31 @@ Wapas nahi aayegi.  Aage badhein?`)) return;
                     <StatCard label="Awaiting response"  value={andonAwaiting}              color="#b45309" sub="Call open, no ack yet"/>
                     <StatCard label="Longest active"     value={fmtDuration(longestActive)} color="#7c3aed"/>
                   </div>
-                  <AndonTable
-                    rows={andonRows}
-                    fullscreenRef={andonRef}
-                    isFullscreen={isFs}
-                    toggleFullscreen={toggleFullscreen}
-                  />
+                  {/* ANDON 70% + bagal me 30% ka card -- neeche wali PM pankti
+                      jaisa hi (user 2026-09-24: "maintenance andon ko 70% karo
+                      jaise iske neeche kar rakha hai, aur aage 30% me ek card").
+                      Wahi `md-col-b` / `md-col-c` classes, taaki phone (<=860px)
+                      par wahi niyam lage: card ANDON ke NEECHE.  Tiles upar
+                      poori chaudai par hi rehte hain.
+                      `stretch` isliye ki bagal ka card ANDON jitna hi lamba dikhe
+                      (PM wali pankti me flex-start hai -- wahan dono me content hai). */}
+                  <div className="md-andonrow" style={{ display: "flex", gap: 16,
+                                alignItems: "stretch", flexWrap: "wrap" }}>
+                    <div className="md-col-b" style={{ flex: "7 1 0%", minWidth: 0 }}>
+                      <AndonTable
+                        rows={andonRows}
+                        fullscreenRef={andonRef}
+                        isFullscreen={isFs}
+                        toggleFullscreen={toggleFullscreen}
+                      />
+                    </div>
+                    {/* 30% -- Quick Access ke 2x2 button (kaunse -- QuickAccess.jsx
+                        ki LINKS list; user ne badle hain) */}
+                    <div className="md-col-c md-andon-side" style={{ flex: "3 1 0%", minWidth: 0,
+                                  display: "flex", flexDirection: "column" }}>
+                      <QuickAccess />
+                    </div>
+                  </div>
                 </div>
                 {/* PM This Month + uske bagal ki KHAALI jagah — ek hi pankti,
                     70 / 30 (user 2026-09-23 ka naksha).  Website aur TV dono

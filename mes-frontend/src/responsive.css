@@ -25,6 +25,25 @@
   padding-right: 78px !important;
 }
 
+/* ── "← Back" to Dashboard (components/DashBack.jsx) ─────────────────
+ * Quick Access se khulne wale charon page (Work Records, Maintenance KPI,
+ * Attendance Dashboard, 3D View) ke header me.  Website + TV app par dikhta
+ * hai; PHONE aur TABLET app me chhupa -- wahan Android ka back hai (baaki
+ * page ke Back bhi wahan chhupe hain).  Dikhawat wahi jo baaki page ke
+ * "← Back" ki (hc-back / tdv-back). */
+.dash-back {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 700; color: #475569; line-height: 1.2;
+  background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px;
+  padding: 7px 14px; cursor: pointer; font-family: inherit; white-space: nowrap;
+}
+.dash-back:hover { background: #e2e8f0; color: #0f172a; }
+body.in-app .dash-back,
+body.in-app-tab .dash-back { display: none !important; }
+/* Website ko phone ki chaudai par kholo (≤640px) to bhi chhupa -- wahan
+   beech ka title (absolute) Back se takraata; browser ka apna back hai. */
+@media (max-width: 640px) { .dash-back { display: none !important; } }
+
 /* ── Tablet and below (≤ 900px) — laptops (≥ 901px) stay 100% unchanged ── */
 @media (max-width: 900px) {
   /* Wide data tables scroll INSIDE their own box instead of stretching the

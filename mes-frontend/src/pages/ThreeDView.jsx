@@ -29,6 +29,7 @@ import { useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { isNativeApp } from "../constants/apiBase";
+import DashBack from "../components/DashBack";
 
 const MODELS = [
   { key: "cylinder", label: "Cylinder", icon: "🛢️",
@@ -139,7 +140,9 @@ export default function ThreeDView() {
       {m ? <ModelViewer m={m} user={user} onBack={() => nav("/maintenance-3d-view")} /> : (
         <div className="bd-root">
           <div className="bd-topbar">
-            <div />
+            {/* List wala page: "← Back" -> main Dashboard (website + TV).
+                Model kholne par uska apna Back (tdv-back) is list par laata hai. */}
+            <div><DashBack /></div>
             <div className="bd-title">3D <span>View</span></div>
             {user?.username && (
               <div className="bd-user-pill">Signed in as <b>{user.username}</b></div>

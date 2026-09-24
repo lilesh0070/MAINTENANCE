@@ -39,6 +39,7 @@ const BDHistory             = lazy(() => import("./pages/BDHistory"));
 const BreakdownLogBook      = lazy(() => import("./pages/BreakdownLogBook"));
 const BDAnalysis            = lazy(() => import("./pages/BDAnalysis"));
 const HistoryCard           = lazy(() => import("./pages/HistoryCard"));
+const WorkRecords           = lazy(() => import("./pages/WorkRecords"));
 const WalkieTalkie          = lazy(() => import("./pages/WalkieTalkie"));
 const QPRForm               = lazy(() => import("./pages/QPRForm"));
 const ParetoAnalysis        = lazy(() => import("./pages/ParetoAnalysis"));
@@ -209,6 +210,13 @@ function AppRoutes() {
       {/* History Card — zone-wise machine history (now a top-level sidebar page). */}
       <Route path="/maintenance-history-card" element={
         <Protected requiredAccess="maintenance-history-card"><HistoryCard /></Protected>
+      } />
+
+      {/* Work Records — Log Book + Breakdown + Daily Work Assign + Holiday Plan
+          Work ek hi page par.  SABKE LIYE KHULA (user 2026-09-24): isliye
+          `requiredAccess` JAAN-BOOJH KAR nahi -- login kaafi hai. */}
+      <Route path="/work-records" element={
+        <Protected><WorkRecords /></Protected>
       } />
 
       {/* Preventive Maintenance check sheets (/api/pm/*). */}
