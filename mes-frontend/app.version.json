@@ -1,5 +1,5 @@
 {
-  "version": "1.4.127",
-  "notes": "New designations when creating users: DET and Manager",
-  "released_at": "2026-09-24T12:00:28"
+  "version": "1.4.128",
+  "notes": "Maintenance Dashboard: Today Present Person now shows who is online and has a Buzz button, just like the walkie-talkie",
+  "released_at": "2026-09-24T12:27:26"
 }
