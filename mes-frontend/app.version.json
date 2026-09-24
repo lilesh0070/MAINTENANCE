@@ -1,5 +1,5 @@
 {
-  "version": "1.4.128",
-  "notes": "Maintenance Dashboard: Today Present Person now shows who is online and has a Buzz button, just like the walkie-talkie",
-  "released_at": "2026-09-24T12:27:26"
+  "version": "1.4.136",
+  "notes": "New Work Records page for everyone: Log Book, Breakdown (manual + auto), Daily Work Assign and Holiday Plan Work for all zones on one screen. Dashboard: ANDON at 70% with a Quick Access card (Work Records, Maintenance KPI, Attendance Dashboard, 3D View); each of these pages has a Back button to the Dashboard.",
+  "released_at": "2026-09-25T04:48:15"
 }
