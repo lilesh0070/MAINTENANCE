@@ -1,5 +1,5 @@
 {
-  "version": "1.4.125",
-  "notes": "Daily Work Assign now has an Assigned To list - admins pick which people appear, then choose one when assigning work",
-  "released_at": "2026-09-24T11:03:43"
+  "version": "1.4.126",
+  "notes": "Daily Work Assign: choosing who the work is assigned to is now required",
+  "released_at": "2026-09-24T11:23:36"
 }
