@@ -16,6 +16,13 @@ POST   /            Assign a new daily work plan
 PUT    /{id}/complete   Fill work_done + done_by → status DONE
 PUT    /{id}/reopen     Undo a completion (back to PENDING)
 DELETE /{id}        Remove a plan (wrong entry)
+
+Assigned To (2026-09-24)
+------------------------
+GET    /assignees             Names for the "Assigned To" dropdown
+GET    /assignees/candidates  App users not in the list yet (admin)
+POST   /assignees             Add a person to the list (admin)
+DELETE /assignees/{user_id}   Remove a person from the list (admin)
 """
 import json
 from typing import Optional, List
@@ -51,8 +58,24 @@ def _ensure_table() -> None:
         """)
         for col, typ in (("start_time", "TEXT"), ("end_time", "TEXT"),
                          ("duration_minutes", "INTEGER"),
-                         ("spares", "JSONB"), ("spares_used", "TEXT")):
+                         ("spares", "JSONB"), ("spares_used", "TEXT"),
+                         # Assigned To: naam ki NAQAL + user id.  Naam isliye
+                         # alag se rakhte hain ki baad me user ka naam badle ya
+                         # user hi hat jaaye, to bhi purana kaam padha ja sake.
+                         ("assigned_to", "TEXT"), ("assigned_user_id", "INTEGER")):
             cur.execute(f"ALTER TABLE maintenance_daily_plan_work ADD COLUMN IF NOT EXISTS {col} {typ}")
+        # "Assigned To" ki list -- sirf wahi log jinki login ID bani hai, aur
+        # unme se bhi sirf wo jinhe admin ne chuna (user 2026-09-24: "pehle
+        # naam select kar lenge ki kis kis ka naam aana chahiye").  User hi
+        # mita diya jaaye to wo is list se bhi apne aap hat jaata hai.
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS maintenance_daily_assignee (
+                user_id   INTEGER PRIMARY KEY
+                          REFERENCES maintenance_users(id) ON DELETE CASCADE,
+                added_by  TEXT,
+                added_at  TIMESTAMP DEFAULT NOW()
+            )
+        """)
         conn.commit()
 
 
@@ -60,6 +83,13 @@ def _author(user) -> str:
     if isinstance(user, dict):
         return user.get("username") or "user"
     return getattr(user, "username", None) or "user"
+
+
+def _dikhne_wala_naam(r) -> str:
+    """Dropdown aur plan par jo naam dikhe -- full_name ho to wahi, warna
+    username (yahan ke users aksar apne naam se hi bane hain)."""
+    return (str(r.get("full_name") or "").strip()
+            or str(r.get("username") or "").strip())
 
 
 def _ser(r: dict) -> dict:
@@ -78,6 +108,13 @@ class SundayPlanCreate(BaseModel):
     machine_no:   str
     machine_name: Optional[str] = ""
     problem:      str
+    # "Assigned To" -- list me se chuna hua aadmi.  Naam client se NAHI lete,
+    # id se server par hi nikalte hain (warna koi bhi naam likh kar bhej de).
+    assigned_user_id: Optional[int] = None
+
+
+class AssigneeAdd(BaseModel):
+    user_id: int
 
 
 _SPARE_KEYS = ("spare_name", "spare_model_no", "spare_cnmm_no", "spare_qty")
@@ -155,16 +192,110 @@ def create_plan(body: SundayPlanCreate, user=Depends(get_current_user)):
     if not body.problem.strip():
         raise HTTPException(400, "problem / work description is required")
     with get_conn() as conn:
-        cur = conn.cursor()
+        cur = dict_cursor(conn)
+        naam, uid = None, None
+        if body.assigned_user_id:
+            # Sirf list me chuna hua aadmi hi chalega -- aur naam yahin DB se.
+            cur.execute("""SELECT u.id, u.username, u.full_name
+                             FROM maintenance_daily_assignee a
+                             JOIN maintenance_users u ON u.id = a.user_id
+                            WHERE a.user_id = %s""", (body.assigned_user_id,))
+            p = cur.fetchone()
+            if not p:
+                raise HTTPException(400, "This person is not in the Assigned To list.")
+            naam, uid = _dikhne_wala_naam(p), p["id"]
         cur.execute("""INSERT INTO maintenance_daily_plan_work
                        (plan_date, zone_name, line_name, machine_no, machine_name,
-                        problem, created_by)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                        problem, created_by, assigned_to, assigned_user_id)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
                     (body.plan_date, body.zone_name, body.line_name, body.machine_no,
-                     body.machine_name, body.problem.strip(), _author(user)))
-        new_id = cur.fetchone()[0]
+                     body.machine_name, body.problem.strip(), _author(user), naam, uid))
+        new_id = cur.fetchone()["id"]
         conn.commit()
-    return {"id": new_id}
+    return {"id": new_id, "assigned_to": naam}
+
+
+# ── "Assigned To" ki list ──────────────────────────────────────────────
+# Dropdown me wahi naam aate hain jo admin ne yahan joda.  Jodne ke liye
+# sirf wahi log milte hain jinki login ID bani hai (maintenance_users).
+
+@router.get("/assignees")
+def list_assignees(user=Depends(get_current_user)):
+    """Dropdown ke naam -- page kholne wala har koi dekh sakta hai."""
+    _ensure_table()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT u.id AS user_id, u.username, u.full_name,
+                              COALESCE(u.emp_code, '') AS emp_code
+                         FROM maintenance_daily_assignee a
+                         JOIN maintenance_users u ON u.id = a.user_id
+                        WHERE COALESCE(u.is_active, TRUE)""")
+        out = [{"user_id": r["user_id"], "name": _dikhne_wala_naam(r),
+                "emp_code": r["emp_code"]} for r in cur.fetchall()]
+    return sorted(out, key=lambda x: x["name"].upper())
+
+
+@router.get("/assignees/candidates")
+def assignee_candidates(admin=Depends(require_admin)):
+    """Jin app users ko abhi list me joda ja sakta hai (jo pehle se nahi hain)."""
+    _ensure_table()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT u.id AS user_id, u.username, u.full_name,
+                              COALESCE(u.emp_code, '') AS emp_code
+                         FROM maintenance_users u
+                        WHERE COALESCE(u.is_active, TRUE)
+                          AND NOT EXISTS (SELECT 1 FROM maintenance_daily_assignee a
+                                           WHERE a.user_id = u.id)""")
+        out = [{"user_id": r["user_id"], "name": _dikhne_wala_naam(r),
+                "emp_code": r["emp_code"]} for r in cur.fetchall()]
+    return sorted(out, key=lambda x: x["name"].upper())
+
+
+@router.post("/assignees", status_code=201)
+def add_assignee(body: AssigneeAdd, admin=Depends(require_admin)):
+    _ensure_table()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("SELECT id, username, full_name FROM maintenance_users WHERE id = %s",
+                    (body.user_id,))
+        u = cur.fetchone()
+        if not u:
+            raise HTTPException(404, "User not found")
+        cur.execute("""INSERT INTO maintenance_daily_assignee (user_id, added_by)
+                       VALUES (%s, %s) ON CONFLICT (user_id) DO NOTHING""",
+                    (body.user_id, _author(admin)))
+        try:
+            from main import write_audit
+            write_audit(conn, action="DAILY_ASSIGNEE_ADD", entity_type="user",
+                        entity_id=body.user_id,
+                        details=f"'{_dikhne_wala_naam(u)}' added to Daily Work Assign list",
+                        user=admin)
+        except Exception as e:
+            print(f"[DAILY] assignee-add ka audit nahi likha: {e}")
+        conn.commit()
+    return {"ok": True, "user_id": body.user_id, "name": _dikhne_wala_naam(u)}
+
+
+@router.delete("/assignees/{user_id}")
+def remove_assignee(user_id: int, admin=Depends(require_admin)):
+    """List se hatao.  Pehle se assign hue kaam par naam JYON KA TYON rehta
+    hai -- wo us din ka record hai, list badalne se nahi badalna chahiye."""
+    _ensure_table()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM maintenance_daily_assignee WHERE user_id = %s", (user_id,))
+        if cur.rowcount == 0:
+            raise HTTPException(404, "This person is not in the list")
+        try:
+            from main import write_audit
+            write_audit(conn, action="DAILY_ASSIGNEE_REMOVE", entity_type="user",
+                        entity_id=user_id,
+                        details="removed from Daily Work Assign list", user=admin)
+        except Exception as e:
+            print(f"[DAILY] assignee-remove ka audit nahi likha: {e}")
+        conn.commit()
+    return {"ok": True}
 
 
 @router.put("/{pid}/complete")

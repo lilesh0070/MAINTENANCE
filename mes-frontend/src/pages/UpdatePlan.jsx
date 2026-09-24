@@ -238,6 +238,10 @@ const DAILY_CFG = {
   dateLabel: "Work Date", listTitle: "📋 Daily Work Plans",
   defDate: todayLocalISO, range: true, dateCol: "Date",
   timesSpares: true,   // Daily me bhi: Start/End time + auto Total + Spares (Log Book jaisa)
+  // "Assigned To" -- DROPDOWN, haath se likhna nahi (Shutdown wala `assignee`
+  // free-text hai).  Naam wahi aate hain jo admin ne "Names" se chune, aur chunne
+  // ke liye sirf wahi log milte hain jinki login ID bani hai (user 2026-09-24).
+  assigneePick: true,
 };
 const SHUTDOWN_CFG = {
   api: "/api/shutdown-plan", t1: "Shutdown Plan", t2: "Work",
@@ -259,6 +263,13 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
   const [mname, setMname] = useState("");
   const [problem, setProblem] = useState("");
   const [assignee, setAssignee] = useState("");   // "kaun karega" — only used when cfg.assignee
+  // cfg.assigneePick (Daily): dropdown ke naam + admin ka "Names" panel
+  const [people, setPeople]         = useState([]);   // list me chune hue log
+  const [assigneeId, setAssigneeId] = useState("");
+  const [showPeople, setShowPeople] = useState(false);
+  const [candidates, setCandidates] = useState([]);   // jinhe abhi joda ja sakta hai
+  const [pickId, setPickId]         = useState("");
+  const [peopleBusy, setPeopleBusy] = useState(false);
   const [saving, setSaving]   = useState(false);
   // list + counters (+ optional FROM–TO range: "2 dates ke beech kya hua")
   const [data, setData]     = useState({ rows: [], total: 0, pending: 0, done: 0 });
@@ -296,12 +307,52 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
     if (cfg.range && rTo)   p.set("date_to", rTo);
     return api.get(`${cfg.api}/?${p.toString()}`, token).then(setData).catch(() => {});
   };
+  // "Assigned To" ki list.  Candidates sirf admin ke liye -- backend bhi
+  // require_admin par band hai, isliye doosron ke liye bulaate hi nahi.
+  const loadPeople = () => cfg.assigneePick
+    ? api.get(`${cfg.api}/assignees`, token)
+        .then((d) => setPeople(Array.isArray(d) ? d : [])).catch(() => setPeople([]))
+    : Promise.resolve();
+  const loadCandidates = () => api.get(`${cfg.api}/assignees/candidates`, token)
+    .then((d) => setCandidates(Array.isArray(d) ? d : [])).catch(() => setCandidates([]));
+
   useEffect(() => {
     if (!token) return;
     api.get("/api/machines/", token).then((m) => setMaster(Array.isArray(m) ? m : [])).catch(() => setMaster([]));
     if (cfg.timesSpares)
       api.get("/api/maintenance-spare/", token).then((s) => setSpareMaster(Array.isArray(s) ? s : [])).catch(() => {});
-  }, [token]);
+    loadPeople();
+  }, [token]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const togglePeople = () => {
+    const khol = !showPeople;
+    setShowPeople(khol); setPickId("");
+    if (khol) loadCandidates();
+  };
+  const addPerson = async () => {
+    if (!pickId) return;
+    setPeopleBusy(true);
+    try {
+      await api.post(`${cfg.api}/assignees`, token, { user_id: Number(pickId) });
+      setPickId("");
+      await Promise.all([loadPeople(), loadCandidates()]);
+    } catch (e) { setMsg({ ok: false, text: String(e.message || e).slice(0, 160) }); }
+    finally { setPeopleBusy(false); }
+  };
+  const removePerson = async (p) => {
+    if (!window.confirm(`Remove ${p.name} from the Assigned To list?\nWork already assigned to them keeps their name.`)) return;
+    setPeopleBusy(true);
+    try {
+      const r = await fetch(`${cfg.api}/assignees/${p.user_id}`, {
+        method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+      if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
+      // Hataya hua aadmi dropdown me chuna ho to wo chunav bhi saaf
+      if (String(assigneeId) === String(p.user_id)) setAssigneeId("");
+      await Promise.all([loadPeople(), loadCandidates()]);
+    } catch (e) { setMsg({ ok: false, text: String(e.message || e).slice(0, 160) }); }
+    finally { setPeopleBusy(false); }
+  };
+  const personLabel = (p) => p.name + (p.emp_code ? ` (${p.emp_code})` : "");
   useEffect(() => {
     if (!token) return;
     load();
@@ -333,8 +384,9 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
       await api.post(`${cfg.api}/`, token, {
         plan_date: fDate, zone_name: zone, line_name: line,
         machine_no: effMno, machine_name: effName, problem: problem.trim(),
-        ...(cfg.assignee ? { assigned_to: assignee.trim() } : {}) });
-      setProblem(""); setMno(""); setMname(""); setAssignee("");
+        ...(cfg.assignee ? { assigned_to: assignee.trim() } : {}),
+        ...(cfg.assigneePick ? { assigned_user_id: assigneeId ? Number(assigneeId) : null } : {}) });
+      setProblem(""); setMno(""); setMname(""); setAssignee(""); setAssigneeId("");
       setMsg({ ok: true, text: "✓ Work assigned for " + fDate });
       load();
     } catch (e) { setMsg({ ok: false, text: String(e.message || e).slice(0, 160) }); }
@@ -391,9 +443,11 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
 
   const rows = data.rows.filter((r) => tab === "ALL" || r.status === tab);
   const pct = data.total ? Math.round((data.done / data.total) * 100) : 0;
-  // Header columns — Shutdown mode adds an "Assigned To" column after Problem.
+  // Header columns — Shutdown (free-text) aur Daily (dropdown) dono me Problem
+  // ke baad "Assigned To" column.
+  const hasAssignee = !!(cfg.assignee || cfg.assigneePick);
   const headers = ["#", cfg.dateCol, "Zone", "Line", "M/C No", "Machine", "Problem / Work",
-                   ...(cfg.assignee ? ["Assigned To"] : []),
+                   ...(hasAssignee ? ["Assigned To"] : []),
                    "Status", "Action Taken", "Done By", "Action"];
   const COLS = headers.length;
 
@@ -452,7 +506,7 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
         </div>
         <div style={{ display:"flex", gap:12, flexWrap:"wrap", alignItems:"flex-end", marginTop:12 }}>
           <Fld label="Problem / Work to do">
-            <input style={{ ...selStyle, minWidth:cfg.assignee ? 320 : 420 }} value={problem}
+            <input style={{ ...selStyle, minWidth:hasAssignee ? 320 : 420 }} value={problem}
                    placeholder="e.g. CONVEYOR BELT ALIGNMENT + GREASING"
                    onChange={(e) => setProblem(upperCaret(e))} />
           </Fld>
@@ -463,6 +517,27 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
                      onChange={(e) => setAssignee(upperCaret(e))} />
             </Fld>
           )}
+          {cfg.assigneePick && (
+            <Fld label="Assigned To">
+              <div style={{ display:"flex", gap:6 }}>
+                <select style={{ ...selStyle, minWidth:210 }} value={assigneeId}
+                        onChange={(e) => setAssigneeId(e.target.value)}>
+                  <option value="">{people.length ? "— select name —" : "— no names added yet —"}</option>
+                  {people.map((p) => <option key={p.user_id} value={p.user_id}>{personLabel(p)}</option>)}
+                </select>
+                {/* Kaun-kaun list me aaye -- ye tay karna sirf admin ka kaam */}
+                {isAdmin && (
+                  <button type="button" onClick={togglePeople} title="Choose which names appear in this list"
+                          style={{ padding:"0 12px", borderRadius:9, cursor:"pointer", fontSize:12, fontWeight:800,
+                                   border:"1.5px solid " + (showPeople ? theme.accent : "#cbd5e1"),
+                                   background: showPeople ? theme.accent : "#fff",
+                                   color: showPeople ? "#fff" : "#475569", whiteSpace:"nowrap" }}>
+                    ⚙ Names
+                  </button>
+                )}
+              </div>
+            </Fld>
+          )}
           <button onClick={assign} disabled={saving}
                   style={{ padding:"11px 26px", borderRadius:9, border:"none", cursor:"pointer",
                            background:"#16a34a", color:"#fff", fontSize:13.5, fontWeight:800,
@@ -470,6 +545,50 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
             {saving ? "Assigning…" : "✔ Assign Work"}
           </button>
         </div>
+        {/* Admin: "Assigned To" me kaun-kaun aaye.  Sirf wahi log jud sakte hain
+            jinki login ID bani hai; list se hatane par pehle ke kaam par naam
+            wahi rehta hai (wo us din ka record hai). */}
+        {cfg.assigneePick && isAdmin && showPeople && (
+          <div style={{ marginTop:14, padding:"14px 16px", borderRadius:12,
+                        border:"1.5px dashed #c7d2fe", background:"#f8faff" }}>
+            <div style={{ fontSize:13, fontWeight:800, color:"#0f172a" }}>Names in the "Assigned To" list</div>
+            <div style={{ fontSize:11.5, color:"#64748b", marginTop:2 }}>
+              Only these people appear in the dropdown. You can add anyone who has a login ID.
+            </div>
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginTop:10 }}>
+              {people.length === 0 && (
+                <span style={{ fontSize:12, color:"#94a3b8", fontStyle:"italic" }}>No names added yet.</span>
+              )}
+              {people.map((p) => (
+                <span key={p.user_id}
+                      style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"5px 6px 5px 12px",
+                               borderRadius:99, background:"#fff", border:"1.5px solid #c7d2fe",
+                               fontSize:12, fontWeight:700, color:"#1e293b" }}>
+                  {personLabel(p)}
+                  <button type="button" onClick={() => removePerson(p)} disabled={peopleBusy}
+                          title={`Remove ${p.name}`}
+                          style={{ width:20, height:20, borderRadius:99, border:"none", cursor:"pointer",
+                                   background:"#fee2e2", color:"#dc2626", fontSize:11, fontWeight:900, lineHeight:1 }}>✕</button>
+                </span>
+              ))}
+            </div>
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"flex-end", marginTop:12 }}>
+              <Fld label="Add a person">
+                <select style={{ ...selStyle, minWidth:240 }} value={pickId} onChange={(e) => setPickId(e.target.value)}>
+                  <option value="">{candidates.length ? "— pick from app users —" : "— everyone is already added —"}</option>
+                  {candidates.map((c) => <option key={c.user_id} value={c.user_id}>{personLabel(c)}</option>)}
+                </select>
+              </Fld>
+              <button type="button" onClick={addPerson} disabled={!pickId || peopleBusy}
+                      style={{ padding:"10px 18px", borderRadius:9, border:"none",
+                               cursor: pickId ? "pointer" : "not-allowed",
+                               background: pickId ? "#4f46e5" : "#c7d2fe", color:"#fff",
+                               fontSize:12.5, fontWeight:800 }}>
+                {peopleBusy ? "Saving…" : "+ Add"}
+              </button>
+            </div>
+          </div>
+        )}
         {msg && (
           <div style={{ marginTop:12, padding:"9px 14px", borderRadius:9, fontSize:12.5, fontWeight:700,
                         background: msg.ok ? "#dcfce7" : "#fee2e2", color: msg.ok ? "#166534" : "#991b1b" }}>
@@ -535,7 +654,7 @@ function WorkPlanBoard({ theme, user, nav, cfg }) {
                   <td style={{ borderBottom:"1px solid #eef2f7", padding:"9px 12px", fontSize:12, fontWeight:800 }}>{r.machine_no}</td>
                   <td style={{ borderBottom:"1px solid #eef2f7", padding:"9px 12px", fontSize:12 }}>{r.machine_name}</td>
                   <td style={{ borderBottom:"1px solid #eef2f7", padding:"9px 12px", fontSize:12, maxWidth:240 }}>{r.problem}</td>
-                  {cfg.assignee && (
+                  {hasAssignee && (
                     <td style={{ borderBottom:"1px solid #eef2f7", padding:"9px 12px", fontSize:12, fontWeight:700, color:"#334155" }}>
                       {r.assigned_to || <span style={{ color:"#cbd5e1" }}>—</span>}
                     </td>

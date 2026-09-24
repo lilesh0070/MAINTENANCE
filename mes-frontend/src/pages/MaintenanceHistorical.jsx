@@ -1172,10 +1172,11 @@ export default function MaintenanceHistorical() {
                 naam: `Daily-Work-Assign_${aajKaNaam()}`,
                 sheet: "Daily Work Assign",
                 headers: ["#", "Date", "Zone", "Line", "M/C No", "Machine", "Problem / Work",
-                          "Status", "Action Taken", "Done By"],
+                          "Assigned To", "Status", "Action Taken", "Done By"],
                 rows: dayList.map((r, i) => [
                   i + 1, xl(r.plan_date), xl(r.zone_name), xl(r.line_name), xl(r.machine_no),
-                  xl(r.machine_name), xl(r.problem), r.status === "DONE" ? "Done" : "Pending",
+                  xl(r.machine_name), xl(r.problem), xl(r.assigned_to),
+                  r.status === "DONE" ? "Done" : "Pending",
                   r.status === "DONE" ? xl(r.work_done) : "", r.status === "DONE" ? xl(r.done_by) : "",
                 ]),
               })} /></span>
@@ -1185,15 +1186,15 @@ export default function MaintenanceHistorical() {
                 <thead>
                   <tr>
                     <th>#</th><th>Date</th><th>Zone</th><th>Line</th>
-                    <th>M/C No</th><th>Machine</th><th>Problem / Work</th>
+                    <th>M/C No</th><th>Machine</th><th>Problem / Work</th><th>Assigned To</th>
                     <th style={{ textAlign:"center" }}>Status</th><th>Action Taken</th><th>Done By</th>
                     {isAdmin && <th style={{ textAlign:"center" }}>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {dayLoading && <tr><td colSpan={isAdmin ? 11 : 10} className="hd-empty">Loading…</td></tr>}
+                  {dayLoading && <tr><td colSpan={isAdmin ? 12 : 11} className="hd-empty">Loading…</td></tr>}
                   {!dayLoading && dayList.length === 0 &&
-                    <tr><td colSpan={isAdmin ? 11 : 10} className="hd-empty">No daily work for this filter.</td></tr>}
+                    <tr><td colSpan={isAdmin ? 12 : 11} className="hd-empty">No daily work for this filter.</td></tr>}
                   {!dayLoading && dayList.map((r, i) => (
                     <tr key={r.id}>
                       <td>{i + 1}</td>
@@ -1203,6 +1204,7 @@ export default function MaintenanceHistorical() {
                       <td className="hd-mno">{r.machine_no || "—"}</td>
                       <td>{r.machine_name || "—"}</td>
                       <td style={{ maxWidth:220 }}>{r.problem}</td>
+                      <td style={{ fontWeight:700, color:"#334155" }}>{r.assigned_to || "—"}</td>
                       <td style={{ textAlign:"center" }}>
                         <span style={{ padding:"2px 10px", borderRadius:99, fontSize:11, fontWeight:800,
                                        background: r.status === "DONE" ? "#dcfce7" : "#fef3c7",
