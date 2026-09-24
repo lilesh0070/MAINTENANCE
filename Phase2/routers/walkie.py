@@ -271,8 +271,12 @@ def _members_rows():
     _ensure_tables()
     with get_conn() as conn:
         cur = dict_cursor(conn)
+        # emp_code: Dashboard ka "Today Present Person" (attendance) isi se
+        # walkie wale bande tak pahunchta hai -- online ka nishaan aur Buzz
+        # (2026-09-24).  Attendance aur app user ka rishta sirf emp code hai.
         cur.execute("""
             SELECT u.id, u.username, u.full_name, u.role,
+                   COALESCE(u.emp_code, '') AS emp_code,
                    COALESCE(w.enabled, FALSE) AS enabled
               FROM maintenance_users u
               LEFT JOIN walkie_members w ON w.user_id = u.id
@@ -522,6 +526,7 @@ def roster(user=Depends(get_current_user)):
     me_in = [c for c in _channels_rows() if user["id"] in c["members"]]
     return {
         "me": {"id": user["id"], "name": _naam(user),
+               "emp_code": (user.get("emp_code") or ""),
                "enabled": user["id"] in {r["id"] for r in rows},
                # UI ka faisla bhi SERVER se aata hai, taaki dono jagah ek hi
                # jawab rahe (frontend ka `canAccess` sirf dikhane ke liye).
@@ -534,6 +539,7 @@ def roster(user=Depends(get_current_user)):
         # alag cheez hai) -- sirf Buzz ka button chhupa deta hai.
         "can_buzz_ids": sorted(_jodi_ids(user, "walkie_buzz_pairs")),
         "people": [{"id": r["id"], "name": _naam(r), "username": r["username"],
+                    "emp_code": r.get("emp_code") or "",
                     "online": r["id"] in online}
                    for r in rows if r["id"] != user["id"]],
         # Group ki ijazat na ho to list bhejte hi nahi -- page chhupa de,

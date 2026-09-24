@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { api } from "./shared";
+import { walkieLink } from "../../constants/walkieLink";
 
 /* ════════════════════════════════════════════════════════════════════
  * 1.6) Today Present Person — Maintenance Dashboard ke daayin taraf wale
@@ -18,7 +19,25 @@ import { api } from "./shared";
  *        waqt par chalti hai.  Isliye yahan sirf dikhana hai.
  *      ⚠ Is endpoint me sirf naam jaate hain (contact/photo nahi), isliye
  *        Attendance Dashboard ki permission na hone par bhi ye dikhta hai.
+ *
+ *      ── Naam ke aage online ka nishaan + Buzz (2026-09-24) ──
+ *      User: "naam ke aage buzz ka option do, walkie-talkie se jaisa jaata tha
+ *      waise hi jaayega; online ho to aage green aaye, jaise walkie me aata hai."
+ *      Isliye Walkie-Talkie page wala hi raasta -- nayi cheez kuch nahi:
+ *        * Buzz  = `walkieLink.send({t:"buzz", target:{type:"user", id}})`.
+ *          Server wahi jaanch karta hai (walkie-buzz ki ijazat + buzz ki jodi),
+ *          aur itihaas me bhi wahi entry jaati hai.
+ *        * Button wahi dikhta hai jahan walkie page par dikhta -- `can_buzz`
+ *          aur Setup ki jodi (`can_buzz_ids`).  Offline par disabled.
+ *      Attendance ka aadmi aur app user sirf EMP CODE se judte hain; jiski
+ *      app ID nahi (ya walkie par nahi), uske aage na nishaan na button.
+ *      ⚠ Website par walkie service default BAND hai (Services) -- tab socket
+ *        nahi chalta, to online ki khabar roster (server) se aati hai aur Buzz
+ *        disabled rehta hai.  Isi liye roster har 30 sec taaza hota hai.
  * ════════════════════════════════════════════════════════════════════ */
+
+// Emp code ka ek hi roop -- dono taraf se aise hi milaate hain.
+const saafCode = (c) => String(c || "").trim().toUpperCase();
 
 /* Shift ka faisla YAHAN sirf PURANE server ke liye hai (neeche `board` wala
    raasta).  Naya server khud batata hai -- wahi sahi hai, kyunki TV / phone
@@ -77,6 +96,61 @@ function PresentPeople({ token }) {
     return () => clearInterval(t);
   }, [load]);
 
+  // ── walkie: kaun online, kisko buzz kar sakte hain (Walkie page jaisa) ──
+  const [roster, setRoster] = useState(null);
+  const [conn, setConn]     = useState(walkieLink.state.conn);
+  const [online, setOnline] = useState(walkieLink.state.online || []);
+  const [kehna, setKehna]   = useState("");
+
+  const loadRoster = useCallback(() => {
+    if (!token) return;
+    api.get("/api/walkie/roster", token).then(setRoster).catch(() => setRoster(null));
+  }, [token]);
+  useEffect(() => { loadRoster(); }, [loadRoster]);
+  /* Socket band ho (website par walkie OFF) to online ki khabar sirf isi se
+     milti hai.  Sirf timer -- koi lagataar animation nahi. */
+  useEffect(() => {
+    const t = setInterval(loadRoster, 30_000);
+    return () => clearInterval(t);
+  }, [loadRoster]);
+
+  /* App ka EK hi socket (`walkieLink`, Layout ka WalkiePresence chalata hai)
+     -- yahan bas usi ko sunte hain, apna nahi kholte. */
+  useEffect(() => {
+    const lagao = () => { setConn(walkieLink.state.conn); setOnline(walkieLink.state.online || []); };
+    lagao();
+    let ghadi = null;
+    const hatao = walkieLink.on((m) => {
+      lagao();
+      if (m.t === "buzz_sent") {
+        setKehna(m.why || (m.listeners ? "Buzz sent" : "Nobody is online to buzz"));
+        clearTimeout(ghadi);
+        ghadi = setTimeout(() => setKehna(""), 3000);
+      }
+    });
+    return () => { hatao(); clearTimeout(ghadi); };
+  }, []);
+
+  const byCode = useMemo(() => {
+    const m = new Map();
+    for (const w of roster?.people || []) {
+      const c = saafCode(w.emp_code);
+      if (c) m.set(c, w);
+    }
+    return m;
+  }, [roster]);
+  const buzzKinko = useMemo(() => new Set((roster?.can_buzz_ids || []).map(Number)), [roster]);
+  const canBuzz = roster?.me?.can_buzz === true;
+  const meraCode = saafCode(roster?.me?.emp_code);
+  const sockOn = conn === "on";
+  // Socket chalu ho to uski LIVE list, warna roster ki (server wali) jaankari
+  const isOnline = (w) => (sockOn ? online.includes(w.id) : !!w.online);
+
+  const buzz = (w) => {
+    if (!sockOn) return;
+    walkieLink.send({ t: "buzz", target: { type: "user", id: w.id } });
+  };
+
   const khaali = { padding: "26px 16px", textAlign: "center", color: "#94a3b8",
                    fontSize: 12.5, fontStyle: "italic" };
 
@@ -117,17 +191,52 @@ function PresentPeople({ token }) {
         <div style={khaali}>No one is marked in this shift yet.</div>
       ) : (
         <div style={{ maxHeight: 520, overflowY: "auto" }}>
-          {d.people.map((p, i) => (
-            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10,
-                                     padding: "10px 16px",
-                                     borderTop: i === 0 ? "none" : "1px solid #f2f5f9" }}>
-              <span style={{ flexShrink: 0, width: 22, fontSize: 11, fontWeight: 700,
-                             color: "#b6bfcc" }}>{i + 1}</span>
-              <span style={{ fontSize: 14, fontWeight: 700, color: "#0f172a",
-                             overflow: "hidden", textOverflow: "ellipsis",
-                             whiteSpace: "nowrap" }}>{p.name}</span>
-            </div>
-          ))}
+          {d.people.map((p, i) => {
+            const code = saafCode(p.emp_code);
+            const w    = code ? byCode.get(code) : null;      // walkie wala banda
+            const main = !!code && code === meraCode;         // ye main khud hoon
+            const on   = main ? sockOn : (w ? isOnline(w) : false);
+            const dot  = main || !!w;                          // app ID + walkie par
+            const buzzHai = !main && w && canBuzz && buzzKinko.has(Number(w.id));
+            const band = !sockOn || !on;
+            return (
+              /* Buzz wali row ka padding kam -- button (26px) naam (17px) se
+                 ooncha hai, aur bina iske wo row 46px ki ho jaati jabki baaki
+                 37px.  TV ka layout locked hai: list ki lambai pehle jitni rahe. */
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10,
+                                       padding: buzzHai ? "5.5px 16px" : "10px 16px",
+                                       borderTop: i === 0 ? "none" : "1px solid #f2f5f9" }}>
+                <span style={{ flexShrink: 0, width: 22, fontSize: 11, fontWeight: 700,
+                               color: "#b6bfcc" }}>{i + 1}</span>
+                {/* Walkie jaisa: hara = online, dhusar = offline.  App ID na ho
+                    to khaali jagah (naam ek line me rahe). */}
+                <span title={dot ? (on ? "Online" : "Offline") : "No app login / not on walkie-talkie"}
+                      style={{ flexShrink: 0, width: 9, height: 9, borderRadius: 99,
+                               background: dot ? (on ? "#16a34a" : "#cbd5e1") : "transparent" }} />
+                <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, color: "#0f172a",
+                               overflow: "hidden", textOverflow: "ellipsis",
+                               whiteSpace: "nowrap" }}>{p.name}</span>
+                {buzzHai && (
+                  <button type="button" disabled={band} onClick={() => buzz(w)}
+                          title={!sockOn ? "Walkie-talkie is off on this device"
+                                 : !on ? `${p.name} is offline` : `Buzz ${p.name}`}
+                          style={{ flexShrink: 0, padding: "4px 10px", borderRadius: 7,
+                                   border: "1.5px solid #c7d2fe", background: "#eef2ff",
+                                   color: "#4338ca", fontSize: 11, fontWeight: 800,
+                                   cursor: band ? "not-allowed" : "pointer",
+                                   opacity: band ? 0.45 : 1, whiteSpace: "nowrap" }}>
+                    📳 Buzz
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {kehna && (
+        <div style={{ padding: "8px 16px", borderTop: "1px solid #eef2f7", fontSize: 12,
+                      fontWeight: 700, color: "#4338ca", background: "#f5f7ff" }}>
+          {kehna}
         </div>
       )}
     </div>
