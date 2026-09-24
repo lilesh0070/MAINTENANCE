@@ -1,5 +1,5 @@
 {
-  "version": "1.4.126",
-  "notes": "Daily Work Assign: choosing who the work is assigned to is now required",
-  "released_at": "2026-09-24T11:23:36"
+  "version": "1.4.127",
+  "notes": "New designations when creating users: DET and Manager",
+  "released_at": "2026-09-24T12:00:28"
 }
