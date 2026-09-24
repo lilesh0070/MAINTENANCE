@@ -9,8 +9,11 @@ Tables:
 
 Roles (designation ladder — sirf `admin` ke paas full power hai; baaki sab
 ko admin per-page permissions deta hai):
-  admin · supervisor · engineer · senior_engineer ·
-  assistant_manager · deputy_manager · senior_manager
+  admin · supervisor · det · engineer · senior_engineer ·
+  assistant_manager · deputy_manager · manager · senior_manager
+  (det + manager 2026-09-24 me jude.  Role ke naam par kahin koi khaas logic
+  nahi chalta -- access sirf per-page permission se -- isliye naya role jodna
+  = yahan VALID_ROLES + frontend mailconfig.jsx ka ROLE_OPTIONS/ROLE_PILL.)
 
 Kis user ko kaunsa page dikhega aur wo likh payega ya nahi, ye poori tarah
 `maintenance_user_permissions` tay karti hai — frontend ka `canAccess()` /
@@ -28,8 +31,8 @@ from auth import require_admin, hash_password
 router = APIRouter(prefix="/api/users", tags=["users"])
 
 VALID_ROLES = {
-    "admin", "supervisor", "engineer", "senior_engineer",
-    "assistant_manager", "deputy_manager", "senior_manager",
+    "admin", "supervisor", "det", "engineer", "senior_engineer",
+    "assistant_manager", "deputy_manager", "manager", "senior_manager",
 }
 
 

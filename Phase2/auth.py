@@ -2,8 +2,8 @@
 auth.py
 =======
 JWT-based authentication.  Roles = ek designation ladder — admin ·
-supervisor · engineer · senior_engineer · assistant_manager ·
-deputy_manager · senior_manager.  Sirf `admin` ke paas full access hai;
+supervisor · det · engineer · senior_engineer · assistant_manager ·
+deputy_manager · manager · senior_manager.  Sirf `admin` ke paas full access hai;
 baaki sab ko per-page permissions (maintenance_user_permissions) milti hain.
 
 To change JWT secret → edit SECRET_KEY

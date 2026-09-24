@@ -18,23 +18,31 @@ import {
 // Roles = ek designation-ladder.  Sirf `admin` ke paas full access hai;
 // baaki sab (supervisor … senior manager) ko admin per-page permissions
 // deta hai (Permissions button).  ROLE_OPTIONS = dropdown ka single source.
+// DET aur Manager 2026-09-24 me jude (user: "designation me Manager aur DET
+// add karo").  Ladder ke kram me: DET trainee hai to Engineer se pehle,
+// Manager Deputy aur Senior ke beech.  Naya role = yahan + backend
+// users.py ka VALID_ROLES (warna save par 400).
 export const ROLE_OPTIONS = [
   { value: "admin",             label: "Admin" },
   { value: "supervisor",        label: "Supervisor" },
+  { value: "det",               label: "DET" },
   { value: "engineer",          label: "Engineer" },
   { value: "senior_engineer",   label: "Senior Engineer" },
   { value: "assistant_manager", label: "Assistant Manager" },
   { value: "deputy_manager",    label: "Deputy Manager" },
+  { value: "manager",           label: "Manager" },
   { value: "senior_manager",    label: "Senior Manager" },
 ];
 
 export const ROLE_PILL = {
   admin:             { bg:"rgba(30,64,175,.10)",  fg:"#1e40af" },
   supervisor:        { bg:"rgba(13,148,136,.10)", fg:"#0d9488" },
+  det:               { bg:"rgba(2,132,199,.10)",  fg:"#0369a1" },
   engineer:          { bg:"rgba(22,163,74,.10)",  fg:"#16a34a" },
   senior_engineer:   { bg:"rgba(5,150,105,.12)",  fg:"#047857" },
   assistant_manager: { bg:"rgba(124,58,237,.10)", fg:"#6d28d9" },
   deputy_manager:    { bg:"rgba(79,70,229,.10)",  fg:"#4f46e5" },
+  manager:           { bg:"rgba(219,39,119,.10)", fg:"#be185d" },
   senior_manager:    { bg:"rgba(217,119,6,.12)",  fg:"#b45309" },
 };
 
