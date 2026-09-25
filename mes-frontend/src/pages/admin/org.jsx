@@ -116,15 +116,20 @@ export function UsersPage({ toast, readOnly = false }) {
   };
 
   const openEdit = (u) => setEditModal({
-    id: u.id, username: u.username || "", emp_code: u.emp_code || "",
-    wasName: u.username || "", wasCode: u.emp_code || "",
+    id: u.id, username: u.username || "", emp_code: u.emp_code || "", role: u.role || "",
+    wasName: u.username || "", wasCode: u.emp_code || "", wasRole: u.role || "",
   });
 
-  /* Dono alag endpoint par jaate hain, isliye jo BADLA hai sirf wahi bheja
-     jaata hai.  Kram jaan-boojh kar hai: pehle EMP CODE, phir USERNAME --
-     apna hi naam badalne par token ussi waqt bekaar ho jaata hai, to uske
-     baad koi bhi call 401 khaati.  Ulta kram rakhte to emp code chup-chaap
-     gir jaata. */
+  /* Teen cheezein: username, emp code, DESIGNATION (role) -- user 2026-09-25:
+     "username aur emp id ke edit me designation ka option bhi do, wahin se
+     edit ho jaaye".  Designation = wahi role jo table ke dropdown me hai;
+     Attendance Dashboard par bhi yahi dikhti hai (attendance.py `_DESIG`).
+     Jo BADLA hai sirf wahi bheja jaata hai.  Emp code + role EK hi call me
+     (`/role` dono leta hai).  Kram jaan-boojh kar hai: pehle EMP CODE/ROLE,
+     phir USERNAME -- apna hi naam badalne par token ussi waqt bekaar ho
+     jaata hai, to uske baad koi bhi call 401 khaati.  Ulta kram rakhte to
+     emp code / role chup-chaap gir jaata.
+     `admin` naam wale account ka role table ki tarah yahan bhi band. */
   const saveEdit = async () => {
     const m = editModal;
     if (!m) return;
@@ -133,12 +138,20 @@ export function UsersPage({ toast, readOnly = false }) {
     if (!naam) { toast("Username is required","err"); return; }
     const naamBadla = naam !== m.wasName;
     const codeBadla = code !== (m.wasCode || "").toUpperCase();
-    if (!naamBadla && !codeBadla) { setEditModal(null); return; }
+    const roleBadla = m.wasName !== "admin" && !!m.role && m.role !== m.wasRole;
+    if (!naamBadla && !codeBadla && !roleBadla) { setEditModal(null); return; }
+    if (roleBadla && m.wasName === me?.username && m.wasRole === "admin" &&
+        !confirm("Change your own designation from Admin? You will lose admin access.")) return;
     if (naamBadla && m.wasName === me?.username &&
         !confirm(`Change your own username to "${naam}"? You will be signed out.`)) return;
     setEditSaving(true);
     try {
-      if (codeBadla) await api.put(`/api/users/${m.id}/role`,     { emp_code: code }, token);
+      if (codeBadla || roleBadla) {
+        await api.put(`/api/users/${m.id}/role`, {
+          ...(codeBadla ? { emp_code: code } : {}),
+          ...(roleBadla ? { role: m.role } : {}),
+        }, token);
+      }
       if (naamBadla) await api.put(`/api/users/${m.id}/username`, { username: naam }, token);
       toast("Saved");
       setEditModal(null);
@@ -375,7 +388,7 @@ export function UsersPage({ toast, readOnly = false }) {
         )}
       </Card>
 
-      {/* Username + Employee ID -- dono ek hi jagah (har row ke "Edit" se). */}
+      {/* Username + Employee ID + Designation -- teeno ek hi jagah (har row ke "Edit" se). */}
       <Modal open={!!editModal} onClose={()=>setEditModal(null)}
              title={`Edit User - ${editModal?.wasName || ""}`}>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
@@ -388,6 +401,20 @@ export function UsersPage({ toast, readOnly = false }) {
             <Input value={editModal?.emp_code || ""} maxLength={40}
                    onChange={e=>setEditModal(m=>({ ...m, emp_code:e.target.value }))}
                    placeholder="e.g. 487" name="mes-edit-empcode" autoComplete="off" />
+          </FF>
+          {/* Designation = Role (table wala dropdown).  `admin` account band. */}
+          <FF label="Designation (Role)"
+              hint={editModal?.wasName === "admin"
+                ? "The admin account always stays Admin."
+                : "Also shown on the Attendance Dashboard for this person."}>
+            <Select value={editModal?.role || ""} disabled={editModal?.wasName === "admin"}
+                    onChange={e=>setEditModal(m=>({ ...m, role:e.target.value }))}>
+              {/* purana / anjaan role (list me nahi) -- chuna hua dikhe, galat na lage */}
+              {editModal?.wasRole && !ROLE_OPTIONS.some(r => r.value === editModal.wasRole) && (
+                <option value={editModal.wasRole}>{editModal.wasRole}</option>
+              )}
+              {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </Select>
           </FF>
         </div>
         <div style={{ marginTop:14, padding:"10px 12px", borderRadius:8, background:"#fffbeb",

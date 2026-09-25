@@ -48,7 +48,7 @@ permission nahi hoti.
 
 Endpoints (prefix /api/attendance)
 ----------------------------------
-GET    /app-users                app ke user (id/username/emp code) -- Add Member ke liye (admin)
+GET    /app-users                app ke user (id/username/emp code/designation/on_board) -- Add Member ke liye (admin)
 GET    /on-duty                  abhi ki shift ke log -- SIRF NAAM (dashboard)
 GET    /board?day=YYYY-MM-DD     us din ka board (photo ke bina)
 PUT    /board                    {day, lanes:{slot:[ids]}} -- ghaseetne ke baad
@@ -68,6 +68,7 @@ from pydantic import BaseModel
 
 from database import get_conn, dict_cursor
 from auth import get_current_user
+from routers.users import role_label_sql
 
 router = APIRouter(prefix="/api/attendance", tags=["attendance"])
 
@@ -224,10 +225,28 @@ def _badal_sakte(d: date) -> None:
         raise HTTPException(400, "Past dates are view-only.")
 
 
+# ── Designation: app user se juda aadmi ─────────────────────────────────
+# User 2026-09-25: "Add Member me designation nahi aati -- jo hamne wahan
+# (Admin -> Users) define kar rakhi hai wo aa jaye, aur change bhi na ho."
+# Isliye jo aadmi kisi app user se juda hai (sirf EMP CODE se -- attendance
+# aur app user ka yahi ek rishta hai), uski designation HAR BAAR us user ke
+# role ka naam hoti hai (ROLE_LABELS, routers/users.py) -- yahan save wali
+# nahi.  Admin role badle to board par apne aap badal jaati hai.  Juda nahi,
+# ya role anjaan -> jo yahan save hai wahi.
+# LATERAL + LIMIT 1: ek emp code do user par ho bhi jaaye to qatar dohri na ho.
+_JUDA_USER = """
+      LEFT JOIN LATERAL (
+            SELECT ju.role FROM maintenance_users ju
+             WHERE COALESCE(TRIM(s.emp_code), '') <> ''
+               AND UPPER(TRIM(ju.emp_code)) = UPPER(TRIM(s.emp_code))
+             ORDER BY ju.id LIMIT 1
+      ) ju ON TRUE"""
+_DESIG = f"COALESCE({role_label_sql('ju.role')}, s.designation) AS designation"
+
 # ── Board padhna ────────────────────────────────────────────────────────
 # Har aadmi ki aakhri row (day <= D).  Photo ka sirf updated_at -- asli
 # photo (TEXT) yahan nahi padhi jaati.
-_BOARD_SQL = """
+_BOARD_SQL = f"""
     WITH aakhri AS (
         SELECT DISTINCT ON (b.staff_id)
                b.staff_id, b.slot, b.pos, b.updated_by, b.updated_at
@@ -235,12 +254,12 @@ _BOARD_SQL = """
          WHERE b.day <= %(d)s
          ORDER BY b.staff_id, b.day DESC
     )
-    SELECT s.id, s.name, s.emp_code, s.designation, s.contact, s.doj,
+    SELECT s.id, s.name, s.emp_code, {_DESIG}, s.contact, s.doj,
            a.slot, a.pos, a.updated_by, a.updated_at,
            p.updated_at AS photo_at
       FROM aakhri a
       JOIN maintenance_employee s ON s.id = a.staff_id
-      LEFT JOIN maintenance_employee_photo p ON p.staff_id = s.id
+      LEFT JOIN maintenance_employee_photo p ON p.staff_id = s.id{_JUDA_USER}
      WHERE s.removed_on IS NULL OR s.removed_on > %(d)s
      ORDER BY a.pos, s.name, s.id
 """
@@ -363,6 +382,24 @@ def _dohra(cur, emp: str, apna: Optional[int]) -> None:
         raise HTTPException(409, f"Emp code {emp} is already on the board ({naam}).")
 
 
+def _juda_desig(cur, emp: str) -> Optional[str]:
+    """Emp code kisi app user se juda ho to uske role ka naam, warna None.
+    Add/Edit me SERVER bhi yahi save karta hai -- form (ya purani APK, jiska
+    khaana abhi khula hai) kuch aur bheje to bhi.  Warna board to role hi
+    dikhata, par table ki naqal (AI / report yahi padhte hain) alag ho jaati."""
+    if not emp:
+        return None
+    cur.execute(f"""
+        SELECT {role_label_sql('u.role')} AS d FROM maintenance_users u
+         WHERE UPPER(TRIM(u.emp_code)) = UPPER(TRIM(%s))
+         ORDER BY u.id LIMIT 1
+    """, (emp,))
+    r = cur.fetchone()
+    if not r:
+        return None
+    return r["d"] if isinstance(r, dict) else r[0]
+
+
 def _slot(s: Optional[str]) -> str:
     s = (s or "G").strip().upper()
     if s not in SLOTS:
@@ -382,14 +419,27 @@ def app_users(user=Depends(get_current_user)):
     sirf admin ka kaam hai)."""
     if not _admin_hai(user):
         raise HTTPException(403, "Only admin can add members.")
+    _ensure()
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("ALTER TABLE maintenance_users ADD COLUMN IF NOT EXISTS emp_code VARCHAR(40)")
-        cur.execute("""SELECT id, username, COALESCE(full_name, '') AS full_name,
-                              COALESCE(emp_code, '') AS emp_code, role
-                         FROM maintenance_users
-                        WHERE COALESCE(is_active, TRUE)
-                        ORDER BY username""")
+        # `designation` = role ka dikhne wala naam (Admin -> Users wala) --
+        # form me wahi bharti hai aur badli nahi ja sakti.
+        # `on_board` = is emp code ka chalu aadmi board par pehle se hai ->
+        # Add Member ki list me dobara nahi dikhta (user 2026-09-25).  Edit
+        # form ko poori list chahiye (designation milane ke liye), isliye
+        # chhantna frontend karta hai, yahan sirf nishaan.
+        cur.execute(f"""
+            SELECT u.id, u.username, COALESCE(u.full_name, '') AS full_name,
+                   COALESCE(u.emp_code, '') AS emp_code, u.role,
+                   COALESCE({role_label_sql('u.role')}, '') AS designation,
+                   EXISTS (SELECT 1 FROM maintenance_employee e
+                            WHERE e.removed_on IS NULL
+                              AND COALESCE(TRIM(u.emp_code), '') <> ''
+                              AND UPPER(TRIM(e.emp_code)) = UPPER(TRIM(u.emp_code))) AS on_board
+              FROM maintenance_users u
+             WHERE COALESCE(u.is_active, TRUE)
+             ORDER BY u.username""")
         return {"users": cur.fetchall()}
 
 
@@ -507,7 +557,7 @@ def get_members(user=Depends(get_current_user)):
     today = date.today()
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("""
+        cur.execute(f"""
             WITH aaj AS (
                 SELECT DISTINCT ON (b.staff_id) b.staff_id, b.slot
                   FROM maintenance_attendance_board b
@@ -517,12 +567,12 @@ def get_members(user=Depends(get_current_user)):
                 SELECT staff_id, MIN(day) AS from_day
                   FROM maintenance_attendance_board GROUP BY staff_id
             )
-            SELECT s.id, s.name, s.emp_code, s.designation, s.contact, s.doj,
+            SELECT s.id, s.name, s.emp_code, {_DESIG}, s.contact, s.doj,
                    a.slot, f.from_day, p.updated_at AS photo_at
               FROM maintenance_employee s
               LEFT JOIN aaj a   ON a.staff_id = s.id
               LEFT JOIN pehla f ON f.staff_id = s.id
-              LEFT JOIN maintenance_employee_photo p ON p.staff_id = s.id
+              LEFT JOIN maintenance_employee_photo p ON p.staff_id = s.id{_JUDA_USER}
              WHERE s.removed_on IS NULL
              ORDER BY lower(s.name), s.id
         """, {"d": today})
@@ -557,6 +607,7 @@ def add_staff(body: StaffIn, user=Depends(get_current_user)):
         cur = dict_cursor(conn)
         cur.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
         _dohra(cur, v["emp_code"], None)
+        v["designation"] = _juda_desig(cur, v["emp_code"]) or v["designation"]
         cur.execute("""
             INSERT INTO maintenance_employee
                    (name, emp_code, designation, contact, doj, created_by, updated_by)
@@ -588,6 +639,7 @@ def edit_staff(sid: int, body: StaffIn, user=Depends(get_current_user)):
         if r["removed_on"] is not None:
             raise HTTPException(400, "This person has been removed from the board.")
         _dohra(cur, v["emp_code"], sid)
+        v["designation"] = _juda_desig(cur, v["emp_code"]) or v["designation"]
         cur.execute("""
             UPDATE maintenance_employee
                SET name = %s, emp_code = %s, designation = %s, contact = %s, doj = %s,

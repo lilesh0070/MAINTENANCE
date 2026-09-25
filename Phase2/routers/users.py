@@ -13,7 +13,8 @@ ko admin per-page permissions deta hai):
   assistant_manager · deputy_manager · manager · senior_manager
   (det + manager 2026-09-24 me jude.  Role ke naam par kahin koi khaas logic
   nahi chalta -- access sirf per-page permission se -- isliye naya role jodna
-  = yahan VALID_ROLES + frontend mailconfig.jsx ka ROLE_OPTIONS/ROLE_PILL.)
+  = yahan VALID_ROLES + ROLE_LABELS + frontend mailconfig.jsx ka
+  ROLE_OPTIONS/ROLE_PILL.)
 
 Kis user ko kaunsa page dikhega aur wo likh payega ya nahi, ye poori tarah
 `maintenance_user_permissions` tay karti hai — frontend ka `canAccess()` /
@@ -34,6 +35,56 @@ VALID_ROLES = {
     "admin", "supervisor", "det", "engineer", "senior_engineer",
     "assistant_manager", "deputy_manager", "manager", "senior_manager",
 }
+
+# Role ka DIKHNE wala naam ("designation") -- frontend `ROLE_OPTIONS`
+# (admin/mailconfig.jsx) ke label hubahu.  Attendance Dashboard me jo aadmi
+# kisi app user se juda hai (emp code se), uski designation yahin se aati hai
+# (user 2026-09-25: "jo hamne wahan define kar rakhi hai wo aa jaye, change
+# bhi na ho").  Naya role jodo to VALID_ROLES + yahan + ROLE_OPTIONS, teeno.
+ROLE_LABELS = {
+    "admin": "Admin",
+    "supervisor": "Supervisor",
+    "det": "DET",
+    "engineer": "Engineer",
+    "senior_engineer": "Senior Engineer",
+    "assistant_manager": "Assistant Manager",
+    "deputy_manager": "Deputy Manager",
+    "manager": "Manager",
+    "senior_manager": "Senior Manager",
+}
+
+
+def role_label_sql(col: str) -> str:
+    """SQL CASE: role -> dikhne wala naam; anjaan role par NULL."""
+    whens = " ".join(f"WHEN '{k}' THEN '{v}'" for k, v in ROLE_LABELS.items())
+    return f"(CASE {col} {whens} END)"
+
+
+def sync_attendance_designation(cur, user_id: int) -> None:
+    """Attendance board (maintenance_employee) me is user se jude aadmi (emp
+    code se) ki SAVE wali designation bhi role ke naam par kar do.
+    User 2026-09-25: "yahan (Admin) designation badlein to wahan (Attendance)
+    bhi ho jaani chahiye."  Board to waise bhi role se hi dikhata hai
+    (attendance.py `_DESIG`) -- ye save wali naqal isliye ki jo seedha table
+    padhe (AI assistant, report) use bhi wahi mile, aur user kabhi hat jaaye
+    to aakhri designation bachi rahe.  Attendance ki table na ho (naya
+    install) to chup-chaap kuch nahi.  Role anjaan ho to kuch nahi badalta."""
+    cur.execute("SELECT to_regclass('maintenance_employee') IS NOT NULL")
+    r = cur.fetchone()
+    if not (r[0] if not isinstance(r, dict) else list(r.values())[0]):
+        return
+    label = role_label_sql("u.role")
+    cur.execute(f"""
+        UPDATE maintenance_employee e
+           SET designation = {label}
+          FROM maintenance_users u
+         WHERE u.id = %s
+           AND e.removed_on IS NULL
+           AND COALESCE(TRIM(u.emp_code), '') <> ''
+           AND UPPER(TRIM(e.emp_code)) = UPPER(TRIM(u.emp_code))
+           AND {label} IS NOT NULL
+           AND COALESCE(e.designation, '') IS DISTINCT FROM {label}
+    """, (user_id,))
 
 
 class UserCreate(BaseModel):
@@ -186,6 +237,9 @@ def create_user(body: UserCreate, admin=Depends(require_admin)):
             RETURNING id, username, role, is_active, created_at, emp_code
         """, (body.username, hash_password(body.password), body.role, body.password, code))
         row = cur.fetchone()
+        # Board par is emp code ka aadmi pehle se ho (haath se joda gaya) to
+        # uski save wali designation bhi abhi role se mila do.
+        sync_attendance_designation(cur, row["id"])
         conn.commit()
         return row
 
@@ -326,6 +380,8 @@ def update_user_role(user_id: int, body: UserUpdate, admin=Depends(require_admin
             cur.execute("UPDATE maintenance_users SET emp_code = %s WHERE id = %s", (code, user_id))
             if cur.rowcount == 0:
                 raise HTTPException(404, "User not found")
+            # naya emp code kisi board wale aadmi se mila -> uski designation bhi
+            sync_attendance_designation(cur, user_id)
             conn.commit()
         if body.role is None:
             return {"ok": True, "updated": True}
@@ -336,6 +392,8 @@ def update_user_role(user_id: int, body: UserUpdate, admin=Depends(require_admin
         cur.execute("UPDATE maintenance_users SET role = %s WHERE id = %s", (body.role, user_id))
         if cur.rowcount == 0:
             raise HTTPException(404, "User not found")
+        # Attendance board ki designation bhi saath me (user 2026-09-25)
+        sync_attendance_designation(cur, user_id)
         conn.commit()
     return {"ok": True, "updated": True}
 

@@ -97,6 +97,8 @@ const whenText = (ts) => {
 const initials = (name) => (name || "").replace(/^(mr|mrs|ms|dr)\.?\s+/i, "").trim()
   .split(/\s+/).map((w) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";
 const telHref = (c) => `tel:${String(c).replace(/[^0-9+]/g, "")}`;
+// Emp code ki tulna -- server ki tarah TRIM + UPPER (app user <-> aadmi)
+const saafCode = (v) => String(v ?? "").trim().toUpperCase();
 
 function tenure(doj, onDay) {
   if (!doj) return "";
@@ -906,6 +908,8 @@ export default function AttendanceDashboard() {
         .att-fld input { width:100%; height:42px; box-sizing:border-box; border:1px solid #cbd5e1; border-radius:10px;
                          padding:0 12px; font-family:inherit; font-size:15px; color:#0f172a; background:#fff; }
         .att-fld input:disabled { background:#f8fafc; color:#334155; -webkit-text-fill-color:#334155; opacity:1; }
+        /* app user wali designation -- dikhti hai, badalti nahi */
+        .att-fld input.att-locked { background:#f1f5f9; color:#334155; font-weight:700; cursor:not-allowed; }
         /* Add Member ka "app user se uthao" wala khaana -- input jaisa hi dikhe */
         .att-fld select { width:100%; height:42px; box-sizing:border-box; border:1px solid #cbd5e1;
                           border-radius:10px; padding:0 10px; font-family:inherit; font-size:15px;
@@ -1339,21 +1343,39 @@ function MemberPanel({ mode, slot0, person, photo0, day, today, editable, showSl
   const set = (k) => (e) => setF((o) => ({ ...o, [k]: e && e.target ? e.target.value : e }));
 
   /* Add Member: app ke user me se uthao (user 2026-09-23 -- "user banate waqt
-     Employee ID zaroori, phir yahan se utha lenge").  Naam aur emp code wahin
-     se bhar jaate hain; photo, contact, designation aur DOJ phir bhi yahin
-     bharne padte hain -- wo khaane user wali table me hote hi nahi.
+     Employee ID zaroori, phir yahan se utha lenge").  Naam, emp code aur
+     DESIGNATION wahin se bharte hain; photo, contact aur DOJ yahin bharne
+     padte hain -- wo khaane user wali table me hote hi nahi.
      List sirf admin ko milti hai; na mile to picker dikhta hi nahi aur naam
-     haath se bharne wala purana raasta jyon ka tyon chalta hai. */
+     haath se bharne wala purana raasta jyon ka tyon chalta hai.
+
+     User 2026-09-25: "designation jo Admin me define kar rakhi hai wo aa
+     jaye aur change bhi na ho; jiska naam add kar diya uska phir se Add wale
+     me naam na dikhe."
+       * Emp code kisi app user se mile (picker se chuno ya haath se likho)
+         -> designation = us user ka role (server `designation`), khaana
+         BAND (readOnly).  Board par bhi server wahi dikhata hai
+         (attendance.py `_DESIG`), to dono kabhi alag nahi honge.
+       * Picker me sirf wo jo board par NAHI hain (server `on_board`).
+       * Edit me bhi list laate hain -- juda aadmi ki designation wahan bhi
+         band rahe.  Purana backend (`designation`/`on_board` nahi) -> sab
+         pehle jaisa. */
   const [appUsers, setAppUsers] = useState([]);
   const [pickUser, setPickUser] = useState("");
   useEffect(() => {
-    if (!(form && mode === "add" && token)) return undefined;
+    if (!(form && token)) return undefined;
     let ruk = false;
     api.get("/api/attendance/app-users", token)
       .then((d) => { if (!ruk) setAppUsers(Array.isArray(d?.users) ? d.users : []); })
       .catch(() => { /* admin nahi / purana backend -- picker chhupa rahega */ });
     return () => { ruk = true; };
-  }, [form, mode, token]);
+  }, [form, token]);
+  const naye = appUsers.filter((u) => !u.on_board);
+  const juda = useMemo(() => {
+    const k = saafCode(f.emp_code);
+    return k ? appUsers.find((u) => saafCode(u.emp_code) === k) || null : null;
+  }, [appUsers, f.emp_code]);
+  const judaDesig = (juda && juda.designation) || "";
 
   const chunoUser = (id) => {
     setPickUser(id);
@@ -1363,6 +1385,7 @@ function MemberPanel({ mode, slot0, person, photo0, day, today, editable, showSl
       ...o,
       name: (u.full_name || u.username || "").toUpperCase(),
       emp_code: u.emp_code || o.emp_code,
+      designation: u.designation || o.designation,
     }));
   };
 
@@ -1396,8 +1419,8 @@ function MemberPanel({ mode, slot0, person, photo0, day, today, editable, showSl
     setBusy(true);
     setPerr("");
     const body = {
-      name, emp_code: f.emp_code.trim(), designation: f.designation.trim(), contact: f.contact.trim(),
-      doj: f.doj || null, day,
+      name, emp_code: f.emp_code.trim(), designation: (judaDesig || f.designation).trim(),
+      contact: f.contact.trim(), doj: f.doj || null, day,
     };
     try {
       if (mode === "add") {
@@ -1486,11 +1509,16 @@ function MemberPanel({ mode, slot0, person, photo0, day, today, editable, showSl
 
           {!view && (
             <>
-              {mode === "add" && appUsers.length > 0 && (
+              {mode === "add" && appUsers.length > 0 && naye.length === 0 && (
+                <div className="att-hint" style={{ marginBottom: 10 }}>
+                  All app users are already on the board.
+                </div>
+              )}
+              {mode === "add" && naye.length > 0 && (
                 <label className="att-fld"><span>From app user</span>
                   <select value={pickUser} onChange={(e) => chunoUser(e.target.value)}>
                     <option value="">— type by hand —</option>
-                    {appUsers.map((u) => (
+                    {naye.map((u) => (
                       <option key={u.id} value={u.id}>
                         {(u.full_name || u.username)}
                         {u.emp_code ? ` · ${u.emp_code}` : " · no emp ID"}
@@ -1507,9 +1535,20 @@ function MemberPanel({ mode, slot0, person, photo0, day, today, editable, showSl
                 <input value={f.emp_code} onChange={set("emp_code")} maxLength={40} placeholder="e.g. 10234" />
               </label>
               <label className="att-fld"><span>Designation</span>
-                <input value={f.designation} onChange={set("designation")} maxLength={120} list="att-desig-list"
-                       placeholder="e.g. Technician" />
-                <datalist id="att-desig-list">{designations.map((d) => <option key={d} value={d} />)}</datalist>
+                {judaDesig ? (
+                  <>
+                    <input value={judaDesig} readOnly aria-readonly="true" className="att-locked" />
+                    <div className="att-hint" style={{ marginTop: 5 }}>
+                      From the app user ({juda.username}) — change it in Admin → Users.
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <input value={f.designation} onChange={set("designation")} maxLength={120} list="att-desig-list"
+                           placeholder="e.g. Technician" />
+                    <datalist id="att-desig-list">{designations.map((d) => <option key={d} value={d} />)}</datalist>
+                  </>
+                )}
               </label>
               <label className="att-fld"><span>Contact Number</span>
                 <input value={f.contact} onChange={set("contact")} maxLength={40} type="tel" inputMode="tel"
