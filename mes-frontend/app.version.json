@@ -1,5 +1,5 @@
 {
-  "version": "1.4.136",
-  "notes": "New Work Records page for everyone: Log Book, Breakdown (manual + auto), Daily Work Assign and Holiday Plan Work for all zones on one screen. Dashboard: ANDON at 70% with a Quick Access card (Work Records, Maintenance KPI, Attendance Dashboard, 3D View); each of these pages has a Back button to the Dashboard.",
-  "released_at": "2026-09-25T04:48:15"
+  "version": "1.4.137",
+  "notes": "Attendance Dashboard: Add Member fills the designation from the app user (Admin > Users) and it can't be changed there; people already on the board no longer appear in the list. Users & Access: the Edit box can now change the designation too, and the Attendance board follows it.",
+  "released_at": "2026-09-25T06:31:25"
 }
