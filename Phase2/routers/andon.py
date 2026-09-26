@@ -38,6 +38,7 @@ GET/PUT         /plc-devices/{id}/outputs   this device's DO1–DO8 (default-fil
 GET             /events                     live OPEN calls (running timer)
 GET             /history                    closed calls (duration / response)
 """
+import collections
 import os
 import re
 import socket
@@ -757,26 +758,6 @@ def _ensure_conn(pool, retry, key, ip, port, series, protocol=None, unit_id=None
         return None
 
 
-def _read_map_name(mc, plc_id, cur, table, name_col):
-    cur.execute(f"""SELECT device_type, device_no, value, {name_col} AS nm
-                     FROM {table}
-                    WHERE plc_id=%s AND COALESCE(device_type,'')<>''
-                          AND COALESCE(device_no,'')<>'' AND value IS NOT NULL
-                    ORDER BY id""", (plc_id,))
-    rows = cur.fetchall()
-    if not rows:
-        return None
-    live = {}
-    for r in rows:
-        key = (r["device_type"], r["device_no"])
-        if key not in live:
-            try: live[key] = _read_one(mc, r["device_type"], r["device_no"])
-            except Exception: live[key] = None
-        if live[key] is not None and int(live[key]) == int(r["value"]):
-            return r["nm"]
-    return None
-
-
 _POLL_FAIL = {}
 _POLL_LOG_EVERY = 30.0
 
@@ -801,17 +782,75 @@ def _poll_ok(dev_id):
         print(f"[ANDON-PLC-POLL] dev {dev_id}: wapas theek", flush=True)
 
 
-def _plc_poll_once(dev):
-    """Taala lagao, phir asli poll.  Taale ki wajah `_plc_lock` par likhi hai."""
+# ════════════════════════════════════════════════════════════════════
+#  CALL PADHNA: HAR LINE PLC KA APNA READER THREAD  (user 2026-09-26)
+# ════════════════════════════════════════════════════════════════════
+# PEHLE: ek hi poller thread saari line PLC baari-baari padhta tha -- aur usi
+# ke andar DB me call kholna / ACK / band.  Koi line PLC band ho to us par
+# ~1.5 s (tatolna / Modbus connect) atakta, har ~5 s -- us beech BAAKI lines
+# ki call bhi der se pakdi jaati, aur wahi der wala samay DB me likha jaata
+# (response time / downtime galat).  2026-09-26 ko LOOP_PIPE_1/2/3 ke PLC
+# ghanton se band the.
+#
+# AB DO HISSE:
+#   * har line PLC ka apna READER thread (`andon-in-<id>`) -- SIRF PLC se
+#     bit padhta hai (MC har 0.1 s, Modbus har 0.4 s -- pehle jaisa).  Band
+#     PLC par sirf wahi atakta hai.  Jo bhi badlav dekhe use kram se line
+#     (queue) me daalta hai -- beech ka koi ON / OFF / ACK chhoote nahi.
+#   * DB ka saara kaam PEHLE ki tarah EK hi poller thread karta hai (call
+#     kholna / ACK / band, slip, nishaan).  KYUN: database ka pool
+#     (SimpleConnectionPool) kai thread ke beech surakshit nahi maana jaata
+#     (AUDIT) -- reader thread DB ko haath hi nahi lagate, to DB par ek saath
+#     ka kaam pehle se zyada nahi hota.
+#   * `_plc_lock(id)` wahi -- "Read now" wala diagnostic aur reader ek hi
+#     connection par ek saath nahi jaate.
+_IN_WORKERS = {}           # dev_id -> _InWorker   (sirf poller thread badalta hai)
+_IN_WAKE = threading.Event()
+_IN_APPLY_EVERY = 1.0      # badlav na ho to bhi itne second me ek baar DB se milao
+_IN_QUEUE_MAX = 1000
+_IN_BATCH_MAX = 50         # ek transaction me itne badlav tak
+_IN_CFG = {"at": -1e9, "data": None}
+_IN_CFG_TTL = 1.0          # PLC / bit ki suchi itne second me ek baar DB se
+_IN_MAPS = {"at": -1e9, "model": {}, "fault": {}}
+_IN_MAPS_TTL = 5.0         # model / fault ki suchi itne second me ek baar DB se
+# Reader itne second se kuch padh hi nahi paaya (kahin atka -- jaise Modbus ke
+# retry me ~6 s) to purana "online" dikhana jhooth hoga -- tab offline maano.
+_IN_STALE_S = 10.0
+_IN_SWEEP_EVERY = 10.0     # band / hatayi PLC ki khuli call ki safai (_stale_call_sweep)
+
+
+def _read_map_name_rows(mc, rows):
+    """Model / fault ka naam: suchi (rows) poller pehle hi DB se laa chuka hota
+    hai; yahan sirf PLC se value padh kar milaate hain -- pehla mel jeetta hai."""
+    if not rows:
+        return None
+    live = {}
+    for r in rows:
+        key = (r["device_type"], r["device_no"])
+        if key not in live:
+            try: live[key] = _read_one(mc, r["device_type"], r["device_no"])
+            except Exception: live[key] = None
+        if live[key] is not None and int(live[key]) == int(r["value"]):
+            return r["nm"]
+    return None
+
+
+def _plc_read_dev(dev, bit_rows, model_rows, fault_rows):
+    """Taala lagao, phir SIRF PLC se padhna.  Taale ki wajah `_plc_lock` par likhi hai."""
     with _plc_lock(dev["id"]):
-        return _plc_poll_once_locked(dev)
+        return _plc_read_dev_locked(dev, bit_rows, model_rows, fault_rows)
 
 
-def _plc_poll_once_locked(dev):
+def _plc_read_dev_locked(dev, bit_rows, model_rows, fault_rows):
+    """Pehle ke `_plc_poll_once_locked` ka PLC wala hissa -- bartaav wahi
+    (connection, dummy read, model/fault, galti par drop + backoff).  DB ka
+    kaam yahan NAHI hota -- padha hua haal lauta diya jaata hai."""
     did = dev["id"]
     has_sub = bool((dev.get("sub_ip") or "").strip())
     proto     = _proto_for(dev.get("series"),     dev.get("protocol"))
     sub_proto = _proto_for(dev.get("sub_series"), dev.get("sub_protocol"))
+    out = {"ok": False, "sub_ok": (False if has_sub else None),
+           "bits": [], "model": None, "fault": None}
     mc = _ensure_conn(_PLC_CONN, _PLC_RETRY, did, dev["ip"],
                       dev.get("port") or _default_port(proto),
                       dev.get("series") or "Q", proto, dev.get("unit_id"))
@@ -822,7 +861,7 @@ def _plc_poll_once_locked(dev):
                                int(dev.get("port") or _default_port(proto))))
                 or "could not connect (no reason recorded)")
         _poll_fail(did, ConnectionError(_why))
-        return False, (False if has_sub else None)
+        return out
 
     sub_mc = _ensure_conn(_SUB_CONN, _SUB_RETRY, did, dev["sub_ip"],
                           dev.get("sub_port") or _default_port(sub_proto),
@@ -830,68 +869,173 @@ def _plc_poll_once_locked(dev):
                           dev.get("sub_unit_id")) if has_sub else None
     read_mc = sub_mc if has_sub else mc
     try:
-        closed = []
-        acked  = []
-        bit_changed = False
-        with get_conn() as conn:
-            cur = dict_cursor(conn)
-            cur.execute("""SELECT do_index, bit_type, bit_no FROM andon_plc_output_mapping
-                            WHERE plc_id=%s AND COALESCE(bit_type,'')<>'' AND COALESCE(bit_no,'')<>''
-                            ORDER BY do_index""", (did,))
-            _rows = cur.fetchall()
-
-            # Ek bhi bit-address bhara hai ya nahi -- ye yaad rakhna zaroori
-            # hai, warna aisi PLC "online" dikhti rehti hai aur koi nahi
-            # samajh paata ki alarm kyun nahi aata.
-            _POLL_NOBITS[did] = not _rows
-            if not _rows:
-                if _is_modbus(proto):
-                    _ = mc.read_one("HR", 3001)
-                else:
-                    _ = mc.read_one("M", 0)
-                bits = []
+        if not bit_rows:
+            # Ek bhi bit-address nahi -- PLC zinda hai ya nahi, ye ek dummy
+            # read se pata karte hain (UI ise "no bits" chetawni dikhata hai).
+            if _is_modbus(proto):
+                _ = mc.read_one("HR", 3001)
             else:
-                bits = list(zip(_rows, mc.read_many([(b["bit_type"], b["bit_no"]) for b in _rows])))
-
-            any_on = any(v != 0 for _, v in bits)
-            model = fault = None
-            if any_on and read_mc:
-                try:
-                    model = _read_map_name(read_mc, did, cur, "andon_model_map", "model_name")
-                    fault = _read_map_name(read_mc, did, cur, "andon_fault_map", "fault_name")
-                except Exception:
-                    model = fault = None
-            for b, val in bits:
-                res = _apply_state(cur, dev, b["do_index"], val != 0, model=model, fault=fault)
-                if res and res.get("action") == "closed":
-                    closed.append((res.get("event_id"), res.get("history_id")))
-                elif res and res.get("action") == "acknowledged":
-                    acked.append(res.get("event_id"))
-                if res and res.get("action") in ("opened", "acknowledged", "closed"):
-                    bit_changed = True
-            conn.commit()
-
-        if bit_changed:
-            _OUT_WAKE.set()
-
-        for _eid, _hid in closed:
-            if _eid and _hid:
-                try: auto_slip_on_close(_eid, _hid)
-                except Exception as _e: print(f"[ANDON-SLIP] close-fill dikkat (call {_eid}): {_e}")
-
-        for _eid in acked:
-            if _eid:
-                try: auto_slip_on_ack(_eid)
-                except Exception as _e: print(f"[ANDON-SLIP] ack-fill dikkat (call {_eid}): {_e}")
+                _ = mc.read_one("M", 0)
+            bits = []
+        else:
+            vals = mc.read_many([(b["bit_type"], b["bit_no"]) for b in bit_rows])
+            bits = [(b["do_index"], int(v)) for b, v in zip(bit_rows, vals)]
+        model = fault = None
+        if any(v != 0 for _, v in bits) and read_mc:
+            try:
+                model = _read_map_name_rows(read_mc, model_rows)
+                fault = _read_map_name_rows(read_mc, fault_rows)
+            except Exception:
+                model = fault = None
         _poll_ok(did)
-        return True, (bool(sub_mc) if has_sub else None)
+        out.update(ok=True, sub_ok=(bool(sub_mc) if has_sub else None),
+                   bits=bits, model=model, fault=fault)
+        return out
     except Exception as e:
         _poll_fail(did, e)
         if not isinstance(e, PlcProtocolError):
             _plc_drop(did)
             n = (_POLL_FAIL.get(did) or {}).get("count", 1)
             _PLC_RETRY[did] = _time.monotonic() + min(1 + (n // 10), _PLC_RETRY_SECS)
-        return False, (False if has_sub else None)
+        return out
+
+
+class _InWorker:
+    """Ek line PLC ka reader thread.  Poller har chakkar me `configure()` se
+    taaza setting (PLC ka pata, bit ki suchi, model / fault suchi) deta hai."""
+
+    def __init__(self, dev_id):
+        self.id = dev_id
+        self.cfg = None                        # (dev, bits, model, fault) -- ek assignment
+        self.latest = None                     # sabse naya padha hua haal
+        self.changes = collections.deque()     # badlav, kram se (poller DB me lagata hai)
+        self._full_logged = False
+        self._stop = False
+        self._ev = threading.Event()
+        self._t = threading.Thread(target=self._run, daemon=True, name=f"andon-in-{dev_id}")
+        self._t.start()
+
+    def configure(self, dev, bit_rows, model_rows, fault_rows):
+        first = self.cfg is None
+        self.cfg = (dev, bit_rows, model_rows, fault_rows)
+        if first:
+            self._ev.set()
+
+    def stop(self):
+        self._stop = True
+        self._ev.set()
+
+    def alive(self):
+        return self._t.is_alive() and not self._stop
+
+    def _run(self):
+        last_sig = None
+        while not self._stop:
+            cfg = self.cfg
+            if cfg is None:
+                self._ev.wait(0.1)
+                self._ev.clear()
+                continue
+            dev, bit_rows, model_rows, fault_rows = cfg
+            t0 = _time.monotonic()
+            try:
+                r = _plc_read_dev(dev, bit_rows, model_rows, fault_rows)
+            except Exception as e:             # na aana chahiye -- phir bhi thread na mare
+                print(f"[ANDON-PLC-POLL] dev {self.id} reader: {e}", flush=True)
+                r = {"ok": False, "sub_ok": None, "bits": [], "model": None, "fault": None}
+            r["at"] = t0
+            sig = (r["ok"], tuple(r["bits"]), r["model"], r["fault"])
+            if sig != last_sig:
+                last_sig = sig
+                if r["ok"]:
+                    if len(self.changes) < _IN_QUEUE_MAX:
+                        self.changes.append(r)
+                        self._full_logged = False
+                    elif not self._full_logged:
+                        self._full_logged = True
+                        print(f"[ANDON-PLC-POLL] dev {self.id}: badlav ki line bhari "
+                              f"({_IN_QUEUE_MAX}) -- DB ruka hai?  Aage sirf aakhri "
+                              f"haal lagega", flush=True)
+                self.latest = r
+                _IN_WAKE.set()
+            else:
+                self.latest = r
+            gap = MODBUS_POLL_INTERVAL if _is_modbus(dev.get("protocol")) else _PLC_POLL_INTERVAL
+            rest = gap - (_time.monotonic() - t0)
+            if rest > 0:
+                self._ev.wait(rest)
+                self._ev.clear()
+        try:
+            # Band -> is PLC ke connection chhodo.  Par agar isi PLC ka NAYA
+            # reader ban chuka hai (PLC turant dobara chalu), to connection
+            # ab uska hai -- use mat todo.
+            if _IN_WORKERS.get(self.id) is None:
+                with _plc_lock(self.id):
+                    _plc_drop(self.id)
+        except Exception:
+            pass
+
+
+def _in_apply_db(cur, dev, batch):
+    """Padhe hue haal DB me lagao (call kholna / ACK / band) -- kram se.  Sirf
+    poller thread bulaata hai.  Lautata hai (closed, acked, changed)."""
+    closed, acked, changed = [], [], False
+    for r in batch:
+        for do_index, val in r["bits"]:
+            res = _apply_state(cur, dev, do_index, val != 0, model=r["model"], fault=r["fault"])
+            if res and res.get("action") == "closed":
+                closed.append((res.get("event_id"), res.get("history_id")))
+            elif res and res.get("action") == "acknowledged":
+                acked.append(res.get("event_id"))
+            if res and res.get("action") in ("opened", "acknowledged", "closed"):
+                changed = True
+    return closed, acked, changed
+
+
+def _in_sig(r):
+    return (tuple(r["bits"]), r["model"], r["fault"])
+
+
+def _in_apply(dev, w, applied):
+    """Ek line PLC ke naye badlav (aur har ~1 s ek baar aakhri haal) DB me.
+    Transaction fail ho to line se kuch nahi hat-ta -- agle chakkar me dobara."""
+    did = dev["id"]
+    # Ek baar me zyada se zyada _IN_BATCH_MAX -- DB der tak ruka rahe to line
+    # lambi ho jaati hai; sab ek transaction me lagaane se poller (aur baaki
+    # lines) seconds tak atak jaate.  Baaki agle chakkar (0.1 s) me.
+    batch = list(w.changes)[:_IN_BATCH_MAX]
+    n_q = len(batch)
+    if not batch:
+        r = w.latest
+        if r is None or not r["ok"] or _time.monotonic() - r["at"] > _IN_STALE_S:
+            return                             # purana (atka) haal dobara mat lagao
+        last_sig, last_t = applied.get(did, (None, -1e9))
+        if _in_sig(r) == last_sig and _time.monotonic() - last_t < _IN_APPLY_EVERY:
+            return
+        batch = [r]
+    with get_conn() as conn:
+        closed, acked, changed = _in_apply_db(dict_cursor(conn), dev, batch)
+        conn.commit()
+    for _ in range(n_q):
+        w.changes.popleft()
+    applied[did] = (_in_sig(batch[-1]), _time.monotonic())
+
+    if changed:
+        _OUT_WAKE.set()
+
+    # Pehle ACK wale, phir close wale -- ek batch me ek hi call ka ACK aur
+    # band dono ho sakte hain (pehle ek poll me ek hi hota tha), aur ghatna
+    # ka kram yahi hai.  (Close ke baad ack-slip waise bhi kuch nahi karti --
+    # call andon_system se hat chuki hoti hai; response history se bharta hai.)
+    for _eid in acked:
+        if _eid:
+            try: auto_slip_on_ack(_eid)
+            except Exception as _e: print(f"[ANDON-SLIP] ack-fill dikkat (call {_eid}): {_e}")
+
+    for _eid, _hid in closed:
+        if _eid and _hid:
+            try: auto_slip_on_close(_eid, _hid)
+            except Exception as _e: print(f"[ANDON-SLIP] close-fill dikkat (call {_eid}): {_e}")
 
 
 def _stale_call_sweep():
@@ -929,90 +1073,168 @@ def _stale_call_sweep():
         print(f"[ANDON] stale-call sweep dikkat: {e}")
 
 
-_MB_LAST = {}
+def _in_read_config():
+    """Poller ka DB-padhna: saari line PLC, unki bit ki suchi (har ~1 s), aur
+    model / fault ki suchi (har ~5 s).  Test isi ko badal kar bina DB chalta hai."""
+    now = _time.monotonic()
+    if _IN_CFG["data"] is not None and now - _IN_CFG["at"] < _IN_CFG_TTL:
+        return _IN_CFG["data"]
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""SELECT id, zone, line, machine_no, machine_name,
+                              ip, port, series, protocol, unit_id,
+                              sub_ip, sub_port, sub_series, sub_protocol, sub_unit_id,
+                              enabled
+                         FROM andon_plc_devices""")
+        devs = cur.fetchall()
+        cur.execute("""SELECT plc_id, do_index, bit_type, bit_no FROM andon_plc_output_mapping
+                        WHERE plc_id IS NOT NULL
+                          AND COALESCE(bit_type,'')<>'' AND COALESCE(bit_no,'')<>''
+                        ORDER BY plc_id, do_index""")
+        bits = {}
+        for r in cur.fetchall():
+            bits.setdefault(r["plc_id"], []).append(r)
+        if now - _IN_MAPS["at"] >= _IN_MAPS_TTL:
+            for kind, table, col in (("model", "andon_model_map", "model_name"),
+                                     ("fault", "andon_fault_map", "fault_name")):
+                cur.execute(f"""SELECT plc_id, device_type, device_no, value, {col} AS nm
+                                  FROM {table}
+                                 WHERE COALESCE(device_type,'')<>''
+                                       AND COALESCE(device_no,'')<>'' AND value IS NOT NULL
+                                 ORDER BY id""")
+                m = {}
+                for r in cur.fetchall():
+                    m.setdefault(r["plc_id"], []).append(r)
+                _IN_MAPS[kind] = m
+            _IN_MAPS["at"] = now
+    data = (devs, bits, _IN_MAPS["model"], _IN_MAPS["fault"])
+    _IN_CFG["data"], _IN_CFG["at"] = data, now
+    return data
+
+
+def _in_stamp(did, ok, why):
+    """DB me nishaan -- taaki doosre backend bhi dekh sakein ki is PLC ko koi
+    poll kar raha hai ya nahi.  Poller ~10 s me ek baar bulaata hai."""
+    try:
+        with get_conn() as _c2:
+            _cur2 = _c2.cursor()
+            if ok:
+                _cur2.execute("UPDATE andon_plc_devices SET last_poll_at=NOW(), "
+                              "last_try_at=NOW(), last_poll_by=%s, "
+                              "last_poll_error=NULL WHERE id=%s",
+                              (_WRITER_ID, did))
+            else:
+                # Koshish ka nishaan alag -- isse pata chalta hai ki poller
+                # ZINDA hai, bas jud nahi paa raha.
+                _cur2.execute("UPDATE andon_plc_devices SET last_try_at=NOW(), "
+                              "last_poll_by=%s, last_poll_error=%s WHERE id=%s",
+                              (_WRITER_ID, (why or "unknown")[:400], did))
+            _c2.commit()
+    except Exception as _e:
+        print(f"[ANDON-PLC-POLL] nishaan nahi likha (dev {did}): {_e}")
+
+
+def _in_stop(did):
+    w = _IN_WORKERS.pop(did, None)
+    if w is not None:
+        w.stop()                               # reader khud apna connection chhodta hai
+
+
+def _in_drop_idle():
+    """Jin PLC ka koi reader nahi (band / hatayi gayi), unke bache connection
+    -- jaise "Read now" ne khole the -- chhod do.  Jo abhi kisi ke haath me hai
+    use is chakkar chhod do (taala nahi mila to agle chakkar)."""
+    for k in set(list(_PLC_CONN.keys()) + list(_SUB_CONN.keys())):
+        if k in _IN_WORKERS:
+            continue
+        lk = _plc_lock(k)
+        if lk.acquire(blocking=False):
+            try:
+                _plc_drop(k)
+            finally:
+                lk.release()
 
 
 def _plc_poll_loop():
-    n = 0
+    applied = {}                               # dev_id -> (aakhri lagaya haal, kab)
+    last_sweep = _time.monotonic()
     while True:
         try:
             _ensure_tables()
-            with get_conn() as conn:
-                cur = dict_cursor(conn)
-                cur.execute("""SELECT id, zone, line, machine_no, machine_name,
-                                      ip, port, series, protocol, unit_id,
-                                      sub_ip, sub_port, sub_series, sub_protocol, sub_unit_id,
-                                      enabled
-                                 FROM andon_plc_devices""")
-                devs = cur.fetchall()
+            devs, bits_by, model_by, fault_by = _in_read_config()
             now = datetime.now().isoformat(timespec="seconds")
             ids = set()
             for dev in devs:
-                ids.add(dev["id"])
-                prev = _PLC_STATUS.get(dev["id"], {})
-
-                if _is_modbus(dev.get("protocol")) and dev.get("enabled"):
-                    _t = _time.monotonic()
-                    if _t - _MB_LAST.get(dev["id"], 0.0) < MODBUS_POLL_INTERVAL:
-                        continue
-                    _MB_LAST[dev["id"]] = _t
+                did = dev["id"]
+                ids.add(did)
+                prev = _PLC_STATUS.get(did, {})
                 if not dev.get("enabled"):
-                    _PLC_STATUS[dev["id"]] = {"online": None, "sub_online": None, "checked": now, "last_seen": prev.get("last_seen")}
-                    _plc_drop(dev["id"])
+                    _PLC_STATUS[did] = {"online": None, "sub_online": None, "checked": now,
+                                        "last_seen": prev.get("last_seen")}
+                    _in_stop(did)
+                    applied.pop(did, None)
                     continue
-                ok, sub_ok = _plc_poll_once(dev)
-                # DB me nishaan -- taaki doosre backend bhi dekh sakein ki is
-                # PLC ko koi poll kar raha hai ya nahi (upar wali tippani).
-                # Har baar likhna bekaar hai (0.4s par), isliye ~10 sec me ek.
-                if (_time.monotonic() - _POLL_STAMP.get(dev["id"], 0.0)) > 10.0:
-                    _POLL_STAMP[dev["id"]] = _time.monotonic()
-                    _why = (_POLL_FAIL.get(dev["id"]) or {}).get("why")
-                    try:
-                        with get_conn() as _c2:
-                            _cur2 = _c2.cursor()
-                            if ok:
-                                _cur2.execute("UPDATE andon_plc_devices SET last_poll_at=NOW(), "
-                                              "last_try_at=NOW(), last_poll_by=%s, "
-                                              "last_poll_error=NULL WHERE id=%s",
-                                              (_WRITER_ID, dev["id"]))
-                            else:
-                                # Koshish ka nishaan alag -- isse pata chalta hai ki
-                                # poller ZINDA hai, bas jud nahi paa raha.
-                                _cur2.execute("UPDATE andon_plc_devices SET last_try_at=NOW(), "
-                                              "last_poll_by=%s, last_poll_error=%s WHERE id=%s",
-                                              (_WRITER_ID, (_why or "unknown")[:400], dev["id"]))
-                            _c2.commit()
-                    except Exception as _e:
-                        print(f"[ANDON-PLC-POLL] nishaan nahi likha (dev {dev['id']}): {_e}")
+                rows = bits_by.get(did, [])
+                # Ek bhi bit-address bhara hai ya nahi -- ye yaad rakhna zaroori
+                # hai, warna aisi PLC "online" dikhti rehti hai aur koi nahi
+                # samajh paata ki alarm kyun nahi aata.
+                _POLL_NOBITS[did] = not rows
+                w = _IN_WORKERS.get(did)
+                if w is None or not w.alive():
+                    w = _IN_WORKERS[did] = _InWorker(did)
+                w.configure(dev, rows, model_by.get(did, []), fault_by.get(did, []))
+                r = w.latest
+                if r is None:
+                    continue                   # reader ne abhi pehli baar padha hi nahi
+                try:
+                    _in_apply(dev, w, applied)
+                except Exception as e:
+                    print(f"[ANDON-PLC-POLL] dev {did} DB: {e}", flush=True)
+                ok, sub_ok = r["ok"], r["sub_ok"]
+                _umar = _time.monotonic() - r["at"]
+                _atka = (f"no fresh read for {int(_umar)} s — the reader of this PLC "
+                         f"is stuck" if _umar > _IN_STALE_S else None)
+                if _atka:
+                    ok = False
+                # DB me nishaan -- har chakkar me likhna bekaar hai, ~10 sec me ek.
+                if (_time.monotonic() - _POLL_STAMP.get(did, 0.0)) > 10.0:
+                    _POLL_STAMP[did] = _time.monotonic()
+                    _in_stamp(did, ok, _atka or (_POLL_FAIL.get(did) or {}).get("why"))
                 _st = {"online": ok, "sub_online": sub_ok, "checked": now,
                        "last_seen": now if ok else prev.get("last_seen")}
-
-                if ok and _POLL_NOBITS.get(dev["id"]):
+                if ok and _POLL_NOBITS.get(did):
                     # PLC juda hua hai par usme ek bhi bit-address nahi --
                     # UI ise chetavni ke roop me dikhata hai.
                     _st["no_bits"] = True
-                _f = _POLL_FAIL.get(dev["id"])
-                if not ok and _f:
+                _f = _POLL_FAIL.get(did)
+                if _atka:
+                    _st["poll_error"] = _atka
+                elif not ok and _f:
                     _st["poll_error"] = _f["why"]
                     _st["poll_error_count"] = _f["count"]
                 if not ok:
                     _st["offline_since"] = prev.get("offline_since") or now
-                _PLC_STATUS[dev["id"]] = _st
-            for k in list(_PLC_CONN.keys()):
-                if k not in ids: _plc_drop(k)
+                _PLC_STATUS[did] = _st
+            for k in list(_IN_WORKERS.keys()):
+                if k not in ids:
+                    _in_stop(k)
+                    applied.pop(k, None)
             for k in list(_PLC_STATUS.keys()):
                 if k not in ids: _PLC_STATUS.pop(k, None)
-            for k in list(_MB_LAST.keys()):
-                if k not in ids: _MB_LAST.pop(k, None)
             for k in list(_POLL_NOBITS.keys()):
                 if k not in ids: _POLL_NOBITS.pop(k, None)
+            _in_drop_idle()
         except Exception as e:
             print(f"[ANDON-PLC-POLL] {e}")
-        n += 1
-        if n % 60 == 0:
+        # Hatayi / band PLC ki khuli reh gayi call -- har 10 s.  (Pehle har 60
+        # chakkar par hota tha = aam taur par ~15-20 s; ye 2 halki query hai.)
+        if _time.monotonic() - last_sweep >= _IN_SWEEP_EVERY:
+            last_sweep = _time.monotonic()
             try: _stale_call_sweep()
             except Exception as e: print(f"[ANDON] stale-sweep {e}")
-        _time.sleep(_PLC_POLL_INTERVAL)
+        # Koi reader naya badlav dekhe to turant jaago, warna 0.1 s.
+        _IN_WAKE.wait(timeout=_PLC_POLL_INTERVAL)
+        _IN_WAKE.clear()
 
 
 def _slip_sweep_loop():
@@ -1185,12 +1407,42 @@ def _out_key(ip, port, series=None, protocol=None, unit_id=None):
     return (str(ip), int(port or _default_port(proto)), proto, int(unit_id or 1))
 
 
+# Ek connection (chaabi) par ek waqt me EK hi haath.  User 2026-09-26: "ek hi
+# signal ke liye alag-alag thread kar do" -- ab har PLC ka apna worker thread
+# hai, aur usi connection ko "Retry" ka endpoint (_out_drop) aur Edit ka
+# bit2-reset bhi alag thread se chhoo sakte hain.  pymcprotocol / pymodbus ka
+# object thread-safe nahi, isliye har chaabi ka apna taala.
+_OUT_KEY_LOCKS = {}
+_OUT_KEY_LOCKS_GUARD = threading.Lock()
+
+
+def _out_key_lock(key):
+    with _OUT_KEY_LOCKS_GUARD:
+        lk = _OUT_KEY_LOCKS.get(key)
+        if lk is None:
+            lk = _OUT_KEY_LOCKS[key] = threading.Lock()
+        return lk
+
+
+def _out_close_key(key):
+    """Ek chaabi ka connection + uska hisaab-kitaab hatao.  Taala pakad kar bulao."""
+    mc = _OUT_CONN.pop(key, None)
+    if mc is not None:
+        try: mc.close()
+        except Exception: pass
+    _OUT_RETRY.pop(key, None)
+    _OUT_FAILS.pop(key, None)
+    _OUT_ERR.pop(key, None)
+
+
 def _out_drop(ip, port=None):
     """Is PLC ke SAARE connection girao — protocol/unit chahe jo bhi ho.
 
     Chaabi me ab protocol bhi hai, isliye ek hi (ip, port) par ek se zyada
     entry ho sakti hain (jaise protocol badalne ke theek baad).  "Retry"
     dabane par saari girni chahiye, warna purani wali chupi rehti hai.
+    Har chaabi apne taale ke saath -- worker us waqt usi PLC se baat kar
+    raha ho to uske khatam hone tak (max ~2 s) rukta hai, beech me nahi todta.
     """
     ip = str(ip)
     pt = int(port) if port else None
@@ -1198,17 +1450,18 @@ def _out_drop(ip, port=None):
                    + list(_OUT_FAILS.keys()) + list(_OUT_ERR.keys())):
         if key[0] != ip or (pt is not None and key[1] != pt):
             continue
-        mc = _OUT_CONN.pop(key, None)
-        if mc is not None:
-            try: mc.close()
-            except Exception: pass
-        _OUT_RETRY.pop(key, None)
-        _OUT_FAILS.pop(key, None)
-        _OUT_ERR.pop(key, None)
+        with _out_key_lock(key):
+            _out_close_key(key)
 
 
 def _out_write_bit(ip, port, series, bit_type, bit_no, value, protocol=None, unit_id=None):
-    key  = _out_key(ip, port, series, protocol, unit_id)
+    key = _out_key(ip, port, series, protocol, unit_id)
+    with _out_key_lock(key):
+        return _out_write_bit_locked(key, series, bit_type, bit_no, value)
+
+
+def _out_write_bit_locked(key, series, bit_type, bit_no, value):
+    ip   = key[0]
     head = f"{(bit_type or '').upper()}{bit_no}"
     mc = _OUT_CONN.get(key)
     if mc is None:
@@ -1272,19 +1525,142 @@ def _out_read_bit(ip, port, series, bit_type, bit_no, protocol=None, unit_id=Non
         return None
 
 
-def _andon_output_write_once():
-    _ensure_output()
-    global _have_lock
-    got = _acquire_writer_lock()
-    if got != _have_lock:
-        print(f"[ANDON-OUT] writer lock "
-              f"{'ACQUIRED' if got else 'RELEASED'} ({_WRITER_ID}, prio={_WRITER_PRIO})", flush=True)
-        _have_lock = got
-    if not got:
+# ════════════════════════════════════════════════════════════════════
+#  HAR PLC KA APNA WORKER  (user 2026-09-26)
+# ════════════════════════════════════════════════════════════════════
+# PEHLE: ek hi thread saare output PLC baari-baari chhoota tha.  Koi PLC band
+# ho to us par connect ~2 s atakta (pymcprotocol soc_timeout) aur har ~5 s
+# (_PLC_RETRY_SECS) dohraata -- us beech CHALTE hue PLC ki bit bhi ruki
+# rehti.  6 band PLC = ~12 s tak baaki sab ki bit late, aur writer-lock ki
+# heartbeat bhi utni der chup (10 s par barabar-prio peer lock chheen leta).
+#
+# AB:
+#   * coordinator (yahi purana loop) sirf DB padhta hai -- kaunsi mapping,
+#     kaunsi call khuli -- har mapping ki chahiye-wali bit tay karta hai,
+#     kaam PLC-wise baant deta hai, aur natija DB me likhta hai.  PLC se
+#     KABHI baat nahi karta, isliye kabhi atakta nahi.
+#   * har output PLC (IP) ka apna worker thread -- sirf apne PLC ka
+#     connection aur bit.  Ek band PLC par atka worker doosre ko nahi rokta.
+#   * Ek IP = ek worker (port/protocol chahe jo ho): FX5U ek waqt me gine-
+#     chune connection hi jhelta hai, do thread ek hi PLC par ek saath na jaayein.
+#   * "Ek hi signal": ek department ki jitni bhi mapping (5 Maintenance PLC)
+#     sab par WAHI bit -- _want_bit department se hi nikalta hai, jaisa pehle.
+_OUT_WORKERS = {}           # ip -> _OutWorker   (sirf coordinator badalta hai)
+_OUT_ORPHAN_SINCE = {}      # hatayi gayi mapping -> kab se uski bit bujha rahe
+_OUT_ORPHAN_MAX_S = 600     # 10 min me bhi OFF confirm na ho to chhod do
+
+
+class _OutWorker:
+    """Ek output PLC (IP) ka thread.  Coordinator har cycle me `submit()` se
+    us PLC ki poori kaam-list deta hai (purani list ki jagah); worker use turant
+    aur phir har ~1 s dohraata hai (bit koi haath se badal de to wapas sahi)."""
+
+    def __init__(self, ip):
+        self.ip = str(ip)
+        self._jobs = []
+        self._drop_ports = set()
+        self._stop = False
+        self._ev = threading.Event()
+        self._t = threading.Thread(target=self._run, daemon=True,
+                                   name=f"andon-out-{self.ip}")
+        self._t.start()
+        print(f"[ANDON-OUT] {self.ip} — apna worker thread chalu", flush=True)
+
+    def submit(self, jobs, drop_ports=None):
+        self._jobs = jobs                         # ek assignment -- poori list badli
+        if drop_ports:
+            self._drop_ports = self._drop_ports | set(drop_ports)
+        self._ev.set()
+
+    def stop(self):
+        self._stop = True
+        self._ev.set()
+
+    def alive(self):
+        return self._t.is_alive() and not self._stop
+
+    def _close_stale(self, keep):
+        # Protocol / port badla to purani chaabi ka connection band -- FX5U par
+        # wahi purana connection uska slot pakde rehta (v1.4.40 wali galti).
         for k in list(_OUT_CONN.keys()):
-            try: _OUT_CONN.pop(k).close()
-            except Exception: pass
-        return
+            if k[0] == self.ip and k not in keep:
+                with _out_key_lock(k):
+                    _out_close_key(k)
+                print(f"[ANDON-OUT] {k[0]}:{k[1]} ({k[2]}) — ab kisi mapping ki nahi, "
+                      f"connection band kiya", flush=True)
+
+    def _run(self):
+        while True:
+            self._ev.wait(timeout=1.0)
+            self._ev.clear()
+            if self._stop:
+                break
+            if not _have_lock:                    # writer ka taala nahi -> PLC ko haath nahi
+                continue
+            try:
+                ports, self._drop_ports = self._drop_ports, set()
+                for pt in ports:                  # "Retry" dabaya tha
+                    _out_drop(self.ip, pt)
+                    print(f"[ANDON-OUT] Retry — {self.ip}:{pt} connection reset", flush=True)
+                jobs = self._jobs
+                self._close_stale({j["key"] for j in jobs})
+                for j in jobs:
+                    if self._stop or not _have_lock:
+                        break
+                    _out_apply(j)
+            except Exception as e:
+                print(f"[ANDON-OUT] {self.ip} worker: {e}", flush=True)
+        try:
+            _out_drop(self.ip)                    # band -> is PLC ke saare connection chhodo
+        except Exception:
+            pass
+        print(f"[ANDON-OUT] {self.ip} — worker band", flush=True)
+
+
+def _out_apply(j):
+    """Ek mapping ki bit1 (+bit2) PLC par likho, natija _OUT_STATE me.
+    (Pehle ke loop ka andar wala hissa -- bartaav wahi.)"""
+    prev = _OUT_STATE.get(j["mid"], {})
+    okey = j["key"]
+    actual = _out_write_bit(j["ip"], j["port"], j["series"], j["bit_type"], j["bit_no"],
+                            j["want"], j["protocol"], j["unit_id"])
+    if actual is None and (okey in _OUT_CONN or j.get("orphan")):
+        # connection zinda hai (ek-aadh read chooka) -- pichhla haal hi sahi.
+        # Hatayi mapping ki bit bhi tab tak ON maano jab tak OFF confirm na ho.
+        actual = prev.get("on")
+    want2 = actual2 = None
+    if j["bit2"]:
+        want2 = j["want2"]
+        actual2 = _out_write_bit(j["ip"], j["port"], j["series"], j["bit2_type"] or "M",
+                                 j["bit2_no"], want2, j["protocol"], j["unit_id"])
+        if actual2 is None and (okey in _OUT_CONN or j.get("orphan")):
+            actual2 = prev.get("on2")
+    _OUT_STATE[j["mid"]] = {
+        "ip": j["ip"], "port": j["port"], "series": j["series"],
+        "protocol": j["protocol"], "unit_id": j["unit_id"],
+        "bit_type": j["bit_type"], "bit_no": j["bit_no"],
+        "bit2_type": j["bit2_type"], "bit2_no": j["bit2_no"],
+        "want": j["want"], "on": actual, "online": actual is not None,
+        "want2": want2, "on2": actual2,
+        "err": None if actual is not None else _OUT_ERR.get(okey),
+        "orphan": bool(j.get("orphan")),
+        "checked": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+def _out_job(mid, src, want, has2, want2, orphan=False):
+    return {"mid": mid, "ip": src["ip"], "port": src["port"], "series": src["series"],
+            "protocol": src["protocol"], "unit_id": src["unit_id"],
+            "bit_type": src["bit_type"], "bit_no": src["bit_no"],
+            "bit2_type": src.get("bit2_type"), "bit2_no": src.get("bit2_no"),
+            "want": want, "bit2": has2, "want2": want2, "orphan": orphan,
+            "key": _out_key(src["ip"], src["port"], src["series"],
+                            src["protocol"], src["unit_id"])}
+
+
+def _out_read_db():
+    """Chalu mapping + abhi khuli calls (department-wise).  Coordinator ka
+    EKMATRA DB-padhna -- test isi ko badal kar bina DB ke chalta hai."""
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("""SELECT id, department, plc_ip, plc_port, plc_series, protocol, unit_id,
@@ -1298,106 +1674,123 @@ def _andon_output_write_once():
                          LEFT JOIN andon_departments dep ON dep.id = e.department_id
                         WHERE e.state='OPEN' GROUP BY 1""")
         live = {_dept_key(r["dept"]): r for r in cur.fetchall()}
+    return maps, live
+
+
+def _out_persist(updates):
+    if not updates:
+        return
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            for last_bit, last_want, last_online, last_bit2, last_want2, last_err, mid in updates:
+                cur.execute("""UPDATE andon_call_output
+                                  SET last_bit=%s, last_want=%s, last_online=%s,
+                                      last_bit2=%s, last_want2=%s, last_error=%s,
+                                      last_at=NOW(), last_writer=%s
+                                WHERE id=%s""",
+                            (last_bit, last_want, last_online,
+                             last_bit2, last_want2, last_err, _WRITER_ID, mid))
+            conn.commit()
+    except Exception as e:
+        print(f"[ANDON-OUT] persist error: {e}")
+
+
+def _out_stop_all():
+    """Writer ka taala gaya -- saare worker band (wo apne connection khud
+    chhodte hain), aur jo connection kisi worker ka nahi (jaise Edit ne khola
+    tha) wo bhi -- par jo abhi kisi ke haath me hai use is cycle chhod do."""
+    for ip in list(_OUT_WORKERS.keys()):
+        w = _OUT_WORKERS.pop(ip, None)
+        if w is not None:
+            w.stop()
+    for k in list(_OUT_CONN.keys()):
+        lk = _out_key_lock(k)
+        if lk.acquire(blocking=False):
+            try:
+                _out_close_key(k)
+            finally:
+                lk.release()
+
+
+def _andon_output_write_once():
+    """Coordinator ka ek chakkar: taala -> DB -> kaam baanto -> natija likho.
+    PLC se khud baat NAHI karta (wo har PLC ka worker karta hai)."""
+    _ensure_output()
+    global _have_lock
+    got = _acquire_writer_lock()
+    if got != _have_lock:
+        print(f"[ANDON-OUT] writer lock "
+              f"{'ACQUIRED' if got else 'RELEASED'} ({_WRITER_ID}, prio={_WRITER_PRIO})", flush=True)
+        _have_lock = got
+    if not got:
+        _out_stop_all()
+        return
+    maps, live = _out_read_db()
     enabled_ids = {m["id"] for m in maps}
 
-    # ── Pool ki safai — LIKHNE SE PEHLE ──────────────────────────────────
-    # ⚠ Chaabi me ab protocol/port/unit bhi hain, yaani setting badalte hi
-    # NAYI chaabi ban jaati hai aur PURANI connection pool me padi reh jaati.
-    # FX5U par wahi purani connection uska EKMATRA slot pakde rehti hai, to
-    # nayi jud hi nahi paati — protocol theek karne ke BAAD bhi screen par
-    # "Disconnected" hi dikhta rehta.  (Theek yahi galti "Read now" me ho
-    # chuki hai, v1.4.40.)
-    #
-    # Safai LIKHNE SE PEHLE isliye: baad me karte to purani connection us
-    # cycle ka slot khaa jaati aur naya connection ek cycle der se judta.
-    live_keys = {_out_key(m["plc_ip"], m["plc_port"], m["plc_series"],
-                          m.get("protocol"), m.get("unit_id")) for m in maps}
-    # Jo mapping hat gayi par uski bit abhi bujhani baaki hai, uska
-    # connection bhi is cycle me chahiye — warna bit ON hi reh jayegi.
-    for _oid, _st in _OUT_STATE.items():
-        if _oid not in enabled_ids and _st.get("ip") and (_st.get("on") or _st.get("on2")):
-            live_keys.add(_out_key(_st.get("ip"), _st.get("port"), _st.get("series"),
-                                   _st.get("protocol"), _st.get("unit_id")))
-    for k in [k for k in _OUT_CONN if k not in live_keys]:
-        mc = _OUT_CONN.pop(k, None)
-        if mc is not None:
-            try: mc.close()
-            except Exception: pass
-        _OUT_RETRY.pop(k, None)
-        _OUT_FAILS.pop(k, None)
-        _OUT_ERR.pop(k, None)
-        print(f"[ANDON-OUT] {k[0]}:{k[1]} ({k[2]}) — ab kisi mapping ki nahi, "
-              f"connection band kiya", flush=True)
-
-    updates = []
+    jobs_by_ip, drop_by_ip = {}, {}
+    wants = {}
     for m in maps:
+        ip = str(m["plc_ip"])
         req = m.get("reconnect_req")
         if req is not None and _OUT_RECONN_SEEN.get(m["id"]) != req:
             _OUT_RECONN_SEEN[m["id"]] = req
-            _out_drop(m["plc_ip"], m["plc_port"])
-            print(f"[ANDON-OUT] Retry — {m['plc_ip']}:{m['plc_port']} connection reset", flush=True)
+            drop_by_ip.setdefault(ip, set()).add(m["plc_port"])
         want = _want_bit(m["department"], live)
-        prev = _OUT_STATE.get(m["id"], {})
-        # Chaabi EK BAAR nikal kar rakh lete hain — neeche "connection abhi
-        # zinda hai kya" wali jaanch aur galti dhoondhna, dono isi par hain.
-        # Pehle yahan `(ip, port)` haath se banaya jaata tha aur MC ka 5007
-        # hardcode tha, jisse Modbus wali row kabhi milti hi nahi thi.
-        okey = _out_key(m["plc_ip"], m["plc_port"], m["plc_series"],
-                        m.get("protocol"), m.get("unit_id"))
-        actual = _out_write_bit(m["plc_ip"], m["plc_port"], m["plc_series"],
-                                m["bit_type"], m["bit_no"], want,
-                                m.get("protocol"), m.get("unit_id"))
-        if actual is None and okey in _OUT_CONN:
-            actual = prev.get("on")
+        has2 = bool((m.get("bit2_no") or "").strip()) and _dept_off_on_ack(m["department"])
+        want2 = _want_bit(m["department"], live, on_close=True) if has2 else None
+        wants[m["id"]] = (want, want2)
+        src = {"ip": m["plc_ip"], "port": m["plc_port"], "series": m["plc_series"],
+               "protocol": m.get("protocol"), "unit_id": m.get("unit_id"),
+               "bit_type": m["bit_type"], "bit_no": m["bit_no"],
+               "bit2_type": m.get("bit2_type"), "bit2_no": m.get("bit2_no")}
+        jobs_by_ip.setdefault(ip, []).append(_out_job(m["id"], src, want, has2, want2))
 
-        want2 = actual2 = None
-        if (m.get("bit2_no") or "").strip() and _dept_off_on_ack(m["department"]):
-            want2 = _want_bit(m["department"], live, on_close=True)
-            actual2 = _out_write_bit(m["plc_ip"], m["plc_port"], m["plc_series"],
-                                     m["bit2_type"] or "M", m["bit2_no"], want2,
-                                     m.get("protocol"), m.get("unit_id"))
-            if actual2 is None and okey in _OUT_CONN:
-                actual2 = prev.get("on2")
-
-        _OUT_STATE[m["id"]] = {"ip": m["plc_ip"], "port": m["plc_port"], "series": m["plc_series"],
-                               "protocol": m.get("protocol"), "unit_id": m.get("unit_id"),
-                               "bit_type": m["bit_type"], "bit_no": m["bit_no"],
-                               "bit2_type": m.get("bit2_type"), "bit2_no": m.get("bit2_no"),
-                               "want": want, "on": actual, "online": actual is not None,
-                               "want2": want2, "on2": actual2,
-                               "checked": datetime.now().isoformat(timespec="seconds")}
-        updates.append((actual, want, actual is not None, actual2, want2,
-                        None if actual is not None else _OUT_ERR.get(okey), m["id"]))
-
-    for oid in list(_OUT_STATE.keys()):
+    # Hatayi / band ki gayi mapping jiski bit abhi ON hai -- OFF confirm hone
+    # tak (max 10 min) usi PLC ke worker se bujhwao.  (Pehle ek hi koshish
+    # hoti thi -- PLC us pal band ho to bit hamesha ON reh jaati.)
+    now = _time.monotonic()
+    for oid, st in list(_OUT_STATE.items()):
         if oid in enabled_ids:
+            _OUT_ORPHAN_SINCE.pop(oid, None)
             continue
-        st = _OUT_STATE[oid]
-        if st.get("on"):
-            _out_write_bit(st.get("ip"), st.get("port"), st.get("series"),
-                          st.get("bit_type"), st.get("bit_no"), False,
-                          st.get("protocol"), st.get("unit_id"))
-        if st.get("on2") and (st.get("bit2_no") or "").strip():
-            _out_write_bit(st.get("ip"), st.get("port"), st.get("series"),
-                          st.get("bit2_type") or "M", st.get("bit2_no"), False,
-                          st.get("protocol"), st.get("unit_id"))
-        _OUT_STATE.pop(oid, None)
+        need2 = st.get("on2") is True and bool((st.get("bit2_no") or "").strip())
+        if st.get("on") is not True and not need2:
+            _OUT_STATE.pop(oid, None)
+            _OUT_ORPHAN_SINCE.pop(oid, None)
+            continue
+        since = _OUT_ORPHAN_SINCE.setdefault(oid, now)
+        if now - since > _OUT_ORPHAN_MAX_S:
+            print(f"[ANDON-OUT] mapping {oid} ({st.get('ip')}) hat gayi, par uski bit "
+                  f"{_OUT_ORPHAN_MAX_S // 60} min me bhi OFF confirm nahi hui — chhod diya", flush=True)
+            _OUT_STATE.pop(oid, None)
+            _OUT_ORPHAN_SINCE.pop(oid, None)
+            continue
+        jobs_by_ip.setdefault(str(st.get("ip")), []).append(
+            _out_job(oid, st, False, need2, False if need2 else None, orphan=True))
 
-    if updates:
-        try:
-            with get_conn() as conn:
-                cur = conn.cursor()
-                for last_bit, last_want, last_online, last_bit2, last_want2, last_err, mid in updates:
-                    cur.execute("""UPDATE andon_call_output
-                                      SET last_bit=%s, last_want=%s, last_online=%s,
-                                          last_bit2=%s, last_want2=%s, last_error=%s,
-                                          last_at=NOW(), last_writer=%s
-                                    WHERE id=%s""",
-                                (last_bit, last_want, last_online,
-                                 last_bit2, last_want2, last_err, _WRITER_ID, mid))
-                conn.commit()
-        except Exception as e:
-            print(f"[ANDON-OUT] persist error: {e}")
+    for ip, jobs in jobs_by_ip.items():
+        w = _OUT_WORKERS.get(ip)
+        if w is None or not w.alive():
+            w = _OUT_WORKERS[ip] = _OutWorker(ip)
+        w.submit(jobs, drop_by_ip.get(ip))
+    for ip in [ip for ip in list(_OUT_WORKERS.keys()) if ip not in jobs_by_ip]:
+        w = _OUT_WORKERS.pop(ip, None)
+        if w is not None:
+            w.stop()                              # ab is PLC ki koi mapping nahi
+
+    # Natija -- har worker ka AAKHRI jawab (jo abhi tak nahi aaya use chhod do,
+    # DB me purana hi rehne do -- warna nayi mapping pal bhar "Disconnected" dikhti).
+    updates = []
+    for m in maps:
+        st = _OUT_STATE.get(m["id"])
+        if not st or st.get("orphan"):
+            continue
+        want, want2 = wants[m["id"]]
+        updates.append((st.get("on"), want, st.get("on") is not None,
+                        st.get("on2"), want2, st.get("err"), m["id"]))
+    _out_persist(updates)
 
 
 def _andon_output_loop():
