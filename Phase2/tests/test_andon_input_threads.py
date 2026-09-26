@@ -15,6 +15,12 @@ User: "dono kar do lekin dhyan se".  Ye test pakka karta hai:
  (10) Lambi line (DB der tak ruka) 50-50 ke tukdon me, kram se lagti hai.
  (11) Purana reader band ho par usi PLC ka naya chal raha ho -> connection
       nahi tootta; aakhri reader band -> connection chhoot jaata hai.
+ (12) SUB-PLC (model / fault wali) ka apna thread; BAND sub-PLC apni hi line
+      ki call ko bhi late nahi karti (pehle har ~5 s ~1.5 s rukti thi).
+ (13) Chalti sub-PLC se model call ke pal par hi padha jaata hai.
+ (14) Chalti sub-PLC achanak band (connection latka): EK hi baar intezaar,
+      phir connection chhoda -- har chakkar nahi; wapas aayi to phir judi.
+ (15) Sub-PLC ka IP badla -> naya connection; sub hataya -> connection chhoda.
 
 BINA DB, BINA ASLI PLC: andon.py ke DB wale function (_in_read_config,
 _in_apply_db, _in_stamp, _stale_call_sweep, get_conn) aur PLC driver
@@ -44,12 +50,11 @@ BITS, DEAD = {}, set()   # ip -> {"M100": 0, ...};  band ip
 
 
 class FakeDrv:
+    """MC jaisa -- asli `_McDriver` ki tarah `alive()` NAHI: band PLC par juda
+    hua connection sirf read ke timeout se pata chalta hai."""
     def __init__(self, ip):
         self.ip = ip
         self.closed = False
-
-    def alive(self):
-        return self.ip not in DEAD and not self.closed
 
     def read_one(self, t, n):
         if self.ip in DEAD:
@@ -65,11 +70,17 @@ class FakeDrv:
         self.closed = True
 
 
+class FakeMbDrv(FakeDrv):
+    """Modbus jaisa -- `alive()` hai (pymodbus `connected`)."""
+    def alive(self):
+        return self.ip not in DEAD and not self.closed
+
+
 def fake_connect(plc, timer=4):
     if plc["plc_ip"] in DEAD:
         time.sleep(DEAD_WAIT)
         raise ConnectionError("Modbus TCP connect failed")
-    return FakeDrv(plc["plc_ip"])
+    return (FakeMbDrv if A._is_modbus(plc.get("protocol")) else FakeDrv)(plc["plc_ip"])
 
 
 def fake_reachable(ip, port, timeout=1.5):
@@ -100,6 +111,18 @@ DEAD.update(IP[d] for d in DEAD_IDS)
 MC_IDS = [900, 903, 906]
 MB_IDS = [910, 913, 915]
 
+# ── sub-PLC (model wali): 900 chalu + model, 901 BAND, 902 chalu + model ──
+SUB = {900: "10.8.2.1", 901: "10.8.2.2", 902: "10.8.2.3"}
+MODELS = {}
+for _d, _ip in SUB.items():
+    _dv = next(x for x in DEVS if x["id"] == _d)
+    _dv.update(sub_ip=_ip, sub_port=5002, sub_series="Q", sub_protocol="MC", sub_unit_id=1)
+    BITS.setdefault(_ip, {})["D1016"] = 5
+for _d in (900, 902):
+    MODELS[_d] = [{"plc_id": _d, "device_type": "D", "device_no": "1016", "value": 5, "nm": "MODEL-5"},
+                  {"plc_id": _d, "device_type": "D", "device_no": "1016", "value": 7, "nm": "MODEL-7"}]
+DEAD.add(SUB[901])
+
 
 def setbit(did, do, v):
     BITS.setdefault(IP[did], {})[f"{BITKEY[did]}{100 + do}"] = 1 if v else 0
@@ -107,6 +130,7 @@ def setbit(did, do, v):
 
 # ── naqli DB: call kholna / ACK / band (asli _apply_state jaisa hi niyam) ──
 OPEN, LOG, FAIL_NEXT, CFG_CALLS = {}, [], set(), []
+OPENED_MODEL = {}          # (did, do) -> call khulte waqt ka model
 ACK_OF = {2: 1, 4: 3}
 
 
@@ -129,6 +153,7 @@ def fake_apply_db(cur, dev, batch):
                 continue
             if on and (did, do) not in OPEN:
                 OPEN[(did, do)] = {"acked": False}
+                OPENED_MODEL[(did, do)] = r["model"]
                 LOG.append((time.monotonic(), did, do, "opened"))
                 changed = True
             elif not on and (did, do) in OPEN:
@@ -147,7 +172,7 @@ class FakeConn:
 
 def fake_read_config():
     CFG_CALLS.append(time.monotonic())
-    return [dict(d) for d in DEVS], ROWS, {}, {}
+    return [dict(d) for d in DEVS], ROWS, MODELS, {}
 
 
 A._connect = fake_connect
@@ -224,7 +249,7 @@ T("line khaali + 60 khuli / 60 band, baari-baari", not fw.changes and len(seq991
   and all(a == ("opened" if i % 2 == 0 else "closed") for i, a in enumerate(seq991)))
 
 print("\n--- (11) purana reader band hua, par usi PLC ka naya reader chal raha ---")
-d990 = dict(DEVS[0], id=990, ip="10.8.1.90")
+d990 = dict(DEVS[0], id=990, ip="10.8.1.90", sub_ip=None)
 r990 = [{"plc_id": 990, "do_index": 1, "bit_type": "M", "bit_no": "101"}]
 W1 = A._InWorker(990)
 W1.configure(d990, r990, [], [])
@@ -327,6 +352,74 @@ T("disabled: online=None", A._PLC_STATUS.get(912, {}).get("online") is None)
 DEVS[:] = [d for d in DEVS if d["id"] != 914]
 time.sleep(1.2)
 T("hatayi: reader ruka + haal hata", 914 not in A._IN_WORKERS and 914 not in A._PLC_STATUS)
+
+def toggle(did, n, gap):
+    """n baar call ON -> OFF; har baar khulne / band hone ki der."""
+    lat = []
+    for _ in range(n):
+        t0 = time.monotonic()
+        setbit(did, 1, 1)
+        x = wait_log(did, 1, "opened", t0, 10)
+        lat.append(x if x is not None else 99)
+        t1 = time.monotonic()
+        setbit(did, 1, 0)
+        y = wait_log(did, 1, "closed", t1, 10)
+        lat.append(y if y is not None else 99)
+        time.sleep(gap)
+    return lat
+
+
+print("\n--- (12) sub-PLC ka apna thread; BAND sub-PLC (901) apni line ko late nahi karti ---")
+subs = sorted(t.name for t in threading.enumerate() if t.name.startswith("andon-sub-"))
+T("3 sub-PLC -> 3 alag thread", subs == ["andon-sub-900", "andon-sub-901", "andon-sub-902"], str(subs))
+lat = toggle(901, 14, 0.25)                  # ~8 s -- sub ke tatolne (har 5 s, 1.5 s) ke upar se
+T("901 (sub band): har call 0.5 s ke andar", max(lat) < 0.5,
+  f"max {max(lat):.3f}s, avg {sum(lat) / len(lat):.3f}s")
+s901 = A._PLC_STATUS.get(901, {})
+T("901: online=True, sub_online=False", s901.get("online") is True and s901.get("sub_online") is False)
+
+print("\n--- (13) chalti sub-PLC (900) se model, call ke pal par ---")
+toggle(900, 1, 0.1)
+T("call ke saath model = MODEL-5 (sub-PLC ke D1016 se)", OPENED_MODEL.get((900, 1)) == "MODEL-5",
+  str(OPENED_MODEL.get((900, 1))))
+BITS[SUB[900]]["D1016"] = 7
+toggle(900, 1, 0.1)
+T("sub par model badla -> agli call MODEL-7", OPENED_MODEL.get((900, 1)) == "MODEL-7",
+  str(OPENED_MODEL.get((900, 1))))
+
+print("\n--- (14) chalti sub-PLC (902) achanak band -- connection latka ---")
+T("902 ka sub juda hua", wait_until(lambda: 902 in A._SUB_CONN, 5))
+sub_drv = A._SUB_CONN[902][0]
+DEAD.add(SUB[902])                           # bijli gayi: purana connection read par atkega
+first = toggle(902, 1, 0.1)
+T("pehli call: ek hi baar ka intezaar (~1.5 s), model khaali", first[0] < 2.5
+  and OPENED_MODEL.get((902, 1)) is None, f"{first[0]:.2f}s")
+T("latka connection chhoda (band kiya)", 902 not in A._SUB_CONN and sub_drv.closed)
+rest = toggle(902, 6, 0.2)
+T("baad ki 6 call: har baar 0.5 s ke andar (har chakkar atakna nahi)", max(rest) < 0.5,
+  f"max {max(rest):.3f}s")
+T("902: sub_online=False, line online=True", A._PLC_STATUS.get(902, {}).get("sub_online") is False
+  and A._PLC_STATUS.get(902, {}).get("online") is True)
+DEAD.discard(SUB[902])                       # wapas aayi
+A._SUB_RETRY.pop(902, None)                  # (UI ka Recheck yahi karta hai)
+T("wapas aayi -> apne thread ne phir joda", wait_until(lambda: 902 in A._SUB_CONN, 5))
+toggle(902, 1, 0.1)
+T("phir se model aaya", OPENED_MODEL.get((902, 1)) == "MODEL-5", str(OPENED_MODEL.get((902, 1))))
+
+print("\n--- (15) sub-PLC ka IP badla / hataya ---")
+old = A._SUB_CONN[900][0]
+BITS.setdefault("10.8.2.9", {})["D1016"] = 5
+next(d for d in DEVS if d["id"] == 900)["sub_ip"] = "10.8.2.9"
+T("naya IP -> naya connection", wait_until(lambda: 900 in A._SUB_CONN
+                                          and A._SUB_CONN[900][1][0] == "10.8.2.9", 3))
+T("purana connection band", old.closed)
+toggle(900, 1, 0.1)
+T("naye sub se model", OPENED_MODEL.get((900, 1)) == "MODEL-5")
+new = A._SUB_CONN[900][0]
+next(d for d in DEVS if d["id"] == 900)["sub_ip"] = None
+T("sub hataya -> connection chhoda", wait_until(lambda: 900 not in A._SUB_CONN, 3) and new.closed)
+toggle(900, 1, 0.1)
+T("bina sub: call khuli, model khaali (sub hi nahi)", OPENED_MODEL.get((900, 1)) is None)
 
 print("\n--- (9) poller (DB wala) chakkar kabhi nahi atka ---")
 gaps = [b - a for a, b in zip(CFG_CALLS, CFG_CALLS[1:])]

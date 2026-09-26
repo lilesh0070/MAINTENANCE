@@ -817,22 +817,61 @@ _IN_MAPS_TTL = 5.0         # model / fault ki suchi itne second me ek baar DB se
 # retry me ~6 s) to purana "online" dikhana jhooth hoga -- tab offline maano.
 _IN_STALE_S = 10.0
 _IN_SWEEP_EVERY = 10.0     # band / hatayi PLC ki khuli call ki safai (_stale_call_sweep)
+_SUB_KEEP_EVERY = 0.5      # sub-PLC ka thread itne second me connection jaanchta / jodta hai
+_SUB_ERR = {}              # dev_id -> (wajah, kab log kiya) -- sub-PLC ki galti ka log
+
+
+def _is_conn_err(e):
+    """Connection hi gaya (timeout / reset / jawab nahi aaya) -- PLC ne jawab dekar
+    mana kiya ho (galat address: MCProtocolError / PlcProtocolError / ValueError)
+    us se alag.  ⚠ Aise connection par aage padhna khatarnak: der se aaya purana
+    jawab agle read me chipak jaata hai (MC) -- galat bit, yaani naqli call."""
+    return (isinstance(e, (OSError, EOFError))
+            or type(e).__name__ == "ConnectionException"
+            or "not connected" in str(e).lower())
 
 
 def _read_map_name_rows(mc, rows):
     """Model / fault ka naam: suchi (rows) poller pehle hi DB se laa chuka hota
-    hai; yahan sirf PLC se value padh kar milaate hain -- pehla mel jeetta hai."""
+    hai; yahan sirf PLC se value padh kar milaate hain -- pehla mel jeetta hai.
+    Connection wali galti upar jaati hai (connection chhodna hai); PLC ne mana
+    kiya (galat address) to bas naam nahi milta."""
     if not rows:
         return None
     live = {}
     for r in rows:
         key = (r["device_type"], r["device_no"])
         if key not in live:
-            try: live[key] = _read_one(mc, r["device_type"], r["device_no"])
-            except Exception: live[key] = None
+            try:
+                live[key] = _read_one(mc, r["device_type"], r["device_no"])
+            except Exception as e:
+                if _is_conn_err(e):
+                    raise
+                live[key] = None
         if live[key] is not None and int(live[key]) == int(r["value"]):
             return r["nm"]
     return None
+
+
+def _sub_drop(did):
+    ent = _SUB_CONN.pop(did, None)
+    if ent is not None:
+        try: ent[0].close()
+        except Exception: pass
+
+
+def _sub_fail(did, e):
+    """Sub-PLC ne jawab nahi diya -- connection chhodo; uska apna thread
+    `_PLC_RETRY_SECS` baad phir jodega.  `_plc_lock(did)` bulaane wale ke paas."""
+    _sub_drop(did)
+    _SUB_RETRY[did] = _time.monotonic() + _PLC_RETRY_SECS
+    why = f"{type(e).__name__}: {e}"[:200]
+    now = _time.monotonic()
+    prev = _SUB_ERR.get(did)
+    if not prev or prev[0] != why or now - prev[1] >= _POLL_LOG_EVERY:
+        _SUB_ERR[did] = (why, now)
+        print(f"[ANDON-PLC-POLL] dev {did} sub-PLC: {why} -- connection chhoda, "
+              f"uska thread {_PLC_RETRY_SECS}s baad phir jodega", flush=True)
 
 
 def _plc_read_dev(dev, bit_rows, model_rows, fault_rows):
@@ -847,8 +886,7 @@ def _plc_read_dev_locked(dev, bit_rows, model_rows, fault_rows):
     kaam yahan NAHI hota -- padha hua haal lauta diya jaata hai."""
     did = dev["id"]
     has_sub = bool((dev.get("sub_ip") or "").strip())
-    proto     = _proto_for(dev.get("series"),     dev.get("protocol"))
-    sub_proto = _proto_for(dev.get("sub_series"), dev.get("sub_protocol"))
+    proto   = _proto_for(dev.get("series"), dev.get("protocol"))
     out = {"ok": False, "sub_ok": (False if has_sub else None),
            "bits": [], "model": None, "fault": None}
     mc = _ensure_conn(_PLC_CONN, _PLC_RETRY, did, dev["ip"],
@@ -863,10 +901,12 @@ def _plc_read_dev_locked(dev, bit_rows, model_rows, fault_rows):
         _poll_fail(did, ConnectionError(_why))
         return out
 
-    sub_mc = _ensure_conn(_SUB_CONN, _SUB_RETRY, did, dev["sub_ip"],
-                          dev.get("sub_port") or _default_port(sub_proto),
-                          dev.get("sub_series") or "Q", sub_proto,
-                          dev.get("sub_unit_id")) if has_sub else None
+    # Sub-PLC (model / fault wali) ka connection uska APNA thread rakhta hai
+    # (`_InWorker._sub_keep`, `andon-sub-<id>`) -- yahan sirf juda hua
+    # connection lete hain.  Pehle yahi jodta tha: sub-PLC band ho to har ~5 s
+    # tatolne me ~1.5 s ye line ruk jaati thi.
+    _se = _SUB_CONN.get(did) if has_sub else None
+    sub_mc = _se[0] if _se else None
     read_mc = sub_mc if has_sub else mc
     try:
         if not bit_rows:
@@ -885,8 +925,16 @@ def _plc_read_dev_locked(dev, bit_rows, model_rows, fault_rows):
             try:
                 model = _read_map_name_rows(read_mc, model_rows)
                 fault = _read_map_name_rows(read_mc, fault_rows)
-            except Exception:
+            except Exception as e:             # sirf connection wali galti yahan aati hai
                 model = fault = None
+                if has_sub:
+                    _sub_fail(did, e)          # ek hi baar ka intezaar, har chakkar nahi
+                    sub_mc = None
+                else:
+                    # Bit to padh liye (sahi hain), par isi connection par aage
+                    # padhna khatarnak (upar `_is_conn_err`) -- agla chakkar
+                    # naya connection kholega.
+                    _plc_drop(did)
         _poll_ok(did)
         out.update(ok=True, sub_ok=(bool(sub_mc) if has_sub else None),
                    bits=bits, model=model, fault=fault)
@@ -902,7 +950,9 @@ def _plc_read_dev_locked(dev, bit_rows, model_rows, fault_rows):
 
 class _InWorker:
     """Ek line PLC ka reader thread.  Poller har chakkar me `configure()` se
-    taaza setting (PLC ka pata, bit ki suchi, model / fault suchi) deta hai."""
+    taaza setting (PLC ka pata, bit ki suchi, model / fault suchi) deta hai.
+    Sub-PLC (model / fault wali) ho to uska ALAG thread (`andon-sub-<id>`) --
+    wo sirf uska connection jodta / sambhalta hai (`_sub_keep`)."""
 
     def __init__(self, dev_id):
         self.id = dev_id
@@ -912,6 +962,8 @@ class _InWorker:
         self._full_logged = False
         self._stop = False
         self._ev = threading.Event()
+        self._sub_ev = threading.Event()
+        self._sub_t = None
         self._t = threading.Thread(target=self._run, daemon=True, name=f"andon-in-{dev_id}")
         self._t.start()
 
@@ -920,13 +972,74 @@ class _InWorker:
         self.cfg = (dev, bit_rows, model_rows, fault_rows)
         if first:
             self._ev.set()
+        if self._sub_t is None and (dev.get("sub_ip") or "").strip():
+            self._sub_t = threading.Thread(target=self._sub_run, daemon=True,
+                                           name=f"andon-sub-{self.id}")
+            self._sub_t.start()
 
     def stop(self):
         self._stop = True
         self._ev.set()
+        self._sub_ev.set()
 
     def alive(self):
         return self._t.is_alive() and not self._stop
+
+    def _sub_run(self):
+        while not self._stop:
+            cfg = self.cfg
+            try:
+                self._sub_keep(cfg[0] if cfg else None)
+            except Exception as e:             # na aana chahiye -- phir bhi thread na mare
+                print(f"[ANDON-PLC-POLL] dev {self.id} sub-PLC thread: {e}", flush=True)
+            self._sub_ev.wait(_SUB_KEEP_EVERY)
+            self._sub_ev.clear()
+
+    def _sub_keep(self, dev):
+        """Sub-PLC ka connection banaye rakho -- ISI thread se.  Jodna (band PLC
+        par tatolna ~1.5 s) taale ke BAHAR, taaki line ka reader kabhi na ruke;
+        taala sirf connection rakhne / hatane ke pal.  Tootna reader pakadta
+        hai (`_sub_fail`) -- phir yahan `_SUB_RETRY` ke baad dobara jodte hain."""
+        did = self.id
+        ent = _SUB_CONN.get(did)
+        if not (dev and (dev.get("sub_ip") or "").strip()):
+            if ent is not None:                # sub-PLC hata di gayi
+                with _plc_lock(did):
+                    if _SUB_CONN.get(did) is ent:
+                        _sub_drop(did)
+            return
+        proto = _proto_for(dev.get("sub_series"), dev.get("sub_protocol"))
+        ip = str(dev["sub_ip"]).strip()
+        p = int(dev.get("sub_port") or _default_port(proto))
+        sig = (ip, p, _norm_proto(proto), str(dev.get("sub_series") or "Q"),
+               int(dev.get("sub_unit_id") or 1))
+        if ent is not None:
+            if ent[1] == sig and not (hasattr(ent[0], "alive") and not ent[0].alive()):
+                return                         # juda hua, theek
+            with _plc_lock(did):               # pata badla, ya connection mara
+                if _SUB_CONN.get(did) is ent:
+                    _sub_drop(did)
+        if _time.monotonic() < _SUB_RETRY.get(did, 0):
+            return
+        if not _is_modbus(proto) and not _reachable(ip, p, timeout=1.5):
+            _SUB_RETRY[did] = _time.monotonic() + _PLC_RETRY_SECS
+            return
+        try:
+            mc = _connect({"series": dev.get("sub_series") or "Q", "plc_ip": ip,
+                           "plc_port": p, "protocol": proto, "unit_id": dev.get("sub_unit_id")})
+        except Exception as e:
+            _CONN_ERR[(did, ip, p)] = (f"connect failed ({ip}:{p}) — "
+                                       f"{type(e).__name__}: {e}")[:400]
+            _SUB_RETRY[did] = _time.monotonic() + _PLC_RETRY_SECS
+            return
+        with _plc_lock(did):
+            if self._stop or did in _SUB_CONN:  # beech me band hua -- connection mat chhodo latka
+                try: mc.close()
+                except Exception: pass
+                return
+            _SUB_CONN[did] = (mc, sig)
+            _SUB_RETRY.pop(did, None)
+            _CONN_ERR.pop((did, ip, p), None)
 
     def _run(self):
         last_sig = None
