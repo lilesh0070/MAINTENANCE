@@ -87,9 +87,54 @@ if (API_FALLBACK) {
   }
 }
 
+// ── Cloudflare ka 4 ghante wala browser cache band — 2026-09-26 ─────────────
+// Website domain (maintenance.tbdi.in / maintenance.dxtbdi.com) par Cloudflare
+// tunnel ke peeche yahi DEV server chalta hai, jo har file par
+// `Cache-Control: no-cache` bhejta hai (browser har baar ETag se poochhe
+// "badli?").  Par Cloudflare `.js` / `.css` jaisi files ko apne "Browser
+// Cache TTL" (4 ghante) se badal kar `max-age=14400` kar deta tha — `.jsx`
+// ko nahi (naap 2026-09-26: origin `no-cache`, domain par `max-age=14400`).
+// Nateeja: update ke baad 4 ghante tak browser purani CSS/JS + nayi .jsx ka
+// mel chalata, aur har domain ka cache alag -> dono domain par ALAG view.
+//
+// Ab har file par `private` (Cloudflare jaisa beech ka cache use rakhe hi
+// nahi — aur jo file wo rakhta nahi, uska header bhi nahi badalta; .jsx isi
+// se bachi thi) + `Cloudflare-CDN-Cache-Control: no-store`.  Browser ab bhi
+// ETag se poochhta hai — file na badli ho to chhota 304, pura download nahi.
+//   * Vite ki `?v=` wali deps (`immutable`) ko haath nahi — unka naam hi
+//     version hai, Cloudflare / browser rakhein to bhi purani nahi hoti (aur
+//     site jaldi khulti hai).
+//   * `/api` ko haath nahi (backend apna header khud deta hai).
+// Pakka ilaaj Cloudflare me bhi: dono zone me Browser Cache TTL = "Respect
+// Existing Headers" (user ka dashboard).
+const VERSION_WALI_DEP = /\/node_modules\/\.vite\/deps\/[^?]*\?(?:.*&)?v=[0-9a-f]+/
+const noCdnBrowserCache = {
+  name: 'no-cdn-browser-cache',
+  configureServer(server) {
+    const theek = (v) => (/immutable/i.test(String(v)) ? v : 'no-cache, private')
+    server.middlewares.use((req, res, next) => {
+      const url = req.url || ''
+      if (url.startsWith('/api') || VERSION_WALI_DEP.test(url)) return next()
+      const setH = res.setHeader.bind(res)
+      res.setHeader = (name, value) =>
+        setH(name, String(name).toLowerCase() === 'cache-control' ? theek(value) : value)
+      // public/ ki files (sirv) header `writeHead` ke object me deta hai
+      const writeH = res.writeHead.bind(res)
+      res.writeHead = (code, ...rest) => {
+        const h = rest.find((x) => x && typeof x === 'object' && !Array.isArray(x))
+        if (h) for (const k of Object.keys(h)) if (k.toLowerCase() === 'cache-control') h[k] = theek(h[k])
+        return writeH(code, ...rest)
+      }
+      setH('Cache-Control', 'no-cache, private')
+      setH('Cloudflare-CDN-Cache-Control', 'no-store')
+      next()
+    })
+  },
+}
+
 export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(APP_VERSION) },
-  plugins: [react()],
+  plugins: [react(), noCdnBrowserCache],
   server: {
     host: '0.0.0.0',
     port: 9965,
