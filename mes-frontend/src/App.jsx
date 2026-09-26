@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DisplayProvider } from "./context/DisplayContext";
@@ -23,56 +23,60 @@ import { loadServices, useServiceOn } from "./constants/clientServices";
 // `Login` jaan-boojh kar SEEDHA rakha hai -- wahi pehli screen hai, use
 // intezaar nahi karna chahiye.  Layout/AndonAlert bhi seedhe, wo har page par
 // chahiye hote hain.
+//
+// `lazyRetry` (lazy nahi) -- 2026-09-26: click ke pal file na aaye (net /
+// tunnel ka pal bhar atakna) to page gir jaata tha; ab 2 baar aur koshish.
 import Login from "./pages/Login";
+import lazyRetry from "./lazyRetry";
 
-const ProductionBreakdownSlip = lazy(() => import("./pages/ProductionBreakdownSlip"));
-const MaintenanceDashboard  = lazy(() => import("./pages/MaintenanceDashboard"));
-const MaintenanceHistorical = lazy(() => import("./pages/MaintenanceHistorical"));
-const MaintenanceCAPA       = lazy(() => import("./pages/MaintenanceCAPA"));
-const MaintenanceDeviations = lazy(() => import("./pages/MaintenanceDeviations"));
-const PMPanel               = lazy(() => import("./pages/PMPanel"));
-const MaintenanceKPI        = lazy(() => import("./pages/MaintenanceKPI"));
-const MaintenanceOverview   = lazy(() => import("./pages/MaintenanceOverview"));
-const AndonSystem           = lazy(() => import("./pages/AndonSystem"));
-const MaintenanceBreakdown  = lazy(() => import("./pages/MaintenanceBreakdown"));
-const BDHistory             = lazy(() => import("./pages/BDHistory"));
-const BreakdownLogBook      = lazy(() => import("./pages/BreakdownLogBook"));
-const BDAnalysis            = lazy(() => import("./pages/BDAnalysis"));
-const HistoryCard           = lazy(() => import("./pages/HistoryCard"));
-const WorkRecords           = lazy(() => import("./pages/WorkRecords"));
-const WalkieTalkie          = lazy(() => import("./pages/WalkieTalkie"));
-const QPRForm               = lazy(() => import("./pages/QPRForm"));
-const ParetoAnalysis        = lazy(() => import("./pages/ParetoAnalysis"));
-const TopBreakdowns         = lazy(() => import("./pages/TopBreakdowns"));
-const BreakdownQPR          = lazy(() => import("./pages/BreakdownQPR"));
-const BreakdownQprMachine   = lazy(() => import("./pages/BreakdownQprMachine"));
-const UpdatePlan            = lazy(() => import("./pages/UpdatePlan"));
-const SkillTraining         = lazy(() => import("./pages/SkillTraining"));
-const OJT                   = lazy(() => import("./pages/OJT"));
-const SkillMatrix           = lazy(() => import("./pages/SkillMatrix"));
-const OrganisationChart     = lazy(() => import("./pages/OrganisationChart"));
-const SkillUpgradation      = lazy(() => import("./pages/SkillUpgradation"));
-const MachineManual         = lazy(() => import("./pages/MachineManual"));
-const StudyMaterial         = lazy(() => import("./pages/StudyMaterial"));
-const ThreeDView            = lazy(() => import("./pages/ThreeDView"));
-const AttendanceDashboard   = lazy(() => import("./pages/AttendanceDashboard"));
-const MachineDMC            = lazy(() => import("./pages/MachineDMC"));
-const DailyDMCFill          = lazy(() => import("./pages/DailyDMCFill"));
-const DMCSupervisorVerify   = lazy(() => import("./pages/DMCSupervisorVerify"));
-const DMCMaintenanceVerify  = lazy(() => import("./pages/DMCMaintenanceVerify"));
-const DMCNgPoint            = lazy(() => import("./pages/DMCNgPoint"));
-const Spare                 = lazy(() => import("./pages/Spare"));
-const MachineMaster         = lazy(() => import("./pages/MachineMaster"));
+const ProductionBreakdownSlip = lazyRetry(() => import("./pages/ProductionBreakdownSlip"));
+const MaintenanceDashboard  = lazyRetry(() => import("./pages/MaintenanceDashboard"));
+const MaintenanceHistorical = lazyRetry(() => import("./pages/MaintenanceHistorical"));
+const MaintenanceCAPA       = lazyRetry(() => import("./pages/MaintenanceCAPA"));
+const MaintenanceDeviations = lazyRetry(() => import("./pages/MaintenanceDeviations"));
+const PMPanel               = lazyRetry(() => import("./pages/PMPanel"));
+const MaintenanceKPI        = lazyRetry(() => import("./pages/MaintenanceKPI"));
+const MaintenanceOverview   = lazyRetry(() => import("./pages/MaintenanceOverview"));
+const AndonSystem           = lazyRetry(() => import("./pages/AndonSystem"));
+const MaintenanceBreakdown  = lazyRetry(() => import("./pages/MaintenanceBreakdown"));
+const BDHistory             = lazyRetry(() => import("./pages/BDHistory"));
+const BreakdownLogBook      = lazyRetry(() => import("./pages/BreakdownLogBook"));
+const BDAnalysis            = lazyRetry(() => import("./pages/BDAnalysis"));
+const HistoryCard           = lazyRetry(() => import("./pages/HistoryCard"));
+const WorkRecords           = lazyRetry(() => import("./pages/WorkRecords"));
+const WalkieTalkie          = lazyRetry(() => import("./pages/WalkieTalkie"));
+const QPRForm               = lazyRetry(() => import("./pages/QPRForm"));
+const ParetoAnalysis        = lazyRetry(() => import("./pages/ParetoAnalysis"));
+const TopBreakdowns         = lazyRetry(() => import("./pages/TopBreakdowns"));
+const BreakdownQPR          = lazyRetry(() => import("./pages/BreakdownQPR"));
+const BreakdownQprMachine   = lazyRetry(() => import("./pages/BreakdownQprMachine"));
+const UpdatePlan            = lazyRetry(() => import("./pages/UpdatePlan"));
+const SkillTraining         = lazyRetry(() => import("./pages/SkillTraining"));
+const OJT                   = lazyRetry(() => import("./pages/OJT"));
+const SkillMatrix           = lazyRetry(() => import("./pages/SkillMatrix"));
+const OrganisationChart     = lazyRetry(() => import("./pages/OrganisationChart"));
+const SkillUpgradation      = lazyRetry(() => import("./pages/SkillUpgradation"));
+const MachineManual         = lazyRetry(() => import("./pages/MachineManual"));
+const StudyMaterial         = lazyRetry(() => import("./pages/StudyMaterial"));
+const ThreeDView            = lazyRetry(() => import("./pages/ThreeDView"));
+const AttendanceDashboard   = lazyRetry(() => import("./pages/AttendanceDashboard"));
+const MachineDMC            = lazyRetry(() => import("./pages/MachineDMC"));
+const DailyDMCFill          = lazyRetry(() => import("./pages/DailyDMCFill"));
+const DMCSupervisorVerify   = lazyRetry(() => import("./pages/DMCSupervisorVerify"));
+const DMCMaintenanceVerify  = lazyRetry(() => import("./pages/DMCMaintenanceVerify"));
+const DMCNgPoint            = lazyRetry(() => import("./pages/DMCNgPoint"));
+const Spare                 = lazyRetry(() => import("./pages/Spare"));
+const MachineMaster         = lazyRetry(() => import("./pages/MachineMaster"));
 
 // Ye NAMED export hain (default nahi), isliye `default` me lapetna padta hai --
 // `lazy()` sirf `{ default: Component }` samajhta hai.
-const NewBreakdownSlip = lazy(() =>
+const NewBreakdownSlip = lazyRetry(() =>
   import("./pages/breakdown/NewBreakdownSlip").then((m) => ({ default: m.NewBreakdownSlip })));
-const UpdatePlanSection = lazy(() =>
+const UpdatePlanSection = lazyRetry(() =>
   import("./pages/UpdatePlan").then((m) => ({ default: m.UpdatePlanSection })));
-const MaintenanceAdminPanel = lazy(() =>
+const MaintenanceAdminPanel = lazyRetry(() =>
   import("./pages/AdminPanel").then((m) => ({ default: m.MaintenanceAdminPanel })));
-const DocumentUpdatePanel = lazy(() =>
+const DocumentUpdatePanel = lazyRetry(() =>
   import("./pages/AdminPanel").then((m) => ({ default: m.DocumentUpdatePanel })));
 
 // ─── Protected Route ───────────────────────────────────────────────────────

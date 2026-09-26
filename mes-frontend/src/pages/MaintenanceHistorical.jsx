@@ -16,7 +16,8 @@
  * slip form production/maintenance/closure JSONB bharti hai).
  * Routing: /maintenance-historical
  */
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import lazyRetry from "../lazyRetry";
 import { useAuth } from "../context/AuthContext";
 import { ClosureFormModal } from "./breakdown/ClosureFormModal";
 import { slipPayload } from "./breakdown/slipPayload";
@@ -30,7 +31,7 @@ import { aajKaNaam } from "../constants/sheetTools";
 // CAPA ka QPR form -- "View" me SIRF DEKHNE ke mode me yahin parde par khulta
 // hai (CAPA page ki permission na ho tab bhi, aur yahan ke filter bhi bache
 // rehte hain).  Lazy -- jab tak koi View na dabaye, 100 KB ka grid load nahi.
-const CapaSheet = lazy(() => import("./MaintenanceCAPA"));
+const CapaSheet = lazyRetry(() => import("./MaintenanceCAPA"));
 
 /* Backend ki galti ka SANDESH nikalo, JSON ka kachra nahi.
  *

@@ -135,6 +135,13 @@ const noCdnBrowserCache = {
 export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(APP_VERSION) },
   plugins: [react(), noCdnBrowserCache],
+  // Saare page ki files SHURU me hi dekh kar saare package EK baar me jod lo
+  // (2026-09-26).  Warna koi pehli baar aisa page khole jisme naya package ho,
+  // to Vite beech me dobara jodta hai: SAB khule tab reload (bhara form gaya)
+  // aur purane tab me React ki do copy -> ErrorBoundary.  Laptop par khud
+  // dekha: "new dependencies optimized ... optimized dependencies changed.
+  // reloading".
+  optimizeDeps: { entries: ['index.html', 'src/**/*.{js,jsx}'] },
   server: {
     host: '0.0.0.0',
     port: 9965,
