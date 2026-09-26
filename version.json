@@ -1,0 +1,5 @@
+{
+  "version": "1.4.139",
+  "notes": "Pages now open again by themselves if the connection drops for a moment while opening them, and the error screen is clearer (in English).",
+  "released_at": "2026-09-26T11:45:38"
+}
