@@ -1,5 +1,5 @@
 {
- "columns": 821,
+ "columns": 839,
  "db": "maintenance_db",
  "schema": {
   "andon_call_output": {
@@ -1422,6 +1422,74 @@
     "type": "character varying"
    }
   },
+  "maintenance_attendance_log": {
+   "action": {
+    "default": null,
+    "nullable": false,
+    "pos": 8,
+    "type": "character varying"
+   },
+   "at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 2,
+    "type": "timestamp without time zone"
+   },
+   "by_user": {
+    "default": null,
+    "nullable": true,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "day": {
+    "default": null,
+    "nullable": false,
+    "pos": 4,
+    "type": "date"
+   },
+   "detail": {
+    "default": null,
+    "nullable": true,
+    "pos": 11,
+    "type": "character varying"
+   },
+   "emp_code": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "character varying"
+   },
+   "from_slot": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "character varying"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "bigint"
+   },
+   "staff_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 5,
+    "type": "integer"
+   },
+   "staff_name": {
+    "default": null,
+    "nullable": true,
+    "pos": 6,
+    "type": "character varying"
+   },
+   "to_slot": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "character varying"
+   }
+  },
   "maintenance_audit_log": {
    "action": {
     "default": null,
@@ -1995,6 +2063,12 @@
    }
   },
   "maintenance_capa_sheet": {
+   "bd_source": {
+    "default": "'manual'::character varying",
+    "nullable": false,
+    "pos": 15,
+    "type": "character varying"
+   },
    "breakdown_id": {
     "default": null,
     "nullable": true,
@@ -2112,7 +2186,39 @@
     "type": "text"
    }
   },
+  "maintenance_daily_assignee": {
+   "added_at": {
+    "default": "now()",
+    "nullable": true,
+    "pos": 3,
+    "type": "timestamp without time zone"
+   },
+   "added_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "text"
+   },
+   "user_id": {
+    "default": null,
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   }
+  },
   "maintenance_daily_plan_work": {
+   "assigned_to": {
+    "default": null,
+    "nullable": true,
+    "pos": 19,
+    "type": "text"
+   },
+   "assigned_user_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 20,
+    "type": "integer"
+   },
    "created_at": {
     "default": "now()",
     "nullable": true,
@@ -4247,6 +4353,12 @@
     "pos": 9,
     "type": "timestamp without time zone"
    },
+   "emp_code": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "character varying"
+   },
    "full_name": {
     "default": null,
     "nullable": true,
@@ -5069,6 +5181,6 @@
    }
   }
  },
- "tables": 70,
- "taken_at": "2026-09-22T13:03:05"
+ "tables": 72,
+ "taken_at": "2026-09-26T10:41:08"
 }

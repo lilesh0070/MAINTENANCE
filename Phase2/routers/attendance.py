@@ -20,6 +20,9 @@ Teen table
           _AI_BLOCKED_TABLES) -- warna ek `SELECT *` me 20 photo = ~300 KB
           base64 AI ke context me chala jaata
   maintenance_attendance_board  -- (day, staff_id) -> slot + pos
+  maintenance_attendance_log    -- (2026-09-26) har badlav ki ek line: kisne,
+                                   kab, kise, kis kataar se kis me (History ka
+                                   "Changes").  Sirf jodte hain, kabhi badalte nahi.
 
 Din-wise, "aage chalta hai" niyam
 ---------------------------------
@@ -54,11 +57,13 @@ GET    /board?day=YYYY-MM-DD     us din ka board (photo ke bina)
 PUT    /board                    {day, lanes:{slot:[ids]}} -- ghaseetne ke baad
 GET    /photos?ids=1,2,3         {id: dataURL}
 GET    /members                  saare chalu member (aaj ki kataar ke saath)
+GET    /history?start=&end=      History: har aadmi x har din ki kataar + ginti + badlav
 POST   /staff                    naya aadmi {..., slot, day}        (admin)
 PUT    /staff/{id}               details / photo / kataar badlo     (admin)
 DELETE /staff/{id}?day=          us din se hatao                    (admin)
 """
 import re
+from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Optional
 
@@ -163,6 +168,26 @@ def _ensure() -> None:
         # "har aadmi ki aakhri row <= din" isi se tez
         cur.execute("CREATE INDEX IF NOT EXISTS ix_att_board_staff_day"
                     " ON maintenance_attendance_board (staff_id, day DESC)")
+        # Badlav ka log (History -> Changes) -- upar `_log` ki tippani.
+        # staff_id par FK jaan-boojh kar NAHI: aadmi mite to bhi itihaas rahe
+        # (naam / emp code ki naqal saath me).
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS maintenance_attendance_log (
+                id          BIGSERIAL PRIMARY KEY,
+                at          TIMESTAMP NOT NULL DEFAULT NOW(),
+                by_user     VARCHAR(120),
+                day         DATE NOT NULL,
+                staff_id    INTEGER,
+                staff_name  VARCHAR(120),
+                emp_code    VARCHAR(40),
+                action      VARCHAR(12) NOT NULL,
+                from_slot   VARCHAR(10),
+                to_slot     VARCHAR(10),
+                detail      VARCHAR(300)
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS ix_att_log_day"
+                    " ON maintenance_attendance_log (day)")
     _bani = True
 
 
@@ -320,6 +345,41 @@ def _likho(cur, d: date, lanes: dict, who: str) -> None:
     """, rows)
 
 
+# ── Badlav ka log ───────────────────────────────────────────────────────
+# User 2026-09-26: "attendance dashboard me history ka option ... jisme sab ho".
+# Board ki table har din ka sirf AAKHRI haal rakhti hai, aur uska `updated_by`
+# us din kataar ko aakhri baar chhoone wale ka ho jaata hai (kram badalne par
+# poori kataar dobara likhi jaati hai) -- "kisne kab kya badla" usse pakka nahi
+# milta.  Isliye ab se har badlav ek line yahan: move / add / remove / delete /
+# edit.  Pehle ke dino ka hisaab board ki rows se nikalta hai (`_hist_*`).
+def _log(cur, who: str, items: list) -> None:
+    """items: [{day, id, name, emp_code, action, from, to, detail}].
+    SAVEPOINT ke andar -- log na likh paaye to bhi asli kaam (board / member)
+    NA ruke; bas server log me ek line."""
+    if not items:
+        return
+    try:
+        cur.execute("SAVEPOINT att_log")
+    except Exception as ex:
+        print(f"[ATTENDANCE] log nahi likha: {ex}")
+        return
+    try:
+        psycopg2.extras.execute_values(cur, """
+            INSERT INTO maintenance_attendance_log
+                   (by_user, day, staff_id, staff_name, emp_code, action, from_slot, to_slot, detail)
+            VALUES %s
+        """, [(who, i["day"], i.get("id"), (i.get("name") or "")[:120] or None,
+               (i.get("emp_code") or "")[:40] or None, i["action"], i.get("from"), i.get("to"),
+               (i.get("detail") or "")[:300] or None) for i in items])
+        cur.execute("RELEASE SAVEPOINT att_log")
+    except Exception as ex:
+        try:
+            cur.execute("ROLLBACK TO SAVEPOINT att_log")
+        except Exception:
+            pass
+        print(f"[ATTENDANCE] log nahi likha: {ex}")
+
+
 # ── Aadmi ki details ────────────────────────────────────────────────────
 class StaffIn(BaseModel):
     name: str
@@ -405,6 +465,16 @@ def _slot(s: Optional[str]) -> str:
     if s not in SLOTS:
         raise HTTPException(400, f"Unknown row: {s}")
     return s
+
+
+def _norm_slot(s: Optional[str]) -> str:
+    """DB me anjaan kataar ho to G -- board (`_lanes`) bhi yahi karta hai."""
+    return s if s in SLOTS else "G"
+
+
+# Edit ke log me kaunse khaane (sirf naam jaata hai, value nahi)
+_EDIT_FIELDS = (("name", "Name"), ("emp_code", "Emp code"), ("designation", "Designation"),
+                ("contact", "Contact"), ("doj", "Date of joining"))
 
 
 # ── Endpoints ───────────────────────────────────────────────────────────
@@ -527,6 +597,14 @@ def save_board(body: BoardIn, user=Depends(get_current_user)):
             naya[slot] = ([i for i in ids if i in dikhe]
                           + [i for i in abhi[slot] if i not in diye])
         _likho(cur, d, naya, _kaun(user))
+        # log me SIRF jinki kataar badli -- kram badalna (usi kataar me aage-
+        # peeche) badlav nahi
+        pehle = {r["id"]: r for r in rows}
+        _log(cur, _kaun(user), [
+            {"day": d, "id": i, "name": pehle[i]["name"], "emp_code": pehle[i]["emp_code"],
+             "action": "move", "from": _norm_slot(pehle[i]["slot"]), "to": slot}
+            for slot, ids in naya.items() for i in ids
+            if i in pehle and _norm_slot(pehle[i]["slot"]) != slot])
     with get_conn() as conn:
         return _jawab(dict_cursor(conn), d, "full")
 
@@ -620,6 +698,8 @@ def add_staff(body: StaffIn, user=Depends(get_current_user)):
                         " VALUES (%s, %s)", (sid, v["photo"]))
         lane = _lanes(_board(cur, d))[slot] + [sid]
         _likho(cur, d, {slot: lane}, who)
+        _log(cur, who, [{"day": d, "id": sid, "name": v["name"], "emp_code": v["emp_code"],
+                         "action": "add", "to": slot}])
     return {"id": sid}
 
 
@@ -632,7 +712,8 @@ def edit_staff(sid: int, body: StaffIn, user=Depends(get_current_user)):
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
-        cur.execute("SELECT removed_on FROM maintenance_employee WHERE id = %s", (sid,))
+        cur.execute("SELECT removed_on, name, emp_code, designation, contact, doj"
+                    " FROM maintenance_employee WHERE id = %s", (sid,))
         r = cur.fetchone()
         if not r:
             raise HTTPException(404, "Person not found.")
@@ -646,6 +727,15 @@ def edit_staff(sid: int, body: StaffIn, user=Depends(get_current_user)):
                    updated_by = %s, updated_at = NOW()
              WHERE id = %s
         """, (v["name"], v["emp_code"], v["designation"], v["contact"], v["doj"], who, sid))
+        # log: kaunse khaane badle -- sirf NAAM, value nahi (contact number
+        # log me na jaaye)
+        badla = [lbl for k, lbl in _EDIT_FIELDS if (r[k] or None) != (v[k] or None)]
+        if body.photo_change:
+            badla.append("Photo")
+        logs = []
+        if badla:
+            logs.append({"day": date.today(), "id": sid, "name": v["name"], "emp_code": v["emp_code"],
+                         "action": "edit", "detail": ", ".join(badla)})
         if body.photo_change:
             if v["photo"]:
                 cur.execute("""
@@ -667,6 +757,9 @@ def edit_staff(sid: int, body: StaffIn, user=Depends(get_current_user)):
                 lanes[abhi].remove(sid)
                 lanes[slot].append(sid)
                 _likho(cur, d, {abhi: lanes[abhi], slot: lanes[slot]}, who)
+                logs.append({"day": d, "id": sid, "name": v["name"], "emp_code": v["emp_code"],
+                             "action": "move", "from": abhi, "to": slot})
+        _log(cur, who, logs)
     return {"ok": True}
 
 
@@ -679,12 +772,17 @@ def remove_staff(sid: int, day: Optional[str] = Query(None), user=Depends(get_cu
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
-        cur.execute("SELECT removed_on FROM maintenance_employee WHERE id = %s", (sid,))
+        cur.execute("SELECT removed_on, name, emp_code FROM maintenance_employee WHERE id = %s", (sid,))
         r = cur.fetchone()
         if not r:
             raise HTTPException(404, "Person not found.")
         if r[0] is not None:
             return {"ok": True, "mode": "removed"}
+        # log ke liye: us din kis kataar me tha
+        cur.execute("SELECT slot FROM maintenance_attendance_board"
+                    " WHERE staff_id = %s AND day <= %s ORDER BY day DESC LIMIT 1", (sid, d))
+        tha = cur.fetchone()
+        tha = _norm_slot(tha[0]) if tha else None
         cur.execute("SELECT 1 FROM maintenance_attendance_board"
                     " WHERE staff_id = %s AND day < %s LIMIT 1", (sid, d))
         if cur.fetchone():
@@ -702,4 +800,210 @@ def remove_staff(sid: int, day: Optional[str] = Query(None), user=Depends(get_cu
             # (photo aur board ki row ON DELETE CASCADE se)
             cur.execute("DELETE FROM maintenance_employee WHERE id = %s", (sid,))
             mode = "deleted"
+        _log(cur, _kaun(user), [{"day": d, "id": sid, "name": r[1], "emp_code": r[2],
+                                 "action": "remove" if mode == "removed" else "delete", "from": tha}])
     return {"ok": True, "mode": mode}
+
+
+# ── History (user 2026-09-26: "history ka option ... jisme sab ho") ─────
+# Register: har aadmi x har din ki kataar -- board wala hi "aage chalta hai"
+# niyam (din D par aakhri row <= D; removed_on se hata), aakhir me ginti, aur
+# har din kitne duty par.  Changes: kisne kab kya badla.
+#
+# EK AADMI = EK QATAR, EMP CODE se (TRIM + UPPER): 23-Sep ko purane record hata
+# kar wahi log naye record se jode gaye (id alag, emp code wahi) -- id se qatar
+# banti to ek aadmi do qatar me bant jaata.  Emp code khaali -> record ki id.
+# Ek din ek hi emp code ke do record hon (`_dohra` hone nahi deta) to naya
+# (badi id) jeetta hai.
+#
+# Changes do jagah se:
+#   * maintenance_attendance_log -- ab se, har badlav, sahi kisne / kab
+#   * usse PEHLE ke: board ki rows se (`_hist_changes`) -- har din ka AAKHRI
+#     haal; "kisne" = us din row aakhri baar likhne wala (upar `_log` dekho)
+# Ginti sirf AAJ tak (aage ke din "planned" -- dikhte hain, ginte nahi).
+HIST_MAX_DAYS = 93          # ek baar me itne din (~3 mahine) -- grid aur jawab halke
+_ON_DUTY = ("G", "A", "B")  # board ke "On duty" jaisa
+
+
+def _hist_timeline(days, carry, rows, removed_on):
+    """Ek RECORD ka har din: [(slot | None, us din ki row | None)].
+    days[0] = start se ek din pehle (pehle din ka badlav pakadne ke liye);
+    carry = days[0] tak ki aakhri row; rows = {day: row} (start..end)."""
+    slot = _norm_slot(carry["slot"]) if carry else None
+    out = []
+    for d in days:
+        r = rows.get(d)
+        if r is not None:
+            slot = _norm_slot(r["slot"])
+        on = slot is not None and (removed_on is None or removed_on > d)
+        out.append((slot if on else None, r))
+    return out
+
+
+def _hist_key(rec) -> str:
+    emp = (rec.get("emp_code") or "").strip().upper()
+    return f"E:{emp}" if emp else f"I:{rec['id']}"
+
+
+def _hist_merge(recs, lines):
+    """Ek aadmi ke saare record (NAYA PEHLE) -> har din (slot, record, row)."""
+    n = len(lines[recs[0]["id"]])
+    out = []
+    for i in range(n):
+        got = (None, None, None)
+        for rec in recs:
+            s, row = lines[rec["id"]][i]
+            if s is not None:
+                got = (s, rec, row)
+                break
+        out.append(got)
+    return out
+
+
+def _hist_changes(days, merged, name, emp):
+    """Board ki rows se nikale badlav (log shuru hone se pehle ke liye)."""
+    ev = []
+    prev = merged[0]
+    for i in range(1, len(days)):
+        cur = merged[i]
+        if cur[0] != prev[0]:
+            if cur[0] is not None:
+                row = cur[2]
+                ev.append({"day": days[i], "action": "add" if prev[0] is None else "move",
+                           "from": prev[0], "to": cur[0],
+                           "by": row["updated_by"] if row else None,
+                           "at": row["updated_at"] if row else None})
+            else:
+                # pichhle din wala record isi din hataya gaya (removed_on) --
+                # hataane wale ka naam / waqt usi record par
+                rec = prev[1]
+                ev.append({"day": days[i], "action": "remove", "from": prev[0], "to": None,
+                           "by": rec.get("updated_by"), "at": rec.get("updated_at")})
+            ev[-1].update(name=name, emp_code=emp, detail=None, source="board")
+        prev = cur
+    return ev
+
+
+def _iso(v):
+    return v.isoformat(timespec="seconds") if isinstance(v, datetime) else (v.isoformat() if v else None)
+
+
+@router.get("/history")
+def history(start: Optional[str] = Query(None), end: Optional[str] = Query(None),
+            user=Depends(get_current_user)):
+    """History: start..end (khaali = is mahine ki 1 tareekh se aaj tak)."""
+    _ensure()
+    _padh_sakta(user)
+    today = date.today()
+    s = _din(start) if start else today.replace(day=1)
+    e = _din(end) if end else today
+    if e < s:
+        raise HTTPException(400, "The From date must be on or before the To date.")
+    n = (e - s).days + 1
+    if n > HIST_MAX_DAYS:
+        raise HTTPException(400, f"Please choose at most {HIST_MAX_DAYS} days at a time.")
+    pre = s - timedelta(days=1)
+    days = [pre + timedelta(days=i) for i in range(n + 1)]       # days[0] = pre
+
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("""
+            SELECT DISTINCT ON (staff_id) staff_id, day, slot, updated_by, updated_at
+              FROM maintenance_attendance_board
+             WHERE day <= %s
+             ORDER BY staff_id, day DESC
+        """, (pre,))
+        carry = {r["staff_id"]: r for r in cur.fetchall()}
+        cur.execute("""
+            SELECT staff_id, day, slot, updated_by, updated_at
+              FROM maintenance_attendance_board
+             WHERE day > %s AND day <= %s
+        """, (pre, e))
+        rows = defaultdict(dict)
+        for r in cur.fetchall():
+            rows[r["staff_id"]][r["day"]] = r
+        ids = sorted(set(carry) | set(rows))
+        recs = []
+        if ids:
+            cur.execute(f"""
+                SELECT s.id, s.name, s.emp_code, {_DESIG}, s.removed_on,
+                       s.updated_by, s.updated_at
+                  FROM maintenance_employee s{_JUDA_USER}
+                 WHERE s.id = ANY(%s)
+            """, (ids,))
+            recs = cur.fetchall()
+        cur.execute("SELECT MIN(at) AS m FROM maintenance_attendance_log")
+        log_since = cur.fetchone()["m"]
+        cur.execute("""
+            SELECT at, by_user, day, staff_name, emp_code, action, from_slot, to_slot, detail
+              FROM maintenance_attendance_log
+             WHERE day >= %s AND day <= %s
+             ORDER BY at DESC, id DESC
+             LIMIT 5000
+        """, (s, e))
+        logs = cur.fetchall()
+
+    groups = defaultdict(list)
+    for rec in recs:
+        groups[_hist_key(rec)].append(rec)
+    people, changes = [], []
+    for key, grp in groups.items():
+        grp.sort(key=lambda r: r["id"], reverse=True)           # naya record pehle
+        lines = {r["id"]: _hist_timeline(days, carry.get(r["id"]), rows.get(r["id"], {}),
+                                         r["removed_on"]) for r in grp}
+        merged = _hist_merge(grp, lines)
+        top = grp[0]
+        name, emp = top["name"], (top["emp_code"] or "")
+        for ev in _hist_changes(days, merged, name, emp):
+            # log shuru hone ke baad wale badlav log se aate hain (sahi kisne/kab)
+            if (log_since is None or (ev["at"] is not None and ev["at"] < log_since)
+                    or (ev["at"] is None and ev["day"] < log_since.date())):
+                changes.append(ev)
+        slots = [m[0] for m in merged[1:]]
+        if not any(slots):
+            continue                                            # is beech board par tha hi nahi
+        tot = {k: 0 for k in SLOTS}
+        for d, sl in zip(days[1:], slots):
+            if sl and d <= today:
+                tot[sl] += 1
+        tot["duty"] = sum(tot[k] for k in _ON_DUTY)
+        hata = [r["removed_on"] for r in grp]
+        people.append({
+            "key": key,
+            "name": name,
+            "emp_code": emp,
+            "designation": top["designation"] or "",
+            "removed_on": max(hata).isoformat() if all(hata) else None,
+            "slots": slots,
+            "totals": tot,
+        })
+    people.sort(key=lambda p: (p["removed_on"] is not None, p["name"].lower(), p["emp_code"]))
+
+    day_totals = []
+    for i in range(n):
+        c = {k: 0 for k in SLOTS}
+        for p in people:
+            if p["slots"][i]:
+                c[p["slots"][i]] += 1
+        c["duty"] = sum(c[k] for k in _ON_DUTY)
+        c["total"] = sum(c[k] for k in SLOTS)
+        day_totals.append(c)
+
+    for r in logs:
+        changes.append({"day": r["day"], "action": r["action"], "from": r["from_slot"],
+                        "to": r["to_slot"], "by": r["by_user"], "at": r["at"],
+                        "name": r["staff_name"] or "", "emp_code": r["emp_code"] or "",
+                        "detail": r["detail"], "source": "log"})
+    changes.sort(key=lambda c: (c["day"], c["at"] or datetime.min), reverse=True)
+
+    return {
+        "start": s.isoformat(),
+        "end": e.isoformat(),
+        "today": today.isoformat(),
+        "max_days": HIST_MAX_DAYS,
+        "days": [d.isoformat() for d in days[1:]],
+        "people": people,
+        "day_totals": day_totals,
+        "changes": [{**c, "day": _iso(c["day"]), "at": _iso(c["at"])} for c in changes],
+        "log_since": _iso(log_since),
+    }

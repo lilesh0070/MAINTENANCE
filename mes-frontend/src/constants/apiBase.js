@@ -220,8 +220,9 @@ async function setupBackButton() {
     const { App } = await import('@capacitor/app');
     App.addListener('backButton', () => {
       // 1) Break Down Slip jaisa modal khula ho to pehle wahi band karo,
-      //    warna bhara hua form bina bataye chala jayega.
-      const x = document.querySelector('.bds-close-x');
+      //    warna bhara hua form bina bataye chala jayega.  `data-back-close`
+      //    = aisa hi koi aur parda (jaise Attendance ki History) -- uska ×.
+      const x = document.querySelector('.bds-close-x, [data-back-close]');
       if (x && x.getBoundingClientRect().width > 0) { x.click(); return; }
 
       // 2) peeche jaane laayak jagah hai?

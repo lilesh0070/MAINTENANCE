@@ -45,6 +45,7 @@ import { useAuth } from "../context/AuthContext";
 import { api } from "../api/client";
 import { isNativeApp } from "../constants/apiBase";
 import DashBack from "../components/DashBack";
+import AttendanceHistory from "./AttendanceHistory";
 
 const NATIVE = isNativeApp();
 const PAGE_KEY = "maintenance-attendance";
@@ -218,6 +219,12 @@ const IcoUsers = () => (
     <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
   </svg>
 );
+const IcoHist = () => (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+       strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l3 2" />
+  </svg>
+);
 const IcoEdit = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
        strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -256,6 +263,7 @@ export default function AttendanceDashboard() {
   const [toast, setToast]       = useState(null);    // {text, kind}
   const [membersOpen, setMembersOpen] = useState(false);
   const [memRev, setMemRev]     = useState(0);       // badlav ke baad "All Members" list dobara
+  const [histOpen, setHistOpen] = useState(false);   // "History" (AttendanceHistory.jsx)
 
   const boardRef   = useRef(null);
   const boardEl    = useRef(null);
@@ -1141,6 +1149,14 @@ export default function AttendanceDashboard() {
             <button className="att-members" onClick={() => setMembersOpen(true)}>
               <IcoUsers /> All Members
             </button>
+            {/* History: har din kaun kis shift me + ginti + badlav (user 2026-09-26).
+                TV par NAHI -- TV ka layout band hai (bina kahe mat chhedo). */}
+            {!tvMode && (
+              <button className="att-members att-hist" onClick={() => setHistOpen(true)}
+                      title="Who was in which shift on each day, with totals and every change">
+                <IcoHist /> History
+              </button>
+            )}
             {adminEdit && (
               <button className="att-add" onClick={() => setPanel({ mode: "add", slot: "G" })}>
                 <b>+</b> Add Member
@@ -1272,6 +1288,14 @@ export default function AttendanceDashboard() {
           onClose={() => setPanel(null)}
           onMove={(id, slot) => { setPanel(null); dropTo(id, slot, Number.MAX_SAFE_INTEGER); }}
           onDone={(msg) => { setPanel(null); showToast(msg); setMemRev((r) => r + 1); localVer.current += 1; reload(); }}
+        />
+      )}
+
+      {histOpen && board && !tvMode && (
+        <AttendanceHistory
+          token={token} theme={theme} slots={SLOTS} today={board.today} native={NATIVE}
+          onClose={() => setHistOpen(false)}
+          onOpenDay={(d) => { setHistOpen(false); pickDay(d); }}
         />
       )}
 
