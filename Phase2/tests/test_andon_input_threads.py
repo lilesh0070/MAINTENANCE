@@ -21,6 +21,8 @@ User: "dono kar do lekin dhyan se".  Ye test pakka karta hai:
  (14) Chalti sub-PLC achanak band (connection latka): EK hi baar intezaar,
       phir connection chhoda -- har chakkar nahi; wapas aayi to phir judi.
  (15) Sub-PLC ka IP badla -> naya connection; sub hataya -> connection chhoda.
+ (16) Chalte system me NAYI line PLC (sub-PLC ke saath) aur nayi Modbus PLC
+      jodi -> bina restart dono ke apne thread, call + model turant.
 
 BINA DB, BINA ASLI PLC: andon.py ke DB wale function (_in_read_config,
 _in_apply_db, _in_stamp, _stale_call_sweep, get_conn) aur PLC driver
@@ -420,6 +422,42 @@ next(d for d in DEVS if d["id"] == 900)["sub_ip"] = None
 T("sub hataya -> connection chhoda", wait_until(lambda: 900 not in A._SUB_CONN, 3) and new.closed)
 toggle(900, 1, 0.1)
 T("bina sub: call khuli, model khaali (sub hi nahi)", OPENED_MODEL.get((900, 1)) is None)
+
+print("\n--- (16) chalte system me NAYI PLC jodi (930 MC + sub-PLC, 931 Modbus) ---")
+for _did, _proto, _ip, _sub in ((930, "MC", "10.8.0.30", "10.8.2.30"),
+                                (931, "MODBUS", "10.8.0.31", None)):
+    _t = "M" if _proto == "MC" else "HR"
+    ROWS[_did] = [{"plc_id": _did, "do_index": d, "bit_type": _t, "bit_no": str(100 + d)}
+                  for d in (1, 2, 3, 4)]
+    IP[_did], BITKEY[_did] = _ip, _t
+    if _sub:
+        BITS.setdefault(_sub, {})["D1016"] = 5
+        MODELS[_did] = [{"plc_id": _did, "device_type": "D", "device_no": "1016",
+                         "value": 5, "nm": "MODEL-5"}]
+    DEVS.append({"id": _did, "zone": "Z", "line": f"NEW{_did}", "machine_no": None,
+                 "machine_name": None, "ip": _ip, "port": 5002 if _proto == "MC" else 506,
+                 "series": "Q" if _proto == "MC" else "FX5U", "protocol": _proto, "unit_id": 1,
+                 "sub_ip": _sub, "sub_port": 5002 if _sub else None,
+                 "sub_series": "Q" if _sub else None, "sub_protocol": "MC" if _sub else None,
+                 "sub_unit_id": 1 if _sub else None, "enabled": True})
+t_add = time.monotonic()
+
+
+def _alive(name):
+    return any(th.name == name and th.is_alive() for th in threading.enumerate())
+
+
+t_thr = wait_until(lambda: _alive("andon-in-930") and _alive("andon-in-931")
+                   and _alive("andon-sub-930") and 930 in A._SUB_CONN, 5)
+T("bina restart: andon-in-930, andon-sub-930, andon-in-931 chalu", t_thr,
+  f"{time.monotonic() - t_add:.2f}s")
+T("931 (bina sub-PLC) ka sub thread nahi bana", not _alive("andon-sub-931"))
+lat930, lat931 = toggle(930, 3, 0.1), toggle(931, 3, 0.1)
+T("930 (MC): call 0.5 s ke andar + model sub-PLC se", max(lat930) < 0.5
+  and OPENED_MODEL.get((930, 1)) == "MODEL-5", f"max {max(lat930):.3f}s")
+T("931 (Modbus): call 1.0 s ke andar", max(lat931) < 1.0, f"max {max(lat931):.3f}s")
+T("dono online=True", A._PLC_STATUS.get(930, {}).get("online") is True
+  and A._PLC_STATUS.get(931, {}).get("online") is True)
 
 print("\n--- (9) poller (DB wala) chakkar kabhi nahi atka ---")
 gaps = [b - a for a, b in zip(CFG_CALLS, CFG_CALLS[1:])]

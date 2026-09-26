@@ -12,6 +12,8 @@ signal ke liye alag-alag thread kar do".  Ye test pakka karta hai:
   (5) Mapping hatao to uski ON bit bujhti hai, aur uska worker band hota hai.
   (6) Coordinator ka chakkar (writer-lock ki heartbeat) band PLC se nahi atakta.
   (7) Writer ka taala gaya to koi worker PLC ko nahi chhoota; wapas mila to phir chalu.
+  (8) Chalte system me NAYI PLC (nayi mapping, naya IP) jodi -> bina restart
+      apna thread, aur khuli call ki bit turant.
 
 BINA DB, BINA ASLI PLC: andon.py ke DB wale do function (_out_read_db,
 _out_persist), taala aur PLC driver (_connect) naqli se badle jaate hain --
@@ -214,6 +216,20 @@ T("uska worker band ho gaya",
 set_live("Maintenance", 0)
 wait_until(lambda: all_maint(1000, 0, MAINT[1:]) and all_maint(1001, 0, MAINT[1:]), 3)
 
+print("\n--- (8) chalte system me NAYI Maintenance PLC jodi (10.9.0.9) ---")
+NEW = "10.9.0.9"
+set_live("Maintenance", 1, 1)
+wait_until(lambda: all_maint(1000, 1, MAINT[1:]), 3)
+MAPS.append(mapping(9, "Maintenance", NEW))
+t = wait_until(lambda: bit(NEW, 1000) == 1 and bit(NEW, 1001) == 1, 3)
+T("bina restart: nayi PLC par khuli call ki M1000 + M1001 ON", t is not None,
+  f"{t:.2f}s" if t is not None else "")
+T("nayi PLC ka apna thread (andon-out-10.9.0.9)",
+  any(th.name == f"andon-out-{NEW}" and th.is_alive() for th in threading.enumerate()))
+set_live("Maintenance", 0)
+T("call band: nayi PLC par bhi dono OFF",
+  wait_until(lambda: bit(NEW, 1000) == 0 and bit(NEW, 1001) == 0, 3) is not None)
+
 print("\n--- (6) coordinator (writer-lock heartbeat) kabhi nahi atka ---")
 T("sabse lamba chakkar 0.5 s se kam", max(CYCLES) < 0.5,
   f"max {max(CYCLES) * 1000:.0f} ms, {len(CYCLES)} chakkar")
@@ -229,9 +245,9 @@ time.sleep(1.5)
 T("taale ke bina PLC ko haath nahi (bit OFF hi)", all_maint(1000, 0, MAINT[1:]))
 LOCK["got"] = True
 A._OUT_WAKE.set()
-T("taala wapas: bit ON", wait_until(lambda: all_maint(1000, 1, MAINT[1:]), 4) is not None)
+T("taala wapas: bit ON", wait_until(lambda: all_maint(1000, 1, MAINT[1:] + [NEW]), 4) is not None)
 set_live("Maintenance", 0)
-wait_until(lambda: all_maint(1000, 0, MAINT[1:]), 3)
+wait_until(lambda: all_maint(1000, 0, MAINT[1:] + [NEW]), 3)
 
 print("\n   %s\n" % (">>> SAB PASS" if not _fail else ">>> %d FAIL" % _fail))
 # Worker (daemon thread) band karke hi niklo -- warna Python band hote waqt
