@@ -1,6 +1,12 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import NetConnectBar from "../components/NetConnectBar";
+import { isNativeApp } from "../constants/apiBase";
+
+// App me login ke UPAR internet ki patti (NetConnectBar) -- uske liye root
+// column banta hai.  Website par dono kuch nahi karte, page jyon ka tyon.
+const NATIVE = isNativeApp();
 
 export default function Login() {
   const [username, setUsername] = useState("");
@@ -395,9 +401,19 @@ export default function Login() {
           .login-card { width: 100vw; border-radius: 0; min-height: 100vh; align-items: center; }
           .login-right { padding: 40px 28px; justify-content: center; }
         }
+
+        /* App: upar internet ki patti, neeche card -- ek ke neeche ek.  Phone
+           par card poori screen bharta hai (min-height 100vh), to patti ki
+           jagah (~70px) usme se ghata di, warna page bewajah khiskta. */
+        .login-root.login-root-app { flex-direction: column; gap: 12px; }
+        @media (max-width: 640px) {
+          .login-root.login-root-app { padding-top: 10px; gap: 10px; }
+          .login-root.login-root-app .login-card { min-height: calc(100vh - 70px); }
+        }
       `}</style>
 
-      <div className="login-root">
+      <div className={"login-root" + (NATIVE ? " login-root-app" : "")}>
+        <NetConnectBar />
         <div
           className="login-card"
           style={{

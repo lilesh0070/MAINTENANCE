@@ -8,7 +8,8 @@
  * ANDAR KYA HAI
  * -------------
  *   • Kaun logged in hai (naam + role)
- *   • Kis raaste se juda hai (Ethernet / Wi-Fi) + dobara jodne ka button
+ *   • Kis raaste se juda hai (Ethernet / Wi-Fi / Internet) + dobara jodne ka
+ *     button + Internet (maintenance.dxtbdi.com) ka switch (2026-09-28)
  *   • Background me chalne ki ijazat (Walkie-Talkie ki call jeb me pade
  *     phone tak pahunchne ke liye)
  *   • App ka version, aur "naya version hai kya" ka check + download
@@ -23,6 +24,7 @@ import qrcode from "qrcode-generator";
 import { useAuth } from "../context/AuthContext";
 import { walkieNative } from "../constants/walkieNative";
 import { isNativeApp, reprobeServer, serverKaNaam, serverMilaKya,
+         internetChalu, setInternetChalu, INTERNET_URL,
          API_BASE as PEHLA_BASE } from "../constants/apiBase";
 
 const MY_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0";
@@ -107,7 +109,8 @@ async function updateVersionLao() {
     const t = setTimeout(() => { try { ctl.abort(); } catch { /* ignore */ } nahi(new Error("timeout")); }, 2500);
     fetch(base + "/api/app/version", { cache: "no-store", signal: ctl.signal })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status))))
-      .then((j) => { clearTimeout(t); mila(j); })
+      // `_kahan` = kis pate ne jawab diya -- download usi par (neeche apkLink)
+      .then((j) => { clearTimeout(t); mila({ ...j, _kahan: base || PEHLA_BASE }); })
       .catch((e) => { clearTimeout(t); nahi(e); });
   });
   const har = await Promise.allSettled(UPDATE_HOSTS.map(ek));
@@ -115,6 +118,13 @@ async function updateVersionLao() {
   if (!mile.length) throw new Error("No server responded");
   return mile.reduce((sabseNaya, x) => (isNewer(x.version, sabseNaya.version) ? x : sabseNaya));
 }
+
+/** APK ka pata APNI taraf se -- jis pate ne version bataya usi par
+ *  `/api/app/download`.  Server ka `apk_url` internet (domain) ke raaste GALAT
+ *  aata hai: Cloudflare -> Vite proxy -> backend ko Host `localhost:8892`
+ *  dikhta hai (naapa 2026-09-28: "https,http://localhost:8892/api/app/download").
+ *  LAN par dono ek hi pata dete hain, to wahan kuch nahi badla. */
+const apkLink = (info) => (info?._kahan ? info._kahan + "/api/app/download" : info?.apk_url || "");
 
 /** "1.2.10" > "1.2.9" — hissa-hissa milao, seedhi string se nahi. */
 function isNewer(server, mine) {
@@ -210,6 +220,9 @@ export default function AppSettings() {
   const [netBase, setNetBase] = useState(PEHLA_BASE);
   const [netBusy, setNetBusy] = useState(false);
   const [netMsg,  setNetMsg]  = useState("");
+  // Internet (maintenance.dxtbdi.com) ka switch -- login page wali patti jaisa
+  // hi, wahi `localStorage` (apiBase.js).  Band = internet se KABHI nahi.
+  const [netOn, setNetOn] = useState(internetChalu);
 
   const dobaraJodo = async () => {
     if (netBusy) return;
@@ -223,13 +236,23 @@ export default function AppSettings() {
         setNetMsg("Connected over " + serverKaNaam(base) + " — reloading…");
         setTimeout(() => { try { window.location.reload(); } catch { /* ignore */ } }, 800);
       } else {
-        setNetMsg("No server found. Check the LAN cable or Wi-Fi, then try again.");
+        setNetMsg(internetChalu()
+          ? "No server found. Check the LAN cable, Wi-Fi or internet, then try again."
+          : "No server found. Internet is off — check the LAN cable or plant Wi-Fi, or turn Internet on.");
       }
     } catch (e) {
       setNetMsg((e && e.message) || "Could not reconnect");
     } finally {
       setNetBusy(false);
     }
+  };
+
+  // Switch badla -> naye niyam se dobara tatolo (aur mila to reload)
+  const internetBadlo = (v) => {
+    if (netBusy) return;
+    setInternetChalu(v);
+    setNetOn(v);
+    dobaraJodo();
   };
 
   const check = useCallback(async (chupchap) => {
@@ -258,7 +281,7 @@ export default function AppSettings() {
    * Purana raasta hataya NAHI -- agar plugin kisi wajah se na mile to wahi
    * chal jaata hai, taaki update kabhi POORI tarah band na ho. */
   const download = async () => {
-    const url = info?.apk_url;
+    const url = apkLink(info);
     if (!url) return;
 
     const P = window.Capacitor?.Plugins?.ApkUpdate;
@@ -306,7 +329,9 @@ export default function AppSettings() {
           ho).  App khulte hi jo chup-chaap check hota hai (neeche `check(true)`)
           wo `info` bhar deta hai, isliye kholte hi haal saamne hota hai --
           bas taaza karna ho to "Check for update" dabao. */}
-      <button onClick={() => setOpen(true)}
+      {/* kholte waqt abhi ka raasta padho -- mount ke waqt wala purana ho
+          sakta hai (tab tatolna chal hi raha tha) */}
+      <button onClick={() => { setNetBase(PEHLA_BASE); setOpen(true); }}
               aria-label="Settings"
               style={{ position: "fixed", right: 14, top: 12, zIndex: 10000,
                        width: 40, height: 40, borderRadius: "50%",
@@ -358,8 +383,35 @@ export default function AppSettings() {
                 raaste dobara tatolta hai.  APNE AAP kuch nahi hota. */}
             <div style={row}>
               <span style={lbl}>Connected over</span>
-              <b>{serverKaNaam(netBase)}</b>
+              <b style={serverMilaKya() ? undefined : { color: "#b91c1c" }}>
+                {serverMilaKya() ? serverKaNaam(netBase) : "Not connected"}
+              </b>
             </div>
+
+            {/* Internet ka switch -- login page ki patti wala hi niyam */}
+            <div style={row}>
+              <span style={lbl}>Internet connection</span>
+              <button role="switch" aria-checked={netOn} disabled={netBusy}
+                      onClick={() => internetBadlo(!netOn)}
+                      style={{ display: "flex", alignItems: "center", gap: 8, background: "none",
+                               border: "none", padding: 0, fontWeight: 800, fontSize: 13,
+                               color: netOn ? "#1d4ed8" : "#64748b",
+                               cursor: netBusy ? "default" : "pointer" }}>
+                {netOn ? "On" : "Off"}
+                <span style={{ width: 38, height: 22, borderRadius: 99, position: "relative",
+                               background: netOn ? "#2563eb" : "#cbd5e1", transition: "background .15s" }}>
+                  <span style={{ position: "absolute", top: 3, left: netOn ? 19 : 3, width: 16, height: 16,
+                                 borderRadius: "50%", background: "#fff", transition: "left .15s",
+                                 boxShadow: "0 1px 3px rgba(0,0,0,.25)" }} />
+                </span>
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: "#94a3b8", margin: "6px 0 2px", lineHeight: 1.5 }}>
+              {netOn
+                ? `Uses ${INTERNET_URL.replace(/^https?:\/\//, "")} when the plant Ethernet / Wi-Fi server can't be reached.`
+                : "Off — the app connects only over the plant Ethernet / Wi-Fi, even if the internet is available."}
+            </div>
+
             <div style={{ margin: "8px 0 12px" }}>
               <button onClick={dobaraJodo} disabled={netBusy}
                       style={{ width: "100%", padding: "10px 0", borderRadius: 10,
@@ -367,7 +419,7 @@ export default function AppSettings() {
                                background: netBusy ? "#93c5fd" : "#2563eb",
                                color: "#fff", fontWeight: 800, fontSize: 13.5,
                                cursor: netBusy ? "default" : "pointer" }}>
-                {netBusy ? "Checking both connections…" : "↻ Reconnect to the server"}
+                {netBusy ? "Checking connections…" : "↻ Reconnect to the server"}
               </button>
               {netMsg && (
                 <div style={{ fontSize: 11.5, fontWeight: 700, lineHeight: 1.5,
@@ -380,7 +432,8 @@ export default function AppSettings() {
               )}
               <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6, lineHeight: 1.5 }}>
                 Use this if pages stop loading after the network changes. It
-                checks the Ethernet and Wi-Fi addresses again and reloads the app.
+                checks the Ethernet, Wi-Fi{netOn ? " and internet" : ""} addresses
+                again and reloads the app.
               </div>
             </div>
 
@@ -500,7 +553,7 @@ export default function AppSettings() {
                 plant server upar hai -- yaani aam haalat me ye QR SERVER ka
                 pata dikhata hai, jo hamesha chalu rehta hai.  Laptop ka pata
                 tabhi aayega jab uske paas sach me naya version ho. */}
-            {!busy && !err && info?.apk_ready && info?.apk_url && (
+            {!busy && !err && info?.apk_ready && apkLink(info) && (
               <div style={{ marginTop: 8, paddingTop: 10, borderTop: "1px solid #f1f5f9",
                             display: "flex", flexDirection: "column", alignItems: "center" }}>
                 <div style={{ fontSize: 11.5, color: "#64748b", fontWeight: 700,
@@ -509,11 +562,11 @@ export default function AppSettings() {
                 </div>
                 <div style={{ padding: 7, background: "#fff", borderRadius: 10,
                               border: "1px solid #e2e8f0" }}>
-                  <ApkQr text={info.apk_url} />
+                  <ApkQr text={apkLink(info)} />
                 </div>
                 <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 6,
                               wordBreak: "break-all", textAlign: "center", lineHeight: 1.4 }}>
-                  {info.apk_url}
+                  {apkLink(info)}
                 </div>
               </div>
             )}

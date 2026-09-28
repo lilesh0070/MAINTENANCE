@@ -471,7 +471,7 @@ public class WalkieService extends Service {
         judaUrl = full;
         walkieMila = walkieChahiye;
         Request req = new Request.Builder().url(full).build();
-        ws = http.newWebSocket(req, new WebSocketListener() {
+        ws = socketClient(full).newWebSocket(req, new WebSocketListener() {
             @Override public void onOpen(WebSocket s, Response r) {
                 if (ws != s) { s.close(1000, "purana"); return; }
                 retry = 0;
@@ -1130,6 +1130,19 @@ public class WalkieService extends Service {
     }
 
     private OkHttpClient http() { return http; }
+
+    /* Internet (wss -> Cloudflare) par CHUP socket ~100 sec me kaat diya jaata
+       hai, aur humara ping 120 sec ka hai (upar onCreate) -- yaani internet par
+       ANDON/walkie ka socket har ~100 sec toot kar dobara judta.  Isliye SIRF
+       wss ke liye 50 sec ka ping (2026-09-28, app me internet ka raasta aaya).
+       LAN (ws) par pehle jaisa 120 sec -- jeb me pade phone ki battery.
+       `newBuilder()` wahi connection pool / dispatcher baant-ta hai. */
+    private OkHttpClient httpNet;
+    private OkHttpClient socketClient(String full) {
+        if (full == null || !full.startsWith("wss")) return http;
+        if (httpNet == null) httpNet = http.newBuilder().pingInterval(50, TimeUnit.SECONDS).build();
+        return httpNet;
+    }
 
     /** Notification par tap -> app khule aur seedha walkie ke page par. */
     private PendingIntent appKholo() {

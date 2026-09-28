@@ -40,9 +40,46 @@ const SERVERS = [
   { url: "http://192.168.100.24:8892", naam: "Wi-Fi" },      // plant server
 ];
 
+/* ── TEESRA RAASTA: INTERNET (2026-09-28) ─────────────────────────────────
+ * User: "maintenance.dxtbdi.com wala app par kar do ... setting do ki us se
+ * connection rakhna hai ki nahi; off kar de to phir na chale, chahe net on ho."
+ * Wajah: server ka Wi-Fi hata diya gaya, aur TBDI-DX Wi-Fi seedha internet
+ * par jaata hai (router ke baad agla hop ISP 103.81.15.241) -- plant ke 30.x
+ * tak koi raasta nahi.  Phone ki app dono LAN pate aazma kar haar jaati thi.
+ *
+ * Raasta: Cloudflare tunnel -> server ki website (Vite 9965) -> `/api` proxy
+ * -> backend 8892.  Laptop se naapa (origin https://localhost, jaisa APK):
+ * `/api/auth/me` 401 + ACAO, login ka preflight 204, APK download 200, walkie
+ * socket ka upgrade backend tak (403 bina token) -- sab chalte hain.
+ *
+ * SERVERS me isliye NAHI rakha:
+ *   1. user ise band kar sake (login page ke upar + Settings ka switch) --
+ *      band ho to internet se KABHI nahi judti;
+ *   2. LAN mile to LAN hi jeete -- neeche `tatolo()` internet ke jawab par
+ *      LAN ko thodi der (LAN_PEHLE_MS) ki chhoot deta hai;
+ *   3. "pichhla server yaad" wala shortcut sirf LAN ke liye -- internet yaad
+ *      rakhte to plant LAN par lautne ke baad bhi app internet par hi atki
+ *      rehti. */
+const INTERNET = { url: "https://maintenance.dxtbdi.com", naam: "Internet" };
+export const INTERNET_URL = INTERNET.url;
+const NET_KEY = "mes_net_internet";   // "0" = band; kuch bhi aur (ya khaali) = chalu
+const NET_PROBE_MS = 12000;           // DNS + TLS + Cloudflare -- neeche tatolo() ki tippani
+const LAN_PEHLE_MS = 400;             // internet pehle bole to bhi LAN ka itna intezaar
+
+/** Internet wala raasta chalu hai?  (Default CHALU -- warna Wi-Fi par app
+ *  chalegi hi nahi, jiske liye ye bana hai.) */
+export function internetChalu() {
+  try { return localStorage.getItem(NET_KEY) !== "0"; } catch { return true; }
+}
+/** Switch se badlo.  Asar agle tatolne se -- bulane wala `reprobeServer()`
+ *  khud chalata hai. */
+export function setInternetChalu(on) {
+  try { localStorage.setItem(NET_KEY, on ? "1" : "0"); } catch { /* ignore */ }
+}
+
 /** Kis raaste par jude hain, aam bhasha me.  Settings isi se likhta hai. */
 export const serverKaNaam = (base) =>
-  (SERVERS.find((s) => s.url === base) || {}).naam || base || "—";
+  ([...SERVERS, INTERNET].find((s) => s.url === base) || {}).naam || base || "—";
 
 /** Aakhri tatolne me koi server mila tha ya nahi.  Settings ko ye batana
  *  zaroori hai: "jud gaye" aur "koi nahi mila" do alag baatein hain, aur
@@ -245,9 +282,38 @@ let realFetch = null;
 // (localStorage app me tikta hai -- `androidScheme: https` ke baad.)
 const PICKED_KEY = "mes_last_server";
 
-/** Dono raaston ko EK SAATH tatolo; jo pehle jawab de wahi le lo. */
-async function pickServer() {
-  if (!NATIVE || !realFetch) return API_BASE;
+/* Abhi chal raha tatolna.  `fetch` isi ka intezaar karta hai (neeche
+ * installApiBase), aur login page ki patti "Connecting…" isi se dikhati hai.
+ * `pickNo`: switch dabte hi naya tatolna shuru hota hai -- purana baad me
+ * laute to uska nateeja PHENK do (warna band kiya internet phir se chun
+ * liya jaata). */
+let pickChal = null;
+let pickNo = 0;
+const ruko = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Login page ki patti ko khabar: tatolna shuru / khatam. */
+const bataao = () => {
+  try { window.dispatchEvent(new CustomEvent("mes-server")); } catch { /* ignore */ }
+};
+
+/** Abhi ka haal -- login page ki patti ke liye. */
+export const serverHaal = () => ({
+  base: API_BASE, mila: serverMila, chal: !!pickChal, naam: serverKaNaam(API_BASE),
+});
+
+/** Saare raaston ko EK SAATH tatolo; jo pehle jawab de wahi le lo. */
+function pickServer() {
+  if (!NATIVE || !realFetch) return Promise.resolve(API_BASE);
+  const mera = ++pickNo;
+  const p = tatolo(mera).finally(() => {
+    if (pickChal === p) { pickChal = null; bataao(); }
+  });
+  pickChal = p;
+  bataao();
+  return p;
+}
+
+async function tatolo(mera) {
   /* Build ne saaf-saaf ek server bataya ho (`VITE_API_BASE=...`) to use hi
      rakho -- tatolna nahi.  Bina iske wo sirf SHURUAATI value banti thi aur
      ye function use turant `SERVERS` me se kisi par badal deta tha, yaani
@@ -258,43 +324,76 @@ async function pickServer() {
      bilkul pehle jaisa rehta hai. */
   const thopa = import.meta.env && import.meta.env.VITE_API_BASE;
   if (thopa) { API_BASE = thopa; serverMila = true; return API_BASE; }
-  const tryOne = (base) => new Promise((resolve, reject) => {
+  const tryOne = (base, ms = PROBE_MS) => new Promise((resolve, reject) => {
     const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
-    const t = setTimeout(() => { try { ctl && ctl.abort(); } catch { /* ignore */ } reject(new Error("timeout")); }, PROBE_MS);
+    const t = setTimeout(() => { try { ctl && ctl.abort(); } catch { /* ignore */ } reject(new Error("timeout")); }, ms);
     // /api/auth/me bina token 401 deta hai — yahi kaafi hai ye jaanne ko ki
     // server zinda hai.  200 ka intezaar nahi karte.
     realFetch(base + "/api/auth/me", ctl ? { signal: ctl.signal } : undefined)
       .then(() => { clearTimeout(t); resolve(base); })
       .catch((e) => { clearTimeout(t); reject(e); });
   });
+  // Nateeja tabhi lagao jab beech me naya tatolna shuru na hua ho.
+  const lagao = (base, mila) => {
+    if (mera !== pickNo) return false;
+    API_BASE = base;
+    serverMila = mila;
+    return true;
+  };
   // Pichhli baar jo server mila tha, use PEHLE akela aazmao.  Plant me raasta
   // roz wahi rehta hai, aur tab dono ko tatolne me lagne wale ~700ms har baar
   // app khulne par bach jaate hain (naapa gaya).  Wo na mile to neeche wala
   // poora race chalta hai, yaani network badle to bhi app khud sambhal leti hai.
+  // (Sirf LAN pate -- internet kabhi yaad nahi rakha jaata, upar INTERNET dekho.)
   let yaad = null;
   try { yaad = localStorage.getItem(PICKED_KEY); } catch { /* ignore */ }
   if (yaad && SERVERS.some((s) => s.url === yaad)) {
     try {
-      API_BASE = await tryOne(yaad);
-      serverMila = true;
+      lagao(await tryOne(yaad), true);
       return API_BASE;
     } catch { /* nahi mila -- neeche sabko aazmate hain */ }
   }
 
+  // LAN sab ek saath; internet (switch chalu ho to) saath me, par uske jawab
+  // ke baad bhi LAN ko LAN_PEHLE_MS ki chhoot -- plant me LAN hi jeete.
+  const daud = SERVERS.map((s) => tryOne(s.url));
+  if (internetChalu()) {
+    // App THANDI khule to pehli HTTPS (DNS + TLS + Cloudflare) dheemi hoti hai.
+    // Phone emulator par naapa (laptop CPU 65-93%): kabhi 3.4s, kabhi 6s ki
+    // hadd bhi paar -- jabki garam app me wahi 0.4-0.6s.  Beech me kaat kar
+    // dobara shuru karne se aadha hua TLS bhi phir se hota hai, isliye EK
+    // lambi koshish (12s).  Haan, JALDI fail hui ho (network abhi taiyaar
+    // nahi tha / DNS) to 1.5s ruk kar ek baar aur.
+    const shuru = Date.now();
+    const net = () => tryOne(INTERNET.url, NET_PROBE_MS);
+    daud.push(net()
+      .catch((e) => (Date.now() - shuru < 4000 ? ruko(1500).then(net) : Promise.reject(e)))
+      .then((u) => ruko(LAN_PEHLE_MS).then(() => u)));
+  }
   try {
-    const winner = await Promise.any(SERVERS.map((s) => tryOne(s.url)));
-    API_BASE = winner;
-    serverMila = true;            // ab lambi hadd theek hai (bhaari report chal sake)
-    try { localStorage.setItem(PICKED_KEY, winner); } catch { /* ignore */ }
+    const winner = await Promise.any(daud);
+    // ab lambi hadd theek hai (bhaari report chal sake)
+    if (lagao(winner, true)) {
+      try {
+        // Internet jeeta to purana LAN pata bhool jao -- warna agli baar
+        // khulte hi wo shortcut 2.5s khaata (phone ab bhi Wi-Fi par hai).
+        if (winner === INTERNET.url) localStorage.removeItem(PICKED_KEY);
+        else localStorage.setItem(PICKED_KEY, winner);
+      } catch { /* ignore */ }
+    }
   } catch {
-    API_BASE = SERVERS[0].url;    // koi nahi mila — pehla hi rakho, error saaf aayega
-    serverMila = false;           // ab jaldi fail karo, 15s rukna bekaar hai
-    try { localStorage.removeItem(PICKED_KEY); } catch { /* ignore */ }
+    // koi nahi mila — pehla hi rakho, error saaf aayega; aur ab jaldi fail
+    // karo, 15s rukna bekaar hai
+    if (lagao(SERVERS[0].url, false)) {
+      try { localStorage.removeItem(PICKED_KEY); } catch { /* ignore */ }
+    }
   }
   return API_BASE;
 }
 
-/** Kabhi bhi dobara tatolna ho (jaise request fail hone par). */
+/** Kabhi bhi dobara tatolna ho (jaise request fail hone par, ya internet ka
+ *  switch badla).  Hamesha NAYA tatolna -- chalta hua purana ho to uska
+ *  nateeja phenk diya jaata hai. */
 export function reprobeServer() { return pickServer(); }
 
 /**
@@ -340,7 +439,7 @@ export function installApiBase() {
     return realFetch(url, { ...(opts || {}), signal: ctl.signal })
       .finally(() => clearTimeout(t));
   };
-  window.fetch = (input, init) => {
+  const bhejo = (input, init) => {
     if (typeof input === "string") return withTimeout(withBase(input), init);
     // Request object aaya ho to uska url badal kar naya banao
     if (input && typeof input === "object" && typeof input.url === "string"
@@ -348,6 +447,17 @@ export function installApiBase() {
       return withTimeout(new Request(withBase(input.url), input), init);
     }
     return withTimeout(input, init);
+  };
+  window.fetch = (input, init) => {
+    // Server abhi tay ho raha ho (app abhi khuli, ya internet ka switch daba)
+    // to apni `/api/...` request uske BAAD bhejo -- warna wo pehle (LAN) pate
+    // par jaakar 3.5s baad fail hoti: Wi-Fi par khulte hi login dabaya to
+    // "Cannot reach server".  LAN par tatolna ~10-50ms ka hai, farak nahi
+    // padta.  Poore URL wali call (jaise update check ke pate) nahi rukti.
+    if (pickChal && typeof input === "string" && input.startsWith("/")) {
+      return pickChal.then(() => bhejo(input, init), () => bhejo(input, init));
+    }
+    return bhejo(input, init);
   };
 
   // 2) XMLHttpRequest (axios isi par chalta hai)
@@ -362,9 +472,17 @@ export function installApiBase() {
   }
 
   // 3) shuru me hi tay kar lo ki kaunsa raasta chalu hai.  App ko rokte nahi —
-  //    pehli request tab tak SERVERS[0] par jayegi; jawab aate hi base badal
-  //    jaata hai aur aage ki saari request sahi raaste par jaati hain.
-  pickServer();
+  //    `fetch` wali request tay hone tak ruk jaati hai (upar), axios/XHR wali
+  //    tab tak SERVERS[0] par jaati hai; jawab aate hi base badal jaata hai
+  //    aur aage ki saari request sahi raaste par jaati hain.
+  //    Khulte waqt KUCH na mila to 3s baad EK baar aur (thandi app ki pehli
+  //    HTTPS / Wi-Fi abhi juda na ho -- emulator par pakda).  Isse zyada apne
+  //    aap nahi (polling nahi); uske baad login ki patti ka "Retry" ya Settings
+  //    ka "Reconnect".  Beech me user ne khud dabaya ho to ye nahi chalta.
+  pickServer().then(() => {
+    if (serverMila) return;
+    setTimeout(() => { if (!serverMila && !pickChal) pickServer(); }, 3000);
+  });
 
   // 4) status bar ko app ke upar se hata do (upar wali tippani dekhein)
   setupStatusBar();
