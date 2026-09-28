@@ -1,5 +1,5 @@
 {
-  "version": "1.4.139",
-  "notes": "Pages now open again by themselves if the connection drops for a moment while opening them, and the error screen is clearer (in English).",
-  "released_at": "2026-09-26T11:45:03"
+  "version": "1.4.140",
+  "notes": "The app can now also connect over the internet (maintenance.dxtbdi.com) when the plant Ethernet / Wi-Fi server can't be reached. Internet On/Off switch at the top of the login page and in Settings.",
+  "released_at": "2026-09-28T12:46:40"
 }
