@@ -1,5 +1,5 @@
 {
-  "version": "2.0.0",
-  "notes": "Sidebar: Maintenance Dashboard and Maintenance KPI at the top. Overview page removed. Historical: Date limited to the selected Month. Dashboard Pending Breakdown shows 'Above N min'. Website logo position fixed.",
-  "released_at": "2026-10-03T21:26:07"
+  "version": "2.0.1",
+  "notes": "ANDON Live Board: Financial Year / Month / Date filter (default today; clear the date to see the whole month). Monitor, Fault History, Call History and Reports tabs removed. Full-screen button only on the TV. Spare card fix.",
+  "released_at": "2026-10-03T22:09:51"
 }
