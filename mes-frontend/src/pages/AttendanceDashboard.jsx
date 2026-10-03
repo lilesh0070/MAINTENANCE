@@ -54,6 +54,7 @@ import { isNativeApp } from "../constants/apiBase";
 import DashBack from "../components/DashBack";
 import AttendanceHistory from "./AttendanceHistory";
 import AttendanceLeave from "./AttendanceLeave";
+import AttendanceTvLeave from "./AttendanceTvLeave";
 import { rankOf } from "../constants/hierarchy";
 
 const NATIVE = isNativeApp();
@@ -70,7 +71,9 @@ const REFRESH_MS = 60_000;          // doosra supervisor badle to TV / doosre ph
      app  : html par `in-app-tv` (1350 ka layout, asli TV 804x1428 dp)
      web  : TV ke browser me website -- badi khadi screen, touch nahi
             (touch wale tablet / phone par pehle jaisa scroll)
-   `TvFit.jsx` sirf 2000px+ (4K Windows TV) par chalta hai, is TV par nahi. */
+   `TvFit.jsx` sirf 2000px+ (4K Windows TV) par chalta hai, is TV par nahi.
+   2026-10-03 (user ne chuna): neeche ki aadhi me ab LEAVE (`AttendanceTvLeave`,
+   absolute -- board ka naap nahi badalta), sirf dekhna, bina scroll. */
 const tvWebNow = () => typeof window !== "undefined" && !NATIVE && !COARSE
   && window.innerWidth >= 700 && window.innerHeight >= window.innerWidth * 1.3;
 
@@ -1326,10 +1329,13 @@ function AttendanceBoardPage() {
 
           {/* Leave -- chhutti ki arzi + Assistant Manager ki manzoori (user
               2026-10-03: "attendance ke neeche leave ka option do").  Board ke
-              NEECHE.  TV par NAHI -- TV ka layout band hai (bina kahe mat chhedo). */}
+              NEECHE.  TV par ye nahi -- wahan apna panel (neeche). */}
           {!tvMode && board && <AttendanceLeave token={token} today={board.today} />}
         </div>
         </div>
+        {/* TV: Leave neeche ki KHAALI aadhi screen me (user 2026-10-03: "neeche ki
+            khaali aadhi me") -- absolute, board ka naap / fit nahi badalta; sirf dekhna. */}
+        {tvMode && board && <AttendanceTvLeave token={token} today={board.today} tvApp={tvApp} />}
       </div>
 
       {drag && ghostPerson && createPortal(
