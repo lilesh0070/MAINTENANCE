@@ -1,0 +1,5 @@
+{
+  "version": "2.0.2",
+  "notes": "ANDON Configuration: PLC Assign now shows only ANDON (Model / Fault screens removed). Includes 2.0.1: Live Board Financial Year / Month / Date filter.",
+  "released_at": "2026-10-03T22:18:16"
+}
