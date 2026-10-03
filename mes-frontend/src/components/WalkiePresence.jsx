@@ -21,6 +21,7 @@ import { useAuth } from "../context/AuthContext";
 import { walkieLink, walkieWsBase } from "../constants/walkieLink";
 import { walkieNative } from "../constants/walkieNative";
 import { useServiceOn } from "../constants/clientServices";
+import { serverHaal } from "../constants/apiBase";
 
 export default function WalkiePresence() {
   const { token, user } = useAuth();
@@ -52,6 +53,10 @@ export default function WalkiePresence() {
   /* Service chal rahi hai aur WALKIE sun rahi hai? -- app peechhe jaane par
      page ka socket band karne ke liye (neeche). */
   const sevaWalkie = useRef(false);
+  /* Service / page ka socket AAKHRI baar kis pate par chalaya -- server ka
+     pata badle to dono ko naye par le jaane ke liye (neeche "mes-server"). */
+  const sevaShart = useRef(null);      // { url, andon, walkie } -- service chalayi to
+  const pageUrl   = useRef(null);      // walkieLink chalaya to uska pata
 
   // ── socket + service, har page par ─────────────────────────────
   useEffect(() => {
@@ -87,6 +92,7 @@ export default function WalkiePresence() {
          online, na parda, na aawaz. */
       const walkieHai = walkieOn && mera;
       if (walkieHai) walkieLink.start(token); else walkieLink.stop();
+      pageUrl.current = walkieHai ? walkieWsBase() : null;
 
       if (!walkieNative.hai()) return;           // website -- service hai hi nahi
 
@@ -101,6 +107,7 @@ export default function WalkiePresence() {
            service mat chalao (chal rahi ho to rok do).  Tab app khuli ho
            tabhi page khud sunta aur bajata hai; band app me kuch nahi. */
         sevaWalkie.current = false;
+        sevaShart.current = null;
         await walkieNative.stop().catch(() => {});
         if (!ruk) walkieLink.setPlayHere(true);
         return;
@@ -118,7 +125,9 @@ export default function WalkiePresence() {
         .catch(() => {});
       await walkieNative.requestPerms().catch(() => {});
       if (ruk) return;
-      await walkieNative.start(walkieWsBase(), token, { andon: andonSuno, walkie: walkieHai }).catch(() => {});
+      const url = walkieWsBase();
+      sevaShart.current = { url, andon: andonSuno, walkie: walkieHai };
+      await walkieNative.start(url, token, { andon: andonSuno, walkie: walkieHai }).catch(() => {});
       taaza();
       ghadi = setInterval(taaza, 8000);
     };
@@ -126,6 +135,36 @@ export default function WalkiePresence() {
 
     return () => { ruk = true; if (ghadi) clearInterval(ghadi); if (phir) clearTimeout(phir); };
   }, [token, walkieOn, bgOn, andonSuno]);
+
+  /* ── Server ka pata BADLA -> service aur page ka socket bhi naye pate par ──
+     User 2026-10-03: "app ke upar se internet band karne ke baad bhi ANDON
+     call aati hai".  Wajah: Settings me Internet band karne par app dobara
+     tatolti hai -- LAN mila to page reload (sab naye pate par), par LAN NA
+     mila to reload nahi hota, aur Java service purane INTERNET socket
+     (wss://maintenance.dxtbdi.com) par hi judi rehti thi -> ANDON aata raha.
+     Ab har tatolne ke baad (switch, Reconnect, login ki patti ka Retry, ya
+     app khulte hi der se poora hua tatolna) pata badla ho to service ko naya
+     pata (wahi andon/walkie shart) aur page ka socket naye pate par.  Server
+     na mila ho to bhi -- tab service naye (LAN) pate par koshish karti rehti
+     hai, internet par nahi.  Website par ye event aata hi nahi. */
+  useEffect(() => {
+    if (!token) return undefined;
+    const badla = () => {
+      if (serverHaal().chal) return;                 // abhi tatol hi rahe hain
+      const url = walkieWsBase();
+      const s = sevaShart.current;
+      if (s && s.url !== url) {
+        sevaShart.current = { ...s, url };
+        walkieNative.start(url, token, { andon: s.andon, walkie: s.walkie }).catch(() => {});
+      }
+      if (pageUrl.current && pageUrl.current !== url) {
+        pageUrl.current = url;
+        walkieLink.start(token);                     // purana band karke naye pate par
+      }
+    };
+    window.addEventListener("mes-server", badla);
+    return () => window.removeEventListener("mes-server", badla);
+  }, [token]);
 
   /* App PEECHHE gayi aur service walkie sun rahi hai -- page ka apna socket
      band (wapas aate hi phir jud jaata hai).  Warna wo socket bhi har 20 sec

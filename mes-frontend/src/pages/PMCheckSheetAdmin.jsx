@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { FormatSheet } from "./pm/FormatSheet";
+import { PM_LAYOUTS, PM_LAYOUT_KEYS, pmLayout, sheetLayoutKey } from "./pm/pmLayouts";
 
 // Financial year (Apr→Mar) a YYYY-MM-DD date belongs to, e.g. "2026-27".
 const fyOf = (dateStr) => {
@@ -109,6 +110,28 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
   useEffect(() => {   // format layout, loaded once (to render a saved sheet)
     api(`/check-sheet-format`).then((d) => setHistFmt(d && d.format ? d.format : null)).catch(() => {});
   }, [api]);
+
+  // ── LAYOUT: kaunsa format chalega (user 2026-10-03) ──────────────────
+  // "update wale option me preventive wale me option do kaunsa format use
+  //  karna hai -- jo chahiye wo save kar lunga to wahi aayega."  Sirf admin
+  // badalta hai (server bhi `require_admin`).  Nayi bhari jaane wali sheet par
+  // lagta hai; pehle ki bhari sheet apne layout me hi dikhti hain.
+  const layoutNow = pmLayout(histFmt).key;
+  const [layoutPick, setLayoutPick] = useState(null);       // null = abhi wala
+  const layoutSel = layoutPick || layoutNow;
+  const [layoutSaving, setLayoutSaving] = useState(false);
+  const [layoutPreview, setLayoutPreview] = useState(false);
+  const canLayout = isAdmin && !readOnly;
+  const saveLayout = async () => {
+    setLayoutSaving(true);
+    try {
+      await api(`/check-sheet-layout`, { method: "PUT", body: JSON.stringify({ layout: layoutSel }) });
+      setHistFmt((f) => (f ? { ...f, layout: layoutSel } : f));
+      setLayoutPick(null);
+      say(`Saved ✓ — new PM check sheets will use “${PM_LAYOUTS[layoutSel].name}”`);
+    } catch (e) { say(String(e.message || e), "err"); }
+    finally { setLayoutSaving(false); }
+  };
 
   useEffect(() => {
     if (tab !== "history" || !mno) { setHistSheets([]); setHistRevs({ current: null, history: [] }); return; }
@@ -340,6 +363,58 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
               {fmtSaving ? "…" : "💾 Save Format No."}</button>
           )}
         </div>
+      </div>
+      )}
+
+      {/* ── FORMAT tab: kaunsa LAYOUT chalega (2026-10-03) ── */}
+      {tab === "format" && (
+      <div style={{ ...card, borderLeft: "4px solid #0891b2" }}>
+        <div style={{ fontWeight: 800, fontSize: 13, color: "#0f172a" }}>
+          🧾 PM Check Sheet — which format to use
+          <span style={{ fontWeight: 600, color: "#94a3b8" }}> (applies to new sheets; sheets already filled keep their own format)</span>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(270px, 1fr))", gap: 10, marginTop: 10 }}>
+          {PM_LAYOUT_KEYS.map((k) => {
+            const L = PM_LAYOUTS[k];
+            const on = layoutSel === k;
+            return (
+              <label key={k} style={{ border: `2px solid ${on ? "#0891b2" : "#e2e8f0"}`, borderRadius: 10,
+                                      padding: "10px 12px", background: on ? "#ecfeff" : "#fff",
+                                      cursor: canLayout ? "pointer" : "default", display: "block" }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input type="radio" name="pm-layout" checked={on} disabled={!canLayout}
+                         onChange={() => setLayoutPick(k)} />
+                  <b style={{ fontSize: 13, color: "#0f172a" }}>{L.name}</b>
+                  {k === layoutNow && (
+                    <span style={{ fontSize: 10.5, fontWeight: 800, color: "#15803d", background: "#f0fdf4",
+                                   border: "1px solid #bbf7d0", borderRadius: 99, padding: "1px 8px" }}>IN USE</span>
+                  )}
+                </span>
+                <span style={{ display: "block", fontSize: 12, color: "#475569", marginTop: 5, lineHeight: 1.45 }}>{L.desc}</span>
+              </label>
+            );
+          })}
+        </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+          {canLayout ? (
+            <button onClick={saveLayout} disabled={layoutSaving || layoutSel === layoutNow || !histFmt}
+                    style={{ padding: "9px 18px", borderRadius: 8, border: "none",
+                             background: layoutSel === layoutNow ? "#94a3b8" : "#0891b2", color: "#fff",
+                             fontWeight: 800, fontSize: 13, cursor: layoutSel === layoutNow ? "default" : "pointer" }}>
+              {layoutSaving ? "…" : "💾 Save — use this format"}</button>
+          ) : (
+            <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>Only admin can change the format.</span>
+          )}
+          <button onClick={() => setLayoutPreview((v) => !v)} disabled={!histFmt}
+                  style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid #cbd5e1", background: "#fff",
+                           color: "#334155", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+            {layoutPreview ? "Hide preview" : "👁 Preview"}</button>
+        </div>
+        {layoutPreview && histFmt && (
+          <div style={{ marginTop: 12 }}>
+            <FormatSheet f={{ ...histFmt, layout: layoutSel, blank_rows: 6 }} />
+          </div>
+        )}
       </div>
       )}
 
@@ -742,8 +817,12 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
             </div>
             <FormatSheet
               printable
-              f={histFmt ? { ...histFmt, doc_footer: viewFill.doc_footer || histFmt.doc_footer } : histFmt}
+              // sheet ka APNA layout (jisme bhari thi) -- purani = classic
+              f={histFmt ? { ...histFmt, doc_footer: viewFill.doc_footer || histFmt.doc_footer,
+                             layout: sheetLayoutKey(viewFill.doc_footer) } : histFmt}
               points={viewFill.entries || []}
+              // sheet ke neeche spare ki list (sirf padhne ke liye)
+              sheetSpares={viewFill.sheet_spares || []}
               rev={{ rev_no: viewFill.rev_no, rev_date: viewFill.rev_date }}
               signVals={[viewFill.prepared_by, viewFill.checked_by, viewFill.approved_by]}
               signImgs={viewFill.sign_imgs || []}

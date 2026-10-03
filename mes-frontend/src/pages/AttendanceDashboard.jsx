@@ -38,6 +38,13 @@
  *
  * Routing: /maintenance-attendance · Access: "maintenance-attendance"
  * (likhna = full).  Backend: /api/attendance
+ *
+ * 2026-10-03: page (route + menu) SABKE LIYE khula -- Leave har koi apni ID
+ * se bhare (user).  BOARD ab bhi sirf "maintenance-attendance" wale ko; baaki
+ * ko yahi page sirf Leave ke saath (`LeaveOnlyPage`, neeche).
+ * Kataar ke andar kram HIERARCHY se (Manager > DM > AM > Senior Engineer >
+ * Engineer > Supervisor > DET), phir ghaseeta hua `pos` -- server `rank`
+ * bhejta hai (purana server na bheje to designation se, ../constants/hierarchy).
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -46,6 +53,8 @@ import { api } from "../api/client";
 import { isNativeApp } from "../constants/apiBase";
 import DashBack from "../components/DashBack";
 import AttendanceHistory from "./AttendanceHistory";
+import AttendanceLeave from "./AttendanceLeave";
+import { rankOf } from "../constants/hierarchy";
 
 const NATIVE = isNativeApp();
 const PAGE_KEY = "maintenance-attendance";
@@ -113,13 +122,16 @@ function tenure(doj, onDay) {
     .filter(Boolean).join(" ");
 }
 
-// Kataar -> log (pos ke kram me).  Server kram me hi deta hai; yahan dobara
-// isliye ki ghaseetne ke baad hum khud pos badalte hain.
+// Kataar -> log: pehle HIERARCHY (user 2026-10-03: "hierarchy ke hisaab se
+// naam upar se neeche"), phir pos.  Server kram me hi deta hai; yahan dobara
+// isliye ki ghaseetne ke baad hum khud pos badalte hain.  Ek hi pad ke log
+// apas me ghaseet kar aage-peeche ho sakte hain; upar wale pad ke upar nahi.
 function groupLanes(people) {
   const L = Object.fromEntries(SLOTS.map((s) => [s.key, []]));
   for (const p of people) (L[p.slot] || L.G).push(p);
   for (const k of Object.keys(L)) {
-    L[k].sort((a, b) => a.pos - b.pos || a.name.localeCompare(b.name) || a.id - b.id);
+    L[k].sort((a, b) => rankOf(a) - rankOf(b) || a.pos - b.pos
+      || a.name.localeCompare(b.name) || a.id - b.id);
   }
   return L;
 }
@@ -245,8 +257,66 @@ const IcoCam = () => (
   </svg>
 );
 
-/* ═══════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════
+   Board sirf "maintenance-attendance" wale ko (pehle jaisa).  Baaki sabko
+   yahi page sirf LEAVE ke saath -- arzi har koi apni ID se bhare (user
+   2026-10-03).  Haq / chhanti backend par (attendance.py LEAVE hissa).
+   ═══════════════════════════════════════════════════════════════════ */
 export default function AttendanceDashboard() {
+  const { canAccess } = useAuth();
+  return canAccess(PAGE_KEY) ? <AttendanceBoardPage /> : <LeaveOnlyPage />;
+}
+
+// Board wale page ka header (bd-*) -- responsive.css ke phone / tablet niyam
+// inhi class par hain, isliye Leave wale akele page par bhi wahi.
+const leaveOnlyCss = (theme) => `
+  @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@600;700;800&display=swap');
+  .bd-root { min-height:100vh; background:#f1f5f9; font-family:'Barlow',sans-serif; padding-bottom:96px; }
+  .bd-topbar {
+    background:#fff; border-bottom:1px solid #e2e8f0;
+    padding:0 40px 0 88px; height:60px;
+    display:flex; align-items:center; justify-content:space-between;
+    position:sticky; top:0; z-index:100; box-shadow:0 1px 3px rgba(0,0,0,.06);
+  }
+  .bd-topbar::after { content:''; position:absolute; bottom:0; left:0; right:0;
+                      height:2px; background:${theme.gradient}; }
+  .bd-title { position:absolute; left:50%; transform:translateX(-50%);
+              font-family:'Barlow Condensed',sans-serif;
+              font-size:34px; font-weight:800; color:#0f172a;
+              letter-spacing:-.01em; pointer-events:none; white-space:nowrap; }
+  .bd-title span { color:${theme.accent}; }
+  .bd-user-pill { display:flex; align-items:center; gap:10px; padding:6px 14px;
+                  border-radius:99px; border:1.5px solid #e2e8f0; background:#f8fafc;
+                  font-size:12px; font-weight:600; color:#334155; white-space:nowrap; }
+  .bd-user-pill b { color:#0f172a; font-weight:800; }
+  .attl-body { padding:6px 32px 0; max-width:1100px; margin:0 auto; }
+  @media (max-width: 760px) {
+    .bd-title { font-size:20px; }
+    .attl-body { padding:2px 12px 0; }
+    body:not(.in-app):not(.in-app-tab):not(.in-app-tv) .bd-user-pill { display:none; }
+  }
+`;
+
+function LeaveOnlyPage() {
+  const { token, user, theme } = useAuth();
+  return (
+    <>
+      <style>{leaveOnlyCss(theme)}</style>
+      <div className="bd-root">
+        <div className="bd-topbar">
+          <div><DashBack /></div>
+          <div className="bd-title">Leave</div>
+          {user?.username && <div className="bd-user-pill">Signed in as <b>{user.username}</b></div>}
+        </div>
+        <div className="attl-body">
+          <AttendanceLeave token={token} />
+        </div>
+      </div>
+    </>
+  );
+}
+
+function AttendanceBoardPage() {
   const { token, user, theme, canWrite, isAdmin } = useAuth();
   const mayWrite = canWrite(PAGE_KEY);
 
@@ -1253,6 +1323,11 @@ export default function AttendanceDashboard() {
               );
             })}
           </div>
+
+          {/* Leave -- chhutti ki arzi + Assistant Manager ki manzoori (user
+              2026-10-03: "attendance ke neeche leave ka option do").  Board ke
+              NEECHE.  TV par NAHI -- TV ka layout band hai (bina kahe mat chhedo). */}
+          {!tvMode && board && <AttendanceLeave token={token} today={board.today} />}
         </div>
         </div>
       </div>

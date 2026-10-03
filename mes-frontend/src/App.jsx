@@ -342,9 +342,12 @@ function AppRoutes() {
         <Protected requiredAccess="maintenance-3d-view"><ThreeDView /></Protected>
       } />
       {/* Attendance Dashboard — shift-wise board (G/A/B/Week Off/Leave/WFH),
-          card ghaseet kar shift badlo.  Likhna = full (rok backend par bhi). */}
+          card ghaseet kar shift badlo.  Likhna = full (rok backend par bhi).
+          2026-10-03: route SABKE LIYE khula -- Leave har koi apni ID se bhare
+          (user ka kaha).  BOARD ab bhi sirf "maintenance-attendance" wale ko:
+          faisla page ke andar (AttendanceDashboard.jsx), rok backend par. */}
       <Route path="/maintenance-attendance" element={
-        <Protected requiredAccess="maintenance-attendance"><AttendanceDashboard /></Protected>
+        <Protected><AttendanceDashboard /></Protected>
       } />
       <Route path="/maintenance-machine-dmc" element={
         <Protected requiredAccess="maintenance-machine-dmc"><MachineDMC /></Protected>

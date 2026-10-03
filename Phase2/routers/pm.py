@@ -134,6 +134,61 @@ def _get_doc_footer(name: str) -> dict:
             "rev_date":  df.get("rev_date", "")}
 
 
+# ── CHECK-SHEET LAYOUT (user 2026-10-03) ─────────────────────────────────
+# "update wale option me preventive wale me option do kaunsa format use karna
+#  hai -- ek format aur banayenge, jo chahiye wo save kar lunga to wahi aayega"
+#   classic       = purana: Observation, Action Taken, Spares Used, Status
+#                   (OK/NG list), Sign -- har row par
+#   status_first  = naya: Status METHOD ke turant baad (tap: OK -> NG ->
+#                   khaali), phir SPARES USED (tap: YES -> NO -> khaali; detail
+#                   sheet ke neeche wali list me, Where Used = "Point N - ..."),
+#                   Observation / Action Taken SIRF NG par; Sign column nahi
+#                   (sign neeche hai hi)
+# Chuna hua layout format JSON ki `layout` key me (Document Update -> PM Check
+# Sheet -> Format).  Har bhari sheet ke `doc_footer` snapshot me bhi -- purani
+# sheet hamesha APNE layout me dikhe; jisme nahi wo "classic" (pehle ki sab).
+# Frontend me dono ka naqsha: mes-frontend/src/pages/pm/pmLayouts.js
+_PM_LAYOUTS = ("classic", "status_first")
+
+
+def _current_layout() -> str:
+    """Abhi Document Update me chuna hua layout (na ho to classic)."""
+    _ensure_format_table()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        cur.execute("SELECT format->>'layout' AS l FROM maintenance_pm_check_sheet_format "
+                    "WHERE name='PM CHECK SHEET FORMAT'")
+        r = cur.fetchone()
+    lay = (r["l"] if r else None) or "classic"
+    return lay if lay in _PM_LAYOUTS else "classic"
+
+
+def _layout_saaf(entries: list, layout: str) -> list:
+    """status_first: Observation / Action Taken SIRF NG wale point par rakho
+    (OK par screen par dikhte hi nahi -- beech me NG->OK kiya ho to purana likha
+    na bache); har row ka sign khaana is layout me hai hi nahi; Spares Used
+    sirf YES / NO (baaki kuch aaye to khaali)."""
+    if layout != "status_first":
+        return entries
+    out = []
+    for e in entries or []:
+        e = dict(e) if isinstance(e, dict) else {}
+        if str(e.get("status") or "").strip().upper() != "NG":
+            e["observation"] = ""
+            e["action_taken"] = ""
+        e["sign"] = ""
+        sp = str(e.get("spares_used") or "").strip().upper()
+        e["spares_used"] = sp if sp in ("YES", "NO") else ""
+        out.append(e)
+    return out
+
+
+def _sheet_layout(doc_footer) -> str:
+    """Bhari sheet ka layout -- uske snapshot se; purani (bina layout) = classic."""
+    lay = (doc_footer or {}).get("layout") if isinstance(doc_footer, dict) else None
+    return lay if lay in _PM_LAYOUTS else "classic"
+
+
 # ── Revision history for check points ────────────────────────────────
 # maintenance_pm_check_point always holds the CURRENT revision's points.
 # When the admin bumps the revision (new rev_no must be numerically
@@ -702,6 +757,10 @@ class CheckSheetFill(BaseModel):
     # sheet-level spares list — one for the whole sheet (not per check point).
     # Each item: {where_used, spare_name, spare_model_no, spare_cnmm_no, spare_qty}
     sheet_spares: List[dict] = []
+    # kis layout me bhari (2026-10-03) -- "classic" | "status_first".  Nayi
+    # sheet par hi maana jaata hai; resubmit / admin-edit me sheet ka apna
+    # (snapshot wala) layout chalta hai.  Na bheje to Document Update wala.
+    layout:       Optional[str] = None
 
 
 def _record_pm_spares(body: "CheckSheetFill", pm_date) -> None:
@@ -759,6 +818,10 @@ def save_check_sheet_fill(body: CheckSheetFill, user=Depends(get_current_user)):
     # SNAPSHOT the CURRENT check-sheet format number/rev at fill time, so this
     # saved sheet keeps its own format even after the format is later updated.
     snap = _get_doc_footer("PM CHECK SHEET FORMAT")
+    # layout bhi snapshot me -- jis layout me bhari usi me hamesha dikhe
+    lay = body.layout if body.layout in _PM_LAYOUTS else _current_layout()
+    snap["layout"] = lay
+    entries = _layout_saaf(body.entries, lay)
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
@@ -771,7 +834,7 @@ def save_check_sheet_fill(body: CheckSheetFill, user=Depends(get_current_user)):
             RETURNING id
         """, (body.zone_name, body.line_name, body.machine_no, body.machine_name,
               pmd, str(body.rev_no or ""), str(body.rev_date or ""),
-              json.dumps(body.entries), body.prepared_by, "",
+              json.dumps(entries), body.prepared_by, "",
               "", author, json.dumps(snap),
               json.dumps([prepared_sign, None, None]), "FILLED",
               json.dumps([_log("fill", "-", "FILLED", body.prepared_by, author)]),
@@ -808,7 +871,7 @@ def resubmit_check_sheet_fill(fill_id: int, body: CheckSheetFill, user=Depends(g
     author = user.get("username") if isinstance(user, dict) else getattr(user, "username", "user")
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("SELECT id, stage, chain_log FROM maintenance_pm_check_sheet_filled "
+        cur.execute("SELECT id, stage, chain_log, doc_footer FROM maintenance_pm_check_sheet_filled "
                     "WHERE id=%s FOR UPDATE", (fill_id,))
         row = cur.fetchone()
         if not row:
@@ -817,6 +880,8 @@ def resubmit_check_sheet_fill(fill_id: int, body: CheckSheetFill, user=Depends(g
         if cur_stage != "REJECTED":
             raise HTTPException(409, f"Only a sent-back sheet can be edited — this one is at "
                                      f"'{cur_stage}'. Refresh the list.")
+        # sheet ka APNA layout (bharte waqt wala) -- abhi chuna hua nahi
+        entries = _layout_saaf(body.entries, _sheet_layout(row.get("doc_footer")))
         log = list(row.get("chain_log") or [])
         log.append(_log("resubmit", "REJECTED", "FILLED", body.prepared_by, author))
         cur2 = conn.cursor()
@@ -828,7 +893,7 @@ def resubmit_check_sheet_fill(fill_id: int, body: CheckSheetFill, user=Depends(g
                    checked_by='', checked_by_user=NULL, checked_at=NULL,
                    approved_by='', approved_by_user=NULL, approved_at=NULL
              WHERE id=%s
-        """, (pmd, json.dumps(body.entries), body.prepared_by,
+        """, (pmd, json.dumps(entries), body.prepared_by,
               json.dumps([prepared_sign, None, None]), json.dumps(log),
               json.dumps([s for s in (body.sheet_spares or []) if (s.get("spare_name") or "").strip()]),
               fill_id))
@@ -878,7 +943,7 @@ def admin_update_check_sheet_fill(fill_id: int, body: CheckSheetFill,
     author = admin.get("username") if isinstance(admin, dict) else "admin"
     with get_conn() as conn:
         cur = dict_cursor(conn)
-        cur.execute("""SELECT id, stage, chain_log, machine_no, pm_date
+        cur.execute("""SELECT id, stage, chain_log, machine_no, pm_date, doc_footer
                          FROM maintenance_pm_check_sheet_filled
                         WHERE id=%s FOR UPDATE""", (fill_id,))
         row = cur.fetchone()
@@ -887,6 +952,8 @@ def admin_update_check_sheet_fill(fill_id: int, body: CheckSheetFill,
 
         purana_mno  = row.get("machine_no")
         purani_date = row.get("pm_date")
+        # sheet ka APNA layout (bharte waqt wala) -- abhi chuna hua nahi
+        entries = _layout_saaf(body.entries, _sheet_layout(row.get("doc_footer")))
 
         log = list(row.get("chain_log") or [])
         log.append(_log("admin-edit", str(row.get("stage") or ""),
@@ -900,7 +967,7 @@ def admin_update_check_sheet_fill(fill_id: int, body: CheckSheetFill,
                    chain_log=%s::jsonb
              WHERE id=%s
         """, (body.zone_name, body.line_name, body.machine_no, body.machine_name,
-              pmd, json.dumps(body.entries),
+              pmd, json.dumps(entries),
               json.dumps([s for s in (body.sheet_spares or [])
                           if (s.get("spare_name") or "").strip()]),
               json.dumps(log), fill_id))
@@ -1811,6 +1878,41 @@ def update_check_sheet_doc(body: DocFooterIn, user=Depends(get_current_user)):
     if not updated:
         raise HTTPException(404, "format not found")
     return {"ok": True, "format_name": name, "doc_footer": footer}
+
+
+class LayoutIn(BaseModel):
+    layout: str
+
+
+@router.put("/check-sheet-layout")
+def set_check_sheet_layout(body: LayoutIn, admin=Depends(require_admin)):
+    """Kaunsa LAYOUT chalega (classic / status_first) -- SIRF admin (Document
+    Update -> PM Check Sheet -> Format).  Sirf NAYI bhari jaane wali sheet par
+    lagta hai; pehle ki bhari sheet apne snapshot wale layout me hi rehti hain
+    (`_sheet_layout`)."""
+    lay = (body.layout or "").strip()
+    if lay not in _PM_LAYOUTS:
+        raise HTTPException(400, f"unknown layout '{lay}'")
+    _ensure_format_table()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""UPDATE maintenance_pm_check_sheet_format
+                          SET format = jsonb_set(COALESCE(format,'{}'::jsonb), '{layout}',
+                                                 to_jsonb(%s::text), true),
+                              updated_at = NOW()
+                        WHERE name='PM CHECK SHEET FORMAT'""", (lay,))
+        n = cur.rowcount
+        try:
+            from main import write_audit
+            write_audit(conn, action="PM_LAYOUT_SET",
+                        entity_type="maintenance_pm_check_sheet_format",
+                        details=f"PM check sheet layout -> {lay}", user=admin)
+        except Exception as e:
+            print(f"[PM] layout ka audit nahi likha: {e}")
+        conn.commit()
+    if not n:
+        raise HTTPException(404, "format not found")
+    return {"ok": True, "layout": lay}
 
 
 def _author(user) -> str:

@@ -1,5 +1,5 @@
 {
- "columns": 839,
+ "columns": 857,
  "db": "maintenance_db",
  "schema": {
   "andon_call_output": {
@@ -1419,6 +1419,116 @@
     "default": null,
     "nullable": true,
     "pos": 5,
+    "type": "character varying"
+   }
+  },
+  "maintenance_attendance_leave": {
+   "applied_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 11,
+    "type": "timestamp without time zone"
+   },
+   "applied_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 9,
+    "type": "character varying"
+   },
+   "applied_by_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 10,
+    "type": "integer"
+   },
+   "decided_at": {
+    "default": null,
+    "nullable": true,
+    "pos": 13,
+    "type": "timestamp without time zone"
+   },
+   "decided_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 12,
+    "type": "character varying"
+   },
+   "emp_code": {
+    "default": null,
+    "nullable": true,
+    "pos": 4,
+    "type": "character varying"
+   },
+   "from_date": {
+    "default": null,
+    "nullable": false,
+    "pos": 5,
+    "type": "date"
+   },
+   "id": {
+    "default": "nextval(<sequence>)",
+    "nullable": false,
+    "pos": 1,
+    "type": "integer"
+   },
+   "note": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "character varying"
+   },
+   "orig_from": {
+    "default": null,
+    "nullable": true,
+    "pos": 15,
+    "type": "date"
+   },
+   "orig_to": {
+    "default": null,
+    "nullable": true,
+    "pos": 16,
+    "type": "date"
+   },
+   "reason": {
+    "default": null,
+    "nullable": true,
+    "pos": 7,
+    "type": "character varying"
+   },
+   "staff_id": {
+    "default": null,
+    "nullable": true,
+    "pos": 2,
+    "type": "integer"
+   },
+   "staff_name": {
+    "default": null,
+    "nullable": false,
+    "pos": 3,
+    "type": "character varying"
+   },
+   "status": {
+    "default": "'PENDING'::character varying",
+    "nullable": false,
+    "pos": 8,
+    "type": "character varying"
+   },
+   "to_date": {
+    "default": null,
+    "nullable": false,
+    "pos": 6,
+    "type": "date"
+   },
+   "updated_at": {
+    "default": "now()",
+    "nullable": false,
+    "pos": 18,
+    "type": "timestamp without time zone"
+   },
+   "updated_by": {
+    "default": null,
+    "nullable": true,
+    "pos": 17,
     "type": "character varying"
    }
   },
@@ -5181,6 +5291,6 @@
    }
   }
  },
- "tables": 72,
- "taken_at": "2026-09-26T10:41:08"
+ "tables": 73,
+ "taken_at": "2026-10-03T11:13:12"
 }

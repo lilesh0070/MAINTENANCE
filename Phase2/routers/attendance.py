@@ -52,7 +52,7 @@ permission nahi hoti.
 Endpoints (prefix /api/attendance)
 ----------------------------------
 GET    /app-users                app ke user (id/username/emp code/designation/on_board) -- Add Member ke liye (admin)
-GET    /on-duty                  abhi ki shift ke log -- SIRF NAAM (dashboard)
+GET    /on-duty                  dono shift ke log (abhi wali upar, hierarchy kram) -- SIRF NAAM (dashboard)
 GET    /board?day=YYYY-MM-DD     us din ka board (photo ke bina)
 PUT    /board                    {day, lanes:{slot:[ids]}} -- ghaseetne ke baad
 GET    /photos?ids=1,2,3         {id: dataURL}
@@ -61,6 +61,15 @@ GET    /history?start=&end=      History: har aadmi x har din ki kataar + ginti 
 POST   /staff                    naya aadmi {..., slot, day}        (admin)
 PUT    /staff/{id}               details / photo / kataar badlo     (admin)
 DELETE /staff/{id}?day=          us din se hatao                    (admin)
+
+Leave (2026-10-03) -- neeche "LEAVE" wala hissa (board ki page-permission NAHI; haq pad se)
+GET    /leave?start=&end=&status=&staff_id=   {pending, rows (record), me, people, ...}
+POST   /leave                    nayi arzi {staff_id, from_date, to_date, reason}   (apne naam ki; maint/admin kisi ki)
+POST   /leave/{id}/approve       {from_date?, to_date?, note?}      (us pad ka approver)
+PUT    /leave/{id}               date badlo {from_date, to_date}    (us pad ka approver)
+POST   /leave/{id}/reject        {note?}                            (us pad ka approver)
+POST   /leave/{id}/cancel        PENDING arzi wapas (jiski / jisne bhari / approver)
+DELETE /leave/{id}               row mitao                          (SIRF admin; audit me naqal)
 """
 import re
 from collections import defaultdict
@@ -268,6 +277,34 @@ _JUDA_USER = """
       ) ju ON TRUE"""
 _DESIG = f"COALESCE({role_label_sql('ju.role')}, s.designation) AS designation"
 
+# ── Hierarchy (user 2026-10-03) ─────────────────────────────────────────
+# "attendance me hierarchy ke hisaab se naam aaye upar se neeche -- main
+# dashboard me shift ke hisaab se, aur attendance panel me bhi."  Kram (user
+# ne baad me theek kiya -- "supervisor pehle aana tha, DET baad me"):
+# Manager, Deputy Manager, Assistant Manager, Senior Engineer, Engineer,
+# Supervisor, DET; anjaan sabse neeche.  Board ki ek kataar ke andar pehle ye kram,
+# phir ghaseeta hua (`pos`) -- yaani ek hi pad ke log apas me ghaseet kar
+# aage-peeche ho sakte hain.  Leave ki manzoori bhi isi pad se (neeche LEAVE).
+# Pad = juda app user ka ROLE (emp code se); juda nahi to save ki hui
+# designation ka naam ("Senior Engineer" -> senior_engineer).
+_RANK = {"senior_manager": 0, "manager": 1, "deputy_manager": 2, "assistant_manager": 3,
+         "senior_engineer": 4, "engineer": 5, "supervisor": 6, "det": 7}
+_RANK_BAAKI = 9
+
+
+def _pad(role: Optional[str], desig: Optional[str] = None) -> str:
+    """Role (ya designation) se pad ki kunji -- anjaan ho to ''."""
+    r = (role or "").strip().lower()
+    if r in _RANK:
+        return r
+    d = re.sub(r"[^a-z]+", "_", (desig or "").strip().lower()).strip("_")
+    return d if d in _RANK else ""
+
+
+def _rank(role: Optional[str], desig: Optional[str] = None) -> int:
+    return _RANK.get(_pad(role, desig), _RANK_BAAKI)
+
+
 # ── Board padhna ────────────────────────────────────────────────────────
 # Har aadmi ki aakhri row (day <= D).  Photo ka sirf updated_at -- asli
 # photo (TEXT) yahan nahi padhi jaati.
@@ -279,7 +316,7 @@ _BOARD_SQL = f"""
          WHERE b.day <= %(d)s
          ORDER BY b.staff_id, b.day DESC
     )
-    SELECT s.id, s.name, s.emp_code, {_DESIG}, s.contact, s.doj,
+    SELECT s.id, s.name, s.emp_code, {_DESIG}, ju.role AS juda_role, s.contact, s.doj,
            a.slot, a.pos, a.updated_by, a.updated_at,
            p.updated_at AS photo_at
       FROM aakhri a
@@ -291,8 +328,12 @@ _BOARD_SQL = f"""
 
 
 def _board(cur, d: date) -> list:
+    """Us din ka board -- kram: pad (hierarchy), phir ghaseeta hua `pos`, phir naam."""
     cur.execute(_BOARD_SQL, {"d": d})
-    return cur.fetchall()
+    rows = cur.fetchall()
+    rows.sort(key=lambda r: (_rank(r["juda_role"], r["designation"]), r["pos"] or 0,
+                             (r["name"] or "").lower(), r["id"]))
+    return rows
 
 
 def _lanes(rows) -> dict:
@@ -315,6 +356,7 @@ def _jawab(cur, d: date, lvl: str) -> dict:
             "doj": r["doj"].isoformat() if r["doj"] else None,
             "slot": r["slot"] if r["slot"] in SLOTS else "G",
             "pos": r["pos"],
+            "rank": _rank(r["juda_role"], r["designation"]),
             "photo_ver": int(r["photo_at"].timestamp() * 1000) if r["photo_at"] else None,
         })
         if r["updated_at"] and (last is None or r["updated_at"] > last["updated_at"]):
@@ -522,6 +564,12 @@ def app_users(user=Depends(get_current_user)):
 # isliye us khidki me din ek peeche kar dete hain (wahi "plant day" wali soch
 # jo ANDON ke Today card me hai).
 #
+# User 2026-10-03: "A shift chal rahi hai to sirf A ki aa rahi hai -- A aur B
+# dono ki aani chahiye; B me bhi dono, bas shift ke hisaab se upar-neeche."
+# Isliye `groups`: abhi wali shift UPAR, doosri neeche; har group me log
+# hierarchy ke kram me (`_board`).  `shift` / `slots` / `people` / `count`
+# pehle jaise (sirf abhi wali shift) -- purani APK yahi padhti hai.
+#
 # ⚠ Yahan page-permission JAAN-BOOJH KAR nahi maangi jaati: jawab me sirf naam,
 #   emp code, designation aur shift jaate hain -- contact number, photo aur
 #   date-of-joining kuch NAHI.  Attendance Dashboard (jisme wo sab hai) par rok
@@ -544,13 +592,26 @@ def on_duty(user=Depends(get_current_user)):
             din = din - timedelta(days=1)
     with get_conn() as conn:
         rows = _board(dict_cursor(conn), din)
-    log = [{"id": r["id"], "name": r["name"], "emp_code": r["emp_code"] or "",
-            "designation": r["designation"] or "",
-            "slot": r["slot"] if r["slot"] in SLOTS else "G"}
-           for r in rows
-           if (r["slot"] if r["slot"] in SLOTS else "G") in slots]
+
+    def kaun(sl):
+        return [{"id": r["id"], "name": r["name"], "emp_code": r["emp_code"] or "",
+                 "designation": r["designation"] or "",
+                 "slot": _norm_slot(r["slot"]),
+                 "rank": _rank(r["juda_role"], r["designation"])}
+                for r in rows if _norm_slot(r["slot"]) in sl]
+
+    din_wale, raat_wale = ("G", "A"), ("B",)
+    groups = [{"shift": "G + A", "slots": list(din_wale), "people": kaun(din_wale)},
+              {"shift": "B", "slots": list(raat_wale), "people": kaun(raat_wale)}]
+    if slots == raat_wale:
+        groups.reverse()
+    for i, g in enumerate(groups):
+        g["now"] = i == 0
+        g["count"] = len(g["people"])
+    log = groups[0]["people"]
     return {"shift": label, "slots": list(slots), "day": din.isoformat(),
-            "now": ab.strftime("%H:%M"), "count": len(log), "people": log}
+            "now": ab.strftime("%H:%M"), "count": len(log), "people": log,
+            "groups": groups, "total": sum(g["count"] for g in groups)}
 
 
 @router.get("/board")
@@ -645,7 +706,7 @@ def get_members(user=Depends(get_current_user)):
                 SELECT staff_id, MIN(day) AS from_day
                   FROM maintenance_attendance_board GROUP BY staff_id
             )
-            SELECT s.id, s.name, s.emp_code, {_DESIG}, s.contact, s.doj,
+            SELECT s.id, s.name, s.emp_code, {_DESIG}, ju.role AS juda_role, s.contact, s.doj,
                    a.slot, f.from_day, p.updated_at AS photo_at
               FROM maintenance_employee s
               LEFT JOIN aaj a   ON a.staff_id = s.id
@@ -655,6 +716,8 @@ def get_members(user=Depends(get_current_user)):
              ORDER BY lower(s.name), s.id
         """, {"d": today})
         rows = cur.fetchall()
+    # hierarchy ke kram me (2026-10-03), phir naam
+    rows.sort(key=lambda r: (_rank(r["juda_role"], r["designation"]), (r["name"] or "").lower(), r["id"]))
     return {
         "today": today.isoformat(),
         "is_admin": _admin_hai(user),
@@ -667,6 +730,7 @@ def get_members(user=Depends(get_current_user)):
             "doj": r["doj"].isoformat() if r["doj"] else None,
             "slot": r["slot"] if r["slot"] in SLOTS else None,
             "from_day": r["from_day"].isoformat() if r["from_day"] else None,
+            "rank": _rank(r["juda_role"], r["designation"]),
             "photo_ver": int(r["photo_at"].timestamp() * 1000) if r["photo_at"] else None,
         } for r in rows],
     }
@@ -1007,3 +1071,510 @@ def history(start: Optional[str] = Query(None), end: Optional[str] = Query(None)
         "changes": [{**c, "day": _iso(c["day"]), "at": _iso(c["at"])} for c in changes],
         "log_since": _iso(log_since),
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# LEAVE -- chhutti ki arzi (user 2026-10-03)
+# ══════════════════════════════════════════════════════════════════════════
+# Pehli baat (user): "attendance ke neeche leave ka option do -- apna naam
+# select karke kab se kab tak leave par rahega apni ID se daal dega, wo leave
+# section me dikhega; assistant manager approve karega, date change kar sake."
+# Usi din doosri baat (user): "jisko leave apply karni hai wo APNI ID se apply
+# karega aur use APNI leave dikhegi bas; maint wali ID par sabki dikhegi.
+# Supervisor / DET / Engineer / Senior Engineer ki leave AM approve karega, AM
+# ki DM, DM ki Manager, aur Manager apni khud.  Admin ke paas sab.  Leave ka
+# proper record rahe -- AM / DM / Manager purana record dekh sakein.  Admin
+# leave ki row delete kar sake."
+#
+# Ek arzi = ek row (maintenance_attendance_leave).  Haal:
+#   PENDING  -> APPROVED / REJECTED      (us pad ka approver)
+#   PENDING  -> CANCELLED                (jiski arzi / jisne bhari / approver)
+#   APPROVED -> date badle / REJECTED    (approver -- manzoori wapas bhi)
+#   koi bhi  -> mita di                  (SIRF admin; audit log me naqal)
+# PAD (upar `_pad`) arzi WALE aadmi ka -- uske emp code se juda app user ka
+# role, warna board ki designation.  Pad -> "level" -> kaun approve kare:
+#   staff (supervisor / det / engineer / senior_engineer / baaki) -> assistant_manager
+#   assistant_manager -> deputy_manager
+#   deputy_manager    -> manager / senior_manager
+#   manager / senior_manager -> manager / senior_manager (apni khud bhi)
+#   admin -> sab
+# Kaun kya DEKHE:
+#   admin, sanjha "maint" ID, manager / senior_manager -> sab
+#   deputy_manager    -> AM + staff + apni
+#   assistant_manager -> staff + apni
+#   baaki             -> sirf APNI (jiski arzi hai wo khud, ya jo usne bhari)
+# Arzi kaun bhare: har login SIRF APNE naam ki (emp code se juda board ka
+# aadmi); sanjha "maint" ID aur admin kisi ki bhi (plant ka sanjha device).
+# Attendance BOARD ki page-permission leave ke liye JAAN-BOOJH KAR nahi
+# maangi jaati -- warna jinke paas board ka haq nahi (zyadatar log) wo apni
+# leave bhi na bhar paate.  Har jaanch SERVER par, sirf button chhupana nahi.
+#   * Board par apne aap KUCH nahi hota -- arzi sirf Leave section me.
+#   * Date badli to pehli wali `orig_from` / `orig_to` me (sirf pehli baar).
+# Table apne `_ensure_leave()` me (apna flag) -- board / history ke raaste par
+# koi naya DDL nahi juda.
+LEAVE_MAX_DAYS = 92          # ek arzi me itne din tak
+LEAVE_BACK_DAYS = 7          # itne din peechhe tak ki arzi (beemari wagairah baad me)
+_LEAVE_LOCK = 7_202_610      # ek aadmi ki do arzi ek saath na takrayein (staff_id ke saath)
+_leave_bani = False
+
+# Sanjha (shared) maintenance login -- plant ke sanjhe device par chalta hai;
+# user: "maint wali ID par sabki leave dikhegi".  Username se (emp code 1001).
+_SANJHA_IDS = ("maint",)
+
+# level -> kaun approve kare (role)
+_LEAVE_APPROVER = {
+    "staff":             ("assistant_manager",),
+    "assistant_manager": ("deputy_manager",),
+    "deputy_manager":    ("manager", "senior_manager"),
+    "manager":           ("manager", "senior_manager"),
+}
+# level -> "kiska intezaar" (UI ki line -- English)
+_LEAVE_WAIT = {
+    "staff": "Assistant Manager", "assistant_manager": "Deputy Manager",
+    "deputy_manager": "Manager", "manager": "Manager",
+}
+# dekhne wale ka role -> kin level ki arzi dikhe (apni to hamesha)
+_LEAVE_DEKHE = {
+    "assistant_manager": ("staff",),
+    "deputy_manager":    ("staff", "assistant_manager"),
+}
+_LEAVE_SAB_DEKHE = ("manager", "senior_manager")
+
+_LEAVE_COLS = ("id, staff_id, staff_name, emp_code, from_date, to_date, reason, status,"
+               " applied_by, applied_by_id, applied_at, decided_by, decided_at, note,"
+               " orig_from, orig_to, updated_by, updated_at")
+_LEAVE_COL_LIST = tuple(c.strip() for c in _LEAVE_COLS.split(","))
+# arzi + arzi wale ka pad (juda user ka role / board ki designation).  Aadmi
+# board se hat gaya ho to bhi row ki emp code ki naqal se user milta hai.
+_LEAVE_SELECT = f"""
+    SELECT {", ".join("l." + c for c in _LEAVE_COL_LIST)},
+           lu.role AS taker_role, e.designation AS taker_desig,
+           COALESCE({role_label_sql('lu.role')}, e.designation) AS taker_label
+      FROM maintenance_attendance_leave l
+      LEFT JOIN maintenance_employee e ON e.id = l.staff_id
+      LEFT JOIN LATERAL (
+            SELECT u.role FROM maintenance_users u
+             WHERE COALESCE(TRIM(COALESCE(e.emp_code, l.emp_code)), '') <> ''
+               AND UPPER(TRIM(u.emp_code)) = UPPER(TRIM(COALESCE(e.emp_code, l.emp_code)))
+             ORDER BY u.id LIMIT 1
+      ) lu ON TRUE"""
+
+
+def _ensure_leave() -> None:
+    global _leave_bani
+    if _leave_bani:
+        return
+    with get_conn() as conn:
+        cur = conn.cursor()
+        # staff_id par FK jaan-boojh kar NAHI (log jaisa): aadmi mite to bhi
+        # arzi ka itihaas rahe -- naam / emp code ki naqal saath me.
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS maintenance_attendance_leave (
+                id             SERIAL PRIMARY KEY,
+                staff_id       INTEGER,
+                staff_name     VARCHAR(120) NOT NULL,
+                emp_code       VARCHAR(40),
+                from_date      DATE NOT NULL,
+                to_date        DATE NOT NULL,
+                reason         VARCHAR(300),
+                status         VARCHAR(12) NOT NULL DEFAULT 'PENDING',
+                applied_by     VARCHAR(120),
+                applied_by_id  INTEGER,
+                applied_at     TIMESTAMP NOT NULL DEFAULT NOW(),
+                decided_by     VARCHAR(120),
+                decided_at     TIMESTAMP,
+                note           VARCHAR(300),
+                orig_from      DATE,
+                orig_to        DATE,
+                updated_by     VARCHAR(120),
+                updated_at     TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS ix_att_leave_dates"
+                    " ON maintenance_attendance_leave (to_date, from_date)")
+    _leave_bani = True
+
+
+def _leave_level(pad: str) -> str:
+    """Pad -> leave ka level (kaun approve kare isi se)."""
+    if pad in ("manager", "senior_manager"):
+        return "manager"
+    if pad in ("deputy_manager", "assistant_manager"):
+        return pad
+    return "staff"
+
+
+def _mera_staff(cur, user: dict) -> Optional[int]:
+    """Login user ka emp code jis CHALU aadmi se mile -- wahi uski 'apni' leave."""
+    cur.execute("""
+        SELECT s.id FROM maintenance_employee s
+          JOIN maintenance_users u ON UPPER(TRIM(u.emp_code)) = UPPER(TRIM(s.emp_code))
+         WHERE u.id = %s AND COALESCE(TRIM(s.emp_code), '') <> ''
+           AND (s.removed_on IS NULL OR s.removed_on > CURRENT_DATE)
+         ORDER BY s.id DESC LIMIT 1
+    """, (user.get("id"),))
+    r = cur.fetchone()
+    if not r:
+        return None
+    return r["id"] if isinstance(r, dict) else r[0]
+
+
+def _viewer(cur, user: dict) -> dict:
+    """Dekhne / karne wale ka haq -- har leave endpoint isi se."""
+    role = (user.get("role") or "").strip().lower()
+    admin = role == "admin"
+    sanjha = str(user.get("username") or "").strip().lower() in _SANJHA_IDS
+    return {
+        "id": user.get("id"),
+        "role": role,
+        "admin": admin,
+        "sanjha": sanjha,
+        "staff_id": _mera_staff(cur, user),
+        "sab": admin or sanjha or role in _LEAVE_SAB_DEKHE,
+        "dekhe": set(_LEAVE_DEKHE.get(role, ())),
+        "kisi_ki": admin or sanjha,          # kisi ke bhi naam ki arzi bhar sake
+    }
+
+
+def _apni(v: dict, r) -> bool:
+    """Arzi dekhne wale ki APNI hai (wo khud chhutti par) ya usi ne bhari."""
+    return ((v["staff_id"] is not None and r["staff_id"] == v["staff_id"])
+            or (r["applied_by_id"] is not None and r["applied_by_id"] == v["id"]))
+
+
+def _row_level(r) -> str:
+    return _leave_level(_pad(r.get("taker_role"), r.get("taker_desig")))
+
+
+def _approve_kar_sake(v: dict, r) -> bool:
+    return v["admin"] or v["role"] in _LEAVE_APPROVER.get(_row_level(r), ())
+
+
+def _dikhe(v: dict, r) -> bool:
+    return v["sab"] or _apni(v, r) or _row_level(r) in v["dekhe"]
+
+
+def _leave_json(r, v: dict) -> dict:
+    lvl = _row_level(r)
+    d = {k: r[k] for k in _LEAVE_COL_LIST}
+    d["days"] = (d["to_date"] - d["from_date"]).days + 1
+    d["designation"] = r.get("taker_label") or ""
+    d["level"] = lvl
+    d["waiting_for"] = _LEAVE_WAIT.get(lvl, "Assistant Manager")
+    d["mine"] = _apni(v, r)
+    d["can_approve"] = _approve_kar_sake(v, r)
+    d["can_cancel"] = r["status"] == "PENDING" and (d["mine"] or d["can_approve"])
+    d["can_delete"] = v["admin"]
+    for k in ("from_date", "to_date", "applied_at", "decided_at", "orig_from", "orig_to", "updated_at"):
+        d[k] = _iso(d.get(k))
+    return d
+
+
+def _leave_dates(f: Optional[str], t: Optional[str], naya: bool) -> tuple:
+    if not f or not t:
+        raise HTTPException(400, "Please choose both the From and To dates.")
+    fd, td = _din(f), _din(t)
+    if td < fd:
+        raise HTTPException(400, "The To date must be on or after the From date.")
+    if (td - fd).days + 1 > LEAVE_MAX_DAYS:
+        raise HTTPException(400, f"A leave can be at most {LEAVE_MAX_DAYS} days.")
+    if naya and fd < date.today() - timedelta(days=LEAVE_BACK_DAYS):
+        raise HTTPException(400, f"A leave can start at most {LEAVE_BACK_DAYS} days in the past.")
+    return fd, td
+
+
+def _overlap(cur, staff_id: Optional[int], fd: date, td: date, siwa: Optional[int] = None) -> None:
+    """Usi aadmi ki PENDING / APPROVED arzi in dino par pehle se ho to mana."""
+    if staff_id is None:
+        return
+    cur.execute("""
+        SELECT from_date, to_date, status FROM maintenance_attendance_leave
+         WHERE staff_id = %s AND status IN ('PENDING', 'APPROVED')
+           AND from_date <= %s AND to_date >= %s
+           AND (%s::int IS NULL OR id <> %s)
+         ORDER BY from_date LIMIT 1
+    """, (staff_id, td, fd, siwa, siwa))
+    r = cur.fetchone()
+    if r:
+        ek = "an" if r["status"] == "APPROVED" else "a"
+        raise HTTPException(400, f"There is already {ek} {r['status'].lower()} leave for "
+                                 f"{r['from_date']:%d %b} – {r['to_date']:%d %b} on these dates.")
+
+
+def _saaf_note(s: Optional[str]) -> Optional[str]:
+    return " ".join((s or "").split())[:300] or None
+
+
+class LeaveIn(BaseModel):
+    staff_id: int
+    from_date: str
+    to_date: str
+    reason: Optional[str] = ""
+
+
+class LeaveDecide(BaseModel):
+    from_date: Optional[str] = None
+    to_date: Optional[str] = None
+    note: Optional[str] = ""
+
+
+_LEAVE_STATUS = ("PENDING", "APPROVED", "REJECTED", "CANCELLED")
+
+
+@router.get("/leave")
+def list_leave(start: Optional[str] = Query(None), end: Optional[str] = Query(None),
+               status: Optional[str] = Query(None), staff_id: Optional[int] = Query(None),
+               user=Depends(get_current_user)):
+    """Leave section.
+      pending -- dekhne wale ke daayre ki SAARI PENDING (tareekh ki koi had nahi)
+      rows    -- record: [start, end] se takraati arzi (start na ho = 60 din
+                 pehle; end na ho = aage sab); status / staff_id ho to chhanti
+      me      -- apna board ka aadmi (arzi isi naam se); people -- kisi ki bhi
+                 arzi bharne wale (admin / maint) ke liye chalu log (hierarchy kram)"""
+    _ensure()
+    _ensure_leave()
+    s = _din(start) if start else date.today() - timedelta(days=60)
+    e = _din(end) if end else None
+    if e is not None and e < s:
+        raise HTTPException(400, "The To date must be on or after the From date.")
+    st = (status or "").strip().upper() or None
+    if st and st not in _LEAVE_STATUS:
+        raise HTTPException(400, f"Unknown status: {status}")
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        v = _viewer(cur, user)
+        cur.execute(f"""{_LEAVE_SELECT}
+             WHERE l.status = 'PENDING'
+                OR (l.to_date >= %(s)s AND (%(e)s::date IS NULL OR l.from_date <= %(e)s::date))
+             ORDER BY l.from_date DESC, l.id DESC
+             LIMIT 3000
+        """, {"s": s, "e": e})
+        dikhe = [r for r in cur.fetchall() if _dikhe(v, r)]
+        me = None
+        if v["staff_id"] is not None:
+            cur.execute(f"""
+                SELECT s.id, s.name, s.emp_code, {_DESIG}, ju.role AS juda_role
+                  FROM maintenance_employee s{_JUDA_USER}
+                 WHERE s.id = %s""", (v["staff_id"],))
+            m = cur.fetchone()
+            if m:
+                lvl = _leave_level(_pad(m["juda_role"], m["designation"]))
+                me = {"staff_id": m["id"], "name": m["name"], "emp_code": m["emp_code"] or "",
+                      "designation": m["designation"] or "", "waiting_for": _LEAVE_WAIT[lvl]}
+        people = []
+        if v["kisi_ki"]:
+            cur.execute(f"""
+                SELECT s.id, s.name, s.emp_code, {_DESIG}, ju.role AS juda_role
+                  FROM maintenance_employee s{_JUDA_USER}
+                 WHERE s.removed_on IS NULL OR s.removed_on > CURRENT_DATE""")
+            pr = sorted(cur.fetchall(), key=lambda r: (_rank(r["juda_role"], r["designation"]),
+                                                        (r["name"] or "").lower(), r["id"]))
+            people = [{"id": r["id"], "name": r["name"], "emp_code": r["emp_code"] or "",
+                       "designation": r["designation"] or "",
+                       "waiting_for": _LEAVE_WAIT[_leave_level(_pad(r["juda_role"], r["designation"]))]}
+                      for r in pr]
+
+    def record(r) -> bool:
+        if r["to_date"] < s or (e is not None and r["from_date"] > e):
+            return False
+        if st and r["status"] != st:
+            return False
+        return staff_id is None or r["staff_id"] == staff_id
+
+    pending = sorted((r for r in dikhe if r["status"] == "PENDING"),
+                     key=lambda r: (r["from_date"], r["id"]))
+    return {
+        "today": date.today().isoformat(),
+        "start": s.isoformat(),
+        "end": e.isoformat() if e else None,
+        "me": me,
+        "see_all": v["sab"],
+        "can_apply_any": v["kisi_ki"],
+        "can_delete": v["admin"],
+        "approves": sorted(lvl for lvl, roles in _LEAVE_APPROVER.items()
+                           if v["admin"] or v["role"] in roles),
+        "people": people,
+        "max_days": LEAVE_MAX_DAYS,
+        "back_days": LEAVE_BACK_DAYS,
+        "pending": [_leave_json(r, v) for r in pending],
+        "rows": [_leave_json(r, v) for r in dikhe if record(r)],
+    }
+
+
+@router.post("/leave", status_code=201)
+def apply_leave(body: LeaveIn, user=Depends(get_current_user)):
+    _ensure()
+    _ensure_leave()
+    fd, td = _leave_dates(body.from_date, body.to_date, naya=True)
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        v = _viewer(cur, user)
+        if not v["kisi_ki"]:
+            if v["staff_id"] is None:
+                raise HTTPException(403, "Your login is not linked to anyone on the attendance list "
+                                         "— ask admin to add your Emp code there.")
+            if body.staff_id != v["staff_id"]:
+                raise HTTPException(403, "You can apply for leave only in your own name.")
+        cur.execute("SELECT pg_advisory_xact_lock(%s, %s)", (_LEAVE_LOCK, body.staff_id))
+        cur.execute("SELECT id, name, emp_code, removed_on FROM maintenance_employee WHERE id = %s",
+                    (body.staff_id,))
+        sm = cur.fetchone()
+        if not sm or (sm["removed_on"] is not None and sm["removed_on"] <= fd):
+            raise HTTPException(400, "Please choose a member from the list.")
+        _overlap(cur, sm["id"], fd, td)
+        cur.execute("""
+            INSERT INTO maintenance_attendance_leave
+                   (staff_id, staff_name, emp_code, from_date, to_date, reason, status,
+                    applied_by, applied_by_id, updated_by)
+            VALUES (%s, %s, %s, %s, %s, %s, 'PENDING', %s, %s, %s)
+            RETURNING id
+        """, (sm["id"], sm["name"], sm["emp_code"], fd, td, _saaf_note(body.reason),
+              _kaun(user), user.get("id"), _kaun(user)))
+        lid = cur.fetchone()["id"]
+        return _leave_json(_leave_row(cur, lid, lock=False), v)
+
+
+def _leave_row(cur, lid: int, lock: bool = True) -> dict:
+    cur.execute(f"{_LEAVE_SELECT} WHERE l.id = %s{' FOR UPDATE OF l' if lock else ''}", (lid,))
+    r = cur.fetchone()
+    if not r:
+        raise HTTPException(404, "Leave request not found.")
+    return r
+
+
+def _sirf_approver(v: dict, r) -> None:
+    if not _approve_kar_sake(v, r):
+        raise HTTPException(403, f"Only the {_LEAVE_WAIT.get(_row_level(r), 'Assistant Manager')} "
+                                 f"(or admin) can approve or change this leave.")
+
+
+def _naye_din(cur, r, body: LeaveDecide) -> tuple:
+    """Approver ne date bheji ho to jaancho (aur takraav dekho); na bheji to wahi."""
+    if not body.from_date and not body.to_date:
+        return r["from_date"], r["to_date"]
+    fd, td = _leave_dates(body.from_date or r["from_date"].isoformat(),
+                          body.to_date or r["to_date"].isoformat(), naya=False)
+    if (fd, td) != (r["from_date"], r["to_date"]):
+        _overlap(cur, r["staff_id"], fd, td, siwa=r["id"])
+    return fd, td
+
+
+@router.post("/leave/{lid}/approve")
+def approve_leave(lid: int, body: LeaveDecide, user=Depends(get_current_user)):
+    _ensure_leave()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        v = _viewer(cur, user)
+        r = _leave_row(cur, lid)
+        _sirf_approver(v, r)
+        if r["status"] != "PENDING":
+            raise HTTPException(400, f"This request is already {r['status'].lower()}.")
+        cur.execute("SELECT pg_advisory_xact_lock(%s, %s)", (_LEAVE_LOCK, r["staff_id"] or 0))
+        fd, td = _naye_din(cur, r, body)
+        badli = (fd, td) != (r["from_date"], r["to_date"])
+        # RHS ka from_date / to_date = PURANI value (UPDATE ka niyam) -- wahi orig me
+        cur.execute("""
+            UPDATE maintenance_attendance_leave
+               SET status = 'APPROVED', from_date = %s, to_date = %s,
+                   orig_from = CASE WHEN %s THEN COALESCE(orig_from, from_date) ELSE orig_from END,
+                   orig_to   = CASE WHEN %s THEN COALESCE(orig_to,   to_date)   ELSE orig_to   END,
+                   decided_by = %s, decided_at = NOW(), note = COALESCE(%s, note),
+                   updated_by = %s, updated_at = NOW()
+             WHERE id = %s
+        """, (fd, td, badli, badli, _kaun(user), _saaf_note(body.note), _kaun(user), lid))
+        return _leave_json(_leave_row(cur, lid, lock=False), v)
+
+
+@router.put("/leave/{lid}")
+def change_leave_dates(lid: int, body: LeaveDecide, user=Depends(get_current_user)):
+    """Approver date badle -- PENDING ya APPROVED dono par (haal wahi rehta hai)."""
+    _ensure_leave()
+    if not body.from_date or not body.to_date:
+        raise HTTPException(400, "Please choose both the From and To dates.")
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        v = _viewer(cur, user)
+        r = _leave_row(cur, lid)
+        _sirf_approver(v, r)
+        if r["status"] not in ("PENDING", "APPROVED"):
+            raise HTTPException(400, f"This request is {r['status'].lower()} — its dates can't be changed.")
+        cur.execute("SELECT pg_advisory_xact_lock(%s, %s)", (_LEAVE_LOCK, r["staff_id"] or 0))
+        fd, td = _naye_din(cur, r, body)
+        if (fd, td) == (r["from_date"], r["to_date"]):
+            return _leave_json(r, v)
+        cur.execute("""
+            UPDATE maintenance_attendance_leave
+               SET from_date = %s, to_date = %s,
+                   orig_from = COALESCE(orig_from, from_date),
+                   orig_to   = COALESCE(orig_to,   to_date),
+                   note = COALESCE(%s, note), updated_by = %s, updated_at = NOW()
+             WHERE id = %s
+        """, (fd, td, _saaf_note(body.note), _kaun(user), lid))
+        return _leave_json(_leave_row(cur, lid, lock=False), v)
+
+
+@router.post("/leave/{lid}/reject")
+def reject_leave(lid: int, body: LeaveDecide, user=Depends(get_current_user)):
+    _ensure_leave()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        v = _viewer(cur, user)
+        r = _leave_row(cur, lid)
+        _sirf_approver(v, r)
+        if r["status"] not in ("PENDING", "APPROVED"):
+            raise HTTPException(400, f"This request is already {r['status'].lower()}.")
+        cur.execute("""
+            UPDATE maintenance_attendance_leave
+               SET status = 'REJECTED', decided_by = %s, decided_at = NOW(),
+                   note = COALESCE(%s, note), updated_by = %s, updated_at = NOW()
+             WHERE id = %s
+        """, (_kaun(user), _saaf_note(body.note), _kaun(user), lid))
+        return _leave_json(_leave_row(cur, lid, lock=False), v)
+
+
+@router.post("/leave/{lid}/cancel")
+def cancel_leave(lid: int, user=Depends(get_current_user)):
+    """PENDING arzi wapas -- jiski arzi / jisne bhari, ya us pad ka approver."""
+    _ensure_leave()
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        v = _viewer(cur, user)
+        r = _leave_row(cur, lid)
+        if not (_apni(v, r) or _approve_kar_sake(v, r)):
+            raise HTTPException(403, "Only the person on leave, the person who applied, or the "
+                                     "approver can cancel this request.")
+        if r["status"] != "PENDING":
+            raise HTTPException(400, "Only a pending request can be cancelled.")
+        cur.execute("""
+            UPDATE maintenance_attendance_leave
+               SET status = 'CANCELLED', decided_by = %s, decided_at = NOW(),
+                   updated_by = %s, updated_at = NOW()
+             WHERE id = %s
+        """, (_kaun(user), _kaun(user), lid))
+        return _leave_json(_leave_row(cur, lid, lock=False), v)
+
+
+@router.delete("/leave/{lid}")
+def delete_leave(lid: int, user=Depends(get_current_user)):
+    """SIRF admin -- arzi ki row poori mita do (user: "admin me option do leave
+    wali row ko delete karne ka").  Mitane se pehle uski naqal audit log me
+    (kiski, kis din ki, kya haal tha, kisne bhari / faisla kiya) -- record ka
+    nishaan rahe."""
+    _ensure_leave()
+    if not _admin_hai(user):
+        raise HTTPException(403, "Only admin can delete a leave record.")
+    with get_conn() as conn:
+        cur = dict_cursor(conn)
+        r = _leave_row(cur, lid)
+        cur.execute("DELETE FROM maintenance_attendance_leave WHERE id = %s", (lid,))
+        try:
+            from main import write_audit
+            faisla = f" · decided {r['decided_by']}" if r["decided_by"] else ""
+            write_audit(conn, action="LEAVE_DELETE", entity_type="maintenance_attendance_leave",
+                        entity_id=lid, user=user,
+                        details=(f"leave #{lid} deleted: {r['staff_name']} ({r['emp_code'] or '-'}) "
+                                 f"{r['from_date']:%Y-%m-%d} .. {r['to_date']:%Y-%m-%d} {r['status']}"
+                                 f" · applied {r['applied_by'] or '-'}{faisla}")[:500])
+        except Exception as ex:
+            print(f"[ATTENDANCE] leave delete ka audit nahi likha: {ex}")
+    return {"ok": True, "id": lid}

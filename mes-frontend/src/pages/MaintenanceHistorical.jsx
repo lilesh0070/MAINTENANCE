@@ -22,6 +22,9 @@ import { useAuth } from "../context/AuthContext";
 import { ClosureFormModal } from "./breakdown/ClosureFormModal";
 import { slipPayload } from "./breakdown/slipPayload";
 import { FormatSheet } from "./pm/FormatSheet";
+import { pmLayout, sheetLayoutKey } from "./pm/pmLayouts";
+import { EMPTY_SPARE, editSpareRow, isSpareYes, spareMissing, spareYesKey, syncSpareRows,
+         spareHatao, spareHataoSawal } from "./pm/pmSpares";
 import { DmcSheet, groupDmcPoints } from "./DmcSheet";
 import { onlyProdZones } from "../constants/zones";
 import ExcelBtn from "../components/ExcelBtn";
@@ -495,15 +498,45 @@ export default function MaintenanceHistorical() {
   const [pmDraft, setPmDraft] = useState([]);
   const [pmBusy,  setPmBusy]  = useState(false);
   const [pmErr,   setPmErr]   = useState("");
+  // sheet ke neeche ki "Spares Used" list bhi edit me (2026-10-03) -- pehle
+  // edit me wo khaali dikhti thi aur badalti nahi thi.  Wahi alag-copy niyam.
+  const [pmSpDraft, setPmSpDraft]     = useState([]);
+  const [spareMaster, setSpareMaster] = useState([]);   // Spare Name sujhaav (Model / ERP khud)
+  // khuli sheet ka APNA layout -- Format 2 me SPARES USED (YES / NO) ka list se jod
+  const pmViewL = pmLayout({ layout: sheetLayoutKey(viewSheet?.doc_footer) });
 
   const pmEditShuru = () => {
     // gehri copy — warna draft badalne par asli entries bhi badal jaatin
     setPmDraft(JSON.parse(JSON.stringify(viewSheet?.entries || [])));
+    setPmSpDraft(JSON.parse(JSON.stringify(viewSheet?.sheet_spares || [])));
+    if (!spareMaster.length)
+      api.get("/api/maintenance-spare/", token)
+        .then((d) => setSpareMaster(Array.isArray(d) ? d : [])).catch(() => {});
     setPmErr(""); setPmEdit(true);
   };
-  const pmEditBand = () => { setPmEdit(false); setPmDraft([]); setPmErr(""); };
+  const pmEditBand = () => { setPmEdit(false); setPmDraft([]); setPmSpDraft([]); setPmErr(""); };
+  // Format 2: YES wale point ki list me row khud bane (fill form jaisa)
+  const pmSpareKey = pmEdit && pmViewL.spareClick ? spareYesKey(pmDraft) : "";
+  useEffect(() => {
+    if (!pmEdit || !pmViewL.spareClick) return;
+    setPmSpDraft((rows) => syncSpareRows(pmDraft, rows));
+  }, [pmSpareKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const pmCellEdit = (i, key, val) => {
+    // YES hataya -> us point ki rows bhi; bhari ho to pehle poochho
+    if (key === "spares_used" && pmViewL.spareClick && isSpareYes(pmDraft[i]) && val !== "YES") {
+      const { rows, bhari } = spareHatao(pmSpDraft, pmDraft[i], i);
+      if (bhari && !window.confirm(spareHataoSawal(pmDraft[i], i, val, bhari))) return;
+      setPmSpDraft(rows);
+    }
+    setPmDraft((d) => d.map((e, ix) => (ix === i ? { ...e, [key]: val } : e)));
+  };
   const pmSave = async () => {
     if (!viewSheet?.id) return;
+    const miss = pmViewL.spareClick ? spareMissing(pmDraft, pmSpDraft) : [];
+    if (miss.length) {
+      setPmErr(`Spares Used is YES for point ${miss.join(", ")} — enter the spare name in “Spares Used” below.`);
+      return;
+    }
     setPmBusy(true); setPmErr("");
     try {
       await api.put(`/api/pm/check-sheet-fill/${viewSheet.id}/admin`, {
@@ -513,7 +546,7 @@ export default function MaintenanceHistorical() {
         machine_name: viewSheet.machine_name || "",
         pm_date:      String(viewSheet.pm_date || "").slice(0, 10),
         entries:      pmDraft,
-        sheet_spares: viewSheet.sheet_spares || [],
+        sheet_spares: pmSpDraft.filter((x) => String(x.spare_name || "").trim()),
       }, token);
       setPmEdit(false); setPmDraft([]);
       setViewSheet(null);
@@ -1361,10 +1394,18 @@ export default function MaintenanceHistorical() {
                       <td>{r.created_by || "—"}</td>
                       {isAdmin && (
                         <td style={{ textAlign:"center" }}>
-                          <RowDelete chhota
-                            kya={`Log Book entry #${r.id} — ${r.machine_no || "?"} · ${String(r.bd_date || "").slice(0, 10)}`}
-                            saath={["Spares recorded on this entry (spares on entries created before 2026-09-08 are left alone — they were never linked to an entry id)"]}
-                            onDelete={() => hatao.log(r.id)} />
+                          <span style={{ display:"inline-flex", gap:6, alignItems:"center" }}>
+                            {/* Edit -- SIRF admin (user 2026-10-03).  Form Log Book page
+                                par hi khulta hai (`?edit=`) -- wahi jisme entry bhari
+                                jaati hai, do jagah alag form nahi.  Save ke baad yahin
+                                wapas.  Backend bhi admin / likhne wala hi maanta hai. */}
+                            <button className="hd-view" style={{ background:"#0891b2" }}
+                                    onClick={() => nav(`/maintenance-logbook?edit=${r.id}`)}>✎ Edit</button>
+                            <RowDelete chhota
+                              kya={`Log Book entry #${r.id} — ${r.machine_no || "?"} · ${String(r.bd_date || "").slice(0, 10)}`}
+                              saath={["Spares recorded on this entry (spares on entries created before 2026-09-08 are left alone — they were never linked to an entry id)"]}
+                              onDelete={() => hatao.log(r.id)} />
+                          </span>
                         </td>
                       )}
                     </tr>
@@ -1431,9 +1472,16 @@ export default function MaintenanceHistorical() {
             <FormatSheet
               printable
               editable={pmEdit}
-              onEdit={(i, key, val) =>
-                setPmDraft((d) => d.map((e, ix) => (ix === i ? { ...e, [key]: val } : e)))}
-              f={pmFmt ? { ...pmFmt, doc_footer: viewSheet.doc_footer || pmFmt.doc_footer } : pmFmt}
+              onEdit={pmCellEdit}
+              // neeche ki "Spares Used" list -- edit me badalti, warna sirf padhne ke liye
+              sheetSpares={pmEdit ? pmSpDraft : (viewSheet.sheet_spares || [])}
+              onSheetSpare={(ri, k, v) => setPmSpDraft((rows) => editSpareRow(rows, ri, k, v, spareMaster))}
+              onAddSheetSpare={() => setPmSpDraft((rows) => [...rows, { where_used: "", ...EMPTY_SPARE }])}
+              onDelSheetSpare={(ri) => setPmSpDraft((rows) => rows.filter((_, j) => j !== ri))}
+              spareNames={spareMaster.map((m) => m.spare_name).filter(Boolean)}
+              // sheet ka APNA layout (jisme bhari thi) -- purani = classic
+              f={pmFmt ? { ...pmFmt, doc_footer: viewSheet.doc_footer || pmFmt.doc_footer,
+                           layout: sheetLayoutKey(viewSheet.doc_footer) } : pmFmt}
               points={pmEdit ? pmDraft : (viewSheet.entries || [])}
               rev={{ rev_no: viewSheet.rev_no, rev_date: viewSheet.rev_date }}
               signVals={[viewSheet.prepared_by, viewSheet.checked_by, viewSheet.approved_by]}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { api } from "./shared";
 import { walkieLink } from "../../constants/walkieLink";
+import { byRank } from "../../constants/hierarchy";
 
 /* ════════════════════════════════════════════════════════════════════
  * 1.6) Today Present Person — Maintenance Dashboard ke daayin taraf wale
@@ -31,6 +32,15 @@ import { walkieLink } from "../../constants/walkieLink";
  *          aur Setup ki jodi (`can_buzz_ids`).  Offline par disabled.
  *      Attendance ka aadmi aur app user sirf EMP CODE se judte hain; jiski
  *      app ID nahi (ya walkie par nahi), uske aage na nishaan na button.
+ *
+ *      ── Dono shift + hierarchy (2026-10-03) ──
+ *      User: "A shift chal rahi hai to sirf A ki aa rahi hai -- A aur B dono
+ *      ki aani chahiye, B me bhi dono, bas shift ke hisaab se upar-neeche" aur
+ *      "hierarchy ke hisaab se naam upar se neeche".  Server `groups` deta hai
+ *      (abhi wali UPAR, `now`), har group me Manager > DM > AM > Senior
+ *      Engineer > Engineer > Supervisor > DET.  Purana server sirf abhi wali
+ *      (`people`) deta hai -- tab ek hi group.  List ki oonchai pehle jitni hi
+ *      (max 520, andar scroll) -- TV ka layout band hai.
  *      ⚠ Website par walkie service default BAND hai (Services) -- tab socket
  *        nahi chalta, to online ki khabar roster (server) se aati hai aur Buzz
  *        disabled rehta hai.  Isi liye roster har 30 sec taaza hota hai.
@@ -50,10 +60,22 @@ function abKiShift() {
   const d = new Date(now);
   if (h < 7) d.setDate(d.getDate() - 1);   // aadhi raat ke baad = kal ki raat
   return {
+    raat,
     slots: raat ? ["B"] : ["G", "A"],
     shift: raat ? "B" : "G + A",
     day: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
   };
+}
+
+/* Jawab -> groups (abhi wali upar).  Naya server `groups` deta hai; purana
+   sirf abhi wali shift ke `people` -- tab ek hi group.  Har group hierarchy
+   kram me (server bhi yahi bhejta hai; yahan purane server ke liye). */
+function groupsOf(d) {
+  if (!d) return [];
+  const gs = Array.isArray(d.groups) && d.groups.length
+    ? d.groups
+    : [{ shift: d.shift, now: true, people: d.people || [] }];
+  return gs.map((g) => ({ ...g, people: byRank(g.people || []) }));
 }
 
 function PresentPeople({ token }) {
@@ -78,11 +100,15 @@ function PresentPeople({ token }) {
     try {
       const w = abKiShift();
       const b = await api.get(`/api/attendance/board?day=${w.day}`, token);
-      const log = (b?.people || [])
-        .filter((p) => w.slots.includes(p.slot))
+      const kaun = (sl) => (b?.people || [])
+        .filter((p) => sl.includes(p.slot))
         .map((p) => ({ id: p.id, name: p.name, emp_code: p.emp_code,
-                       designation: p.designation, slot: p.slot }));
-      setD({ shift: w.shift, day: w.day, count: log.length, people: log });
+                       designation: p.designation, slot: p.slot, rank: p.rank }));
+      const din = { shift: "G + A", now: !w.raat, people: kaun(["G", "A"]) };
+      const raat = { shift: "B", now: w.raat, people: kaun(["B"]) };
+      const groups = w.raat ? [raat, din] : [din, raat];
+      setD({ shift: w.shift, day: w.day, count: groups[0].people.length,
+             people: groups[0].people, groups });
       setErr(false);
     } catch { setErr(true); }
   }, [token]);
@@ -153,6 +179,50 @@ function PresentPeople({ token }) {
 
   const khaali = { padding: "26px 16px", textAlign: "center", color: "#94a3b8",
                    fontSize: 12.5, fontStyle: "italic" };
+  const groups = groupsOf(d);
+  const total = groups.reduce((n, g) => n + g.people.length, 0);
+
+  // ek naam ki row (online ka nishaan + Buzz -- pehle jaisa)
+  const row = (p, i) => {
+    const code = saafCode(p.emp_code);
+    const w    = code ? byCode.get(code) : null;      // walkie wala banda
+    const main = !!code && code === meraCode;         // ye main khud hoon
+    const on   = main ? sockOn : (w ? isOnline(w) : false);
+    const dot  = main || !!w;                          // app ID + walkie par
+    const buzzHai = !main && w && canBuzz && buzzKinko.has(Number(w.id));
+    const band = !sockOn || !on;
+    return (
+      /* Buzz wali row ka padding kam -- button (26px) naam (17px) se
+         ooncha hai, aur bina iske wo row 46px ki ho jaati jabki baaki
+         37px.  TV ka layout locked hai: list ki lambai pehle jitni rahe. */
+      <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10,
+                               padding: buzzHai ? "5.5px 16px" : "10px 16px",
+                               borderTop: i === 0 ? "none" : "1px solid #f2f5f9" }}>
+        <span style={{ flexShrink: 0, width: 22, fontSize: 11, fontWeight: 700,
+                       color: "#b6bfcc" }}>{i + 1}</span>
+        {/* Walkie jaisa: hara = online, dhusar = offline.  App ID na ho
+            to khaali jagah (naam ek line me rahe). */}
+        <span title={dot ? (on ? "Online" : "Offline") : "No app login / not on walkie-talkie"}
+              style={{ flexShrink: 0, width: 9, height: 9, borderRadius: 99,
+                       background: dot ? (on ? "#16a34a" : "#cbd5e1") : "transparent" }} />
+        <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, color: "#0f172a",
+                       overflow: "hidden", textOverflow: "ellipsis",
+                       whiteSpace: "nowrap" }}>{p.name}</span>
+        {buzzHai && (
+          <button type="button" disabled={band} onClick={() => buzz(w)}
+                  title={!sockOn ? "Walkie-talkie is off on this device"
+                         : !on ? `${p.name} is offline` : `Buzz ${p.name}`}
+                  style={{ flexShrink: 0, padding: "4px 10px", borderRadius: 7,
+                           border: "1.5px solid #c7d2fe", background: "#eef2ff",
+                           color: "#4338ca", fontSize: 11, fontWeight: 800,
+                           cursor: band ? "not-allowed" : "pointer",
+                           opacity: band ? 0.45 : 1, whiteSpace: "nowrap" }}>
+            📳 Buzz
+          </button>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div style={{ background: "#fff", border: "1px solid #e8edf3", borderRadius: 14,
@@ -167,7 +237,7 @@ function PresentPeople({ token }) {
           <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 19, fontWeight: 800,
                         color: "#0f172a", lineHeight: 1.1 }}>Today Present Person</div>
           <div style={{ fontSize: 10.5, color: "#8a94a6", fontWeight: 600 }}>
-            {d ? `${d.count} ${d.count === 1 ? "person" : "persons"} · ${d.day}` : "…"}
+            {d ? `${total} ${total === 1 ? "person" : "persons"} · ${d.day}` : "…"}
           </div>
         </div>
         {d && (
@@ -187,50 +257,33 @@ function PresentPeople({ token }) {
         </div>
       ) : !d ? (
         <div style={khaali}>Loading…</div>
-      ) : d.people.length === 0 ? (
-        <div style={khaali}>No one is marked in this shift yet.</div>
+      ) : total === 0 ? (
+        <div style={khaali}>No one is marked in any shift yet.</div>
       ) : (
         <div style={{ maxHeight: 520, overflowY: "auto" }}>
-          {d.people.map((p, i) => {
-            const code = saafCode(p.emp_code);
-            const w    = code ? byCode.get(code) : null;      // walkie wala banda
-            const main = !!code && code === meraCode;         // ye main khud hoon
-            const on   = main ? sockOn : (w ? isOnline(w) : false);
-            const dot  = main || !!w;                          // app ID + walkie par
-            const buzzHai = !main && w && canBuzz && buzzKinko.has(Number(w.id));
-            const band = !sockOn || !on;
-            return (
-              /* Buzz wali row ka padding kam -- button (26px) naam (17px) se
-                 ooncha hai, aur bina iske wo row 46px ki ho jaati jabki baaki
-                 37px.  TV ka layout locked hai: list ki lambai pehle jitni rahe. */
-              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10,
-                                       padding: buzzHai ? "5.5px 16px" : "10px 16px",
-                                       borderTop: i === 0 ? "none" : "1px solid #f2f5f9" }}>
-                <span style={{ flexShrink: 0, width: 22, fontSize: 11, fontWeight: 700,
-                               color: "#b6bfcc" }}>{i + 1}</span>
-                {/* Walkie jaisa: hara = online, dhusar = offline.  App ID na ho
-                    to khaali jagah (naam ek line me rahe). */}
-                <span title={dot ? (on ? "Online" : "Offline") : "No app login / not on walkie-talkie"}
-                      style={{ flexShrink: 0, width: 9, height: 9, borderRadius: 99,
-                               background: dot ? (on ? "#16a34a" : "#cbd5e1") : "transparent" }} />
-                <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, color: "#0f172a",
-                               overflow: "hidden", textOverflow: "ellipsis",
-                               whiteSpace: "nowrap" }}>{p.name}</span>
-                {buzzHai && (
-                  <button type="button" disabled={band} onClick={() => buzz(w)}
-                          title={!sockOn ? "Walkie-talkie is off on this device"
-                                 : !on ? `${p.name} is offline` : `Buzz ${p.name}`}
-                          style={{ flexShrink: 0, padding: "4px 10px", borderRadius: 7,
-                                   border: "1.5px solid #c7d2fe", background: "#eef2ff",
-                                   color: "#4338ca", fontSize: 11, fontWeight: 800,
-                                   cursor: band ? "not-allowed" : "pointer",
-                                   opacity: band ? 0.45 : 1, whiteSpace: "nowrap" }}>
-                    📳 Buzz
-                  </button>
+          {groups.map((g, gi) => (
+            <div key={g.shift}>
+              {/* shift ki patti -- abhi wali hari + NOW */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 16px",
+                            background: g.now ? "#ecfdf5" : "#f8fafc",
+                            borderTop: gi === 0 ? "none" : "1px solid #e2e8f0",
+                            borderBottom: "1px solid #eef2f7",
+                            fontSize: 10.5, fontWeight: 800, letterSpacing: ".06em",
+                            color: g.now ? "#0f766e" : "#64748b" }}>
+                <span>{g.shift} SHIFT</span>
+                {g.now && (
+                  <span style={{ padding: "1px 7px", borderRadius: 99, background: "#0f766e",
+                                 color: "#fff", fontSize: 9, letterSpacing: ".08em" }}>NOW</span>
                 )}
+                <span style={{ marginLeft: "auto", fontWeight: 700, letterSpacing: 0 }}>
+                  {g.people.length} {g.people.length === 1 ? "person" : "persons"}
+                </span>
               </div>
-            );
-          })}
+              {g.people.length === 0
+                ? <div style={{ ...khaali, padding: "12px 16px" }}>No one in this shift.</div>
+                : g.people.map((p, i) => row(p, i))}
+            </div>
+          ))}
         </div>
       )}
       {kehna && (

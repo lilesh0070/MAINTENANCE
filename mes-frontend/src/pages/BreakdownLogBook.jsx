@@ -11,7 +11,7 @@
  * Routing: /maintenance-logbook
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { upperCaret, maskCaret } from "../constants/upperCaret";
 import ExcelBtn from "../components/ExcelBtn";
@@ -37,7 +37,28 @@ const api = {
     if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
     return r.json();
   },
+  // Edit (2026-10-03) -- server ka `detail` hi dikhao, poora JSON nahi
+  async put(path, body, token) {
+    const r = await fetch(path, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(await galti(r));
+    return r.json();
+  },
+  async getOne(path, token) {
+    const r = await fetch(path, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error(await galti(r));
+    return r.json();
+  },
 };
+
+async function galti(r) {
+  const t = await r.text().catch(() => "");
+  try { const j = JSON.parse(t); if (j && j.detail) return String(j.detail); } catch { /* text hi sahi */ }
+  return t || `HTTP ${r.status}`;
+}
 
 const todayISO = () => {
   const d = new Date();
@@ -102,6 +123,28 @@ const EMPTY = {
 // EMPTY holds an array — always hand out a FRESH copy, never the same reference.
 const newForm = () => ({ ...EMPTY, bd_date: todayISO(), spares: [{ ...EMPTY_SPARE }] });
 
+// Server ki row -> form ka shape (EDIT ke liye, 2026-10-03).  Spare list me
+// sirf naam wali rows; koi na ho to "Spare Used = NO".
+const rowToForm = (r) => {
+  const s = (v) => (v == null ? "" : String(v));
+  const sp = Array.isArray(r.spares) ? r.spares.filter((x) => x && s(x.spare_name).trim()) : [];
+  return {
+    ...newForm(),
+    shift: r.shift || "A",
+    zone: s(r.zone), line: s(r.line), machine_no: s(r.machine_no), machine_name: s(r.machine_name),
+    bd_date: s(r.bd_date).slice(0, 10) || todayISO(),
+    bd_start_time: s(r.bd_start_time).slice(0, 5), bd_ok_time: s(r.bd_ok_time).slice(0, 5),
+    problem_observed_by_maintenance: s(r.problem_observed_by_maintenance),
+    action_taken_on_problem: s(r.action_taken_on_problem),
+    spare_used: sp.length ? "yes" : "no",
+    spares: sp.length
+      ? sp.map((x) => ({ spare_name: s(x.spare_name), spare_model_no: s(x.spare_model_no),
+                         spare_cnmm_no: s(x.spare_cnmm_no), spare_qty: s(x.spare_qty) }))
+      : [{ ...EMPTY_SPARE }],
+    bd_attended_by: s(r.bd_attended_by),
+  };
+};
+
 // The 4 spare columns in the List tab render from the `spares` array when present.
 const SPARE_KEYS = new Set(["spare_name", "spare_model_no", "spare_cnmm_no", "spare_qty"]);
 const spareCell = (r, k) => {
@@ -142,6 +185,52 @@ export default function BreakdownLogBook() {
   const [rows, setRows]   = useState([]);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg]     = useState(null);       // {type, text}
+
+  /* ── EDIT (user 2026-10-03: "logbook fill karne ke baad edit wala option do,
+     list me; aur historical data me admin edit kar sake") ──
+     Wahi form, bas bhari hui entry ke saath -- list ke "✎ Edit" se, ya
+     Historical Data se `?edit=<id>` par aakar.  Haq: jisne likhi ya admin
+     (server PUT par bhi yahi jaanchta hai). */
+  const [editId, setEditId]         = useState(null);   // null = nayi entry
+  const [editSerial, setEditSerial] = useState(null);
+  const [editFrom, setEditFrom]     = useState(null);   // "hist" = baad me Historical Data par wapas
+  const [qs, setQs] = useSearchParams();
+  const isAdmin = user?.role === "admin";
+  const canEdit = (r) => isAdmin || (!!r && String(r.created_by || "").trim().toLowerCase()
+                                        === String(user?.username || "").trim().toLowerCase());
+  const startEdit = (r, from = null) => {
+    setForm(rowToForm(r));
+    setEditId(r.id);
+    setEditSerial(r.serial_no ?? null);
+    setEditFrom(from);
+    setView("entry");
+    setMsg(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const editKhatam = () => {
+    const from = editFrom;
+    setEditId(null); setEditSerial(null); setEditFrom(null);
+    setForm(newForm());
+    if (from === "hist") nav("/maintenance-historical");
+    else setView("list");
+  };
+  // Historical Data ka "✎ Edit" -> /maintenance-logbook?edit=<id>: entry laa kar form bharo.
+  // `user` aane ka intezaar -- uske bina haq (canEdit) ka pata nahi chalta.
+  const editQs = qs.get("edit");
+  const userId = user?.id;
+  useEffect(() => {
+    if (!token || !editQs || !userId) return undefined;
+    let ruk = false;
+    api.getOne(`/api/logbook/${encodeURIComponent(editQs)}`, token)
+      .then((r) => {
+        if (ruk) return;
+        if (canEdit(r)) startEdit(r, "hist");
+        else setMsg({ type: "err", text: "Only the person who wrote this entry, or admin, can edit it." });
+      })
+      .catch((e) => { if (!ruk) setMsg({ type: "err", text: e.message || "Could not open this entry" }); })
+      .finally(() => { if (!ruk) setQs({}, { replace: true }); });
+    return () => { ruk = true; };
+  }, [token, editQs, userId]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── List filters — date defaults to TODAY, freely changeable ──
   const [flFy, setFlFy]       = useState("");        // default current FY (boot me set)
@@ -312,10 +401,18 @@ export default function BreakdownLogBook() {
     try {
       // drop completely-blank spare rows so an unused "Add" doesn't get saved
       const spares = (form.spares || []).filter((s) => Object.values(s).some((v) => String(v ?? "").trim()));
-      const r = await api.post("/api/logbook/",
-        { ...form, spares, mc_down_time_minutes: solveMin, solve_time_hours: solveHrs }, token);
-      setMsg({ type: "ok", text: `Entry saved ✓ (Serial No. ${r.serial_no})` });
-      setForm(newForm());
+      const body = { ...form, spares, mc_down_time_minutes: solveMin, solve_time_hours: solveHrs };
+      if (editId) {
+        const r = await api.put(`/api/logbook/${editId}`, body, token);
+        setMsg({ type: "ok", text: `Entry updated ✓ (Serial No. ${r.serial_no ?? editSerial ?? "—"})` });
+        // Historical Data se aaye the to zara ruk kar wahin (toast dikh jaaye)
+        if (editFrom === "hist") setTimeout(editKhatam, 900);
+        else editKhatam();
+      } else {
+        const r = await api.post("/api/logbook/", body, token);
+        setMsg({ type: "ok", text: `Entry saved ✓ (Serial No. ${r.serial_no})` });
+        setForm(newForm());
+      }
     } catch (e) { setMsg({ type: "err", text: e.message || "Save failed" }); }
     finally    { setSaving(false); }
   };
@@ -387,6 +484,10 @@ export default function BreakdownLogBook() {
         .lb-del { font-weight:800; font-size:11px; border-radius:7px; padding:5px 12px; cursor:pointer;
                   border:1px solid #fecaca; background:#fef2f2; color:#dc2626; white-space:nowrap; }
         .lb-del:hover { background:#dc2626; color:#fff; border-color:#dc2626; }
+        .lb-edit { font-weight:800; font-size:11px; border-radius:7px; padding:5px 12px; cursor:pointer;
+                   border:1px solid #bfdbfe; background:#eff6ff; color:#1d4ed8; white-space:nowrap; }
+        .lb-edit:hover { background:#1d4ed8; color:#fff; border-color:#1d4ed8; }
+        .lb-acts { display:inline-flex; gap:6px; align-items:center; }
       `}</style>
 
       <div className="lb-root">
@@ -416,18 +517,28 @@ export default function BreakdownLogBook() {
         <div className="lb-body">
           {view === "entry" ? (
             <div className="lb-card">
-              <div className="lb-card-head">Maintenance Log Book — New Entry</div>
+              <div className="lb-card-head" style={editId ? { background:"#b45309" } : undefined}>
+                {editId ? "Maintenance Log Book — Edit Entry" : "Maintenance Log Book — New Entry"}
+              </div>
               <div className="lb-form">
-                <div style={{ fontSize:11.5, color:"#94a3b8", marginBottom:16, fontWeight:600 }}>
-                  Serial No. is generated automatically on save. Pick Zone → Line → Machine No.
-                  (Machine Name auto-fills), then fill the details and press <b>Save Entry</b>.
-                </div>
+                {editId ? (
+                  <div style={{ fontSize:12, color:"#92400e", marginBottom:16, fontWeight:700,
+                                background:"#fffbeb", border:"1px solid #fde68a", borderRadius:8, padding:"9px 12px" }}>
+                    Editing Serial No. {editSerial ?? "—"}. Change what you need and press <b>Update Entry</b>,
+                    or <b>Cancel</b> to leave it as it is.
+                  </div>
+                ) : (
+                  <div style={{ fontSize:11.5, color:"#94a3b8", marginBottom:16, fontWeight:600 }}>
+                    Serial No. is generated automatically on save. Pick Zone → Line → Machine No.
+                    (Machine Name auto-fills), then fill the details and press <b>Save Entry</b>.
+                  </div>
+                )}
 
                 {/* ── Identity ───────────────────────────────── */}
                 <div className="lb-grid">
                   <div className="lb-field">
                     <span className="lb-lbl">Serial No.</span>
-                    <input className="lb-in" readOnly value="(auto — on save)" />
+                    <input className="lb-in" readOnly value={editId ? String(editSerial ?? "—") : "(auto — on save)"} />
                   </div>
                   <div className="lb-field">
                     <span className="lb-lbl">Shift</span>
@@ -572,10 +683,12 @@ export default function BreakdownLogBook() {
               </div>
 
               <div className="lb-actions">
-                <button className="lb-btn" onClick={reset}>↺ Reset</button>
+                {editId
+                  ? <button className="lb-btn" onClick={editKhatam} disabled={saving}>✕ Cancel</button>
+                  : <button className="lb-btn" onClick={reset}>↺ Reset</button>}
                 <button className="lb-btn primary" onClick={save} disabled={saving || !canSubmit}
                         title={canSubmit ? "" : "Fill all fields first — plus the spare rows if Spare Used = Yes — to enable Save"}>
-                  {saving ? "Saving…" : "💾 Save Entry"}
+                  {saving ? "Saving…" : editId ? "💾 Update Entry" : "💾 Save Entry"}
                 </button>
               </div>
             </div>
@@ -681,7 +794,15 @@ export default function BreakdownLogBook() {
                               </td>
                             );
                           })}
-                          <td><button className="lb-del" onClick={() => remove(r)}>🗑 Delete</button></td>
+                          <td>
+                            <span className="lb-acts">
+                              {/* Edit -- jisne likhi ya admin (user 2026-10-03) */}
+                              {canEdit(r) && (
+                                <button className="lb-edit" onClick={() => startEdit(r)}>✎ Edit</button>
+                              )}
+                              <button className="lb-del" onClick={() => remove(r)}>🗑 Delete</button>
+                            </span>
+                          </td>
                         </tr>
                       ))}
                     </tbody>

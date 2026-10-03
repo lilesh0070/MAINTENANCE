@@ -14,20 +14,14 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { maskCaret } from "../constants/upperCaret";
 import { useAuth } from "../context/AuthContext";
 import { FormatSheet } from "./pm/FormatSheet";
+import { pmLayout, sheetLayoutKey, layoutSaaf } from "./pm/pmLayouts";
+import { fmtErp, editSpareRow, isSpareYes, spareMissing, spareYesKey, syncSpareRows,
+         spareHatao, spareHataoSawal } from "./pm/pmSpares";
 import YearlyPmTab from "./pm/YearlyPmTab";
 import { SignPad } from "./pm/SignPad";
 
 const monthISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
-// Spare ERP Number mask — 4 alphabetic letters + 4 numeric digits (ABCD1234).
-const fmtErp = (raw) => {
-  const s = String(raw || "").toUpperCase();
-  let out = "";
-  for (const ch of s) {
-    if (out.length < 4) { if (ch >= "A" && ch <= "Z") out += ch; }
-    else if (out.length < 8) { if (ch >= "0" && ch <= "9") out += ch; }
-  }
-  return out;
-};
+// Spare ERP mask (`fmtErp`) ab ./pm/pmSpares.js me -- History ka admin edit bhi wahi leta hai.
 
 // PM tab (view) → permission key.  Har tab ki apni key; parent `maintenance-pm`
 // se inherit hoti hai (AuthContext.SUBPAGE_PARENT).
@@ -155,17 +149,7 @@ export default function PMPanel() {
   };
   // sheet-level spare handlers — same picker behaviour as onSpareCell (known
   // Spare Name auto-fills Model / ERP; ERP masked with fmtErp), but on ONE list.
-  const onSheetSpare = (ri, key, val) => setSheetSpares((rows) => {
-    const next = rows.map((r, j) =>
-      (j === ri ? { ...r, [key]: (key === "spare_cnmm_no" ? fmtErp(val) : val) } : r));
-    if (key === "spare_name") {                          // known name → auto-fill model / cnmm
-      const m = spareMaster.find((x) => (x.spare_name || "").toLowerCase() === val.toLowerCase());
-      if (m) next[ri] = { ...next[ri],
-        spare_model_no: m.spare_model_no || next[ri].spare_model_no,
-        spare_cnmm_no:  m.spare_cnmm_no  || next[ri].spare_cnmm_no };
-    }
-    return next;
-  });
+  const onSheetSpare = (ri, key, val) => setSheetSpares((rows) => editSpareRow(rows, ri, key, val, spareMaster));
   const addSheetSpare = () => setSheetSpares((rows) => [...rows, { where_used: "", ...EMPTY_SP }]);
   const delSheetSpare = (ri) => setSheetSpares((rows) => rows.filter((_, j) => j !== ri));
 
@@ -176,8 +160,31 @@ export default function PMPanel() {
   // NOTE: this block must stay BELOW the `calSheet` useState above — it reads
   // calSheet during render, and reading a `const` before its declaration
   // throws (temporal dead zone), which blanks the whole PM page.
-  const FILL_KEYS = ["observation", "action_taken", "spares_used", "status", "sign"];
-  const FILL_LBL  = ["Observation", "Action Taken", "Spares Used", "Status", "Sign"];
+  // Bharne wale column LAYOUT ke hisaab se (2026-10-03): classic = Observation /
+  // Action / Spares / Status / Sign; status_first = Status / Observation /
+  // Action.  Khuli sheet ka apna layout (nayi = Document Update wala, wapas
+  // aayi = jisme bhari thi) -- FormatSheet bhi yahi deta hai, to selection ke
+  // column number dono jagah ek hi khaane ko maante hain.
+  // NAYI sheet (`layout` null) ka layout format aane par tay hota hai -- `fmt`
+  // sheet khulne ke BAAD load hota hai (neeche effect), aur tab tak FormatSheet
+  // "Loading format…" dikhata hai.  (Pehle khulte waqt hi `pmLayout(fmt)` le
+  // lete the -- fmt null -> classic: Format 2 chun kar bhi nayi sheet purane
+  // format me khulti thi.  User ne pakda 2026-10-03.)
+  const calLayoutKey = calSheet?.layout || pmLayout(fmt).key;
+  const CAL_L = pmLayout({ layout: calLayoutKey });
+  const FILL_KEYS = CAL_L.fill;
+  const FILL_LBL  = CAL_L.fillLbl;
+  // Format 2 ka SPARES USED = YES -> neeche "Spares Used" list me us point ki
+  // row khud bane (tap, paste, fill-down -- kisi bhi raaste se).  Sirf YES
+  // points ki kunji badalne par chalta hai, har akshar par nahi.  YES HATANE
+  // par rows `onEditCal` hatata hai (bhari ho to pehle poochh kar).
+  const calSpareKey = CAL_L.spareClick && calSheet
+    ? spareYesKey(calSheet.points.map((p, i) => ({ ...p, ...(calSheet.fill[i] || {}) }))) : "";
+  useEffect(() => {
+    if (!calSheet || !CAL_L.spareClick) return;
+    const pts = calSheet.points.map((p, i) => ({ ...p, ...(calSheet.fill[i] || {}) }));
+    setSheetSpares((rows) => syncSpareRows(pts, rows));
+  }, [calSpareKey, CAL_L.spareClick]);   // eslint-disable-line react-hooks/exhaustive-deps
   const [cs, setCs]     = useState(null);      // {ar, ac, r, c} anchor + current
   const [clip, setClip] = useState(null);      // copied rectangle (2-D array)
   const dragRef = useRef(false);
@@ -324,6 +331,7 @@ export default function PMPanel() {
         cp: { zone: r.zone_name, line: r.line_name, machine_no: r.machine_no, machine_name: r.machine_name },
         points: r.entries || [], rev: { rev_no: r.rev_no, rev_date: r.rev_date },
         fill: {}, docFooter: r.doc_footer || null,
+        layout: sheetLayoutKey(r.doc_footer),           // jisme bhari thi usi me sudhaar
         rejectReason: r.reject_reason || "", rejectedFrom: r.rejected_from || "",
         rejectedBy: r.rejected_by || "",
         sign: { prepared: r.prepared_by || "", checked: "", approved: "" },
@@ -379,6 +387,7 @@ export default function PMPanel() {
       setSheetSpares([]);                               // fresh sheet → empty spares list
       setCalSheet({ code: item.machine_code, mLabel, week, cp: r,
                     points: d.points || [], rev: d.rev || {}, fill: {},
+                    layout: null,     // nayi sheet: Document Update wala, fmt aane par (upar calLayoutKey)
                     sign: { prepared:"", checked:"", approved:"" }, signImgs: [null, null, null], date: defDate });
       setCs(null); setClip(null);
     } catch (e) { setMsg(String(e.message || e).slice(0, 140)); }
@@ -388,6 +397,10 @@ export default function PMPanel() {
     const merged = calSheet.points.map((p, i) => ({ ...p, ...(calSheet.fill[i] || {}) }));
     if (!(merged.length && merged.every(p => String(p.status || "").trim()))) {
       setMsg("Every check point needs a STATUS (OK/NG)"); return;
+    }
+    const spMiss = CAL_L.spareClick ? spareMissing(merged, sheetSpares) : [];
+    if (spMiss.length) {
+      setMsg(`Spares Used is YES for point ${spMiss.join(", ")} — enter the spare name in “Spares Used” below`); return;
     }
     if (!calSheet.sign.prepared.trim() || !(calSheet.signImgs || [])[0]) {
       setMsg("Prepared By (Team Member - Maintenance) name and signature are required"); return;
@@ -401,15 +414,20 @@ export default function PMPanel() {
         zone_name: calSheet.cp.zone || "", line_name: calSheet.cp.line || "",
         machine_no: calSheet.cp.machine_no, machine_name: calSheet.cp.machine_name || "",
         pm_date: calSheet.date, rev_no: String(calSheet.rev.rev_no ?? ""), rev_date: String(calSheet.rev.rev_date ?? ""),
-        entries: merged.map(p => ({
+        // kis layout me bhari -- server snapshot me rakhta hai (wapas aayi sheet
+        // par server apna snapshot hi maanta hai)
+        layout: calLayoutKey,
+        // status_first: OK point ka Observation / Action nahi jaata (server bhi saaf karta hai)
+        entries: layoutSaaf(merged.map(p => ({
           s_no: p.s_no, check_point: p.check_point,
           judgement_standard: p.judgement_standard, method: p.method,
           observation: p.observation || "", action_taken: p.action_taken || "",
           // spares are no longer captured per point — the SHEET-LEVEL list below
-          // carries them, so every point stores a blank spares cell now.
-          spares_used: "", status: p.status || "", sign: p.sign || "",
+          // carries them.  Classic: blank cell.  Format 2: sirf YES / NO (detail
+          // neeche ki list me, Where Used = "Point N - ...").
+          spares_used: CAL_L.spareClick ? (p.spares_used || "") : "", status: p.status || "", sign: p.sign || "",
           spares: [],
-        })),
+        })), calLayoutKey),
         // one spares list for the whole sheet (blank rows dropped)
         sheet_spares: sheetSpares.filter(s => (s.spare_name || "").trim()),
         // stage 1 only — Engineer / In-Charge sign on their own tabs
@@ -665,12 +683,25 @@ export default function PMPanel() {
     // stage 1 also needs the Team Member's name + signature — Engineer and
     // In-Charge sign later, on their own tabs.
     const hasPrepared = !!calSheet.sign.prepared.trim() && !!(calSheet.signImgs || [])[0];
-    const allFilled = pointsDone && hasPrepared;
+    // Format 2: SPARES USED = YES wale har point ki neeche kam se kam ek row me Spare Name
+    const spareMiss = CAL_L.spareClick ? spareMissing(merged, sheetSpares) : [];
+    const allFilled = pointsDone && hasPrepared && !spareMiss.length;
     const gateHint = !pointsDone
       ? "Save unlocks after every check point has a STATUS (OK/NG)"
+      : spareMiss.length ? `Spares Used is YES for point ${spareMiss.join(", ")} — enter the spare name in “Spares Used” below`
       : !calSheet.sign.prepared.trim() ? "Enter the Prepared By (Team Member) name"
       : "Prepared By signature is still missing";
-    const onEditCal = (i, k, v) => setCalSheet(s => s ? ({ ...s, fill: { ...s.fill, [i]: { ...(s.fill[i] || {}), [k]: v } } }) : s);
+    const onEditCal = (i, k, v) => {
+      // Format 2 SPARES USED: YES hataya to neeche us point ki rows bhi hatao --
+      // detail bhari ho to pehle poochho (galti ki tap par likha hua na jaaye).
+      // YES par row upar wala effect banata hai.
+      if (k === "spares_used" && CAL_L.spareClick && isSpareYes(merged[i]) && v !== "YES") {
+        const { rows, bhari } = spareHatao(sheetSpares, merged[i], i);
+        if (bhari && !window.confirm(spareHataoSawal(merged[i], i, v, bhari))) return;
+        setSheetSpares(rows);
+      }
+      setCalSheet(s => s ? ({ ...s, fill: { ...s.fill, [i]: { ...(s.fill[i] || {}), [k]: v } } }) : s);
+    };
     return (
       <div style={{marginTop:14}}>
         <div style={{...card, marginBottom:14, display:"flex", gap:10, flexWrap:"wrap", alignItems:"center"}}>
@@ -692,6 +723,13 @@ export default function PMPanel() {
           </button>
           <button onClick={()=>setCalSheet(null)}
                   style={{padding:"8px 14px", borderRadius:8, border:bd, background:"#fff", cursor:"pointer", fontSize:12, fontWeight:700, color:"#64748b"}}>✕ Cancel</button>
+          {spareMiss.length > 0 && (
+            <div style={{flexBasis:"100%", fontSize:11.5, color:"#92400e", background:"#fffbeb",
+                         border:"1px solid #fde68a", borderRadius:8, padding:"7px 10px"}}>
+              🔧 Spares Used is <b>YES</b> for point <b>{spareMiss.join(", ")}</b> — enter the spare name in
+              <b> “Spares Used”</b> at the bottom of the sheet.
+            </div>
+          )}
           {calSheet.rejectReason && (
             <div style={{flexBasis:"100%", fontSize:11.5, color:"#b91c1c", background:"#fef2f2",
                          border:"1px solid #fecaca", borderRadius:8, padding:"8px 10px"}}>
@@ -706,7 +744,8 @@ export default function PMPanel() {
 
         {/* cell toolbar (Copy/Paste/Fill Down/Clear) user request pe hataya */}
         {/* a re-opened sheet keeps the footer it was originally filled under */}
-        <FormatSheet f={fmt ? { ...fmt, doc_footer: calSheet.docFooter || fmt.doc_footer } : fmt}
+        <FormatSheet f={fmt ? { ...fmt, doc_footer: calSheet.docFooter || fmt.doc_footer,
+                                layout: calLayoutKey } : fmt}
                      points={merged} rev={calSheet.rev} editable onEdit={onEditCal} signable={[0]}
                      onSpares={(i) => setSpareEdit({ i })}
                      sheetSpares={sheetSpares} onSheetSpare={onSheetSpare}
@@ -1083,8 +1122,11 @@ export default function PMPanel() {
                 {/* the sheet's OWN document-control footer (snapshotted at fill
                     time) — not the live format's, so approvers sign exactly
                     the document that History will archive */}
-                <FormatSheet f={fmt ? { ...fmt, doc_footer: verSheet.doc_footer || fmt.doc_footer } : fmt}
+                <FormatSheet f={fmt ? { ...fmt, doc_footer: verSheet.doc_footer || fmt.doc_footer,
+                                        layout: sheetLayoutKey(verSheet.doc_footer) } : fmt}
                              points={verSheet.entries || []}
+                             // sheet ke neeche spare ki list (sirf padhne ke liye)
+                             sheetSpares={verSheet.sheet_spares || []}
                              rev={{ rev_no: verSheet.rev_no, rev_date: verSheet.rev_date }}
                              signable={[verSlot]} signVals={vals} signImgs={imgs}
                              onSign={onVerSign} onSignVal={onVerSignVal}

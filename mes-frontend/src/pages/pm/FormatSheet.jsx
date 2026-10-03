@@ -20,8 +20,17 @@
 // rectangle, which the caller can then copy / paste / fill-down.  `cellSel` is
 // {r1,r2,c1,c2} over point index and FILL column index.  The S.No column is
 // untouched — it stays a plain serial number.
+// LAYOUT (2026-10-03): `f.layout` -- "classic" (purana 9 column) ya
+// "status_first" (Status Method ke baad, tap se OK -> NG -> khaali, Observation /
+// Action sirf NG par, Sign column nahi; SPARES USED tap se YES -> NO -> khaali,
+// YES wale point ki row neeche ki Spares list me -- jod ./pmSpares.js me).
+// Naqsha ./pmLayouts.js me.
+// Bhari sheet dikhate waqt bulane wala `f.layout` me SHEET ka apna layout deta
+// hai (snapshot) -- abhi chuna hua nahi.
 import { useRef } from "react";
 import SheetPrintBtn from "../../components/SheetPrintBtn";
+import { pmLayout, nextStatus } from "./pmLayouts";
+import { nextSpare, isSpareYes, isPointRow, spareNo, spareWhere } from "./pmSpares";
 
 export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = false, printable = false, onEdit = null, signVals = [], signImgs = [], onSign = null, onSignVal = null, signable = null,
                               cellSel = null, onCellDown = null, onCellEnter = null, onSpares = null,
@@ -32,18 +41,27 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
                               markIds = null, onMarkPoint = null }) {
   const markSet = markIds && markIds.length ? new Set(markIds) : null;
   // Spares are no longer captured per check point — the per-row "SPARES USED"
-  // cell is left blank and a single sheet-level list is filled at the bottom
-  // (fill form only).  onSpares stays in the signature for callers that still
-  // pass it; it is unused here now.
+  // cell is left blank (classic; Format 2 me YES / NO) and a single sheet-level
+  // list is filled at the bottom (fill / edit form; read-only views show it
+  // too when it has rows).  onSpares stays in the signature for callers that
+  // still pass it; it is unused here now.
   // Print ke liye sheet ke root ka pata -- SheetPrintBtn isi node ko chhapta hai.
   const boxRef = useRef(null);
   const canSign = (i) => (signable ? signable.includes(i) : editable);
   const inSel = (r, c) => !!cellSel && r >= cellSel.r1 && r <= cellSel.r2 && c >= cellSel.c1 && c <= cellSel.c2;
   if (!f) return <div style={{ color:"#64748b", padding:20 }}>Loading format…</div>;
+  const L = pmLayout(f);
+  const cols = L.columns || f.columns || [];
+  const widths = cols.length === L.widths.length ? L.widths : cols.map(() => `${100 / (cols.length || 1)}%`);
   const sb = "1px solid #000";
   const lbl = { border:sb, padding:"4px 8px", fontSize:11.5, fontWeight:800, background:"#f3f4f6", whiteSpace:"nowrap", width:"16%" };
   const val = { border:sb, padding:"4px 8px", fontSize:12, background:"#fff", width:"34%" };
   const sth = { border:sb, padding:"5px 6px", fontSize:10.5, fontWeight:800, background:"#f3f4f6", textAlign:"center" };
+  // Format 2: YES wale point -- neeche ki list me Where Used ka sujhaav, aur
+  // unki row ka khaali Spare Name peela (yahin bharna hai)
+  const yesPts = L.spareClick
+    ? points.map((p, i) => (isSpareYes(p) ? { no: spareNo(p, i), lbl: spareWhere(p, i) } : null)).filter(Boolean)
+    : [];
   const pairs = [];
   const hf = f.header_fields || [];
   for (let i = 0; i < hf.length; i += 2) pairs.push([hf[i], hf[i + 1]]);
@@ -84,15 +102,15 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
       <div style={{ overflowX:"auto" }}>
         <table style={{ width:"100%", minWidth:1000, borderCollapse:"collapse", tableLayout:"fixed", borderTop:"none" }}>
           <colgroup>
-            <col style={{ width:"4%" }} /><col style={{ width:"20%" }} /><col style={{ width:"14%" }} /><col style={{ width:"10%" }} />
-            <col style={{ width:"16%" }} /><col style={{ width:"13%" }} /><col style={{ width:"9%" }} /><col style={{ width:"6%" }} /><col style={{ width:"8%" }} />
+            {widths.map((w, ci) => <col key={ci} style={{ width:w }} />)}
           </colgroup>
-          <thead><tr>{(f.columns || []).map((c) => <th key={c} style={sth}>{c}</th>)}</tr></thead>
+          <thead><tr>{cols.map((c) => <th key={c} style={sth}>{c}</th>)}</tr></thead>
           <tbody>
             {points.length > 0 ? points.map((p, i) => {
               const inp = { width:"100%", border:"none", outline:"none", fontSize:11,
                             fontFamily:"inherit", background:"#fff", padding:"3px 4px", boxSizing:"border-box" };
-              const FILL = ["observation", "action_taken", "spares_used", "status", "sign"];
+              const FILL = L.fill;
+              const isNG = String(p.status || "").trim().toUpperCase() === "NG";
               const mk = p.id != null ? p.id : `i${i}`;
               return (
                 <tr key={i}
@@ -106,6 +124,12 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
                   {FILL.map((k, ci) => {
                     const sel = editable && inSel(i, ci);
                     const cellInp = sel ? { ...inp, background:"#dbeafe" } : inp;
+                    // status_first: Observation / Action sirf NG point par (OK /
+                    // khaali par khaana band -- na likhna, na dikhana)
+                    const band = L.ngOnly.includes(k) && !isNG;
+                    // Format 2 ka SPARES USED: YES / NO (classic me ye khaana khaali hi)
+                    const spareTap = L.spareClick && k === "spares_used";
+                    const tapCol = k === "status" || spareTap;
                     return (
                     <td key={k}
                         onMouseDown={editable ? (e) => onCellDown && onCellDown(i, ci, e.shiftKey) : undefined}
@@ -113,19 +137,41 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
                         style={{ border: sel ? "1px solid #2563eb" : sb, fontSize:11,
                                  padding: editable ? 0 : "3px 6px", verticalAlign:"top",
                                  // blank SPARES USED cell ko baaki fillable cells jaisa cream do (fill mode me)
-                                 background: sel ? "#dbeafe" : (k === "spares_used" && editable ? "#fff" : undefined),
-                                 textAlign: k === "status" ? "center" : "left",
-                                 fontWeight: k === "status" ? 800 : 400,
-                                 color: k === "status" ? (p[k] === "NG" ? "#dc2626" : "#15803d") : "#111827" }}>
+                                 background: sel ? "#dbeafe"
+                                   : (band && editable ? "#f1f5f9" : (k === "spares_used" && editable ? "#fff" : undefined)),
+                                 textAlign: tapCol ? "center" : "left",
+                                 fontWeight: tapCol ? 800 : 400,
+                                 color: k === "status" ? (p[k] === "NG" ? "#dc2626" : "#15803d")
+                                   : spareTap ? (p[k] === "YES" ? "#1d4ed8" : "#64748b") : "#111827" }}>
                       {/* SPARES USED per-row cell is intentionally BLANK — spares
                           are now captured once, in the sheet-level list below
                           (fill form only). */}
-                      {k === "spares_used" ? null : editable ? (
-                        k === "status" ? (
+                      {(k === "spares_used" && !spareTap) || band ? null : editable ? (
+                        spareTap ? (
+                          // YES -> neeche "Spares Used" me is point ki row (bulane wala banata hai)
+                          <button type="button" title="Tap: YES → NO → clear"
+                                  onClick={() => onEdit && onEdit(i, k, nextSpare(p[k] || ""))}
+                                  style={{ ...cellInp, minHeight:24, cursor:"pointer", textAlign:"center",
+                                           fontWeight:900, letterSpacing:".03em",
+                                           color: p[k] === "YES" ? "#1d4ed8" : "#64748b" }}>
+                            {p[k] || ""}
+                          </button>
+                        ) : k === "status" ? (
+                          L.statusClick ? (
+                            // Dropdown nahi -- har tap: khaali -> OK -> NG -> khaali
+                            <button type="button" title="Tap: OK → NG → clear"
+                                    onClick={() => onEdit && onEdit(i, k, nextStatus(p[k] || ""))}
+                                    style={{ ...cellInp, minHeight:24, cursor:"pointer", textAlign:"center",
+                                             fontWeight:900, letterSpacing:".03em",
+                                             color: p[k] === "NG" ? "#dc2626" : "#15803d" }}>
+                              {p[k] || ""}
+                            </button>
+                          ) : (
                           <select style={{ ...cellInp, textAlign:"center" }} value={p[k] || ""}
                                   onChange={(e) => onEdit && onEdit(i, k, e.target.value)}>
                             <option value=""></option><option value="OK">OK</option><option value="NG">NG</option>
                           </select>
+                          )
                         ) : (
                           <input style={cellInp} value={p[k] || ""}
                                  onChange={(e) => onEdit && onEdit(i, k, e.target.value)} />
@@ -137,7 +183,7 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
                 </tr>
               );
             }) : Array.from({ length: f.blank_rows || 15 }, (_, i) => (
-              <tr key={i}>{(f.columns || []).map((c, j) => (
+              <tr key={i}>{cols.map((c, j) => (
                 <td key={j} style={{ border:sb, height:24, fontSize:11, textAlign:j === 0 ? "center" : "left", padding:"2px 6px" }}>{j === 0 ? i + 1 : ""}</td>
               ))}</tr>
             ))}
@@ -176,34 +222,72 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
         ))}</tr>
         <tr>{(f.signoff || []).map((s) => <td key={s.label} style={{ border:sb, padding:"2px 8px 6px", fontSize:10.5, textAlign:"center", color:"#334155" }}>{s.caption}</td>)}</tr>
       </tbody></table>
-      {/* SHEET-LEVEL spares used — one list for the whole sheet, shown ONLY on
-          the fill form (never on the read-only / print view). */}
-      {editable && (
+      {/* SHEET-LEVEL spares used — one list for the whole sheet.  Fill / edit
+          form par inputs.  Baaki jagah (Engineer / In-Charge verify, History,
+          saved sheet, print) SIRF PADHNE ke liye -- jab list me kuch ho (user
+          2026-10-03: "verify karega usko spare ki detail dikhao, historical
+          data aur submit ke baad bhi check sheet ke neeche spare aane chahiye").
+          Pehle ye sirf fill form par dikhti thi. */}
+      {(editable || (sheetSpares && sheetSpares.length > 0)) && (
         <div style={{ border:sb, borderTop:"none", padding:"8px 10px", background:"#fff" }}>
           <div style={{ fontSize:12.5, fontWeight:900, color:"#111827", marginBottom:8 }}>
             🔧 Spares Used (this sheet)
           </div>
-          <datalist id="fmt-sheet-spare-names">
-            {(spareNames || []).map((nm, k) => <option key={k} value={nm} />)}
-          </datalist>
+          {editable && (
+            <datalist id="fmt-sheet-spare-names">
+              {(spareNames || []).map((nm, k) => <option key={k} value={nm} />)}
+            </datalist>
+          )}
+          {/* Add spare se bani row me Where Used chunne ke liye -- YES wale point */}
+          {editable && (
+            <datalist id="fmt-sheet-spare-where">
+              {yesPts.map((y) => <option key={y.no} value={y.lbl} />)}
+            </datalist>
+          )}
           <table style={{ width:"100%", borderCollapse:"collapse", tableLayout:"fixed" }}>
-            <colgroup>
-              <col style={{ width:"27%" }} /><col style={{ width:"23%" }} /><col style={{ width:"18%" }} />
-              <col style={{ width:"16%" }} /><col style={{ width:"9%" }} /><col style={{ width:"7%" }} />
-            </colgroup>
-            <thead><tr>{["Where Used", "Spare Name", "Model No", "Spare ERP No", "Qty", ""].map((h) =>
-              <th key={h} style={sth}>{h}</th>)}</tr></thead>
+            {editable ? (
+              <colgroup>
+                <col style={{ width:"27%" }} /><col style={{ width:"23%" }} /><col style={{ width:"18%" }} />
+                <col style={{ width:"16%" }} /><col style={{ width:"9%" }} /><col style={{ width:"7%" }} />
+              </colgroup>
+            ) : (
+              <colgroup>
+                <col style={{ width:"30%" }} /><col style={{ width:"25%" }} /><col style={{ width:"19%" }} />
+                <col style={{ width:"17%" }} /><col style={{ width:"9%" }} />
+              </colgroup>
+            )}
+            <thead><tr>{["Where Used", "Spare Name", "Model No", "Spare ERP No", "Qty"]
+              .concat(editable ? [""] : []).map((h, hi) =>
+              <th key={hi} style={sth}>{h}</th>)}</tr></thead>
             <tbody>
               {(sheetSpares || []).map((r, ri) => {
+                if (!editable) {
+                  // sirf padhna -- khaana khaali ho to "—"
+                  const td = { border:sb, padding:"4px 6px", fontSize:11, verticalAlign:"top", wordBreak:"break-word" };
+                  return (
+                    <tr key={ri}>
+                      <td style={td}>{r.where_used || "—"}</td>
+                      <td style={{ ...td, fontWeight:700 }}>{r.spare_name || "—"}</td>
+                      <td style={td}>{r.spare_model_no || "—"}</td>
+                      <td style={td}>{r.spare_cnmm_no || "—"}</td>
+                      <td style={{ ...td, textAlign:"center" }}>{r.spare_qty || "—"}</td>
+                    </tr>
+                  );
+                }
                 const spInp = { width:"100%", border:"none", outline:"none", fontSize:11,
                                 fontFamily:"inherit", background:"#fff", padding:"4px 5px", boxSizing:"border-box" };
+                // YES wale point ki row jisme abhi Spare Name nahi -- peela, yahin bharna hai
+                const bharo = !String(r.spare_name || "").trim() && yesPts.some((y) => isPointRow(r, y.no));
                 return (
                   <tr key={ri}>
                     <td style={{ border:sb, padding:0 }}>
                       <input style={spInp} value={r.where_used || ""} placeholder="Point 5 - PLC panel"
+                             list={yesPts.length ? "fmt-sheet-spare-where" : undefined}
                              onChange={(e) => onSheetSpare && onSheetSpare(ri, "where_used", e.target.value)} /></td>
-                    <td style={{ border:sb, padding:0 }}>
-                      <input style={spInp} list="fmt-sheet-spare-names" value={r.spare_name || ""}
+                    <td style={{ border:sb, padding:0, background: bharo ? "#fef3c7" : undefined }}>
+                      <input style={bharo ? { ...spInp, background:"#fef3c7" } : spInp}
+                             list="fmt-sheet-spare-names" value={r.spare_name || ""}
+                             placeholder={bharo ? "Enter spare name" : undefined}
                              onChange={(e) => onSheetSpare && onSheetSpare(ri, "spare_name", e.target.value)} /></td>
                     <td style={{ border:sb, padding:0 }}>
                       <input style={spInp} value={r.spare_model_no || ""}
@@ -221,18 +305,20 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
                   </tr>
                 );
               })}
-              {(!sheetSpares || sheetSpares.length === 0) && (
+              {editable && (!sheetSpares || sheetSpares.length === 0) && (
                 <tr><td colSpan={6} style={{ border:sb, padding:"6px 8px", fontSize:11, color:"#94a3b8", textAlign:"center" }}>
                   No spares added — use “＋ Add spare” below.
                 </td></tr>
               )}
             </tbody>
           </table>
-          <button type="button" onClick={() => onAddSheetSpare && onAddSheetSpare()}
-                  style={{ marginTop:8, border:"1px dashed #94a3b8", background:"#f8fafc", color:"#334155",
-                           borderRadius:8, padding:"6px 12px", fontWeight:700, fontSize:11.5, cursor:"pointer" }}>
-            ＋ Add spare
-          </button>
+          {editable && (
+            <button type="button" onClick={() => onAddSheetSpare && onAddSheetSpare()}
+                    style={{ marginTop:8, border:"1px dashed #94a3b8", background:"#f8fafc", color:"#334155",
+                             borderRadius:8, padding:"6px 12px", fontWeight:700, fontSize:11.5, cursor:"pointer" }}>
+              ＋ Add spare
+            </button>
+          )}
         </div>
       )}
       {/* document-control footer — format no / rev no / rev date (bottom of sheet) */}
