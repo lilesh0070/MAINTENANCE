@@ -2468,3 +2468,15 @@ body.in-app .dmc-scroll > div {
  * ke neeche tha.  App (`body.in-app`) me logo chhota hai aur apne niyam hain
  * -- wahan ye nahi lagta. */
 body:not(.in-app) .pm-head { padding-left: 50px; }
+
+/* ── TV browser: Full-screen button (FullscreenButton.jsx, html.fs-tv) ──
+ * Upar-daayen kone me fix (6..48px, right 8).  Jin header ki daayein
+ * padding 26-28px thi unka "admin" / "Disconnected" / "Save" button ke
+ * neeche aata tha -- TV par 60px.  Slip modal ka × bhi wahin tha -> modal
+ * thoda neeche.  Laptop / mobile website par button hai hi nahi, wahan kuch nahi. */
+html.fs-tv .an-top,
+html.fs-tv .sm-top,
+html.fs-tv .wk-top,
+html.fs-tv .su-top,
+html.fs-tv .oc-bar { padding-right: 60px !important; }
+html.fs-tv .bds-modal { margin-top: 44px !important; }

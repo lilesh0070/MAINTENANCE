@@ -4,14 +4,39 @@
  * Uses the browser Fullscreen API to put the whole app into full screen
  * (like F11) and back.  Rendered from Layout, so it appears on all pages.
  * Handy on the 65" TV wall-display: one tap → true full screen.
+ *
+ * 2026-10-03 (user): laptop aur mobile WEBSITE par nahi -- sirf TV ke
+ * browser me.  TV = bina touch ki badi khadi screen (Attendance ka
+ * `tvWebNow` wala hi niyam) ya 2000px+ (4K TV, TvFit jaisa).  Jagah:
+ * upar-daayen kone me fix, logo ki seedh (6..48px) -- sabse chhota sticky
+ * header 56.7px ka hai, aur headers daayein 78px chhodte hain, isliye
+ * koi naam iske neeche nahi aata.  APK me Layout ise render hi nahi karta.
  * ─────────────────────────────────────────────────────────────────── */
 import { useEffect, useState } from "react";
+
+const COARSE = typeof window !== "undefined" && !!window.matchMedia
+  && window.matchMedia("(pointer: coarse)").matches;
+const isTvScreen = () => typeof window !== "undefined" && !COARSE
+  && ((window.innerWidth >= 700 && window.innerHeight >= window.innerWidth * 1.3)
+      || window.innerWidth >= 2000);
 
 const fsElement = () =>
   document.fullscreenElement || document.webkitFullscreenElement || null;
 
 export default function FullscreenButton() {
   const [on, setOn] = useState(false);
+  const [tv, setTv] = useState(isTvScreen);
+
+  useEffect(() => {
+    const r = () => setTv(isTvScreen());
+    window.addEventListener("resize", r);
+    return () => window.removeEventListener("resize", r);
+  }, []);
+  // html par `fs-tv` -- responsive.css isi se header ke daayein button ki jagah chhodta hai
+  useEffect(() => {
+    document.documentElement.classList.toggle("fs-tv", tv);
+    return () => document.documentElement.classList.remove("fs-tv");
+  }, [tv]);
 
   useEffect(() => {
     const onChange = () => setOn(!!fsElement());
@@ -39,14 +64,16 @@ export default function FullscreenButton() {
     }
   };
 
+  if (!tv) return null;   // laptop / mobile website
+
   return (
     <button
       onClick={toggle}
       title={on ? "Exit full screen (Esc)" : "Full screen"}
       aria-label={on ? "Exit full screen" : "Enter full screen"}
       style={{
-        position: "fixed", right: 18, top: 18, zIndex: 10000,
-        width: 46, height: 46, borderRadius: 11,
+        position: "fixed", right: 8, top: 6, zIndex: 10000,
+        width: 42, height: 42, borderRadius: 10,
         border: "1px solid rgba(148,163,184,.4)",
         background: "rgba(15,23,42,.78)", color: "#fff",
         display: "grid", placeItems: "center", cursor: "pointer",

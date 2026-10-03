@@ -404,7 +404,11 @@ export default function Spare() {
                    }}
                    title="Click to see which machines used this spare"
                    style={{ borderTop: `3px solid ${TOP_HUE}`, minWidth: 268, maxWidth: 430,
-                            padding: "12px 22px", cursor: "pointer" }}>
+                            padding: "12px 22px", cursor: "pointer",
+                            /* `sp-top` (header ki class) is card par bhi lagi hai -- uska
+                               `sticky; top:0` scroll par card ko header ke upar chipka deta
+                               tha (slide-nav logo ke neeche "Most Used Spare").  Dikhawat wahi. */
+                            position: "relative", zIndex: "auto" }}>
                 <div style={{ fontSize: 11, color: "#64748b", fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase" }}>Most Used Spare</div>
                 <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 27, fontWeight: 800,
                               color: TOP_HUE, lineHeight: 1.12, wordBreak: "break-word" }}>
