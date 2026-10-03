@@ -1,5 +1,5 @@
 {
-  "version": "1.4.140",
-  "notes": "The app can now also connect over the internet (maintenance.dxtbdi.com) when the plant Ethernet / Wi-Fi server can't be reached. Internet On/Off switch at the top of the login page and in Settings.",
-  "released_at": "2026-09-28T12:46:40"
+  "version": "1.4.141",
+  "notes": "Leave: apply in your own name; approvals follow the hierarchy (Assistant Manager, Deputy Manager, Manager); Records tab with date / name / status filters and Excel; admin can delete a leave record. Attendance names follow the hierarchy in every row; the dashboard shows both shifts (current shift on top). PM check sheet: Spares Used (YES / NO) column in Format 2, and spare details are shown on verify and history. Log Book entries can be edited. Turning the Internet switch off now also stops ANDON over the internet.",
+  "released_at": "2026-10-03T11:04:53"
 }
