@@ -1,5 +1,5 @@
 {
-  "version": "1.4.146",
-  "notes": "Attendance on TV: the empty lower half of the screen now shows leave - who is on leave today, who is coming up and the pending requests (view only, no scrolling). The board in the upper half is unchanged.",
-  "released_at": "2026-10-03T15:10:31"
+  "version": "1.4.147",
+  "notes": "Attendance on TV: the lower half of the screen now shows the full Leave section - Approved, Pending and Records with Excel download, as allowed for the TV's login - and it refreshes every minute. The board in the upper half is unchanged.",
+  "released_at": "2026-10-03T15:34:17"
 }
