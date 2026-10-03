@@ -21,7 +21,8 @@
  *     Change dates / Reject; Cancel apni PENDING; Delete sirf admin).
  * Hisaab + haq SERVER par: Phase2/routers/attendance.py (LEAVE wala hissa);
  * yahan ki jaanch sirf jaldi bataane ke liye.
- * TV par ye section hai hi nahi (TV ka layout band).  Koi lagataar animation nahi.
+ * TV par board ke neeche ki aadhi screen me (apne scroll wale dabbe me) -- `poll`
+ * se har minute taaza (TV din bhar khula rehta hai).  Koi lagataar animation nahi.
  * ─────────────────────────────────────────────────────────────────── */
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
@@ -167,7 +168,7 @@ const CSS = `
   ${NATIVE ? ".alv-in[type=date] { -webkit-appearance:none; appearance:none; }" : ""}
 `;
 
-export default function AttendanceLeave({ token, today: today0 }) {
+export default function AttendanceLeave({ token, today: today0, poll = 0 }) {
   const t0 = today0 || isoOf(new Date());
   const [data, setData]   = useState(null);    // GET /leave ka jawab
   const [err, setErr]     = useState("");
@@ -210,6 +211,14 @@ export default function AttendanceLeave({ token, today: today0 }) {
       .catch((e) => { if (!off) setErr(e.message || "Could not load leave requests."); });
     return () => { off = true; };
   }, [token, rev, rFrom, rTo, rangeGalti]);
+
+  // TV: har `poll` ms dobara laao (chhupe page par nahi) -- list hi badalti hai,
+  // khula form / date badalna waise hi rehta hai
+  useEffect(() => {
+    if (!poll) return undefined;
+    const t = setInterval(() => { if (document.visibilityState === "visible") setRev((r) => r + 1); }, poll);
+    return () => clearInterval(t);
+  }, [poll]);
 
   useEffect(() => {
     if (!msg) return undefined;

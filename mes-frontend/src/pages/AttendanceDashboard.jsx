@@ -54,7 +54,6 @@ import { isNativeApp } from "../constants/apiBase";
 import DashBack from "../components/DashBack";
 import AttendanceHistory from "./AttendanceHistory";
 import AttendanceLeave from "./AttendanceLeave";
-import AttendanceTvLeave from "./AttendanceTvLeave";
 import { rankOf } from "../constants/hierarchy";
 
 const NATIVE = isNativeApp();
@@ -72,8 +71,9 @@ const REFRESH_MS = 60_000;          // doosra supervisor badle to TV / doosre ph
      web  : TV ke browser me website -- badi khadi screen, touch nahi
             (touch wale tablet / phone par pehle jaisa scroll)
    `TvFit.jsx` sirf 2000px+ (4K Windows TV) par chalta hai, is TV par nahi.
-   2026-10-03 (user ne chuna): neeche ki aadhi me ab LEAVE (`AttendanceTvLeave`,
-   absolute -- board ka naap nahi badalta), sirf dekhna, bina scroll. */
+   2026-10-03 (user): neeche ki aadhi me ab wahi POORA Leave jo site / mobile par
+   (Approved / Pending / Records + Excel, login ke hisaab se) -- absolute dabba,
+   scroll SIRF uske andar; board ka naap / fit nahi badalta. */
 const tvWebNow = () => typeof window !== "undefined" && !NATIVE && !COARSE
   && window.innerWidth >= 700 && window.innerHeight >= window.innerWidth * 1.3;
 
@@ -1124,6 +1124,12 @@ function AttendanceBoardPage() {
         .att-tv .att-ctext { align-items:flex-start; flex:1; gap:2px; }
         .att-tv .att-code { margin-top:0; }
         .att-tv .att-hole { min-height:70px; }
+        /* TV: neeche ki aadhi me poora Leave -- absolute (flex ke bahar, board ka naap
+           nahi badalta); scroll SIRF is dabbe me, page nahi hilta.  Neeche 96px = AI button. */
+        .att-tv .att-tvleave { position:absolute; left:0; right:0; top:50vh; bottom:0; overflow-y:auto;
+                               -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
+                               padding:0 24px 96px; box-sizing:border-box; }
+        .att-tv .att-tvleave .alv { margin-top:10px; }
 
         /* ── tablet / patli khidki ── */
         @media (max-width: 1100px) {
@@ -1333,9 +1339,14 @@ function AttendanceBoardPage() {
           {!tvMode && board && <AttendanceLeave token={token} today={board.today} />}
         </div>
         </div>
-        {/* TV: Leave neeche ki KHAALI aadhi screen me (user 2026-10-03: "neeche ki
-            khaali aadhi me") -- absolute, board ka naap / fit nahi badalta; sirf dekhna. */}
-        {tvMode && board && <AttendanceTvLeave token={token} today={board.today} tvApp={tvApp} />}
+        {/* TV: Leave neeche ki aadhi screen me -- wahi poora Leave jo site / mobile par
+            (user 2026-10-03: "record aur Excel TV par check kar sake -- Approved, Pending,
+            Record; TV par login hai to usme dikhna chahiye").  Har minute taaza. */}
+        {tvMode && board && (
+          <div className="att-tvleave">
+            <AttendanceLeave token={token} today={board.today} poll={REFRESH_MS} />
+          </div>
+        )}
       </div>
 
       {drag && ghostPerson && createPortal(
