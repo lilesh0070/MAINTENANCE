@@ -862,7 +862,17 @@ export default function MaintenanceHistorical() {
           </div>
           <div className="hd-fld">
             <label>Date</label>
-            <input className="hd-sel" type="date" value={fDate} onChange={(e) => setFDate(e.target.value)} />
+            {/* Date ka picker chune hue Month (warna FY) ke andar hi (user 2026-10-03:
+                "jo month select ho date bhi usi ki select ho").  Date chuno to
+                Month bhi usi ka ho jaata hai -- dono kabhi alag nahi dikhte. */}
+            <input className="hd-sel" type="date" value={fDate}
+                   min={winNoDate?.start} max={winNoDate?.end}
+                   onChange={(e) => {
+                     const v = e.target.value;
+                     if (v && winNoDate && (v < winNoDate.start || v > winNoDate.end)) return;
+                     setFDate(v);
+                     if (v && monthOpts.some((m) => m.value === v.slice(0, 7))) setFMonth(v.slice(0, 7));
+                   }} />
           </div>
           <div className="hd-fld">
             <label>Zone</label>

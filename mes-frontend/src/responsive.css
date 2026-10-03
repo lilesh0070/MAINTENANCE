@@ -431,8 +431,10 @@ body.in-app table {
 
 /* Pending Breakdown ke naam ke neeche jo chhoti line thi (`2026-09-03 · All
    zones`) -- wahi baat theek uske neeche filter me dikh rahi hai, isliye app
-   me do baar padhne ka koi fayda nahi.  Phone par har line mehngi hai. */
-body.in-app .kp-sub { display: none !important; }
+   me do baar padhne ka koi fayda nahi.  Phone par har line mehngi hai.
+   2026-10-03: sirf wahi hissa chhupta hai -- "Above N min" (Slip Threshold)
+   filter me kahin nahi, isliye wo app (phone / tablet / TV) me bhi dikhta hai. */
+body.in-app .kp-sub-when { display: none !important; }
 
 /* ── Dashboard ke bade card ke aapas ke faasle ───────────────────────
  * Sab 12px par the (`.md-cols` ka gap aur margin, aur dono `.md-section` ki

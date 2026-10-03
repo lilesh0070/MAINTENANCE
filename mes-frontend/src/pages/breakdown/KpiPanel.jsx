@@ -83,6 +83,7 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
   const [addOpen, setAddOpen] = useState(false);            // "+ Add Zone" picker toggle (admin)
   const [addPick, setAddPick] = useState("");               // zone chosen in the picker
   const [data,    setData]    = useState(null);
+  const [threshMin, setThreshMin] = useState(null);   // AUTO slip threshold (min)
   const [loading, setLoading] = useState(false);
   const [err,     setErr]     = useState(null);
   const portrait = usePortrait();   // vertical TV → compact sizing
@@ -149,6 +150,11 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
       if (fLine) qs.set("line_name", fLine);
       const r = await api.get(`/api/maintenance-kpi/?${qs.toString()}`, token);
       setData(r);
+      // Document Update -> Slip Threshold ka time, sub-title me "Above N min".
+      // Isi 20 s ke reload ke saath -- admin badle to TV par bhi khud aa jaaye.
+      api.get("/api/andon/slip-config", token)
+        .then((c) => { const n = Number(c?.slip_threshold_min); if (n > 0) setThreshMin(n); })
+        .catch(() => {});
     } catch (e) { setErr(e.message || "Load failed"); }
     finally    { setLoading(false); }
   }, [fDate, fZone, fLine, token, refreshKey]);   // refreshKey bump → refetch after a slip is filled
@@ -182,7 +188,11 @@ function KpiPanel({ token, lines, onViewSlip, onFillSlip, onDeleteSlip, refreshK
             Pending Breakdown
           </div>
           <div className="kp-sub" style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
-            {fDate || monthLabel()} · {fZone || "All zones"}{fLine ? ` · ${fLine}` : ""}
+            <span className="kp-sub-when">
+              {fDate || monthLabel()} · {fZone || "All zones"}{fLine ? ` · ${fLine}` : ""}
+              {threshMin != null ? " · " : ""}
+            </span>
+            {threshMin != null && <span className="kp-sub-above">Above {threshMin} min</span>}
           </div>
         </div>
         <div className="kp-filters" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", position: "relative" }}>
