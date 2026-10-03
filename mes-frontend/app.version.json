@@ -1,5 +1,5 @@
 {
-  "version": "1.4.142",
-  "notes": "PM check sheet: number points take a reading (start with the number, e.g. 8 AMP, 120 VAC); point Type (Alphabet / Number) chosen in Document Update. Spares Used: tap NO, then YES; the spare list shows just 'Point N'. Production Breakdown Slip: the Maintenance tab no longer shows other slips. Permission changes now apply in the app without restarting it.",
-  "released_at": "2026-10-03T12:14:03"
+  "version": "1.4.143",
+  "notes": "PM check sheet: an OK point now fills Observation with 'FOUND OK' and Action Taken with '-' automatically; the reading box on number points is blank (no placeholder).",
+  "released_at": "2026-10-03T12:36:25"
 }
