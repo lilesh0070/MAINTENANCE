@@ -64,16 +64,16 @@ export const sheetLayoutKey = (docFooter) =>
 export const nextStatus = (s) => (s === "OK" ? "NG" : s === "NG" ? "" : "OK");
 
 /* ── Check point ka TYPE (user 2026-10-03) ─────────────────────────────
- * "jo number hai wahan number fill karenge, OK / NG nahi" -- point ka `type`
- * (master `maintenance_pm_check_point.type`): ALPHABET = OK / NG (pehle jaisa),
- * NUMBER = reading (jaise 3ph/210 Vac ±10 -- multimeter ki value).  NUMBER par
- * STATUS ke khaane me hi reading jaati hai; Observation / Action wahan hamesha
- * khule (OK / NG hai hi nahi).  Ye `type` check sheet par koi column NAHI --
- * sirf bharne ka tareeqa badalta hai.  Server bhi yahi jaanchta hai
+ * Point ka `type` (master `maintenance_pm_check_point.type`): ALPHABET /
+ * NUMBER (jaise 3ph/210 Vac ±10 -- multimeter ki value).  Teesri baar user ne
+ * tay kiya: STATUS sirf OK / NG -- HAR point par; NUMBER point ki READING
+ * OBSERVATION me ("240VAC", "210 VAC" -- pehle number, aage kuch bhi), OK ho
+ * ya NG dono me zaroori.  Ye `type` check sheet par koi column NAHI -- sirf
+ * bharne ka tareeqa badalta hai.  Server bhi yahi jaanchta hai
  * (Phase2/routers/pm.py `_number_jaanch`, `_layout_saaf`). */
 export const isNumPoint = (p) => String((p && p.type) || "").trim().toUpperCase() === "NUMBER";
 
-/** Reading: PEHLE number, uske baad jo chahe (user 2026-10-03: "number daalne
+/** Reading (NUMBER point ka Observation): PEHLE number, uske baad jo chahe (user 2026-10-03: "number daalne
  *  ke baad koi kuch likhna chahe to likh de -- jaise 8AMP, 120 VAC").  Shuru ke
  *  akshar (number se pehle) nahi lete; number aa gaya to aage sab chalta hai. */
 export function numOnly(v) {
@@ -87,10 +87,21 @@ export function numOnly(v) {
 }
 
 const NUM_RE = /^-?\d+(\.\d+)?/;                      // SHURU me number (aage kuch bhi)
-/** Point bhara hua hai?  ALPHABET = koi bhi STATUS; NUMBER = number se shuru. */
-export const statusFilled = (p) => (isNumPoint(p)
-  ? NUM_RE.test(String((p && p.status) || "").trim())
-  : !!String((p && p.status) || "").trim());
+/** NUMBER point ki reading (Observation) number se shuru hoti hai? */
+export const readingOk = (p) => NUM_RE.test(String((p && p.observation) || "").trim());
+/** NG point par Observation aur Action dono likhe hain?  ("-" = khaali -- wo
+ *  sirf OK ka default hai; user: "jisko NG kar diya usme observation aur action
+ *  dono fill hone chahiye, NG karne par - hat jayega") */
+export const ngFilled = (p) => !!String((p && p.observation) || "").trim()
+  && !["", "-"].includes(String((p && p.action_taken) || "").trim());
+/** Point bhara hua hai?  STATUS (OK / NG) har point par; NUMBER par Observation
+ *  me reading; NG par Observation + Action. */
+export const statusFilled = (p) => {
+  const st = String((p && p.status) || "").trim().toUpperCase();
+  if (!st) return false;
+  if (isNumPoint(p) && !readingOk(p)) return false;
+  return st !== "NG" || ngFilled(p);
+};
 
 /* ── OK point ka default (user 2026-10-03) ─────────────────────────────
  * "jis status me OK aa raha hai uske observation of check point me default
@@ -99,20 +110,25 @@ export const statusFilled = (p) => (isNumPoint(p)
 export const OK_OBS = "FOUND OK";
 export const OK_ACT = "-";
 
-/** STATUS badla -- fill me kya-kya badle (patch).  OK aaya: khaali Observation
- *  / Action me default; OK se hata: default hi pada ho to saaf (NG par asli
- *  likhna hai).  NUMBER point par kuch nahi (wahan OK / NG hai hi nahi). */
+/** STATUS badla -- fill me kya-kya badle (patch).
+ *  Action: OK aate hi khaali ho to "-" (user: "action me default - wala hi
+ *    rahega, baad me change kar sakte"); NG ya status hata to wahi "-" saaf --
+ *    NG par asli action likhna zaroori ("NG karne par - hat jayega").
+ *  Observation (sirf ALPHABET): OK par khaali ho to "FOUND OK"; OK se hata to
+ *    wahi default saaf.  NUMBER par Observation = reading -- chhedte nahi. */
 export function statusPatch(prev, nayi) {
   const patch = { status: nayi };
-  if (isNumPoint(prev)) return patch;
-  const isOk = String(nayi || "").trim().toUpperCase() === "OK";
-  const wasOk = String((prev && prev.status) || "").trim().toUpperCase() === "OK";
-  if (isOk) {
-    if (!String((prev && prev.observation) || "").trim()) patch.observation = OK_OBS;
-    if (!String((prev && prev.action_taken) || "").trim()) patch.action_taken = OK_ACT;
-  } else if (wasOk) {
-    if ((prev && prev.observation) === OK_OBS) patch.observation = "";
-    if ((prev && prev.action_taken) === OK_ACT) patch.action_taken = "";
+  const st = String(nayi || "").trim().toUpperCase();
+  const was = String((prev && prev.status) || "").trim().toUpperCase();
+  const act = String((prev && prev.action_taken) || "").trim();
+  if (st === "OK" && !act) patch.action_taken = OK_ACT;
+  else if (st !== "OK" && act === OK_ACT) patch.action_taken = "";
+  if (!isNumPoint(prev)) {
+    if (st === "OK") {
+      if (!String((prev && prev.observation) || "").trim()) patch.observation = OK_OBS;
+    } else if (was === "OK" && (prev && prev.observation) === OK_OBS) {
+      patch.observation = "";
+    }
   }
   return patch;
 }
@@ -122,18 +138,23 @@ export function statusPatch(prev, nayi) {
  *  karta hai). */
 export function layoutSaaf(entries, layoutKey) {
   return (entries || []).map((e) => {
-    const ok = !isNumPoint(e) && String(e.status || "").trim().toUpperCase() === "OK";
+    const num = isNumPoint(e);
+    const st = String(e.status || "").trim().toUpperCase();
+    const has = st === "OK" || st === "NG";
+    const ok = !num && st === "OK";
+    // Action: OK par default "-" (khaali ho to) -- likha hua nahi chhedte; NG par
+    // asli likha hona zaroori (save gate), default nahi
+    const act = st === "OK" && !String(e.action_taken || "").trim() ? OK_ACT : (e.action_taken || "");
     if (layoutKey !== "status_first") {
-      // classic: OK par khaali ho tabhi default (likha hua nahi chhedte)
-      return ok ? { ...e, observation: String(e.observation || "").trim() ? e.observation : OK_OBS,
-                    action_taken: String(e.action_taken || "").trim() ? e.action_taken : OK_ACT } : e;
+      // classic: OK (alphabet) par khaali Observation me default
+      return { ...e, action_taken: act,
+               observation: ok && !String(e.observation || "").trim() ? OK_OBS : (e.observation || "") };
     }
-    // NUMBER point par OK / NG nahi -- Observation / Action hamesha rakho
-    const ng = isNumPoint(e) || String(e.status || "").trim().toUpperCase() === "NG";
     const sp = String(e.spares_used || "").trim().toUpperCase();
     return { ...e,
-             observation: ok ? OK_OBS : ng ? (e.observation || "") : "",
-             action_taken: ok ? OK_ACT : ng ? (e.action_taken || "") : "",
+             // OK (alphabet) = pakka "FOUND OK"; NUMBER = reading; NG = likha; khaali status = saaf
+             observation: ok ? OK_OBS : (num || st === "NG") ? (e.observation || "") : "",
+             action_taken: (num || has) ? act : "",
              sign: "", spares_used: sp === "YES" || sp === "NO" ? sp : "" };
   });
 }

@@ -91,9 +91,12 @@ def fake_get_conn():
 
 
 AM  = {"id": -9101, "username": "zz_am",  "role": "assistant_manager"}
-# sanjha login (kisi ke bhi naam arzi) -- do alag id, taaki "paraayi cancel" jaanch sakein
-SUP = {"id": -9102, "username": "maint", "role": "supervisor"}
-SUP2 = {"id": -9103, "username": "MAINT", "role": "supervisor"}
+# kisi ke bhi naam arzi sirf ADMIN (maint ab nahi -- 2026-10-03) -- do alag id
+SUP = {"id": -9102, "username": "zz_ad1", "role": "admin"}
+SUP2 = {"id": -9103, "username": "zz_ad2", "role": "admin"}
+# na approver, na arzi wala -- 403 wali jaanch ke liye
+NON = {"id": -9104, "username": "zz_sup_x", "role": "supervisor"}
+MAINT = {"id": -9105, "username": "maint", "role": "supervisor"}
 
 try:
     conn.autocommit = False
@@ -124,7 +127,7 @@ try:
     st, r1 = err(A.apply_leave, A.LeaveIn(staff_id=sa, from_date=d(3), to_date=d(5), reason="  family   function "), SUP)
     T("theek arzi -> PENDING", st is None and r1["status"] == "PENDING", str(r1)[:90] if st else "")
     T("din ginti 3 (dono din shamil)", st is None and r1["days"] == 3)
-    T("applied_by = login, mine = True", st is None and r1["applied_by"] == "maint" and r1["mine"] is True)
+    T("applied_by = login, mine = True", st is None and r1["applied_by"] == "zz_ad1" and r1["mine"] is True)
     T("reason saaf (faltu space hata)", st is None and r1["reason"] == "family function")
     T("naam/emp code ki naqal", st is None and r1["staff_name"] == "ZZ_TEST_LEAVE_A" and r1["emp_code"] == "ZZL1")
 
@@ -133,10 +136,13 @@ try:
     T("To < From -> 400", st == 400, m)
     st, m = err(A.apply_leave, A.LeaveIn(staff_id=sa, from_date=d(20), to_date=d(20 + 92)), SUP)
     T("93 din -> 400", st == 400, m)
-    st, m = err(A.apply_leave, A.LeaveIn(staff_id=sa, from_date=d(-8), to_date=d(-8)), SUP)
-    T("8 din purani -> 400", st == 400, m)
+    # back date band (2026-10-03) -- admin ki bhi nahi
+    st, m = err(A.apply_leave, A.LeaveIn(staff_id=sa, from_date=d(-1), to_date=d(1)), SUP)
+    T("kal se (back date) -> 400, admin ki bhi", st == 400 and "back-dated" in str(m), m)
     st, m = err(A.apply_leave, A.LeaveIn(staff_id=sa, from_date=d(-7), to_date=d(-7)), SUP)
-    T("7 din purani -> chalti hai", st is None, m if st else "")
+    T("7 din purani -> 400", st == 400, m)
+    st, m = err(A.apply_leave, A.LeaveIn(staff_id=sa, from_date=d(0), to_date=d(0)), SUP)
+    T("aaj ki -> chalti hai", st is None, m if st else "")
     st, m = err(A.apply_leave, A.LeaveIn(staff_id=-1, from_date=d(1), to_date=d(1)), SUP)
     T("list me na ho -> 400", st == 400, m)
 
@@ -150,7 +156,12 @@ try:
 
     print("\n(4) list")
     L = A.list_leave(None, None, None, None, SUP)
-    T("supervisor: kuch approve nahi", L["approves"] == [])
+    T("supervisor: kuch approve nahi", A.list_leave(None, None, None, None, NON)["approves"] == [])
+    st, m = err(A.apply_leave, A.LeaveIn(staff_id=sa, from_date=d(40), to_date=d(40)), MAINT)
+    T("maint (sanjha) arzi -> 403", st == 403, m)
+    T("maint: can_apply False, shared_login True",
+      A.list_leave(None, None, None, None, MAINT)["can_apply"] is False
+      and A.list_leave(None, None, None, None, MAINT)["shared_login"] is True)
     T("AM: staff approve", A.list_leave(None, None, None, None, AM)["approves"] == ["staff"])
     mine = [x for x in L["pending"] if x["id"] in (r1["id"], r2["id"], r3["id"])]
     T("teeno arzi pending me", len(mine) == 3)
@@ -159,7 +170,7 @@ try:
       and next(x for x in L["rows"] if x["id"] == r2["id"])["mine"] is False)
 
     print("\n(5) approve")
-    st, m = err(A.approve_leave, r1["id"], A.LeaveDecide(), SUP)
+    st, m = err(A.approve_leave, r1["id"], A.LeaveDecide(), NON)
     T("supervisor approve -> 403", st == 403, m)
     st, a1 = err(A.approve_leave, r1["id"], A.LeaveDecide(note="ok"), AM)
     T("AM approve -> APPROVED", st is None and a1["status"] == "APPROVED", a1 if st else "")
@@ -178,8 +189,30 @@ try:
     st, p3 = err(A.change_leave_dates, r3["id"], A.LeaveDecide(from_date=d(10), to_date=d(11)), AM)
     T("APPROVED par nayi date", st is None and p3["from_date"] == d(10) and p3["status"] == "APPROVED", p3 if st else "")
     T("orig PEHLI hi (3-5), beech wali (4-6) nahi", st is None and p3["orig_from"] == d(3) and p3["orig_to"] == d(5))
-    st, m = err(A.change_leave_dates, r3["id"], A.LeaveDecide(from_date=d(10), to_date=d(11)), SUP)
+    st, m = err(A.change_leave_dates, r3["id"], A.LeaveDecide(from_date=d(10), to_date=d(11)), NON)
     T("supervisor date badle -> 403", st == 403, m)
+
+    print("\n(7b) back date -- approver bhi naye beete din nahi jod sakta (chhota karna chalta hai)")
+    st, m = err(A.change_leave_dates, r3["id"], A.LeaveDecide(from_date=d(-2), to_date=d(11)), AM)
+    T("shuruaat peechhe (parson) kheenchi -> 400", st == 400 and "back-dated" in str(m), m)
+    st, r5 = err(A.apply_leave, A.LeaveIn(staff_id=sb, from_date=d(30), to_date=d(33)), SUP)
+    st, x = err(A.approve_leave, r5["id"], A.LeaveDecide(), AM)
+    c.execute("UPDATE maintenance_attendance_leave SET from_date = %s, to_date = %s WHERE id = %s",
+              (d(-3), d(2), r5["id"]))           # chalu chhutti (parson se) -- jaise beech me
+    st, x = err(A.change_leave_dates, r5["id"], A.LeaveDecide(from_date=d(-3), to_date=d(0)), AM)
+    T("chalu chhutti chhoti (aaj tak) -> chalti hai", st is None and x["to_date"] == d(0), x if st else "")
+    st, x = err(A.change_leave_dates, r5["id"], A.LeaveDecide(from_date=d(-3), to_date=d(4)), AM)
+    T("aakhir aage (aaj ke baad) badhaya -> chalta hai", st is None and x["to_date"] == d(4), x if st else "")
+    st, m = err(A.change_leave_dates, r5["id"], A.LeaveDecide(from_date=d(-5), to_date=d(4)), AM)
+    T("shuruaat aur peechhe -> 400", st == 400, m)
+    st, x = err(A.change_leave_dates, r5["id"], A.LeaveDecide(from_date=d(-2), to_date=d(4)), AM)
+    T("shuruaat aage kheenchi (beeta din kam) -> chalti hai", st is None and x["from_date"] == d(-2), x if st else "")
+    c.execute("UPDATE maintenance_attendance_leave SET from_date = %s, to_date = %s WHERE id = %s",
+              (d(-9), d(-7), r5["id"]))          # beeti hui chhutti
+    st, m = err(A.change_leave_dates, r5["id"], A.LeaveDecide(from_date=d(-9), to_date=d(-5)), AM)
+    T("beeti chhutti ka aakhir beete din tak badhaya -> 400", st == 400, m)
+    st, x = err(A.change_leave_dates, r5["id"], A.LeaveDecide(from_date=d(-9), to_date=d(-8)), AM)
+    T("beeti chhutti chhoti -> chalti hai", st is None and x["to_date"] == d(-8), x if st else "")
 
     print("\n(8) date badal kar takraav")
     st, m = err(A.change_leave_dates, r2["id"], A.LeaveDecide(from_date=d(4), to_date=d(6)), AM)
@@ -193,7 +226,7 @@ try:
 
     print("\n(10) cancel")
     st, r4 = err(A.apply_leave, A.LeaveIn(staff_id=sb, from_date=d(20), to_date=d(21)), SUP)
-    st, m = err(A.cancel_leave, r4["id"], SUP2)
+    st, m = err(A.cancel_leave, r4["id"], NON)
     T("doosra supervisor cancel -> 403", st == 403, m)
     st, k4 = err(A.cancel_leave, r4["id"], SUP)
     T("jisne bhari wo cancel -> CANCELLED", st is None and k4["status"] == "CANCELLED", k4 if st else "")

@@ -29,7 +29,7 @@
 // hai (snapshot) -- abhi chuna hua nahi.
 import { useRef } from "react";
 import SheetPrintBtn from "../../components/SheetPrintBtn";
-import { pmLayout, nextStatus, isNumPoint, numOnly, OK_OBS, OK_ACT } from "./pmLayouts";
+import { pmLayout, nextStatus, isNumPoint, numOnly, OK_OBS } from "./pmLayouts";
 import { nextSpare, isSpareYes, isPointRow, spareNo, spareWhere } from "./pmSpares";
 
 export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = false, printable = false, onEdit = null, signVals = [], signImgs = [], onSign = null, onSignVal = null, signable = null,
@@ -109,13 +109,13 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
             {points.length > 0 ? points.map((p, i) => {
               const inp = { width:"100%", border:"none", outline:"none", fontSize:11,
                             fontFamily:"inherit", background:"#fff", padding:"3px 4px", boxSizing:"border-box" };
-              const FILL = L.fill;
-              // NUMBER point: STATUS me reading; Observation / Action hamesha khule
+              // User 2026-10-03 (teesri baar): STATUS sirf OK / NG -- HAR point par
+              // (NUMBER bhi).  NUMBER ki reading OBSERVATION me ("240VAC", "210 VAC"
+              // -- pehle number, aage kuch bhi), OK ho ya NG.  ACTION TAKEN sabke
+              // liye default "-" (badal sakte).  "-" khaane ke beech, bold, bada.
+              const st = String(p.status || "").trim().toUpperCase();
               const numPt = isNumPoint(p);
-              const isNG = numPt || String(p.status || "").trim().toUpperCase() === "NG";
-              // Format 2 me OK point: Observation / Action me pakka default
-              // ("FOUND OK" / "-") -- khaana badalta nahi (user 2026-10-03)
-              const okRow = L.ngOnly.length > 0 && !numPt && String(p.status || "").trim().toUpperCase() === "OK";
+              const f2 = L.ngOnly.length > 0;            // Format 2 (status_first)
               const mk = p.id != null ? p.id : `i${i}`;
               return (
                 <tr key={i}
@@ -126,16 +126,24 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
                   <td style={{ border:sb, fontSize:11, padding:"3px 6px", verticalAlign:"top" }}>{p.check_point || ""}</td>
                   <td style={{ border:sb, fontSize:11, padding:"3px 6px", verticalAlign:"top" }}>{p.judgement_standard || ""}</td>
                   <td style={{ border:sb, fontSize:11, padding:"3px 6px", verticalAlign:"top" }}>{p.method || ""}</td>
-                  {FILL.map((k, ci) => {
+                  {L.fill.map((k, ci) => {
                     const sel = editable && inSel(i, ci);
                     const cellInp = sel ? { ...inp, background:"#dbeafe" } : inp;
-                    // status_first: Observation / Action sirf NG point par (OK /
-                    // khaali par khaana band -- na likhna, na dikhana)
-                    const okFixed = okRow && L.ngOnly.includes(k);
-                    const band = L.ngOnly.includes(k) && !isNG && !okFixed;
+                    // Format 2 me kaunsa khaana khula:
+                    //   Observation: NUMBER -> hamesha (reading); OK (alphabet) ->
+                    //     pakka "FOUND OK"; NG -> khula; status khaali -> band
+                    //   Action: NUMBER ya status (OK / NG) ho -> khula (default "-");
+                    //     status khaali -> band
+                    const okFixed = f2 && k === "observation" && !numPt && st === "OK";
+                    const band = f2 && L.ngOnly.includes(k) && !numPt
+                      && (k === "observation" ? st !== "NG" && st !== "OK" : !st);
                     // Format 2 ka SPARES USED: YES / NO (classic me ye khaana khaali hi)
                     const spareTap = L.spareClick && k === "spares_used";
                     const tapCol = k === "status" || spareTap;
+                    const readingCell = numPt && k === "observation";
+                    // "-" (khaali-jaisa default) -- beech me, bold, thoda bada
+                    const dash = !tapCol && String(p[k] || "").trim() === "-";
+                    const dashSt = dash ? { textAlign:"center", fontWeight:800, fontSize:15 } : null;
                     return (
                     <td key={k}
                         onMouseDown={editable ? (e) => onCellDown && onCellDown(i, ci, e.shiftKey) : undefined}
@@ -147,15 +155,17 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
                                    : (band && editable ? "#f1f5f9" : (k === "spares_used" && editable ? "#fff" : undefined)),
                                  textAlign: tapCol ? "center" : "left",
                                  fontWeight: tapCol ? 800 : 400,
-                                 color: k === "status" ? (numPt ? "#1d4ed8" : p[k] === "NG" ? "#dc2626" : "#15803d")
-                                   : spareTap ? (p[k] === "YES" ? "#1d4ed8" : "#64748b") : "#111827" }}>
+                                 color: k === "status" ? (st === "NG" ? "#dc2626" : st === "OK" ? "#15803d" : "#1d4ed8")
+                                   : spareTap ? (p[k] === "YES" ? "#1d4ed8" : "#64748b")
+                                   : readingCell ? "#1d4ed8" : "#111827",
+                                 ...(dashSt || {}) }}>
                       {/* SPARES USED per-row cell is intentionally BLANK — spares
                           are now captured once, in the sheet-level list below
                           (fill form only). */}
                       {(k === "spares_used" && !spareTap) || band ? null : okFixed ? (
                         // pakka default -- edit me bhi input nahi
                         <span style={{ display: "block", padding: editable ? "3px 6px" : 0, color: "#334155" }}>
-                          {p[k] || (k === "observation" ? OK_OBS : OK_ACT)}
+                          {p[k] || OK_OBS}
                         </span>
                       ) : editable ? (
                         spareTap ? (
@@ -167,12 +177,6 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
                                            color: p[k] === "YES" ? "#1d4ed8" : "#64748b" }}>
                             {p[k] || ""}
                           </button>
-                        ) : k === "status" && numPt ? (
-                          // reading -- OK / NG nahi (point ka type NUMBER)
-                          <input style={{ ...cellInp, textAlign:"center", fontWeight:800, color:"#1d4ed8" }}
-                                 title="Start with the number, then anything (e.g. 8 AMP, 120 VAC)"
-                                 value={p[k] || ""}
-                                 onChange={(e) => onEdit && onEdit(i, k, numOnly(e.target.value))} />
                         ) : k === "status" ? (
                           L.statusClick ? (
                             // Dropdown nahi -- har tap: khaali -> OK -> NG -> khaali
@@ -189,8 +193,14 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
                             <option value=""></option><option value="OK">OK</option><option value="NG">NG</option>
                           </select>
                           )
+                        ) : readingCell ? (
+                          // NUMBER point: reading -- pehle number, aage kuch bhi ("240VAC")
+                          <input style={{ ...cellInp, fontWeight:700, color:"#1d4ed8" }}
+                                 title="Enter the reading — start with the number (e.g. 240 VAC, 210 VAC)"
+                                 value={p[k] || ""}
+                                 onChange={(e) => onEdit && onEdit(i, k, numOnly(e.target.value))} />
                         ) : (
-                          <input style={cellInp} value={p[k] || ""}
+                          <input style={dashSt ? { ...cellInp, ...dashSt } : cellInp} value={p[k] || ""}
                                  onChange={(e) => onEdit && onEdit(i, k, e.target.value)} />
                         )
                       ) : (p[k] || "")}

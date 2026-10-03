@@ -11,9 +11,10 @@ zaroori; NUMBER wale point par fill me reading (number), OK / NG nahi.
       nahi badla (archive khaali, rev wahi); sab ke saath -> archive me type
       ki naqal, naye point par type
   (4) PUT /check-point-rev-stepdown: wapas aaye point ka type wahi
-  (5) POST /check-sheet-fill: NUMBER par "OK" / "AMP 8" -> 400 (shuru me number
-      nahi); "215.5", "8AMP", "120 VAC", "-0.5" -> 201 (pehle number, aage kuch
-      bhi); status_first me NUMBER ka Observation bachta
+  (5) POST /check-sheet-fill (teesri baar ka niyam): STATUS sirf OK / NG; NUMBER
+      ki reading OBSERVATION me -- khaali / "VAC 212" -> 400; purane tareeqe ki
+      STATUS "212 VAC" -> 400; "240VAC", "210 VAC", "-0.5" -> 201 (OK ho ya NG);
+      Action khaali -> "-"; status_first me NUMBER ka Observation bachta
   (6) ROLLBACK ke baad ZZ machine ka kuch nahi bacha
 
 ⚠ PROD DB: ek connection, commit kabhi nahi (har request SAVEPOINT); DDL
@@ -182,32 +183,45 @@ try:
       [(x["check_point"], x["type"]) for x in p])
 
     print("\n(5) bhari sheet")
-    def body(st_v, ob="", lay=None):
+    def body(st_v, ob="", lay=None, act=None):
         b = {"zone_name": Z, "line_name": L, "machine_no": M, "machine_name": "ZZ M", "pm_date": "2026-10-03",
              "rev_no": "1", "rev_date": "2026-01-01", "prepared_by": "ZZ", "sign_imgs": ["data:image/png;base64,AA==", None, None],
              "sheet_spares": [],
              "entries": [{"s_no": "1", "check_point": "ZZ Clean panel", "status": "OK", "type": "ALPHABET"},
                          {"s_no": "2", "check_point": "ZZ Main voltage", "status": st_v, "type": "NUMBER",
-                          "observation": ob, "action_taken": ob}]}
+                          "observation": ob, "action_taken": ob if act is None else act}]}
         if lay:
             b["layout"] = lay
         return b
-    r = cl.post("/api/pm/check-sheet-fill", json=body("OK"))
-    T("NUMBER par 'OK' -> 400 (reading chahiye)", r.status_code == 400 and "start with a number" in r.text, r.text[:120])
-    r = cl.post("/api/pm/check-sheet-fill", json=body("AMP 8"))
-    T("NUMBER par 'AMP 8' -> 400 (shuru me number nahi)", r.status_code == 400)
-    for ok_v in ("8AMP", "120 VAC"):
-        r = cl.post("/api/pm/check-sheet-fill", json=body(ok_v))
-        T(f"NUMBER par '{ok_v}' -> 201 (pehle number, aage kuch bhi)", r.status_code == 201, r.text[:80])
-    r = cl.post("/api/pm/check-sheet-fill", json=body("215.5", ob="ZZ low side", lay="status_first"))
-    T("NUMBER par '215.5' -> 201", r.status_code == 201, r.text[:100])
+    r = cl.post("/api/pm/check-sheet-fill", json=body("OK", ob=""))
+    T("NUMBER, Observation khaali -> 400 (reading chahiye)", r.status_code == 400
+      and "Observation" in r.text, r.text[:120])
+    r = cl.post("/api/pm/check-sheet-fill", json=body("OK", ob="VAC 212"))
+    T("NUMBER, Observation 'VAC 212' -> 400 (shuru me number nahi)", r.status_code == 400)
+    r = cl.post("/api/pm/check-sheet-fill", json=body("212 VAC", ob=""))
+    T("purana tareeqa (STATUS me reading) -> 400", r.status_code == 400, r.text[:100])
+    r = cl.post("/api/pm/check-sheet-fill", json=body("MAYBE", ob="240VAC"))
+    T("STATUS OK / NG ke alawa -> 400", r.status_code == 400 and "OK or NG" in r.text, r.text[:100])
+    for st_v, ob_v in (("OK", "240VAC"), ("NG", "210 VAC low side"), ("OK", "-0.5")):
+        r = cl.post("/api/pm/check-sheet-fill", json=body(st_v, ob=ob_v, lay="classic"))
+        T(f"NUMBER {st_v} + Observation '{ob_v}' -> 201", r.status_code == 201, r.text[:80])
+    r = cl.post("/api/pm/check-sheet-fill", json=body("NG", ob="190 VAC low", lay="status_first", act=""))
+    T("NG + Action khaali -> 400 (NG par Action zaroori)", r.status_code == 400 and "is NG" in r.text, r.text[:100])
+    r = cl.post("/api/pm/check-sheet-fill", json=body("NG", ob="190 VAC low", lay="status_first", act="-"))
+    T("NG + Action '-' -> 400 ('-' sirf OK ka default)", r.status_code == 400, r.text[:100])
+    r = cl.post("/api/pm/check-sheet-fill", json=body("NG", ob="190 VAC low", lay="status_first", act="Tap changed"))
+    T("status_first NUMBER NG + Action likha -> 201", r.status_code == 201, r.text[:100])
+    sid = r.json().get("id")
+    c.execute("SELECT entries FROM maintenance_pm_check_sheet_filled WHERE id=%s", (sid,))
+    e1, e2 = c.fetchone()["entries"]
+    T("NUMBER NG: Observation (reading) + Action bache, type naqal", e2["observation"] == "190 VAC low"
+      and e2["action_taken"] == "Tap changed" and e2["type"] == "NUMBER" and e2["status"] == "NG", e2)
+    T("ALPHABET OK: 'FOUND OK' + Action '-'", e1["observation"] == "FOUND OK" and e1["action_taken"] == "-", e1)
+    r = cl.post("/api/pm/check-sheet-fill", json=body("OK", ob="240VAC", lay="status_first", act=""))
     sid = r.json().get("id")
     c.execute("SELECT entries FROM maintenance_pm_check_sheet_filled WHERE id=%s", (sid,))
     e2 = c.fetchone()["entries"][1]
-    T("status_first: NUMBER ka Observation / Action bacha + type naqal", e2["observation"] == "ZZ low side"
-      and e2["action_taken"] == "ZZ low side" and e2["type"] == "NUMBER" and e2["status"] == "215.5", e2)
-    r = cl.post("/api/pm/check-sheet-fill", json=body("-0.5", lay="classic"))
-    T("NUMBER par '-0.5' bhi chalta", r.status_code == 201, r.text[:80])
+    T("NUMBER OK + Action khaali -> '-'", r.status_code == 201 and e2["action_taken"] == "-", e2)
 finally:
     try:
         conn.rollback()

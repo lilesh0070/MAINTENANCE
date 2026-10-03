@@ -22,7 +22,7 @@ import { useAuth } from "../context/AuthContext";
 import { ClosureFormModal } from "./breakdown/ClosureFormModal";
 import { slipPayload } from "./breakdown/slipPayload";
 import { FormatSheet } from "./pm/FormatSheet";
-import { pmLayout, sheetLayoutKey, isNumPoint, statusFilled, statusPatch } from "./pm/pmLayouts";
+import { pmLayout, sheetLayoutKey, isNumPoint, readingOk, ngFilled, statusPatch } from "./pm/pmLayouts";
 import { EMPTY_SPARE, editSpareRow, isSpareYes, spareMissing, spareYesKey, syncSpareRows,
          spareHatao, spareHataoSawal } from "./pm/pmSpares";
 import { DmcSheet, groupDmcPoints } from "./DmcSheet";
@@ -534,10 +534,17 @@ export default function MaintenanceHistorical() {
   };
   const pmSave = async () => {
     if (!viewSheet?.id) return;
-    // NUMBER point (type) par reading hi chahiye -- OK / NG nahi (server bhi rokta hai)
-    const numBad = pmDraft.filter((e) => isNumPoint(e) && !statusFilled(e)).map((e) => e.s_no || "?");
+    // NUMBER point (type): Observation me reading chahiye (server bhi rokta hai)
+    const numBad = pmDraft.filter((e) => isNumPoint(e) && !readingOk(e)).map((e) => e.s_no || "?");
     if (numBad.length) {
-      setPmErr(`Enter the reading for point ${numBad.join(", ")} — it must start with a number (e.g. 8 AMP, 120 VAC).`);
+      setPmErr(`Enter the reading in Observation for point ${numBad.join(", ")} — it must start with a number (e.g. 240 VAC).`);
+      return;
+    }
+    // NG point par Observation + Action dono (server bhi rokta hai)
+    const ngBad = pmDraft.filter((e) => String(e.status || "").trim().toUpperCase() === "NG" && !ngFilled(e))
+      .map((e) => e.s_no || "?");
+    if (ngBad.length) {
+      setPmErr(`Point ${ngBad.join(", ")} is NG — fill both Observation and Action Taken.`);
       return;
     }
     const miss = pmViewL.spareClick ? spareMissing(pmDraft, pmSpDraft) : [];

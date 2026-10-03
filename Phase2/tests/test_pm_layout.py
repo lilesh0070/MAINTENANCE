@@ -164,8 +164,10 @@ try:
     c.execute("SELECT entries, doc_footer FROM maintenance_pm_check_sheet_filled WHERE id=%s", (sid,))
     row = c.fetchone()
     e1, e2, e3 = row["entries"]
-    T("OK point: observation 'FOUND OK', action '-' (pakka default)",
-      e1["observation"] == "FOUND OK" and e1["action_taken"] == "-", e1)
+    T("OK point: observation pakka 'FOUND OK', action jaisa likha (badal sakte)",
+      e1["observation"] == "FOUND OK" and e1["action_taken"] == "ZZ OK ACTION", e1)
+    T("OK point, action khaali -> '-' (sabke liye default)", e3["action_taken"] == "-"
+      and e3["observation"] == "FOUND OK", e3)
     T("NG point: observation / action bache", e2["observation"] == "ZZ LOOSE" and e2["action_taken"] == "ZZ TIGHTENED")
     T("har row ka sign saaf", e1["sign"] == "" and e2["sign"] == "")
     T("Spares Used: ' yes ' -> YES, NO -> NO, kachra -> khaali",

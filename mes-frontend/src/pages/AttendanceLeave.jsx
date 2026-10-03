@@ -23,11 +23,12 @@
  * yahan ki jaanch sirf jaldi bataane ke liye.
  * TV par ye section hai hi nahi (TV ka layout band).  Koi lagataar animation nahi.
  * ─────────────────────────────────────────────────────────────────── */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { isNativeApp } from "../constants/apiBase";
 import ExcelBtn from "../components/ExcelBtn";
 import { aajKaNaam } from "../constants/sheetTools";
+import { MON, periodRange, daysWithin, statusCounts, leaveSummary } from "./leaveRecords";
 
 const NATIVE = isNativeApp();
 
@@ -45,8 +46,8 @@ const whenTxt = (ts) => {
     : d.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
 };
 const nDays = (n) => `${n} day${n === 1 ? "" : "s"}`;
-// Records ki shuruaati khidki: do mahine pehle ki 1 tareekh -> aaj + 92 din
-const monthStart = (s, back) => { const d = dateOf(s); d.setDate(1); d.setMonth(d.getMonth() - back); return isoOf(d); };
+/* Records ka PERIOD (month / FY / calendar year / custom), ginti aur Excel ki
+   Summary sheet -- hisaab ./leaveRecords.js me (node se jaanchne layak). */
 
 const STATUS = {
   PENDING:   { label: "Pending",   c: "#b45309", bg: "#fffbeb", bd: "#fde68a" },
@@ -56,13 +57,23 @@ const STATUS = {
 };
 
 /* Date + tareekh ki jaanch -- server bhi yahi karta hai (LEAVE_MAX_DAYS /
-   LEAVE_BACK_DAYS); yahan bas button dabane se pehle bata dete hain. */
+   LEAVE_BACK_DAYS = 0: back date NAHI); yahan bas button dabane se pehle bata
+   dete hain. */
 function datesGalti(from, to, maxDays, minFrom) {
   if (!from || !to) return "Choose both dates.";
   if (to < from) return "The To date must be on or after the From date.";
   if (spanDays(from, to) > maxDays) return `A leave can be at most ${maxDays} days.`;
-  if (minFrom && from < minFrom) return "This start date is too far in the past.";
+  if (minFrom && from < minFrom) return "Leave can't be back-dated — choose today or a later date.";
   return "";
+}
+
+/* Approver ki date-badli: koi NAYA din (pehle range me nahi tha) aaj se pehle ka
+   na jude -- chalu / beeti chhutti CHHOTI karna chalta hai (server: _peechhe_jude). */
+function peechheJude(from, to, of, ot, today) {
+  if (!of || !ot) return false;
+  if (from < of && from < today) return true;
+  if (to > ot) { const a = addDays(ot, 1); return (from > a ? from : a) < today; }
+  return false;
 }
 
 // <style> ka text MODULE me -- har render par naya string nahi.
@@ -117,6 +128,11 @@ const CSS = `
   .alv-sum { display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:10px 18px 0;
              font-size:12.5px; font-weight:700; color:#475569; }
   .alv-sum b { color:#0f172a; }
+  .alv-cnts { flex-basis:100%; display:flex; gap:6px; flex-wrap:wrap; }
+  .alv-cnt { border:1px solid var(--bd); background:var(--bg); color:var(--c); border-radius:99px;
+             padding:3px 10px; font:800 11.5px 'Barlow',sans-serif; cursor:pointer; }
+  .alv-cnt b { color:inherit; margin-left:3px; }
+  .alv-cnt.on { box-shadow:0 0 0 2px var(--c); }
   .alv-list { padding:10px 18px 16px; display:flex; flex-direction:column; gap:10px; }
   .alv-empty { padding:22px 8px; text-align:center; color:#94a3b8; font-size:13px; font-weight:600; }
   .alv-row { border:1px solid #e2e8f0; border-left:4px solid var(--c); border-radius:12px; padding:11px 13px;
@@ -160,11 +176,24 @@ export default function AttendanceLeave({ token, today: today0 }) {
   const [busy, setBusy]   = useState(false);
   const [msg, setMsg]     = useState(null);    // {kind, text}
   const [edit, setEdit]   = useState(null);    // {id, mode:"dates"|"reject", from, to, note}
-  const [tab, setTab]     = useState("pending");   // "pending" | "records"
-  const tabTay            = useRef(false);         // pehli baar data aane par tab ek hi baar chuno
-  // Records ki chhanti -- tareekh server par, naam / haal yahin
-  const [rFrom, setRFrom] = useState(() => monthStart(t0, 2));
-  const [rTo, setRTo]     = useState(() => addDays(t0, 92));
+  // "approved" (DEFAULT -- user: "approved wala default rahega") | "pending" | "records"
+  const [tab, setTab]     = useState("approved");
+  // Records ki chhanti -- tareekh server par, naam / haal yahin.  Shuru me
+  // chalu FINANCIAL YEAR (aage ki leave bhi dikhe).
+  const now0 = dateOf(t0);
+  const fy0 = now0.getMonth() >= 3 ? now0.getFullYear() : now0.getFullYear() - 1;
+  const [rPer, setRPer]   = useState("fy");
+  const [rMon, setRMon]   = useState(now0.getMonth() + 1);
+  const [rYr, setRYr]     = useState(now0.getFullYear());
+  const [rFy, setRFy]     = useState(fy0);
+  const [rFrom, setRFrom] = useState(() => `${fy0}-04-01`);
+  const [rTo, setRTo]     = useState(() => `${fy0 + 1}-03-31`);
+  const lagao = (per, mon, yr, fy) => {
+    const r = periodRange(per, mon, yr, fy);
+    if (r) { setRFrom(r[0]); setRTo(r[1]); }
+  };
+  // saal ki list: 2026 (Leave shuru) se agle saal tak
+  const saal = Array.from({ length: Math.max(1, now0.getFullYear() + 2 - 2026) }, (_, i) => 2026 + i);
   const [rStatus, setRStatus] = useState("");
   const [rStaff, setRStaff]   = useState("");
 
@@ -177,10 +206,6 @@ export default function AttendanceLeave({ token, today: today0 }) {
       .then((d) => {
         if (off) return;
         setData(d); setErr("");
-        if (!tabTay.current) {
-          tabTay.current = true;
-          setTab(d.pending && d.pending.length ? "pending" : "records");
-        }
       })
       .catch((e) => { if (!off) setErr(e.message || "Could not load leave requests."); });
     return () => { off = true; };
@@ -194,14 +219,18 @@ export default function AttendanceLeave({ token, today: today0 }) {
 
   const today = data?.today || t0;
   const maxDays = data?.max_days || 92;
-  const minFrom = addDays(today, -(data?.back_days ?? 7));
+  const minFrom = addDays(today, -(data?.back_days ?? 0));   // back date nahi -- aaj se
   const me = data?.me || null;
   const anyApply = !!data?.can_apply_any;
   const people = useMemo(() => data?.people || [], [data]);
   const pending = useMemo(() => data?.pending || [], [data]);
+  // chalu / aane wali approved (tareekh nikli to server hi hata deta hai)
+  const approved = useMemo(() => data?.approved || [], [data]);
   const rows = useMemo(() => data?.rows || [], [data]);
   const seesOthers = !!data && (data.see_all || (data.approves || []).length > 0);
-  const canApply = anyApply || !!me;
+  // maint (sanjha) ID arzi nahi bharti -- button hi nahi (server bhi rokta hai)
+  const shared = !!data?.shared_login;
+  const canApply = data && typeof data.can_apply === "boolean" ? data.can_apply : (anyApply || !!me);
   // Backend abhi purana (restart / server update baaki) -- naye khaane (pending,
   // me, can_*) aate hi nahi.  Tab "login juda nahi" jaisa galat sandesh na dikhe.
   // (2026-10-03: laptop par yahi hua -- site nayi, backend 9:27 wala.)
@@ -213,16 +242,19 @@ export default function AttendanceLeave({ token, today: today0 }) {
     for (const r of rows) if (r.staff_id != null && !m.has(r.staff_id)) m.set(r.staff_id, r.staff_name);
     return [...m.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1])));
   }, [rows]);
-  const recRows = useMemo(() => rows.filter((r) =>
-    (!rStatus || r.status === rStatus) && (!rStaff || String(r.staff_id) === rStaff)), [rows, rStatus, rStaff]);
-  const recApprovedDays = recRows.filter((r) => r.status === "APPROVED").reduce((n, r) => n + r.days, 0);
-  const shown = tab === "pending" ? pending : recRows;
+  const nameRows = useMemo(() => rows.filter((r) => !rStaff || String(r.staff_id) === rStaff), [rows, rStaff]);
+  const recRows = useMemo(() => nameRows.filter((r) => !rStatus || r.status === rStatus), [nameRows, rStatus]);
+  // ginti -- naam ki chhanti ke baad, haal ki chhanti se pehle (poora hisaab dikhe)
+  const ginti = useMemo(() => statusCounts(nameRows), [nameRows]);
+  // approved din -- sirf is PERIOD ke andar wale
+  const recApprovedDays = nameRows.filter((r) => r.status === "APPROVED")
+    .reduce((n, r) => n + daysWithin(r, rFrom, rTo), 0);
+  const shown = tab === "pending" ? pending : tab === "approved" ? approved : recRows;
 
   const kholo = () => {
     setEdit(null);
     setForm({ staff_id: anyApply ? "" : String(me?.staff_id || ""), from: today, to: today, reason: "" });
   };
-  const chuna = anyApply ? people.find((p) => String(p.id) === String(form?.staff_id)) : me;
   const formGalti = !form ? "" : !form.staff_id ? "Choose a name."
     : datesGalti(form.from, form.to, maxDays, minFrom);
   const formDin = form && !formGalti ? spanDays(form.from, form.to) : 0;
@@ -246,7 +278,7 @@ export default function AttendanceLeave({ token, today: today0 }) {
     if (formGalti) return;
     karo(() => api.post("/api/attendance/leave",
       { staff_id: Number(form.staff_id), from_date: form.from, to_date: form.to, reason: form.reason }, token),
-    `Leave request sent — it now waits for the ${chuna?.waiting_for || "approver"}'s approval.`,
+    "Leave request sent — it now waits for approval.",
     () => { setForm(null); setTab("pending"); });
   };
   const approve = (r) => karo(() => api.post(`/api/attendance/leave/${r.id}/approve`, {}, token),
@@ -264,19 +296,27 @@ export default function AttendanceLeave({ token, today: today0 }) {
     karo(() => api.delete(`/api/attendance/leave/${r.id}`, token), "Leave record deleted.");
   };
 
-  const editGalti = edit && edit.mode === "dates" ? datesGalti(edit.from, edit.to, maxDays, null) : "";
+  const editGalti = !edit || edit.mode !== "dates" ? ""
+    : datesGalti(edit.from, edit.to, maxDays, null)
+      || (peechheJude(edit.from, edit.to, edit.of, edit.ot, today)
+        ? "Leave can't be back-dated — new days must be today or later." : "");
 
   const subText = !data ? "Loading…"
     : purana ? "The server is still running the old Leave version."
     : data.can_delete ? "Everyone's leave — apply, approve, change dates or delete records."
+    : shared ? "Everyone's leave — see who applied, what is approved or rejected, and the records."
     : anyApply ? "Everyone's leave — apply for any member and check the records."
     : (data.approves || []).length ? "Apply for your own leave, approve your team's requests and check the records."
-    : me ? `Apply for your own leave — it goes to the ${me.waiting_for} for approval.`
+    : me ? "Apply for your own leave — it goes for approval."
     : "Your login is not linked to anyone on the attendance list.";
 
+  const periodNaam = rPer === "month" ? `${MON[rMon - 1]}-${rYr}`
+    : rPer === "fy" ? `FY-${rFy}-${String(rFy + 1).slice(2)}`
+    : rPer === "year" ? `${rYr}` : `${rFrom}_to_${rTo}`;
   const excel = () => ({
-    naam: `Leave-Records_${aajKaNaam()}`,
+    naam: `Leave_${periodNaam}_${aajKaNaam()}`,
     sheet: "Leave",
+    aur: [leaveSummary(nameRows, rFrom, rTo)],
     headers: ["#", "Name", "Emp Code", "Designation", "From", "To", "Days", "Status", "Reason",
               "Applied By", "Applied At", "Decided By", "Decided At", "Note", "Requested From", "Requested To"],
     rows: recRows.map((r, i) => [
@@ -298,12 +338,15 @@ export default function AttendanceLeave({ token, today: today0 }) {
           <div className="alv-sub">{subText}</div>
         </div>
         <div className="alv-tabs" role="tablist">
+          <button className={tab === "approved" ? "on" : ""} onClick={() => setTab("approved")}>
+            Approved{approved.length ? ` (${approved.length})` : ""}
+          </button>
           <button className={tab === "pending" ? "on" : ""} onClick={() => setTab("pending")}>
             Pending{pending.length ? ` (${pending.length})` : ""}
           </button>
           <button className={tab === "records" ? "on" : ""} onClick={() => setTab("records")}>Records</button>
         </div>
-        {!form && (
+        {!form && !shared && (
           <button className="alv-apply" onClick={kholo} disabled={!data || !canApply}
                   title={data && !canApply ? "Ask admin to add your Emp code to the attendance list" : ""}>
             ＋ Apply Leave
@@ -321,7 +364,7 @@ export default function AttendanceLeave({ token, today: today0 }) {
           then reload this page to get the new Leave options.
         </div>
       )}
-      {data && !purana && !canApply && (
+      {data && !purana && !canApply && !shared && (
         <div className="alv-msg info">
           Your login is not linked to anyone on the attendance list, so you can't apply for leave yet —
           ask admin to add your Emp code to the attendance list.
@@ -371,8 +414,7 @@ export default function AttendanceLeave({ token, today: today0 }) {
             </div>
           </div>
           <div className={`alv-hint${formGalti ? " bad" : ""}`}>
-            {formGalti || `${nDays(formDin)} · ${dayTxt(form.from)} – ${dayTxt(form.to)}`
-              + (chuna?.waiting_for ? ` · goes to the ${chuna.waiting_for} for approval` : "")}
+            {formGalti || `${nDays(formDin)} · ${dayTxt(form.from)} – ${dayTxt(form.to)} · goes for approval`}
           </div>
           <div className="alv-actions">
             <button className="alv-btn" onClick={() => setForm(null)} disabled={busy}>Cancel</button>
@@ -387,15 +429,56 @@ export default function AttendanceLeave({ token, today: today0 }) {
         <>
           <div className="alv-filters">
             <div className="alv-fld">
-              <span className="alv-lbl">From</span>
-              <input className="alv-in" type="date" value={rFrom}
-                     onChange={(e) => { const v = e.target.value; setRFrom(v); if (v && rTo && rTo < v) setRTo(v); }} />
+              <span className="alv-lbl">Period</span>
+              <select className="alv-in" value={rPer}
+                      onChange={(e) => { const v = e.target.value; setRPer(v); lagao(v, rMon, rYr, rFy); }}>
+                <option value="month">Month</option>
+                <option value="fy">Financial year (Apr–Mar)</option>
+                <option value="year">Calendar year (Jan–Dec)</option>
+                <option value="custom">Custom dates</option>
+              </select>
             </div>
-            <div className="alv-fld">
-              <span className="alv-lbl">To</span>
-              <input className="alv-in" type="date" value={rTo} min={rFrom || undefined}
-                     onChange={(e) => setRTo(e.target.value)} />
-            </div>
+            {rPer === "month" && (
+              <div className="alv-fld">
+                <span className="alv-lbl">Month</span>
+                <select className="alv-in" value={rMon}
+                        onChange={(e) => { const v = Number(e.target.value); setRMon(v); lagao("month", v, rYr, rFy); }}>
+                  {MON.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                </select>
+              </div>
+            )}
+            {(rPer === "month" || rPer === "year") && (
+              <div className="alv-fld">
+                <span className="alv-lbl">Year</span>
+                <select className="alv-in" value={rYr}
+                        onChange={(e) => { const v = Number(e.target.value); setRYr(v); lagao(rPer, rMon, v, rFy); }}>
+                  {saal.map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+            )}
+            {rPer === "fy" && (
+              <div className="alv-fld">
+                <span className="alv-lbl">Financial year</span>
+                <select className="alv-in" value={rFy}
+                        onChange={(e) => { const v = Number(e.target.value); setRFy(v); lagao("fy", rMon, rYr, v); }}>
+                  {saal.map((y) => <option key={y} value={y}>FY {y}-{String(y + 1).slice(2)}</option>)}
+                </select>
+              </div>
+            )}
+            {rPer === "custom" && (
+              <div className="alv-fld">
+                <span className="alv-lbl">From</span>
+                <input className="alv-in" type="date" value={rFrom}
+                       onChange={(e) => { const v = e.target.value; setRFrom(v); if (v && rTo && rTo < v) setRTo(v); }} />
+              </div>
+            )}
+            {rPer === "custom" && (
+              <div className="alv-fld">
+                <span className="alv-lbl">To</span>
+                <input className="alv-in" type="date" value={rTo} min={rFrom || undefined}
+                       onChange={(e) => setRTo(e.target.value)} />
+              </div>
+            )}
             {seesOthers && (
               <div className="alv-fld">
                 <span className="alv-lbl">Name</span>
@@ -421,7 +504,19 @@ export default function AttendanceLeave({ token, today: today0 }) {
                   <span>·</span>
                   <span><b>{recApprovedDays}</b> approved {recApprovedDays === 1 ? "day" : "days"}</span>
                   <span>· {dayTxt(rFrom)} – {dayTxt(rTo)}</span>
-                  <span style={{ marginLeft: "auto" }}><ExcelBtn banao={excel} /></span>
+                  <span style={{ marginLeft: "auto" }}><ExcelBtn banao={excel}
+                        title="Download these leave records as Excel (with a person × month summary sheet)" /></span>
+                  {/* kisne apply ki, kiski approve / reject -- haal ki ginti */}
+                  <span className="alv-cnts">
+                    {Object.entries(STATUS).map(([k, v]) => (
+                      <button key={k} type="button" className={`alv-cnt${rStatus === k ? " on" : ""}`}
+                              style={{ "--c": v.c, "--bg": v.bg, "--bd": v.bd }}
+                              onClick={() => setRStatus(rStatus === k ? "" : k)}
+                              title={rStatus === k ? "Show all" : `Show only ${v.label.toLowerCase()}`}>
+                        {v.label} <b>{ginti[k]}</b>
+                      </button>
+                    ))}
+                  </span>
                 </>}
           </div>
         </>
@@ -431,7 +526,9 @@ export default function AttendanceLeave({ token, today: today0 }) {
         {!data && !err && <div className="alv-empty">Loading…</div>}
         {data && shown.length === 0 && (
           <div className="alv-empty">
-            {tab === "pending" ? "No pending leave requests." : "No leave requests in these dates."}
+            {tab === "pending" ? "No pending leave requests."
+              : tab === "approved" ? "No approved leave right now or coming up."
+              : "No leave requests in these dates."}
           </div>
         )}
         {shown.map((r) => {
@@ -452,8 +549,8 @@ export default function AttendanceLeave({ token, today: today0 }) {
                 {badla && (
                   <div className="alv-was">Requested {dayTxt(r.orig_from)} – {dayTxt(r.orig_to)} · dates changed</div>
                 )}
-                {r.status === "PENDING" && r.waiting_for && (
-                  <div className="alv-wait">Waiting for the {r.waiting_for}</div>
+                {r.status === "PENDING" && (
+                  <div className="alv-wait">Waiting for approval</div>
                 )}
                 {r.reason && <div className="alv-reason">“{r.reason}”</div>}
                 <div className="alv-meta">
@@ -473,7 +570,8 @@ export default function AttendanceLeave({ token, today: today0 }) {
                   )}
                   {r.can_approve && chalu && !khula && (
                     <button className="alv-btn edit" disabled={busy}
-                            onClick={() => setEdit({ id: r.id, mode: "dates", from: r.from_date, to: r.to_date, note: "" })}>
+                            onClick={() => setEdit({ id: r.id, mode: "dates", from: r.from_date, to: r.to_date,
+                                                     of: r.from_date, ot: r.to_date, note: "" })}>
                       ✎ Change dates
                     </button>
                   )}
@@ -497,6 +595,7 @@ export default function AttendanceLeave({ token, today: today0 }) {
                     <div className="alv-fld">
                       <span className="alv-lbl">From</span>
                       <input className="alv-in" type="date" value={khula.from}
+                             min={khula.of && khula.of < today ? khula.of : today}
                              onChange={(e) => {
                                const v = e.target.value;
                                setEdit((x) => ({ ...x, from: v, to: x.to && x.to < v ? v : x.to }));

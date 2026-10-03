@@ -396,7 +396,7 @@ export default function PMPanel() {
     if (!calSheet) return;
     const merged = calSheet.points.map((p, i) => ({ ...p, ...(calSheet.fill[i] || {}) }));
     if (!(merged.length && merged.every(statusFilled))) {
-      setMsg("Every check point needs a STATUS — OK / NG, or the reading for number points"); return;
+      setMsg("Fill every check point: STATUS (OK / NG) — NG points need Observation and Action, number points need the reading in Observation"); return;
     }
     const spMiss = CAL_L.spareClick ? spareMissing(merged, sheetSpares) : [];
     if (spMiss.length) {
@@ -690,7 +690,7 @@ export default function PMPanel() {
     const spareMiss = CAL_L.spareClick ? spareMissing(merged, sheetSpares) : [];
     const allFilled = pointsDone && hasPrepared && !spareMiss.length;
     const gateHint = !pointsDone
-      ? "Save unlocks after every check point has a STATUS (OK/NG) — number points need the reading"
+      ? "Save unlocks when every point is filled — STATUS (OK/NG); NG needs Observation + Action; number points need the reading in Observation"
       : spareMiss.length ? `Spares Used is YES for point ${spareMiss.join(", ")} — enter the spare name in “Spares Used” below`
       : !calSheet.sign.prepared.trim() ? "Enter the Prepared By (Team Member) name"
       : "Prepared By signature is still missing";

@@ -1077,10 +1077,12 @@ export function xlsxLagao() {
  *   headers — pehli qatar (column ke naam)
  *   rows    — baaki qatarein, har ek array
  *   sheet   — Excel ke andar tab ka naam (31 akshar ki hadd Excel ki apni hai)
+ *   aur     — (chahe to) AUR sheet: [{ sheet, headers, rows }] -- pehli ke baad
+ *             usi file me (2026-10-03, Leave ki "Summary" -- aadmi x mahina)
  *
  * Lautata hai { theek: true } ya { theek: false, kyun }.  Bulane wala isse
  * user ko batata hai — kyunki chup-chaap fail hona hi sabse buri surat hai. */
-export async function excelNikalo({ naam = "export", headers = [], rows = [], sheet = "Sheet1" }) {
+export async function excelNikalo({ naam = "export", headers = [], rows = [], sheet = "Sheet1", aur = [] }) {
   let XLSX;
   try {
     XLSX = await xlsxLagao();
@@ -1089,6 +1091,7 @@ export async function excelNikalo({ naam = "export", headers = [], rows = [], sh
   }
 
   try {
+    const banao = (headers, rows) => {
     const aoa = headers.length ? [headers, ...rows] : rows;
     const ws = XLSX.utils.aoa_to_sheet(aoa);
 
@@ -1119,9 +1122,15 @@ export async function excelNikalo({ naam = "export", headers = [], rows = [], sh
     // Isliye line hata di: jo cheez kuch karti nahi, uska rehna sirf agle
     // aadmi ko dhokha deta hai ("header to pin kiya hua hai na?").  Sach me
     // chahiye ho to library badalni padegi (jaise exceljs).
+    return ws;
+    };
 
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, String(sheet).slice(0, 31));
+    XLSX.utils.book_append_sheet(wb, banao(headers, rows), String(sheet).slice(0, 31));
+    for (const x of (Array.isArray(aur) ? aur : [])) {
+      if (!x || !Array.isArray(x.rows)) continue;
+      XLSX.utils.book_append_sheet(wb, banao(x.headers || [], x.rows), String(x.sheet || "Sheet").slice(0, 31));
+    }
 
     const file = naam + ".xlsx";
     const P = nativePul();

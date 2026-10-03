@@ -145,12 +145,16 @@ try:
     st, l_sup = err(A.apply_leave, LI(staff_id=S["sup"], from_date=d(3), to_date=d(4)), U["sup"])
     T("supervisor apne naam -> PENDING, AM ka intezaar", st is None and l_sup["status"] == "PENDING"
       and l_sup["waiting_for"] == "Assistant Manager" and l_sup["mine"] is True, l_sup if st else "")
+    st, m = err(A.apply_leave, LI(staff_id=S["sup"], from_date=d(-1), to_date=d(-1)), U["sup"])
+    T("back date (kal) -> 400", st == 400 and "back-dated" in str(m), m)
     st, m = err(A.apply_leave, LI(staff_id=S["eng"], from_date=d(3), to_date=d(4)), U["sup"])
     T("supervisor doosre ke naam -> 403", st == 403, m)
     st, m = err(A.apply_leave, LI(staff_id=S["eng"], from_date=d(3), to_date=d(4)), NOSTAFF)
     T("board se juda nahi -> 403 (emp code jodo)", st == 403 and "Emp code" in str(m), m)
-    st, l_eng = err(A.apply_leave, LI(staff_id=S["eng"], from_date=d(5), to_date=d(6)), MAINT)
-    T("maint kisi ke bhi naam -> chalti hai", st is None and l_eng["applied_by"] == MAINT["username"], l_eng if st else "")
+    st, m = err(A.apply_leave, LI(staff_id=S["eng"], from_date=d(5), to_date=d(6)), MAINT)
+    T("maint (sanjha) arzi NAHI bhar sakta -> 403", st == 403, m)
+    st, l_eng = err(A.apply_leave, LI(staff_id=S["eng"], from_date=d(5), to_date=d(6)), ADMIN)
+    T("admin kisi ke bhi naam -> chalti hai", st is None and l_eng["applied_by"] == ADMIN["username"], l_eng if st else "")
     st, l_am = err(A.apply_leave, LI(staff_id=S["am"], from_date=d(7), to_date=d(8)), U["am"])
     T("AM apni -> DM ka intezaar", st is None and l_am["waiting_for"] == "Deputy Manager", l_am if st else "")
     st, l_dm = err(A.apply_leave, LI(staff_id=S["dm"], from_date=d(9), to_date=d(9)), U["dm"])
@@ -158,7 +162,7 @@ try:
     st, l_mgr = err(A.apply_leave, LI(staff_id=S["mgr"], from_date=d(10), to_date=d(10)), ADMIN)
     T("admin Manager ke naam -> chalti hai, Manager ka intezaar", st is None and l_mgr["waiting_for"] == "Manager",
       l_mgr if st else "")
-    st, l_tech = err(A.apply_leave, LI(staff_id=S["tech"], from_date=d(11), to_date=d(11)), MAINT)
+    st, l_tech = err(A.apply_leave, LI(staff_id=S["tech"], from_date=d(11), to_date=d(11)), ADMIN)
     T("bina login wala (designation Senior Engineer) -> AM ka", st is None and l_tech["level"] == "staff"
       and l_tech["designation"] == "Senior Engineer", l_tech if st else "")
     st, l_sup2 = err(A.apply_leave, LI(staff_id=S["sup2"], from_date=d(12), to_date=d(12)), U["sup2"])
@@ -175,7 +179,7 @@ try:
     p, r, g = dikhe(U["sup"])
     T("supervisor: sirf apni", p == {ids["sup"]} and r == {ids["sup"]}, sorted(p))
     p, r, _ = dikhe(U["eng"])
-    T("engineer: apni (maint ne bhari) -- mine", p == {ids["eng"]}, sorted(p))
+    T("engineer: apni (admin ne bhari) -- mine", p == {ids["eng"]}, sorted(p))
     p, r, _ = dikhe(U["am"])
     T("AM: staff (sup, sup2, eng, tech) + apni; DM / Manager nahi",
       p == {ids["sup"], ids["sup2"], ids["eng"], ids["tech"], ids["am"]}, sorted(p))
@@ -233,8 +237,8 @@ try:
     print("\n(5) cancel")
     st, m = err(A.cancel_leave, ids["eng"], U["sup"])
     T("paraayi cancel (supervisor) -> 403", st == 403, m)
-    st, x = err(A.cancel_leave, ids["eng"], MAINT)
-    T("maint ne bhari wo maint cancel -> CANCELLED", st is None and x["status"] == "CANCELLED", x if st else "")
+    st, m = err(A.cancel_leave, ids["eng"], MAINT)
+    T("maint cancel -> 403 (na bhari, na approver)", st == 403, m)
     st, l_s3 = err(A.apply_leave, LI(staff_id=S["sup"], from_date=d(20), to_date=d(20)), U["sup"])
     st, x = err(A.cancel_leave, l_s3["id"], U["sup"])
     T("apni PENDING cancel -> CANCELLED", st is None and x["status"] == "CANCELLED", x if st else "")
@@ -282,12 +286,30 @@ try:
     g = A.list_leave(None, None, None, None, NOSTAFF)
     T("board se juda nahi: me = None", g["me"] is None)
     g = A.list_leave(None, None, None, None, MAINT)
+    T("maint: arzi nahi (can_apply False, people khaali), sab dikhe", g["can_apply"] is False
+      and g["can_apply_any"] is False and g["people"] == [] and g["see_all"] is True and g["shared_login"] is True)
+    g = A.list_leave(None, None, None, None, ADMIN)
     ranks = [A._RANK.get(A._pad(None, p["designation"]), A._RANK_BAAKI) for p in g["people"]]
-    T("maint: people hierarchy kram me (Manager pehle)", g["can_apply_any"] is True and len(g["people"]) > 0
+    T("admin: people hierarchy kram me (Manager pehle)", g["can_apply_any"] is True and len(g["people"]) > 0
       and ranks == sorted(ranks), [p["designation"] for p in g["people"]][:6])
     T("admin: can_delete, approves sab level", A.list_leave(None, None, None, None, ADMIN)["can_delete"] is True
       and set(A.list_leave(None, None, None, None, ADMIN)["approves"]) == set(A._LEAVE_APPROVER))
     T("AM: approves = staff", A.list_leave(None, None, None, None, U["am"])["approves"] == ["staff"])
+
+    print("\n(8b) Approved tab")
+    # back date ki arzi ab mana -- isliye aage ki bhar kar approve, phir SQL se beete
+    # din par (jaise purani approved chhutti jiski tareekh nikal gayi)
+    st, l_old = err(A.apply_leave, LI(staff_id=S["sup2"], from_date=d(30), to_date=d(32)), U["sup2"])
+    st, x = err(A.approve_leave, l_old["id"], LD(), U["am"])
+    c.execute("UPDATE maintenance_attendance_leave SET from_date = %s, to_date = %s WHERE id = %s",
+              (d(-5), d(-3), l_old["id"]))
+    g = A.list_leave(None, None, None, None, ADMIN)
+    ap = {r["id"] for r in g["approved"]}
+    T("approved me chalu / aage wali (mgr, dm, am)", {ids["mgr"], ids["dm"], ids["am"]} <= ap, sorted(ap & zz))
+    T("beeti hui approved (to_date < aaj) approved me NAHI", l_old["id"] not in ap)
+    T("...par Records me hai", l_old["id"] in {r["id"] for r in g["rows"]})
+    T("approved me sirf APPROVED", all(r["status"] == "APPROVED" for r in g["approved"]))
+    zz.add(l_old["id"])
 
     print("\n(9) on-duty / board ka kram")
     sl = {k: slot for k, _, _, _, slot in LOG}

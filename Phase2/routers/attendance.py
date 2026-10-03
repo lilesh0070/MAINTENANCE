@@ -1041,7 +1041,10 @@ def history(start: Optional[str] = Query(None), end: Optional[str] = Query(None)
             "slots": slots,
             "totals": tot,
         })
-    people.sort(key=lambda p: (p["removed_on"] is not None, p["name"].lower(), p["emp_code"]))
+    # hierarchy kram (2026-10-03 -- board jaisa: Manager > DM > AM > Sr Engineer >
+    # Engineer > Supervisor > DET), phir naam; hataye gaye log sabse neeche
+    people.sort(key=lambda p: (p["removed_on"] is not None, _rank(None, p["designation"]),
+                               p["name"].lower(), p["emp_code"]))
 
     day_totals = []
     for i in range(n):
@@ -1104,7 +1107,9 @@ def history(start: Optional[str] = Query(None), end: Optional[str] = Query(None)
 #   assistant_manager -> staff + apni
 #   baaki             -> sirf APNI (jiski arzi hai wo khud, ya jo usne bhari)
 # Arzi kaun bhare: har login SIRF APNE naam ki (emp code se juda board ka
-# aadmi); sanjha "maint" ID aur admin kisi ki bhi (plant ka sanjha device).
+# aadmi); admin kisi ki bhi.  Sanjha "maint" ID arzi NAHI bharti -- sirf
+# dekhti hai (user, baad me: "maint wali ID leave apply nahi kar sakti, apply
+# leave hide kar do").
 # Attendance BOARD ki page-permission leave ke liye JAAN-BOOJH KAR nahi
 # maangi jaati -- warna jinke paas board ka haq nahi (zyadatar log) wo apni
 # leave bhi na bhar paate.  Har jaanch SERVER par, sirf button chhupana nahi.
@@ -1113,7 +1118,9 @@ def history(start: Optional[str] = Query(None), end: Optional[str] = Query(None)
 # Table apne `_ensure_leave()` me (apna flag) -- board / history ke raaste par
 # koi naya DDL nahi juda.
 LEAVE_MAX_DAYS = 92          # ek arzi me itne din tak
-LEAVE_BACK_DAYS = 7          # itne din peechhe tak ki arzi (beemari wagairah baad me)
+LEAVE_BACK_DAYS = 0          # peechhe ki tareekh ki arzi NAHI -- aaj ya aage (user 2026-10-03:
+                             # "koi bhi aaj ki date se back date ki leave apply na kar sake";
+                             # pehle 7 tha).  GET me back_days -- purani app isi se `min` lagati hai.
 _LEAVE_LOCK = 7_202_610      # ek aadmi ki do arzi ek saath na takrayein (staff_id ke saath)
 _leave_bani = False
 
@@ -1232,7 +1239,8 @@ def _viewer(cur, user: dict) -> dict:
         "staff_id": _mera_staff(cur, user),
         "sab": admin or sanjha or role in _LEAVE_SAB_DEKHE,
         "dekhe": set(_LEAVE_DEKHE.get(role, ())),
-        "kisi_ki": admin or sanjha,          # kisi ke bhi naam ki arzi bhar sake
+        "kisi_ki": admin,                    # kisi ke bhi naam ki arzi bhar sake
+        "arzi": not sanjha,                  # arzi bhar sakta hai (maint nahi)
     }
 
 
@@ -1279,8 +1287,18 @@ def _leave_dates(f: Optional[str], t: Optional[str], naya: bool) -> tuple:
     if (td - fd).days + 1 > LEAVE_MAX_DAYS:
         raise HTTPException(400, f"A leave can be at most {LEAVE_MAX_DAYS} days.")
     if naya and fd < date.today() - timedelta(days=LEAVE_BACK_DAYS):
-        raise HTTPException(400, f"A leave can start at most {LEAVE_BACK_DAYS} days in the past.")
+        raise HTTPException(400, "Leave can't be back-dated — the From date must be today or later.")
     return fd, td
+
+
+def _peechhe_jude(fd: date, td: date, of: date, ot: date) -> bool:
+    """Approver ki date-badli me koi NAYA din (jo pehle range me nahi tha) aaj se
+    pehle ka jud raha hai?  Back date sirf naye din se -- chalu / beeti chhutti
+    ko CHHOTA karna (jaldi laut aaya) chalta hai."""
+    aaj = date.today()
+    if fd < of and fd < aaj:                                     # shuruaat peechhe kheenchi
+        return True
+    return td > ot and max(ot + timedelta(days=1), fd) < aaj     # aakhir badhaya, par beete din me
 
 
 def _overlap(cur, staff_id: Optional[int], fd: date, td: date, siwa: Optional[int] = None) -> None:
@@ -1343,8 +1361,10 @@ def list_leave(start: Optional[str] = Query(None), end: Optional[str] = Query(No
     with get_conn() as conn:
         cur = dict_cursor(conn)
         v = _viewer(cur, user)
+        # + chalu / aane wali APPROVED (Approved tab) -- period kuch bhi chuna ho
         cur.execute(f"""{_LEAVE_SELECT}
              WHERE l.status = 'PENDING'
+                OR (l.status = 'APPROVED' AND l.to_date >= CURRENT_DATE)
                 OR (l.to_date >= %(s)s AND (%(e)s::date IS NULL OR l.from_date <= %(e)s::date))
              ORDER BY l.from_date DESC, l.id DESC
              LIMIT 3000
@@ -1383,6 +1403,12 @@ def list_leave(start: Optional[str] = Query(None), end: Optional[str] = Query(No
 
     pending = sorted((r for r in dikhe if r["status"] == "PENDING"),
                      key=lambda r: (r["from_date"], r["id"]))
+    # Approved tab (default): sirf jinki chhutti abhi chal rahi / aage hai -- tareekh
+    # nikal gayi to yahan se hat jaati hai, Records me bachi rehti hai (user:
+    # "3 se 6 tak thi to 7 ko approved wali screen se hat jaye")
+    aaj = date.today()
+    approved = sorted((r for r in dikhe if r["status"] == "APPROVED" and r["to_date"] >= aaj),
+                      key=lambda r: (r["from_date"], r["id"]))
     return {
         "today": date.today().isoformat(),
         "start": s.isoformat(),
@@ -1390,6 +1416,8 @@ def list_leave(start: Optional[str] = Query(None), end: Optional[str] = Query(No
         "me": me,
         "see_all": v["sab"],
         "can_apply_any": v["kisi_ki"],
+        "can_apply": v["arzi"] and (v["kisi_ki"] or me is not None),
+        "shared_login": v["sanjha"],
         "can_delete": v["admin"],
         "approves": sorted(lvl for lvl, roles in _LEAVE_APPROVER.items()
                            if v["admin"] or v["role"] in roles),
@@ -1397,6 +1425,7 @@ def list_leave(start: Optional[str] = Query(None), end: Optional[str] = Query(No
         "max_days": LEAVE_MAX_DAYS,
         "back_days": LEAVE_BACK_DAYS,
         "pending": [_leave_json(r, v) for r in pending],
+        "approved": [_leave_json(r, v) for r in approved],
         "rows": [_leave_json(r, v) for r in dikhe if record(r)],
     }
 
@@ -1409,6 +1438,9 @@ def apply_leave(body: LeaveIn, user=Depends(get_current_user)):
     with get_conn() as conn:
         cur = dict_cursor(conn)
         v = _viewer(cur, user)
+        if not v["arzi"]:
+            raise HTTPException(403, "The shared maint login can't apply for leave — "
+                                     "apply from your own login.")
         if not v["kisi_ki"]:
             if v["staff_id"] is None:
                 raise HTTPException(403, "Your login is not linked to anyone on the attendance list "
@@ -1455,6 +1487,9 @@ def _naye_din(cur, r, body: LeaveDecide) -> tuple:
     fd, td = _leave_dates(body.from_date or r["from_date"].isoformat(),
                           body.to_date or r["to_date"].isoformat(), naya=False)
     if (fd, td) != (r["from_date"], r["to_date"]):
+        if _peechhe_jude(fd, td, r["from_date"], r["to_date"]):
+            raise HTTPException(400, "Leave can't be back-dated — new days must be today or later "
+                                     "(shortening a leave is fine).")
         _overlap(cur, r["staff_id"], fd, td, siwa=r["id"])
     return fd, td
 

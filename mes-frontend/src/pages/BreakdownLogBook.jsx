@@ -15,6 +15,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { upperCaret, maskCaret } from "../constants/upperCaret";
 import ExcelBtn from "../components/ExcelBtn";
+import TimeField from "../components/TimeField";
 import { aajKaNaam } from "../constants/sheetTools";
 
 const api = {
@@ -455,6 +456,10 @@ export default function BreakdownLogBook() {
                  border:1px solid #cbd5e1; border-radius:8px; padding:9px 11px; background:#fff; width:100%;
                  outline:none; transition:border-color .12s, box-shadow .12s; box-sizing:border-box; }
         .lb-in:focus, .lb-sel:focus, .lb-ta:focus { border-color:${theme.accent}; box-shadow:0 0 0 3px ${theme.soft}; }
+        /* time khaana (TimeField) -- dabba .lb-in jaisa, focus andar ke khaane par;
+           uchai purane native time khaane jitni (40px) -- row ka naap na hile */
+        .lb-in.lb-time { min-height:40px; }
+        .lb-in.lb-time:focus-within { border-color:${theme.accent}; box-shadow:0 0 0 3px ${theme.soft}; }
         .lb-in:disabled, .lb-sel:disabled { background:#f1f5f9; color:#94a3b8; cursor:not-allowed; }
         .lb-in[readonly] { background:#f8fafc; color:#334155; }
         .lb-ta { resize:vertical; min-height:64px; line-height:1.45; }
@@ -578,11 +583,14 @@ export default function BreakdownLogBook() {
                   </div>
                   <div className="lb-field">
                     <span className="lb-lbl">Start Time</span>
-                    <input className="lb-in" type="time" value={form.bd_start_time} onChange={(e) => set("bd_start_time", e.target.value)} />
+                    {/* AM/PM khaali ho to ABHI ka (user 2026-10-03) -- native time khaana desktop par khaali chhodta tha */}
+                    <TimeField className="lb-in lb-time" label="Start time" accent={theme.accent}
+                               value={form.bd_start_time} onChange={(v) => set("bd_start_time", v)} />
                   </div>
                   <div className="lb-field">
                     <span className="lb-lbl">End Time</span>
-                    <input className="lb-in" type="time" value={form.bd_ok_time} onChange={(e) => set("bd_ok_time", e.target.value)} />
+                    <TimeField className="lb-in lb-time" label="End time" accent={theme.accent}
+                               value={form.bd_ok_time} onChange={(v) => set("bd_ok_time", v)} />
                   </div>
                   <div className="lb-field">
                     <span className="lb-lbl">Total Time (Min)</span>

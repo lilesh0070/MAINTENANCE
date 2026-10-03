@@ -170,31 +170,31 @@ OK_OBS, OK_ACT = "FOUND OK", "-"
 
 
 def _layout_saaf(entries: list, layout: str) -> list:
-    """Har layout: OK point (alphabet) par Observation khaali ho to "FOUND OK",
-    Action khaali ho to "-".
-    status_first: OK par ye dono PAKKE (wahan khaana badalta nahi); NG par jo
-    likha; khaali status par saaf -- beech me NG->OK kiya ho to purana likha na
-    bache; har row ka sign khaana is layout me hai hi nahi; Spares Used sirf
-    YES / NO (baaki kuch aaye to khaali)."""
+    """Har layout: OK par Action khaali ho to "-" (user: "action me default -
+    wala hi rahega, baad me change kar sakte hain"; NG par "-" nahi -- wahan asli
+    likhna zaroori, `_number_jaanch`);
+    OK (alphabet) par Observation khaali ho to "FOUND OK".  NUMBER par
+    Observation = reading (jaisi likhi).
+    status_first: OK (alphabet) par Observation PAKKA "FOUND OK" (wahan khaana
+    badalta nahi -- beech me NG->OK kiya ho to purana likha na bache); khaali
+    status par saaf; har row ka sign khaana is layout me hai hi nahi; Spares
+    Used sirf YES / NO (baaki kuch aaye to khaali)."""
     out = []
     for e in entries or []:
         e = dict(e) if isinstance(e, dict) else {}
-        # NUMBER point (reading) par OK / NG hai hi nahi -- wahan Observation /
-        # Action hamesha khule (reading theek na ho to likh sakein)
         num = str(e.get("type") or "").strip().upper() == "NUMBER"
         st = str(e.get("status") or "").strip().upper()
         ok = not num and st == "OK"
+        # Action ka default "-" sirf OK par (NG par asli likhna zaroori -- jaanch upar)
+        if st == "OK" and not str(e.get("action_taken") or "").strip():
+            e["action_taken"] = OK_ACT
         if layout != "status_first":
-            if ok:
-                if not str(e.get("observation") or "").strip():
-                    e["observation"] = OK_OBS
-                if not str(e.get("action_taken") or "").strip():
-                    e["action_taken"] = OK_ACT
+            if ok and not str(e.get("observation") or "").strip():
+                e["observation"] = OK_OBS
             out.append(e)
             continue
         if ok:
             e["observation"] = OK_OBS
-            e["action_taken"] = OK_ACT
         elif not num and st != "NG":
             e["observation"] = ""
             e["action_taken"] = ""
@@ -290,24 +290,40 @@ _NUM_RE = re.compile(r"^-?\d+(\.\d+)?")
 
 
 def _number_galat(entries) -> list:
-    """NUMBER wale point jinka STATUS number se SHURU nahi hota (OK / NG / kachra) -- s_no."""
+    """NUMBER wale point jinke OBSERVATION me reading (number se shuru) nahi -- s_no.
+    (User 2026-10-03, teesri baar: STATUS sirf OK / NG; reading Observation me.)"""
     out = []
     for e in entries or []:
         if not isinstance(e, dict):
             continue
         if str(e.get("type") or "").strip().upper() == "NUMBER" \
-                and not _NUM_RE.match(str(e.get("status") or "").strip()):
+                and not _NUM_RE.match(str(e.get("observation") or "").strip()):
             out.append(str(e.get("s_no") or "?"))
     return out
 
 
 def _number_jaanch(entries) -> None:
+    """STATUS har point par sirf OK / NG; NUMBER point par Observation me reading;
+    NG point par Observation + Action dono (Action "-" nahi chalega -- wo OK ka
+    default hai; user: "NG karne par - hat jayega")."""
+    galat = [str(e.get("s_no") or "?") for e in (entries or []) if isinstance(e, dict)
+             and str(e.get("status") or "").strip()
+             and str(e.get("status") or "").strip().upper() not in ("OK", "NG")]
+    if galat:
+        raise HTTPException(400, f"STATUS must be OK or NG (point "
+                                 f"{', '.join(galat[:10])}{'…' if len(galat) > 10 else ''}).")
     bad = _number_galat(entries)
     if bad:
-        raise HTTPException(400, f"Enter the reading for point "
+        raise HTTPException(400, f"Enter the reading in Observation for point "
                                  f"{', '.join(bad[:10])}{'…' if len(bad) > 10 else ''} — it must "
-                                 f"start with a number (e.g. 8 AMP, 120 VAC); OK / NG is not used "
-                                 f"for number points.")
+                                 f"start with a number (e.g. 240 VAC, 210 VAC).")
+    ng = [str(e.get("s_no") or "?") for e in (entries or []) if isinstance(e, dict)
+          and str(e.get("status") or "").strip().upper() == "NG"
+          and (not str(e.get("observation") or "").strip()
+               or str(e.get("action_taken") or "").strip() in ("", OK_ACT))]
+    if ng:
+        raise HTTPException(400, f"Point {', '.join(ng[:10])}{'…' if len(ng) > 10 else ''} is NG — "
+                                 f"fill both Observation and Action Taken.")
 
 
 class PointAdd(BaseModel):
