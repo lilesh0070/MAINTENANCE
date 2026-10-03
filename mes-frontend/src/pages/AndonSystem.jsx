@@ -119,7 +119,6 @@ const defPort   = (p) => (isModbus(p) ? 502 : 5007);
    bhi likha hua hona bekaar hai.  Har jagah (form, badge, address dropdown)
    YAHI se poochha jaata hai, warna kahin Q + Modbus jaisa jodha dikh sakta. */
 const effProto = (series, protocol) => (canModbus(series) && isModbus(protocol) ? "MODBUS" : "MC");
-const MC_ADDR     = ["D", "R", "W", "M", "L", "X", "Y"];   // Model / Fault register
 const MC_BIT_ADDR = ["M", "Y", "X", "L", "D"];             // ANDON call ka signal
 /* Modbus par bhi address WAHI roop me likha jaata hai jo MC me — `D3001`.
    Modbus ka asli number PLC ke apne "MODBUS Device Allocation" se banta hai
@@ -679,14 +678,10 @@ export default function AndonSystem() {
     else await api(`/plc-devices/${outFor.id}/outputs`, { method: "PUT", body: JSON.stringify(body) });
   }, "Output mapping saved");
 
-  // ── Assign (per-machine): ANDON | Model | Fault sub-tabs ──
-  const [assignTab, setAssignTab] = useState("andon");        // andon | model | fault
-  const [modelRows, setModelRows] = useState([]);
-  const [faultRows, setFaultRows] = useState([]);
-  // list khali ho to bhi ek ready row dikhe — user turant Device/Value bhar sake
-  const loadModels = useCallback(async (eid) => { const r = (await api(`/plc-devices/${eid}/models`)) || []; setModelRows(r.length ? r : [{ device_type: "D", device_no: "", value: "", name: "" }]); }, [api]);
-  const loadFaults = useCallback(async (eid) => { const r = (await api(`/plc-devices/${eid}/faults`)) || []; setFaultRows(r.length ? r : [{ device_type: "D", device_no: "", value: "", name: "" }]); }, [api]);
-  const openAssign = (e) => { setAssignTab("andon"); loadOutputs({ type: "plc", id: e.id, name: e.name }); loadModels(e.id); loadFaults(e.id); };
+  // ── Assign (per-machine): sirf ANDON.  Model / Fault ki screen HATAI
+  //    (user 2026-10-03) -- sirf UI se.  DB ki purani mapping aur PLC poller
+  //    (backend) ka Model / Fault padhna waisa hi hai; endpoint bhi rakhe. ──
+  const openAssign = (e) => { loadOutputs({ type: "plc", id: e.id, name: e.name }); };
 
   // "Retry" — us PLC ko ABHI dobara jaancho.  List wala status cache se aata
   // hai (server PLC ko har 10s nahi thakthakata), isliye jab user khud kehta
@@ -731,53 +726,6 @@ export default function AndonSystem() {
     } catch { /* chup-chaap — writer agle cycle me khud bhi koshish karega */ }
     finally { setOutRechecking(null); }
   };
-  const pickMap = (which) => (which === "model" ? setModelRows : setFaultRows);
-  const setMap = (which, i, k, v) => pickMap(which)((rs) => rs.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
-  const addMap = (which) => pickMap(which)((rs) => [...rs, { device_type: "D", device_no: "", value: "", name: "" }]);
-  const delMap = (which, i) => pickMap(which)((rs) => rs.filter((_, j) => j !== i));
-  const saveMaps = (which) => wrap(async () => {
-    const rows = which === "model" ? modelRows : faultRows;
-    const body = { rows: rows.map((r) => ({ device_type: r.device_type || "", device_no: r.device_no || "",
-      value: (r.value === "" || r.value == null) ? null : Number(r.value), name: r.name || "" })) };
-    await api(`/plc-devices/${outFor.id}/${which === "model" ? "models" : "faults"}`, { method: "PUT", body: JSON.stringify(body) });
-  }, "Saved");
-  // Model / Fault dono ka editor same shape — ek renderer
-  const mapEditor = (which, rows, label) => (
-    <div className="an-card">
-      <div className="an-row" style={{ marginBottom: 6 }}>
-        <b style={{ fontSize: 14 }}>{label} mapping</b>
-        {outFor?.name && <span style={{ fontSize: 11.5, color: "#64748b", fontWeight: 600 }}>· {outFor.name}</span>}
-        <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#94a3b8" }}>PLC register value → {label.toLowerCase()} name.</span>
-      </div>
-      {/* `an-stack` -- phone par har qatar ek chhota card.  Paanch khaane
-          343px me thoos diye jaate the, jisme Device ka select sirf ~36px ka
-          bachta tha -- yaani chuni hui "D" teer ke peechhe CHHUP jaati thi. */}
-      <table className="an-tbl an-stack">
-        <thead><tr><th style={{ width: 110 }}>Device</th><th style={{ width: 150 }}>Device No</th><th style={{ width: 120 }}>Value</th><th>{label} Name</th><th style={{ width: 40 }}></th></tr></thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              <td data-lbl="Device">
-                <select className="an-in" style={{ width: "100%", padding: "6px 8px" }} value={r.device_type || ""} onChange={(e) => setMap(which, i, "device_type", e.target.value)} title={MODBUS_ADDR_HINT[r.device_type] || ""}>
-                  <option value="">—</option>
-                  <AddrOptions proto={curProto} mcList={MC_ADDR} />
-                </select>
-              </td>
-              <td data-lbl="Device No"><input className="an-in" style={{ width: "100%", padding: "6px 8px" }} value={r.device_no || ""} onChange={(e) => setMap(which, i, "device_no", e.target.value)} placeholder="e.g. 3001" /></td>
-              <td data-lbl="Value"><input className="an-in" type="number" style={{ width: "100%", padding: "6px 8px" }} value={r.value ?? ""} onChange={(e) => setMap(which, i, "value", e.target.value)} placeholder="e.g. 5" /></td>
-              <td data-lbl={`${label} Name`}><input className="an-in" style={{ width: "100%", padding: "6px 8px" }} value={r.name || ""} onChange={(e) => setMap(which, i, "name", e.target.value)} placeholder={`${label} name`} /></td>
-              <td><button className="an-x" onClick={() => delMap(which, i)}>×</button></td>
-            </tr>
-          ))}
-          {!rows.length && <tr><td colSpan={5} style={{ color: "#94a3b8" }}>No rows yet — “+ Add row”.</td></tr>}
-        </tbody>
-      </table>
-      <div className="an-row" style={{ marginTop: 12, justifyContent: "space-between" }}>
-        <button className="an-btn gh" onClick={() => addMap(which)}>+ Add row</button>
-        <button className="an-btn" onClick={() => saveMaps(which)}>Save {label.toLowerCase()} mapping</button>
-      </div>
-    </div>
-  );
   // each department appears ONCE — its dropdown excludes departments used by other rows
   const deptUsedElsewhere = (i) => new Set(outRows.filter((_, j) => j !== i).map((r) => r.department_id).filter(Boolean));
   const onOutDept = (i, deptId) => {
@@ -1070,16 +1018,6 @@ export default function AndonSystem() {
               {/* ── OUTPUTS (departments + DO1–DO8 → department) ── */}
               {cfg === "outputs" && (
                 <>
-                  {/* Per-machine Assign: ANDON · Model · Fault */}
-                  {outFor.type === "plc" && (
-                    <div className="an-ctabs" style={{ marginBottom:12 }}>
-                      {[["andon","🚦 ANDON"],["model","🏷 Model"],["fault","⚠ Fault"]].map(([k, l]) => (
-                        <button key={k} className={`an-ctab${assignTab === k ? " on" : ""}`} onClick={() => setAssignTab(k)}>{l}</button>
-                      ))}
-                    </div>
-                  )}
-
-                  {(outFor.type !== "plc" || assignTab === "andon") && (
                   <>
                   <div className="an-card" style={{ marginBottom:14 }}>
                     <b style={{ fontSize:14 }}>Departments</b>
@@ -1149,10 +1087,6 @@ export default function AndonSystem() {
                     </div>
                   </div>
                   </>
-                  )}
-
-                  {outFor.type === "plc" && assignTab === "model" && mapEditor("model", modelRows, "Model")}
-                  {outFor.type === "plc" && assignTab === "fault" && mapEditor("fault", faultRows, "Fault")}
                 </>
               )}
             </>
