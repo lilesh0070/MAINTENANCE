@@ -1,5 +1,5 @@
 {
-  "version": "1.4.147",
-  "notes": "Attendance on TV: the lower half of the screen now shows the full Leave section - Approved, Pending and Records with Excel download, as allowed for the TV's login - and it refreshes every minute. The board in the upper half is unchanged.",
-  "released_at": "2026-10-03T15:34:17"
+  "version": "1.4.148",
+  "notes": "Historical Data: admin can now edit the time, date, down-time and response time of an auto (ANDON) breakdown slip too - the totals update from the new times. Problem Related To stays as ANDON set it.",
+  "released_at": "2026-10-03T18:56:54"
 }
