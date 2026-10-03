@@ -14,7 +14,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { maskCaret } from "../constants/upperCaret";
 import { useAuth } from "../context/AuthContext";
 import { FormatSheet } from "./pm/FormatSheet";
-import { pmLayout, sheetLayoutKey, layoutSaaf, isNumPoint, statusFilled } from "./pm/pmLayouts";
+import { pmLayout, sheetLayoutKey, layoutSaaf, isNumPoint, statusFilled, statusPatch } from "./pm/pmLayouts";
 import { fmtErp, editSpareRow, isSpareYes, spareMissing, spareYesKey, syncSpareRows,
          spareHatao, spareHataoSawal } from "./pm/pmSpares";
 import YearlyPmTab from "./pm/YearlyPmTab";
@@ -703,7 +703,10 @@ export default function PMPanel() {
         if (bhari && !window.confirm(spareHataoSawal(merged[i], i, v, bhari))) return;
         setSheetSpares(rows);
       }
-      setCalSheet(s => s ? ({ ...s, fill: { ...s.fill, [i]: { ...(s.fill[i] || {}), [k]: v } } }) : s);
+      // STATUS badla -- OK par Observation "FOUND OK" / Action "-" (khaali ho to),
+      // OK se hata to wahi default saaf (`statusPatch`)
+      const patch = k === "status" ? statusPatch(merged[i], v) : { [k]: v };
+      setCalSheet(s => s ? ({ ...s, fill: { ...s.fill, [i]: { ...(s.fill[i] || {}), ...patch } } }) : s);
     };
     return (
       <div style={{marginTop:14}}>

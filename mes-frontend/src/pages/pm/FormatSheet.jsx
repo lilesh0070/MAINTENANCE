@@ -29,7 +29,7 @@
 // hai (snapshot) -- abhi chuna hua nahi.
 import { useRef } from "react";
 import SheetPrintBtn from "../../components/SheetPrintBtn";
-import { pmLayout, nextStatus, isNumPoint, numOnly } from "./pmLayouts";
+import { pmLayout, nextStatus, isNumPoint, numOnly, OK_OBS, OK_ACT } from "./pmLayouts";
 import { nextSpare, isSpareYes, isPointRow, spareNo, spareWhere } from "./pmSpares";
 
 export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = false, printable = false, onEdit = null, signVals = [], signImgs = [], onSign = null, onSignVal = null, signable = null,
@@ -113,6 +113,9 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
               // NUMBER point: STATUS me reading; Observation / Action hamesha khule
               const numPt = isNumPoint(p);
               const isNG = numPt || String(p.status || "").trim().toUpperCase() === "NG";
+              // Format 2 me OK point: Observation / Action me pakka default
+              // ("FOUND OK" / "-") -- khaana badalta nahi (user 2026-10-03)
+              const okRow = L.ngOnly.length > 0 && !numPt && String(p.status || "").trim().toUpperCase() === "OK";
               const mk = p.id != null ? p.id : `i${i}`;
               return (
                 <tr key={i}
@@ -128,7 +131,8 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
                     const cellInp = sel ? { ...inp, background:"#dbeafe" } : inp;
                     // status_first: Observation / Action sirf NG point par (OK /
                     // khaali par khaana band -- na likhna, na dikhana)
-                    const band = L.ngOnly.includes(k) && !isNG;
+                    const okFixed = okRow && L.ngOnly.includes(k);
+                    const band = L.ngOnly.includes(k) && !isNG && !okFixed;
                     // Format 2 ka SPARES USED: YES / NO (classic me ye khaana khaali hi)
                     const spareTap = L.spareClick && k === "spares_used";
                     const tapCol = k === "status" || spareTap;
@@ -148,7 +152,12 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
                       {/* SPARES USED per-row cell is intentionally BLANK — spares
                           are now captured once, in the sheet-level list below
                           (fill form only). */}
-                      {(k === "spares_used" && !spareTap) || band ? null : editable ? (
+                      {(k === "spares_used" && !spareTap) || band ? null : okFixed ? (
+                        // pakka default -- edit me bhi input nahi
+                        <span style={{ display: "block", padding: editable ? "3px 6px" : 0, color: "#334155" }}>
+                          {p[k] || (k === "observation" ? OK_OBS : OK_ACT)}
+                        </span>
+                      ) : editable ? (
                         spareTap ? (
                           // YES -> neeche "Spares Used" me is point ki row (bulane wala banata hai)
                           <button type="button" title="Tap: NO → YES → clear"
@@ -161,7 +170,7 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
                         ) : k === "status" && numPt ? (
                           // reading -- OK / NG nahi (point ka type NUMBER)
                           <input style={{ ...cellInp, textAlign:"center", fontWeight:800, color:"#1d4ed8" }}
-                                 placeholder="e.g. 8 AMP" title="Start with the number, then anything (e.g. 8 AMP, 120 VAC)"
+                                 title="Start with the number, then anything (e.g. 8 AMP, 120 VAC)"
                                  value={p[k] || ""}
                                  onChange={(e) => onEdit && onEdit(i, k, numOnly(e.target.value))} />
                         ) : k === "status" ? (

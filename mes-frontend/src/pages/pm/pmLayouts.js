@@ -92,16 +92,48 @@ export const statusFilled = (p) => (isNumPoint(p)
   ? NUM_RE.test(String((p && p.status) || "").trim())
   : !!String((p && p.status) || "").trim());
 
+/* ── OK point ka default (user 2026-10-03) ─────────────────────────────
+ * "jis status me OK aa raha hai uske observation of check point me default
+ *  FOUND OK aa jaye aur action taken me - likha aa jaye".  Server bhi yahi
+ *  lagata hai (pm.py `OK_OBS` / `OK_ACT`, `_layout_saaf`). */
+export const OK_OBS = "FOUND OK";
+export const OK_ACT = "-";
+
+/** STATUS badla -- fill me kya-kya badle (patch).  OK aaya: khaali Observation
+ *  / Action me default; OK se hata: default hi pada ho to saaf (NG par asli
+ *  likhna hai).  NUMBER point par kuch nahi (wahan OK / NG hai hi nahi). */
+export function statusPatch(prev, nayi) {
+  const patch = { status: nayi };
+  if (isNumPoint(prev)) return patch;
+  const isOk = String(nayi || "").trim().toUpperCase() === "OK";
+  const wasOk = String((prev && prev.status) || "").trim().toUpperCase() === "OK";
+  if (isOk) {
+    if (!String((prev && prev.observation) || "").trim()) patch.observation = OK_OBS;
+    if (!String((prev && prev.action_taken) || "").trim()) patch.action_taken = OK_ACT;
+  } else if (wasOk) {
+    if ((prev && prev.observation) === OK_OBS) patch.observation = "";
+    if ((prev && prev.action_taken) === OK_ACT) patch.action_taken = "";
+  }
+  return patch;
+}
+
 /** Save se pehle: status_first me OK / khaali point ka Observation / Action
  *  aur har row ka sign nahi jaata; Spares Used sirf YES / NO (server bhi yahi
  *  karta hai). */
 export function layoutSaaf(entries, layoutKey) {
-  if (layoutKey !== "status_first") return entries;
   return (entries || []).map((e) => {
+    const ok = !isNumPoint(e) && String(e.status || "").trim().toUpperCase() === "OK";
+    if (layoutKey !== "status_first") {
+      // classic: OK par khaali ho tabhi default (likha hua nahi chhedte)
+      return ok ? { ...e, observation: String(e.observation || "").trim() ? e.observation : OK_OBS,
+                    action_taken: String(e.action_taken || "").trim() ? e.action_taken : OK_ACT } : e;
+    }
     // NUMBER point par OK / NG nahi -- Observation / Action hamesha rakho
     const ng = isNumPoint(e) || String(e.status || "").trim().toUpperCase() === "NG";
     const sp = String(e.spares_used || "").trim().toUpperCase();
-    return { ...e, observation: ng ? (e.observation || "") : "", action_taken: ng ? (e.action_taken || "") : "",
+    return { ...e,
+             observation: ok ? OK_OBS : ng ? (e.observation || "") : "",
+             action_taken: ok ? OK_ACT : ng ? (e.action_taken || "") : "",
              sign: "", spares_used: sp === "YES" || sp === "NO" ? sp : "" };
   });
 }

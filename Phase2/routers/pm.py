@@ -164,20 +164,38 @@ def _current_layout() -> str:
     return lay if lay in _PM_LAYOUTS else "classic"
 
 
+# OK point ka default (user 2026-10-03: "jis status me OK aa raha hai uske
+# observation of check point me default FOUND OK aa jaye aur action taken me -").
+OK_OBS, OK_ACT = "FOUND OK", "-"
+
+
 def _layout_saaf(entries: list, layout: str) -> list:
-    """status_first: Observation / Action Taken SIRF NG wale point par rakho
-    (OK par screen par dikhte hi nahi -- beech me NG->OK kiya ho to purana likha
-    na bache); har row ka sign khaana is layout me hai hi nahi; Spares Used
-    sirf YES / NO (baaki kuch aaye to khaali)."""
-    if layout != "status_first":
-        return entries
+    """Har layout: OK point (alphabet) par Observation khaali ho to "FOUND OK",
+    Action khaali ho to "-".
+    status_first: OK par ye dono PAKKE (wahan khaana badalta nahi); NG par jo
+    likha; khaali status par saaf -- beech me NG->OK kiya ho to purana likha na
+    bache; har row ka sign khaana is layout me hai hi nahi; Spares Used sirf
+    YES / NO (baaki kuch aaye to khaali)."""
     out = []
     for e in entries or []:
         e = dict(e) if isinstance(e, dict) else {}
         # NUMBER point (reading) par OK / NG hai hi nahi -- wahan Observation /
         # Action hamesha khule (reading theek na ho to likh sakein)
         num = str(e.get("type") or "").strip().upper() == "NUMBER"
-        if not num and str(e.get("status") or "").strip().upper() != "NG":
+        st = str(e.get("status") or "").strip().upper()
+        ok = not num and st == "OK"
+        if layout != "status_first":
+            if ok:
+                if not str(e.get("observation") or "").strip():
+                    e["observation"] = OK_OBS
+                if not str(e.get("action_taken") or "").strip():
+                    e["action_taken"] = OK_ACT
+            out.append(e)
+            continue
+        if ok:
+            e["observation"] = OK_OBS
+            e["action_taken"] = OK_ACT
+        elif not num and st != "NG":
             e["observation"] = ""
             e["action_taken"] = ""
         e["sign"] = ""

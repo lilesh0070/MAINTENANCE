@@ -22,7 +22,7 @@ import { useAuth } from "../context/AuthContext";
 import { ClosureFormModal } from "./breakdown/ClosureFormModal";
 import { slipPayload } from "./breakdown/slipPayload";
 import { FormatSheet } from "./pm/FormatSheet";
-import { pmLayout, sheetLayoutKey, isNumPoint, statusFilled } from "./pm/pmLayouts";
+import { pmLayout, sheetLayoutKey, isNumPoint, statusFilled, statusPatch } from "./pm/pmLayouts";
 import { EMPTY_SPARE, editSpareRow, isSpareYes, spareMissing, spareYesKey, syncSpareRows,
          spareHatao, spareHataoSawal } from "./pm/pmSpares";
 import { DmcSheet, groupDmcPoints } from "./DmcSheet";
@@ -528,7 +528,9 @@ export default function MaintenanceHistorical() {
       if (bhari && !window.confirm(spareHataoSawal(pmDraft[i], i, val, bhari))) return;
       setPmSpDraft(rows);
     }
-    setPmDraft((d) => d.map((e, ix) => (ix === i ? { ...e, [key]: val } : e)));
+    // STATUS badla -- OK par default "FOUND OK" / "-" (fill form jaisa)
+    const patch = key === "status" ? statusPatch(pmDraft[i], val) : { [key]: val };
+    setPmDraft((d) => d.map((e, ix) => (ix === i ? { ...e, ...patch } : e)));
   };
   const pmSave = async () => {
     if (!viewSheet?.id) return;

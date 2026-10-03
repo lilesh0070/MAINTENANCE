@@ -164,7 +164,8 @@ try:
     c.execute("SELECT entries, doc_footer FROM maintenance_pm_check_sheet_filled WHERE id=%s", (sid,))
     row = c.fetchone()
     e1, e2, e3 = row["entries"]
-    T("OK point: observation / action saaf", e1["observation"] == "" and e1["action_taken"] == "", e1)
+    T("OK point: observation 'FOUND OK', action '-' (pakka default)",
+      e1["observation"] == "FOUND OK" and e1["action_taken"] == "-", e1)
     T("NG point: observation / action bache", e2["observation"] == "ZZ LOOSE" and e2["action_taken"] == "ZZ TIGHTENED")
     T("har row ka sign saaf", e1["sign"] == "" and e2["sign"] == "")
     T("Spares Used: ' yes ' -> YES, NO -> NO, kachra -> khaali",
@@ -180,6 +181,8 @@ try:
     T("classic: OK ka observation / sign bache", row["entries"][0]["observation"] == "ZZ OK PAR LIKHA"
       and row["entries"][0]["sign"] == "ZZ", row["entries"][0])
     T("classic: spares_used jyon ka tyon", row["entries"][2]["spares_used"] == "BEARING 6204")
+    T("classic: OK + khaali observation / action -> 'FOUND OK' / '-'",
+      row["entries"][2]["observation"] == "FOUND OK" and row["entries"][2]["action_taken"] == "-", row["entries"][2])
     T("snapshot layout = classic", (row["doc_footer"] or {}).get("layout") == "classic")
 
     print("\n(4) resubmit -- sheet ka APNA layout")
@@ -190,7 +193,7 @@ try:
     T("resubmit 200", r.status_code == 200, r.text[:120])
     c.execute("SELECT entries FROM maintenance_pm_check_sheet_filled WHERE id=%s", (sid,))
     e1 = c.fetchone()["entries"][0]
-    T("status_first sheet: OK ka observation phir bhi saaf", e1["observation"] == "" and e1["sign"] == "", e1)
+    T("status_first sheet: OK ka observation phir bhi default", e1["observation"] == "FOUND OK" and e1["sign"] == "", e1)
 
     print("\n(5) admin edit")
     r = cl.put(f"/api/pm/check-sheet-fill/{cid}/admin", json=body(layout="status_first"))
@@ -200,8 +203,8 @@ try:
       c.fetchone()["entries"][0]["observation"] == "ZZ OK PAR LIKHA")
     r = cl.put(f"/api/pm/check-sheet-fill/{sid}/admin", json=body())
     c.execute("SELECT entries FROM maintenance_pm_check_sheet_filled WHERE id=%s", (sid,))
-    T("status_first sheet admin edit: OK ka observation saaf", r.status_code == 200
-      and c.fetchone()["entries"][0]["observation"] == "")
+    T("status_first sheet admin edit: OK ka observation default", r.status_code == 200
+      and c.fetchone()["entries"][0]["observation"] == "FOUND OK")
     ab["user"] = SUP
     r = cl.put(f"/api/pm/check-sheet-fill/{sid}/admin", json=body())
     T("supervisor admin-edit -> 403", r.status_code == 403)
