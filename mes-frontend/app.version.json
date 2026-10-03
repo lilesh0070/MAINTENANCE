@@ -1,5 +1,5 @@
 {
-  "version": "1.4.143",
-  "notes": "PM check sheet: an OK point now fills Observation with 'FOUND OK' and Action Taken with '-' automatically; the reading box on number points is blank (no placeholder).",
-  "released_at": "2026-10-03T12:36:25"
+  "version": "1.4.145",
+  "notes": "PM check sheet: STATUS is OK / NG for every point; number points take the reading in Observation; Action Taken defaults to '-' on OK; an NG point needs both Observation and Action Taken. Leave: new Approved tab (default) shows current and upcoming approved leave; the shared maint login can view everything but can't apply; leave can't be back-dated; records by month, financial year or calendar year with an Excel summary. Log Book: Start / End Time now pick AM or PM from the current time by default. Attendance history lists people in hierarchy order.",
+  "released_at": "2026-10-03T14:24:45"
 }
