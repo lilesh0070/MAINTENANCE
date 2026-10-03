@@ -39,19 +39,20 @@ export function editSpareRow(rows, ri, key, val, master) {
   return next;
 }
 
-/** Tap: khaali -> YES -> NO -> khaali (Status jaisa). */
-export const nextSpare = (s) => (s === "YES" ? "NO" : s === "NO" ? "" : "YES");
+/** Tap: khaali -> NO -> YES -> khaali.  User (2026-10-03, baad me): "pehle
+ *  click par NO aana chahiye, baad me YES" -- zyadatar point par spare lagta
+ *  hi nahi, to pehli tap NO. */
+export const nextSpare = (s) => (s === "NO" ? "YES" : s === "YES" ? "" : "NO");
 
 export const isSpareYes = (p) => String((p && p.spares_used) || "").trim().toUpperCase() === "YES";
 
 /** Point ka number -- sheet ka S.NO. (na ho to kram). */
 export const spareNo = (p, i) => String((p && p.s_no) || i + 1).trim();
 
-/** YES par bani row ka Where Used: "Point 5 - PLC panel". */
-export const spareWhere = (p, i) => {
-  const cp = String((p && p.check_point) || "").replace(/\s+/g, " ").trim();
-  return cp ? `Point ${spareNo(p, i)} - ${cp}` : `Point ${spareNo(p, i)}`;
-};
+/** YES par bani row ka Where Used: sirf "Point 5" -- poora check point nahi
+ *  (user 2026-10-03: "point 1 to Point 1 aana chahiye, uska poora description
+ *  na aaye, jisse chhota aur sahi lagega"). */
+export const spareWhere = (p, i) => `Point ${spareNo(p, i)}`;
 
 /** Ye row is point ki hai?  "Point 5", "point 5 - x" haan; "Point 50" nahi. */
 export const isPointRow = (r, no) => {

@@ -22,14 +22,14 @@
 // untouched — it stays a plain serial number.
 // LAYOUT (2026-10-03): `f.layout` -- "classic" (purana 9 column) ya
 // "status_first" (Status Method ke baad, tap se OK -> NG -> khaali, Observation /
-// Action sirf NG par, Sign column nahi; SPARES USED tap se YES -> NO -> khaali,
+// Action sirf NG par, Sign column nahi; SPARES USED tap se NO -> YES -> khaali,
 // YES wale point ki row neeche ki Spares list me -- jod ./pmSpares.js me).
 // Naqsha ./pmLayouts.js me.
 // Bhari sheet dikhate waqt bulane wala `f.layout` me SHEET ka apna layout deta
 // hai (snapshot) -- abhi chuna hua nahi.
 import { useRef } from "react";
 import SheetPrintBtn from "../../components/SheetPrintBtn";
-import { pmLayout, nextStatus } from "./pmLayouts";
+import { pmLayout, nextStatus, isNumPoint, numOnly } from "./pmLayouts";
 import { nextSpare, isSpareYes, isPointRow, spareNo, spareWhere } from "./pmSpares";
 
 export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = false, printable = false, onEdit = null, signVals = [], signImgs = [], onSign = null, onSignVal = null, signable = null,
@@ -110,7 +110,9 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
               const inp = { width:"100%", border:"none", outline:"none", fontSize:11,
                             fontFamily:"inherit", background:"#fff", padding:"3px 4px", boxSizing:"border-box" };
               const FILL = L.fill;
-              const isNG = String(p.status || "").trim().toUpperCase() === "NG";
+              // NUMBER point: STATUS me reading; Observation / Action hamesha khule
+              const numPt = isNumPoint(p);
+              const isNG = numPt || String(p.status || "").trim().toUpperCase() === "NG";
               const mk = p.id != null ? p.id : `i${i}`;
               return (
                 <tr key={i}
@@ -141,7 +143,7 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
                                    : (band && editable ? "#f1f5f9" : (k === "spares_used" && editable ? "#fff" : undefined)),
                                  textAlign: tapCol ? "center" : "left",
                                  fontWeight: tapCol ? 800 : 400,
-                                 color: k === "status" ? (p[k] === "NG" ? "#dc2626" : "#15803d")
+                                 color: k === "status" ? (numPt ? "#1d4ed8" : p[k] === "NG" ? "#dc2626" : "#15803d")
                                    : spareTap ? (p[k] === "YES" ? "#1d4ed8" : "#64748b") : "#111827" }}>
                       {/* SPARES USED per-row cell is intentionally BLANK — spares
                           are now captured once, in the sheet-level list below
@@ -149,13 +151,19 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
                       {(k === "spares_used" && !spareTap) || band ? null : editable ? (
                         spareTap ? (
                           // YES -> neeche "Spares Used" me is point ki row (bulane wala banata hai)
-                          <button type="button" title="Tap: YES → NO → clear"
+                          <button type="button" title="Tap: NO → YES → clear"
                                   onClick={() => onEdit && onEdit(i, k, nextSpare(p[k] || ""))}
                                   style={{ ...cellInp, minHeight:24, cursor:"pointer", textAlign:"center",
                                            fontWeight:900, letterSpacing:".03em",
                                            color: p[k] === "YES" ? "#1d4ed8" : "#64748b" }}>
                             {p[k] || ""}
                           </button>
+                        ) : k === "status" && numPt ? (
+                          // reading -- OK / NG nahi (point ka type NUMBER)
+                          <input style={{ ...cellInp, textAlign:"center", fontWeight:800, color:"#1d4ed8" }}
+                                 placeholder="e.g. 8 AMP" title="Start with the number, then anything (e.g. 8 AMP, 120 VAC)"
+                                 value={p[k] || ""}
+                                 onChange={(e) => onEdit && onEdit(i, k, numOnly(e.target.value))} />
                         ) : k === "status" ? (
                           L.statusClick ? (
                             // Dropdown nahi -- har tap: khaali -> OK -> NG -> khaali
@@ -281,7 +289,7 @@ export function FormatSheet({ f, hdr = {}, points = [], rev = {}, editable = fal
                 return (
                   <tr key={ri}>
                     <td style={{ border:sb, padding:0 }}>
-                      <input style={spInp} value={r.where_used || ""} placeholder="Point 5 - PLC panel"
+                      <input style={spInp} value={r.where_used || ""} placeholder="Point 5"
                              list={yesPts.length ? "fmt-sheet-spare-where" : undefined}
                              onChange={(e) => onSheetSpare && onSheetSpare(ri, "where_used", e.target.value)} /></td>
                     <td style={{ border:sb, padding:0, background: bharo ? "#fef3c7" : undefined }}>

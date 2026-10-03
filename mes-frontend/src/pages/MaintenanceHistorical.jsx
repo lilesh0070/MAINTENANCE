@@ -22,7 +22,7 @@ import { useAuth } from "../context/AuthContext";
 import { ClosureFormModal } from "./breakdown/ClosureFormModal";
 import { slipPayload } from "./breakdown/slipPayload";
 import { FormatSheet } from "./pm/FormatSheet";
-import { pmLayout, sheetLayoutKey } from "./pm/pmLayouts";
+import { pmLayout, sheetLayoutKey, isNumPoint, statusFilled } from "./pm/pmLayouts";
 import { EMPTY_SPARE, editSpareRow, isSpareYes, spareMissing, spareYesKey, syncSpareRows,
          spareHatao, spareHataoSawal } from "./pm/pmSpares";
 import { DmcSheet, groupDmcPoints } from "./DmcSheet";
@@ -532,6 +532,12 @@ export default function MaintenanceHistorical() {
   };
   const pmSave = async () => {
     if (!viewSheet?.id) return;
+    // NUMBER point (type) par reading hi chahiye -- OK / NG nahi (server bhi rokta hai)
+    const numBad = pmDraft.filter((e) => isNumPoint(e) && !statusFilled(e)).map((e) => e.s_no || "?");
+    if (numBad.length) {
+      setPmErr(`Enter the reading for point ${numBad.join(", ")} — it must start with a number (e.g. 8 AMP, 120 VAC).`);
+      return;
+    }
     const miss = pmViewL.spareClick ? spareMissing(pmDraft, pmSpDraft) : [];
     if (miss.length) {
       setPmErr(`Spares Used is YES for point ${miss.join(", ")} — enter the spare name in “Spares Used” below.`);

@@ -8,7 +8,7 @@
    Do tab:  Production  = PENDING_PRODUCTION slips (production fill kare)
             Maintenance = PENDING_MAINTENANCE slips (maintenance complete kare)
    Dono ek hi ClosureFormModal reuse karte hain — bas phase alag. */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { PROD_ZONES } from "../constants/zones";
@@ -86,8 +86,19 @@ function Tag({ v }) {
 export default function ProductionBreakdownSlip() {
   const { token, isAdmin, canAccess } = useAuth();
   const nav = useNavigate();
-  const [tab, setTab]     = useState("PRODUCTION");
-  const [rows, setRows]   = useState([]);
+  // Shuru se hi PEHLA ijazat wala tab.  Pehle hamesha "PRODUCTION" se shuru
+  // hota tha -- jise Production ka haq nahi (maintenance wale), uske liye bhi
+  // pehle Production (src=all: saari bina bhari slip, Tool Room wali bhi) ki
+  // request chali jaati, phir neeche wala effect tab badalta.  Dono request saath
+  // chalti -- Production wala jawab BAAD me aaye to wahi list Maintenance tab me
+  // dikh jaati (user 2026-10-03: "kabhi maintenance ke under saari breakdown
+  // slip dikhata hai, toolroom ki ya jo production ne fill na ki ho wo bhi").
+  const [tab, setTab]     = useState(() => (TABS.find((t) => canAccess(t.perm)) || TABS[0]).key);
+  // List KIS tab + filter ki hai (`key`) -- dikhti tabhi hai jab abhi wale se
+  // mile; purana / bhatka jawab kabhi doosre tab me nahi dikhta.
+  const [data, setData]   = useState({ key: "", rows: [] });
+  const reqNo             = useRef(0);       // aakhri `load` -- usi ka jawab maana jaata hai
+  const cntNo             = useRef(0);       // aakhri ginti
   const [count, setCount] = useState({ PRODUCTION: 0, MAINTENANCE: 0, TOOLROOM: 0 });
   const [loading, setLoad]= useState(true);
   const [modal, setModal] = useState(null);   // { ticket, phase }
@@ -107,16 +118,19 @@ export default function ProductionBreakdownSlip() {
 
   const T = TABS.find((t) => t.key === tab);
 
+  // FY + month har request me jaata hai — tab counts bhi usi filter ke hisaab se
+  const fq = `&fy=${encodeURIComponent(fy)}${month ? `&month=${month}` : ""}`;
+  const curKey = `${tab}|${fq}`;
+  const rows = data.key === curKey ? data.rows : [];
+
   // Zone-wise open count (is tab ke stage ki slips me se)
   const zoneCount = {};
   PROD_ZONES.forEach((z) => { zoneCount[z] = 0; });
   rows.forEach((r) => { const z = r.zone; if (z in zoneCount) zoneCount[z] += 1; });
   const shown = zoneSel ? rows.filter((r) => r.zone === zoneSel) : rows;
 
-  // FY + month har request me jaata hai — tab counts bhi usi filter ke hisaab se
-  const fq = `&fy=${encodeURIComponent(fy)}${month ? `&month=${month}` : ""}`;
-
   const loadCounts = useCallback(async () => {
+    const n = ++cntNo.current;
     try {
       const q = `&fy=${encodeURIComponent(fy)}${month ? `&month=${month}` : ""}`;
       const [p, m, t] = await Promise.all([
@@ -124,22 +138,31 @@ export default function ProductionBreakdownSlip() {
         api.get(`/api/breakdown-slips/stage/PENDING_MAINTENANCE?src=maintenance${q}`, token),
         api.get(`/api/breakdown-slips/stage/PENDING_MAINTENANCE?src=toolroom${q}`,    token),
       ]);
+      if (n !== cntNo.current) return;      // purana jawab -- naya filter aa chuka
       setCount({ PRODUCTION: (p || []).length, MAINTENANCE: (m || []).length,
                  TOOLROOM: (t || []).length });
     } catch { /* ignore */ }
   }, [token, fy, month]);
 
+  // Jis tab ka haq hi nahi uski list mangao hi mat -- upar wala effect pehle
+  // ijazat wale tab par bhej dega.  (Boolean dependency -- `canAccess` function
+  // ka reference har provider render par naya hota hai.)
+  const tabOk = canAccess(T.perm);
   const load = useCallback(async () => {
-    if (!token) return;
+    if (!token || !tabOk) return;
+    const n = ++reqNo.current;
+    const key = `${T.key}|${fq}`;
     setLoad(true); setErr("");
     try {
       const url = T.status ? `/api/breakdown-slips/status?limit=500${fq}`
                            : `/api/breakdown-slips/stage/${T.stage}?src=${T.src}${fq}`;
       const r = await api.get(url, token);
-      setRows(Array.isArray(r) ? r : []);
-    } catch (e) { setErr(e.message || "Load failed"); }
-    finally { setLoad(false); loadCounts(); }
-  }, [token, T.stage, T.src, T.status, fq, loadCounts]);
+      // Beech me tab / filter badal gaya -- ye jawab ab kisi kaam ka nahi
+      if (n !== reqNo.current) return;
+      setData({ key, rows: Array.isArray(r) ? r : [] });
+    } catch (e) { if (n === reqNo.current) setErr(e.message || "Load failed"); }
+    finally { if (n === reqNo.current) setLoad(false); loadCounts(); }
+  }, [token, tabOk, T.key, T.stage, T.src, T.status, fq, loadCounts]);
   useEffect(() => { load(); }, [load]);
 
   // Slip delete — SIRF admin.  Galat/extra auto-slip hatane ke liye (ANDON ki
@@ -315,7 +338,7 @@ export default function ProductionBreakdownSlip() {
         {/* list */}
         <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, overflow: "hidden",
                       boxShadow: "0 1px 4px rgba(15,23,42,.05)" }}>
-          {loading ? (
+          {loading || data.key !== curKey ? (
             <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>Loading…</div>
           ) : shown.length === 0 ? (
             <div style={{ padding: 44, textAlign: "center", color: "#94a3b8" }}>

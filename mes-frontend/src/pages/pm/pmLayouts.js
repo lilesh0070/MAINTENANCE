@@ -39,14 +39,14 @@ export const PM_LAYOUTS = {
   status_first: {
     key: "status_first",
     name: "Format 2 — Status after Method",
-    desc: "8 columns: Status right after Method (tap: OK → NG → clear), then Spares Used (tap: YES → NO → clear) — YES adds that point to the “Spares Used” list below. Observation and Action Taken open only for NG points. No Sign column — signatures stay at the bottom.",
+    desc: "8 columns: Status right after Method (tap: OK → NG → clear), then Spares Used (tap: NO → YES → clear) — YES adds that point to the “Spares Used” list below. Observation and Action Taken open only for NG points. No Sign column — signatures stay at the bottom.",
     columns: ["S.NO.", "CHECK POINTS / DETAIL OF WORK", "JUDGEMENT STANDARD", "METHOD",
               "STATUS", "SPARES USED", "OBSERVATION OF CHECK POINTS", "ACTION TAKEN"],
     widths: ["4%", "23%", "15%", "11%", "7%", "8%", "17%", "15%"],
     fill: ["status", "spares_used", "observation", "action_taken"],
     fillLbl: ["Status", "Spares Used", "Observation", "Action Taken"],
     statusClick: true,
-    spareClick: true,                      // tap: khaali -> YES -> NO -> khaali
+    spareClick: true,                      // tap: khaali -> NO -> YES -> khaali
     ngOnly: ["observation", "action_taken"],
   },
 };
@@ -63,13 +63,43 @@ export const sheetLayoutKey = (docFooter) =>
 /** Status ki click: khaali -> OK -> NG -> khaali. */
 export const nextStatus = (s) => (s === "OK" ? "NG" : s === "NG" ? "" : "OK");
 
+/* ── Check point ka TYPE (user 2026-10-03) ─────────────────────────────
+ * "jo number hai wahan number fill karenge, OK / NG nahi" -- point ka `type`
+ * (master `maintenance_pm_check_point.type`): ALPHABET = OK / NG (pehle jaisa),
+ * NUMBER = reading (jaise 3ph/210 Vac ±10 -- multimeter ki value).  NUMBER par
+ * STATUS ke khaane me hi reading jaati hai; Observation / Action wahan hamesha
+ * khule (OK / NG hai hi nahi).  Ye `type` check sheet par koi column NAHI --
+ * sirf bharne ka tareeqa badalta hai.  Server bhi yahi jaanchta hai
+ * (Phase2/routers/pm.py `_number_jaanch`, `_layout_saaf`). */
+export const isNumPoint = (p) => String((p && p.type) || "").trim().toUpperCase() === "NUMBER";
+
+/** Reading: PEHLE number, uske baad jo chahe (user 2026-10-03: "number daalne
+ *  ke baad koi kuch likhna chahe to likh de -- jaise 8AMP, 120 VAC").  Shuru ke
+ *  akshar (number se pehle) nahi lete; number aa gaya to aage sab chalta hai. */
+export function numOnly(v) {
+  const s = String(v || "").replace(/^\s+/, "");
+  if (s === "" || s === "-") return s;                 // abhi likhna shuru kiya
+  if (/^-?\d/.test(s)) return s.slice(0, 30);          // number se shuru -- aage kuch bhi
+  const i = s.search(/\d/);
+  if (i < 0) return "";                                // koi ank hi nahi -- kuch nahi
+  const neg = i > 0 && s[i - 1] === "-";
+  return ((neg ? "-" : "") + s.slice(i)).slice(0, 30);
+}
+
+const NUM_RE = /^-?\d+(\.\d+)?/;                      // SHURU me number (aage kuch bhi)
+/** Point bhara hua hai?  ALPHABET = koi bhi STATUS; NUMBER = number se shuru. */
+export const statusFilled = (p) => (isNumPoint(p)
+  ? NUM_RE.test(String((p && p.status) || "").trim())
+  : !!String((p && p.status) || "").trim());
+
 /** Save se pehle: status_first me OK / khaali point ka Observation / Action
  *  aur har row ka sign nahi jaata; Spares Used sirf YES / NO (server bhi yahi
  *  karta hai). */
 export function layoutSaaf(entries, layoutKey) {
   if (layoutKey !== "status_first") return entries;
   return (entries || []).map((e) => {
-    const ng = String(e.status || "").trim().toUpperCase() === "NG";
+    // NUMBER point par OK / NG nahi -- Observation / Action hamesha rakho
+    const ng = isNumPoint(e) || String(e.status || "").trim().toUpperCase() === "NG";
     const sp = String(e.spares_used || "").trim().toUpperCase();
     return { ...e, observation: ng ? (e.observation || "") : "", action_taken: ng ? (e.action_taken || "") : "",
              sign: "", spares_used: sp === "YES" || sp === "NO" ? sp : "" };

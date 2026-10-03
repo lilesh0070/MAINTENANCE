@@ -1,5 +1,5 @@
 {
- "columns": 857,
+ "columns": 859,
  "db": "maintenance_db",
  "schema": {
   "andon_call_output": {
@@ -3469,6 +3469,12 @@
     "pos": 12,
     "type": "integer"
    },
+   "type": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "character varying"
+   },
    "zone": {
     "default": null,
     "nullable": true,
@@ -3548,6 +3554,12 @@
     "nullable": true,
     "pos": 12,
     "type": "integer"
+   },
+   "type": {
+    "default": null,
+    "nullable": true,
+    "pos": 14,
+    "type": "character varying"
    },
    "zone": {
     "default": null,
@@ -5292,5 +5304,5 @@
   }
  },
  "tables": 73,
- "taken_at": "2026-10-03T11:13:12"
+ "taken_at": "2026-10-03T11:58:41"
 }

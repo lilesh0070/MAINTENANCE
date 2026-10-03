@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import { authStore as ss } from "../authStore";
 import { walkieNative } from "../constants/walkieNative";
 import { walkieLink } from "../constants/walkieLink";
@@ -82,6 +82,22 @@ export const SUBPAGE_PARENT = {
   "maintenance-pm-yearly":    "maintenance-pm",
 };
 
+// -- Login ki "pehchaan" (role + permission) ------------------------------
+// User 2026-10-03: "ID ko permission dete hain to site par alag dikhta hai aur
+// app me alag".  Wajah: permission sirf /me se aati hai -- app khulte waqt (ya
+// login par).  Website par log page reload karte hain to nayi aa jaati; APP
+// din bhar khuli rehti hai, reload hoti hi nahi, to admin ki di / hatayi
+// permission app me tab tak purani rehti thi jab tak app band karke dobara na
+// kholo.  Ab 10s wali /me jaanch (neeche) yahi pehchaan milati hai aur badli ho
+// to user taaza karti hai.  Bina badlav ke set NAHI karte -- warna har 10s poori
+// app dobara render hoti.  Permission ke key ka kram server se badal bhi sakta
+// hai, isliye chhaant kar milate hain.
+const permSig = (p) => Object.keys(p || {}).sort().map((k) => `${k}:${p[k]}`).join(",");
+const meSig = (me) => [me?.username, me?.role, me?.department_id || null, me?.department_slug || null,
+                       permSig(me?.permissions)].join("|");
+const userSig = (u) => [u?.username, u?.role, u?.departmentId || null, u?.departmentSlug || null,
+                        permSig(u?.permissions)].join("|");
+
 // -- Login kahan yaad rehta hai --------------------------------------------
 // Asli jagah ab EK hi file me: src/authStore.js  (api/client.jsx aur
 // AIAssistant.jsx bhi wahi use karte hain -- teen alag copy nahi).
@@ -94,6 +110,9 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => ss.get("mes_token") || "");
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  // 10s jaanch ke andar abhi ka user (effect sirf token par chalta hai)
+  const userRef = useRef(null);
+  useEffect(() => { userRef.current = user; }, [user]);
 
   const authHdr = useCallback(() => ({
     Authorization: `Bearer ${token}`,
@@ -200,11 +219,20 @@ export function AuthProvider({ children }) {
             ss.set("mes_token", me.renewed_token);
             setToken(me.renewed_token);
           }
+          // Admin ne permission / role badla -- app reload kiye bina yahin lag
+          // jaaye (upar `meSig` ki tippani).  Sirf badlav par set.
+          if (me && me.username && userRef.current && meSig(me) !== userSig(userRef.current)) {
+            _setUserFromMe(me);
+          }
         })
         .catch(() => {});                          // network error → ignore (offline etc.)
     };
     const id = setInterval(check, 10000);   // har 10s token validate
-    return () => clearInterval(id);
+    // App / tab saamne aate hi turant jaanch -- background me timer dheema ya
+    // ruka hota hai, to bina iske 10s tak purani permission dikh sakti thi.
+    const vis = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", vis);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", vis); };
   }, [token]);
 
   const login = async (username, password) => {

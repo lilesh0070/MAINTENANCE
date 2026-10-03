@@ -54,6 +54,10 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
   const [npCp, setNpCp]   = useState("");
   const [npJs, setNpJs]   = useState("");
   const [npMe, setNpMe]   = useState("");
+  // Point ka TYPE (user 2026-10-03): ALPHABET = OK / NG, NUMBER = reading.  Naya
+  // point jodte waqt chunna ZAROORI.  Ye check sheet par column nahi banta --
+  // sirf bharne ka tareeqa badalta hai (pm/pmLayouts.js `isNumPoint`).
+  const [npTy, setNpTy]   = useState("");
   const [pending, setPending] = useState([]);   // staged naye points — rev bump par hi commit
   // rev bump form
   // rev bump — rev number AUTO (current+1); sirf date settable
@@ -188,10 +192,21 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
   // do to (reload/page change par) ye hat jaata hai.
   const addPoint = () => {
     if (!npCp.trim()) { say("Check point required", "err"); return; }
+    if (!npTy) { say("Choose the point type — Alphabet (OK / NG) or Number (reading)", "err"); return; }
     setPending((ps) => [...ps, { s_no: npSno, check_point: npCp, judgement_standard: npJs,
-                                 method: npMe, machine_name: mcSel?.machine_name || "" }]);
-    setNpSno(""); setNpCp(""); setNpJs(""); setNpMe("");
+                                 method: npMe, type: npTy, machine_name: mcSel?.machine_name || "" }]);
+    setNpSno(""); setNpCp(""); setNpJs(""); setNpMe(""); setNpTy("");
     say("Point staged — saves only on revision update");
+  };
+  // Pehle se bane point ka type badlo (galat chhanta ho to) -- turant save,
+  // revision nahi chadhti (sheet par dikhne wala kuch nahi badla).
+  const setPointType = async (p, t) => {
+    if (!t || t === p.type) return;
+    try {
+      await api(`/check-points/${p.id}/type`, { method: "PUT", body: JSON.stringify({ type: t }) });
+      setPoints((ps) => ps.map((x) => (x.id === p.id ? { ...x, type: t } : x)));
+      say(`Point ${p.s_no} — type: ${t === "NUMBER" ? "Number (reading)" : "Alphabet (OK / NG)"}`);
+    } catch (e) { say(String(e.message || e), "err"); }
   };
   const removePending = (i) => setPending((ps) => ps.filter((_, x) => x !== i));
 
@@ -616,14 +631,16 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", minWidth: 900, borderCollapse: "collapse", tableLayout: "fixed", borderTop: "none" }}>
               <colgroup>
-                <col style={{ width: "6%" }} /><col style={{ width: "38%" }} /><col style={{ width: "26%" }} />
-                <col style={{ width: "22%" }} />{canEdit && <col style={{ width: "8%" }} />}
+                <col style={{ width: "6%" }} /><col style={{ width: "34%" }} /><col style={{ width: "24%" }} />
+                <col style={{ width: "18%" }} /><col style={{ width: "11%" }} />{canEdit && <col style={{ width: "7%" }} />}
               </colgroup>
               <thead><tr>
                 <th style={sth}>S.NO.</th>
                 <th style={sth}>CHECK POINTS / DETAIL OF WORK</th>
                 <th style={sth}>JUDGEMENT STANDARD</th>
                 <th style={sth}>METHOD</th>
+                {/* sirf yahin (Document Update) -- check sheet par ye column nahi */}
+                <th style={{ ...sth, background: "#e0f2fe" }} title="Alphabet = OK / NG · Number = enter the reading">TYPE</th>
                 {canEdit && <th style={{ ...sth, background: "#fee2e2" }}>ACTION</th>}
               </tr></thead>
               <tbody>
@@ -633,6 +650,19 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
                     <td style={{ border: sb, fontSize: 11, padding: "3px 6px", verticalAlign: "top" }}>{p.check_point}</td>
                     <td style={{ border: sb, fontSize: 11, padding: "3px 6px", verticalAlign: "top" }}>{p.judgement_standard}</td>
                     <td style={{ border: sb, fontSize: 11, padding: "3px 6px", verticalAlign: "top" }}>{p.method}</td>
+                    <td style={{ border: sb, fontSize: 11, padding: canEdit ? 0 : "3px 6px", verticalAlign: "top",
+                                 textAlign: "center", fontWeight: 800, color: p.type === "NUMBER" ? "#1d4ed8" : "#475569" }}>
+                      {canEdit ? (
+                        <select value={p.type === "NUMBER" ? "NUMBER" : "ALPHABET"} onChange={(e) => setPointType(p, e.target.value)}
+                                title="Alphabet = OK / NG · Number = enter the reading"
+                                style={{ width: "100%", border: "none", background: "transparent", fontSize: 11, fontWeight: 800,
+                                         color: p.type === "NUMBER" ? "#1d4ed8" : "#475569", padding: "4px 2px", cursor: "pointer",
+                                         fontFamily: "inherit" }}>
+                          <option value="ALPHABET">Alphabet</option>
+                          <option value="NUMBER">Number</option>
+                        </select>
+                      ) : (p.type === "NUMBER" ? "Number" : "Alphabet")}
+                    </td>
                     {canEdit && (
                       <td style={{ border: sb, textAlign: "center" }}>
                         <button onClick={() => delPoint(p)}
@@ -650,6 +680,9 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
                       <span style={{ fontSize: 9.5, fontWeight: 800, color: "#92400e", background: "#fde68a", borderRadius: 4, padding: "1px 5px", marginLeft: 5 }}>PENDING</span></td>
                     <td style={{ border: sb, fontSize: 11, padding: "3px 6px", verticalAlign: "top" }}>{p.judgement_standard}</td>
                     <td style={{ border: sb, fontSize: 11, padding: "3px 6px", verticalAlign: "top" }}>{p.method}</td>
+                    <td style={{ border: sb, fontSize: 11, padding: "3px 6px", verticalAlign: "top", textAlign: "center",
+                                 fontWeight: 800, color: p.type === "NUMBER" ? "#1d4ed8" : "#475569" }}>
+                      {p.type === "NUMBER" ? "Number" : "Alphabet"}</td>
                     {canEdit && (
                       <td style={{ border: sb, textAlign: "center" }}>
                         <button onClick={() => removePending(i)} style={{ border: "none", background: "transparent", color: "#dc2626", cursor: "pointer", fontWeight: 800, fontSize: 14 }} title="Remove from pending">🗑</button>
@@ -658,7 +691,7 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
                   </tr>
                 ))}
                 {points.length === 0 && pending.length === 0 && (
-                  <tr><td colSpan={canEdit ? 5 : 4} style={{ border: sb, padding: 20, textAlign: "center", color: "#94a3b8", fontSize: 12 }}>No points.</td></tr>
+                  <tr><td colSpan={canEdit ? 6 : 5} style={{ border: sb, padding: 20, textAlign: "center", color: "#94a3b8", fontSize: 12 }}>No points.</td></tr>
                 )}
                 {/* add-point row */}
                 {canEdit && (
@@ -667,6 +700,17 @@ export default function PMCheckSheetAdmin({ toast, readOnly = false }) {
                     <td style={{ border: sb, padding: 0 }}><input style={inp} placeholder="New check point / detail of work…" value={npCp} onChange={(e) => setNpCp(e.target.value)} /></td>
                     <td style={{ border: sb, padding: 0 }}><input style={inp} placeholder="Judgement standard" value={npJs} onChange={(e) => setNpJs(e.target.value)} /></td>
                     <td style={{ border: sb, padding: 0 }}><input style={inp} placeholder="Method" value={npMe} onChange={(e) => setNpMe(e.target.value)} /></td>
+                    {/* TYPE zaroori -- bina chune "+ Add" nahi */}
+                    <td style={{ border: sb, padding: 0 }}>
+                      <select value={npTy} onChange={(e) => setNpTy(e.target.value)}
+                              title="Alphabet = OK / NG · Number = enter the reading"
+                              style={{ ...inp, cursor: "pointer", fontWeight: 700,
+                                       color: npTy ? (npTy === "NUMBER" ? "#1d4ed8" : "#334155") : "#b45309" }}>
+                        <option value="">Type *</option>
+                        <option value="ALPHABET">Alphabet (OK / NG)</option>
+                        <option value="NUMBER">Number (reading)</option>
+                      </select>
+                    </td>
                     <td style={{ border: sb, textAlign: "center", padding: 2 }}>
                       <button onClick={addPoint} disabled={busy}
                               style={{ padding: "4px 10px", borderRadius: 6, border: "none", background: "#16a34a", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>

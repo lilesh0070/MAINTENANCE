@@ -14,7 +14,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { maskCaret } from "../constants/upperCaret";
 import { useAuth } from "../context/AuthContext";
 import { FormatSheet } from "./pm/FormatSheet";
-import { pmLayout, sheetLayoutKey, layoutSaaf } from "./pm/pmLayouts";
+import { pmLayout, sheetLayoutKey, layoutSaaf, isNumPoint, statusFilled } from "./pm/pmLayouts";
 import { fmtErp, editSpareRow, isSpareYes, spareMissing, spareYesKey, syncSpareRows,
          spareHatao, spareHataoSawal } from "./pm/pmSpares";
 import YearlyPmTab from "./pm/YearlyPmTab";
@@ -395,8 +395,8 @@ export default function PMPanel() {
   const saveCalSheet = async () => {
     if (!calSheet) return;
     const merged = calSheet.points.map((p, i) => ({ ...p, ...(calSheet.fill[i] || {}) }));
-    if (!(merged.length && merged.every(p => String(p.status || "").trim()))) {
-      setMsg("Every check point needs a STATUS (OK/NG)"); return;
+    if (!(merged.length && merged.every(statusFilled))) {
+      setMsg("Every check point needs a STATUS — OK / NG, or the reading for number points"); return;
     }
     const spMiss = CAL_L.spareClick ? spareMissing(merged, sheetSpares) : [];
     if (spMiss.length) {
@@ -424,8 +424,10 @@ export default function PMPanel() {
           observation: p.observation || "", action_taken: p.action_taken || "",
           // spares are no longer captured per point — the SHEET-LEVEL list below
           // carries them.  Classic: blank cell.  Format 2: sirf YES / NO (detail
-          // neeche ki list me, Where Used = "Point N - ...").
+          // neeche ki list me, Where Used = "Point N").
           spares_used: CAL_L.spareClick ? (p.spares_used || "") : "", status: p.status || "", sign: p.sign || "",
+          // point ka type sheet ki naqal me -- baad me master badle to bhi ye sheet waisi hi
+          type: isNumPoint(p) ? "NUMBER" : "ALPHABET",
           spares: [],
         })), calLayoutKey),
         // one spares list for the whole sheet (blank rows dropped)
@@ -678,7 +680,8 @@ export default function PMPanel() {
   const calSheetForm = () => {
     if (!calSheet) return null;
     const merged = calSheet.points.map((p, i) => ({ ...p, ...(calSheet.fill[i] || {}) }));
-    const filledN = merged.filter(p => String(p.status || "").trim()).length;
+    // NUMBER point par poora number chahiye (OK / NG nahi)
+    const filledN = merged.filter(statusFilled).length;
     const pointsDone = merged.length > 0 && filledN === merged.length;
     // stage 1 also needs the Team Member's name + signature — Engineer and
     // In-Charge sign later, on their own tabs.
@@ -687,7 +690,7 @@ export default function PMPanel() {
     const spareMiss = CAL_L.spareClick ? spareMissing(merged, sheetSpares) : [];
     const allFilled = pointsDone && hasPrepared && !spareMiss.length;
     const gateHint = !pointsDone
-      ? "Save unlocks after every check point has a STATUS (OK/NG)"
+      ? "Save unlocks after every check point has a STATUS (OK/NG) — number points need the reading"
       : spareMiss.length ? `Spares Used is YES for point ${spareMiss.join(", ")} — enter the spare name in “Spares Used” below`
       : !calSheet.sign.prepared.trim() ? "Enter the Prepared By (Team Member) name"
       : "Prepared By signature is still missing";

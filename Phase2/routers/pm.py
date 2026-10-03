@@ -28,6 +28,7 @@ PUT    /mail-config        Save reminder recipient config
 from __future__ import annotations
 
 import json
+import re
 from datetime import date, datetime, timedelta
 from typing import Optional, List
 
@@ -140,8 +141,8 @@ def _get_doc_footer(name: str) -> dict:
 #   classic       = purana: Observation, Action Taken, Spares Used, Status
 #                   (OK/NG list), Sign -- har row par
 #   status_first  = naya: Status METHOD ke turant baad (tap: OK -> NG ->
-#                   khaali), phir SPARES USED (tap: YES -> NO -> khaali; detail
-#                   sheet ke neeche wali list me, Where Used = "Point N - ..."),
+#                   khaali), phir SPARES USED (tap: NO -> YES -> khaali; detail
+#                   sheet ke neeche wali list me, Where Used = "Point N"),
 #                   Observation / Action Taken SIRF NG par; Sign column nahi
 #                   (sign neeche hai hi)
 # Chuna hua layout format JSON ki `layout` key me (Document Update -> PM Check
@@ -173,7 +174,10 @@ def _layout_saaf(entries: list, layout: str) -> list:
     out = []
     for e in entries or []:
         e = dict(e) if isinstance(e, dict) else {}
-        if str(e.get("status") or "").strip().upper() != "NG":
+        # NUMBER point (reading) par OK / NG hai hi nahi -- wahan Observation /
+        # Action hamesha khule (reading theek na ho to likh sakein)
+        num = str(e.get("type") or "").strip().upper() == "NUMBER"
+        if not num and str(e.get("status") or "").strip().upper() != "NG":
             e["observation"] = ""
             e["action_taken"] = ""
         e["sign"] = ""
@@ -226,6 +230,68 @@ def _rev_int(v) -> int:
         return 0
 
 
+# ── Check point ka TYPE (user 2026-10-03) ───────────────────────────────
+# "pm check sheet wali table me ek column aur -- type, usme do: alphabet aur
+#  number.  Point 1, 2, 3 (Neat & Clean...) alphabet; point 4 (3ph/210 Vac
+#  ±10 Vac) me value daalni padegi -- number.  Naya point jodte waqt type
+#  chunna zaroori; ye column check sheet (format) par nahi aayega; fill me
+#  number wale par number bharenge, OK / NG nahi."
+#   ALPHABET = OK / NG (pehle jaisa)      NUMBER = reading (multimeter, clamp
+#   meter, flowmeter...) -- sheet ke STATUS khaane me wahi number jaata hai.
+# Column dono table me (chalu + revision archive); khaali / purana = ALPHABET.
+# Purane 5108 point ek baar scripts/pm_point_type.py se bhare gaye (judgement
+# standard me volt / amp / LPM wali value = NUMBER).
+_PT_TYPES = ("ALPHABET", "NUMBER")
+_cp_type_bani = False
+
+
+def _ensure_cp_type() -> None:
+    global _cp_type_bani
+    if _cp_type_bani:
+        return
+    _ensure_cp_rev_table()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("ALTER TABLE maintenance_pm_check_point ADD COLUMN IF NOT EXISTS type VARCHAR(10)")
+        cur.execute("ALTER TABLE maintenance_pm_check_point_rev ADD COLUMN IF NOT EXISTS type VARCHAR(10)")
+        conn.commit()
+    _cp_type_bani = True
+
+
+def _pt_type(v, required: bool = True) -> Optional[str]:
+    t = str(v or "").strip().upper()
+    if t in _PT_TYPES:
+        return t
+    if required:
+        raise HTTPException(400, "Choose the point type — Alphabet (OK / NG) or Number (reading).")
+    return None
+
+
+# reading SHURU me number ho -- aage kuch bhi ("8AMP", "120 VAC"; user 2026-10-03)
+_NUM_RE = re.compile(r"^-?\d+(\.\d+)?")
+
+
+def _number_galat(entries) -> list:
+    """NUMBER wale point jinka STATUS number se SHURU nahi hota (OK / NG / kachra) -- s_no."""
+    out = []
+    for e in entries or []:
+        if not isinstance(e, dict):
+            continue
+        if str(e.get("type") or "").strip().upper() == "NUMBER" \
+                and not _NUM_RE.match(str(e.get("status") or "").strip()):
+            out.append(str(e.get("s_no") or "?"))
+    return out
+
+
+def _number_jaanch(entries) -> None:
+    bad = _number_galat(entries)
+    if bad:
+        raise HTTPException(400, f"Enter the reading for point "
+                                 f"{', '.join(bad[:10])}{'…' if len(bad) > 10 else ''} — it must "
+                                 f"start with a number (e.g. 8 AMP, 120 VAC); OK / NG is not used "
+                                 f"for number points.")
+
+
 class PointAdd(BaseModel):
     zone: str
     line: str
@@ -235,6 +301,7 @@ class PointAdd(BaseModel):
     check_point: str
     judgement_standard: Optional[str] = ""
     method: Optional[str] = ""
+    type: Optional[str] = None           # ALPHABET | NUMBER -- zaroori (upar `_PT_TYPES`)
 
 
 class PmStagedPoint(BaseModel):
@@ -244,6 +311,7 @@ class PmStagedPoint(BaseModel):
     judgement_standard: Optional[str] = ""
     method: Optional[str] = ""
     machine_name: Optional[str] = ""
+    type: Optional[str] = None           # ALPHABET | NUMBER -- zaroori
 
 
 class RevBump(BaseModel):
@@ -309,6 +377,8 @@ def add_check_point(body: PointAdd, user=Depends(get_current_user)):
     """Add a point to the machine's CURRENT revision."""
     if not (body.check_point or "").strip():
         raise HTTPException(400, "check_point required")
+    ptype = _pt_type(body.type)
+    _ensure_cp_type()
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute("""SELECT MAX(rev_no) rev_no, MAX(rev_date) rev_date,
@@ -324,11 +394,11 @@ def add_check_point(body: PointAdd, user=Depends(get_current_user)):
         mname = (body.machine_name or "").strip() or (ctx["mname"] or "")
         cur.execute("""INSERT INTO maintenance_pm_check_point
               (zone,line,machine_no,machine_name,s_no,check_point,judgement_standard,
-               method,rev_no,rev_date,sort_order)
-              VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+               method,rev_no,rev_date,sort_order,type)
+              VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
             (body.zone, body.line, body.machine_no, mname, s_no,
              body.check_point.strip(), (body.judgement_standard or "").strip(),
-             (body.method or "").strip(), rev_no, rev_date, int(ctx["so"]) + 1))
+             (body.method or "").strip(), rev_no, rev_date, int(ctx["so"]) + 1, ptype))
         pid = cur.fetchone()["id"]
         conn.commit()
     return {"ok": True, "id": pid, "s_no": s_no, "rev_no": rev_no}
@@ -343,6 +413,32 @@ def delete_check_point(pid: int, user=Depends(get_current_user)):
             raise HTTPException(404, "point not found")
         conn.commit()
     return {"ok": True}
+
+
+class PointTypeIn(BaseModel):
+    type: str
+
+
+@router.put("/check-points/{pid}/type")
+def set_check_point_type(pid: int, body: PointTypeIn, user=Depends(get_current_user)):
+    """Ek point ka TYPE badlo (Document Update ki points list se) -- check sheet
+    ke dikhne wale khaane nahi badalte, isliye revision nahi chadhti.  Pehle ki
+    bhari sheet apni naqal (entries) me hi rehti hain."""
+    t = _pt_type(body.type)
+    _ensure_cp_type()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE maintenance_pm_check_point SET type=%s WHERE id=%s", (t, pid))
+        if cur.rowcount == 0:
+            raise HTTPException(404, "point not found")
+        try:
+            from main import write_audit
+            write_audit(conn, action="PM_POINT_TYPE", entity_type="pm_check_point", entity_id=pid,
+                        details=f"point #{pid} type -> {t}", user=user)
+        except Exception:
+            pass
+        conn.commit()
+    return {"ok": True, "id": pid, "type": t}
 
 
 class RevStepDown(BaseModel):
@@ -367,6 +463,7 @@ class RevStepDown(BaseModel):
 def stepdown_check_point_rev(body: RevStepDown, admin=Depends(require_admin)):
     """Chalu revision hatao, pichhli wapas laao (admin only)."""
     _ensure_cp_rev_table()
+    _ensure_cp_type()
     key = (body.zone, body.line, body.machine_no)
     with get_conn() as conn:
         cur = dict_cursor(conn)
@@ -392,8 +489,8 @@ def stepdown_check_point_rev(body: RevStepDown, admin=Depends(require_admin)):
         cur2.execute("""DELETE FROM maintenance_pm_check_point WHERE zone=%s AND line=%s AND machine_no=%s""", key)
         gone = cur2.rowcount
         # 2) purani revision ko HU-BA-HU wapas live me laao
-        cur2.execute("""INSERT INTO maintenance_pm_check_point (zone,line,machine_no,machine_name,s_no,check_point,judgement_standard,method,rev_no,rev_date,sort_order)
-                        SELECT zone,line,machine_no,machine_name,s_no,check_point,judgement_standard,method,rev_no,rev_date,sort_order FROM maintenance_pm_check_point_rev
+        cur2.execute("""INSERT INTO maintenance_pm_check_point (zone,line,machine_no,machine_name,s_no,check_point,judgement_standard,method,rev_no,rev_date,sort_order,type)
+                        SELECT zone,line,machine_no,machine_name,s_no,check_point,judgement_standard,method,rev_no,rev_date,sort_order,type FROM maintenance_pm_check_point_rev
                          WHERE zone=%s AND line=%s AND machine_no=%s AND rev_no=%s""",
                      key + (back_rev,))
         back_rows = cur2.rowcount
@@ -511,6 +608,10 @@ def bump_check_point_rev(body: RevBump, user=Depends(get_current_user)):
     viewable point-by-point.  Pehli baar (machine par koi point nahi) → seedhe
     Rev 1, koi archive nahi."""
     _ensure_cp_rev_table()
+    _ensure_cp_type()
+    # har staged naye point ka type PEHLE jaancho -- ek bhi galat ho to kuch na badle
+    staged_types = [(_pt_type(pt.type) if (pt.check_point or "").strip() else None)
+                    for pt in (body.new_points or [])]
     rev_date_s = (body.rev_date or "").strip() or date.today().isoformat()
     try:
         new_date = datetime.strptime(rev_date_s, "%Y-%m-%d").date()
@@ -555,9 +656,9 @@ def bump_check_point_rev(body: RevBump, user=Depends(get_current_user)):
                          (body.zone, body.line, body.machine_no, cur_raw))
             cur2.execute("""INSERT INTO maintenance_pm_check_point_rev
                   (zone,line,machine_no,machine_name,s_no,check_point,judgement_standard,
-                   method,rev_no,rev_date,sort_order)
+                   method,rev_no,rev_date,sort_order,type)
                   SELECT zone,line,machine_no,machine_name,s_no,check_point,
-                         judgement_standard,method,rev_no,rev_date,sort_order
+                         judgement_standard,method,rev_no,rev_date,sort_order,type
                     FROM maintenance_pm_check_point
                    WHERE zone=%s AND line=%s AND machine_no=%s""",
                          (body.zone, body.line, body.machine_no))
@@ -576,17 +677,17 @@ def bump_check_point_rev(body: RevBump, user=Depends(get_current_user)):
             so_next = int(base.get("so") or 0)
             n_next  = int(base.get("n") or 0)
             mn_ctx  = base.get("mname") or ""
-            for pt in body.new_points:
+            for pt, ptype in zip(body.new_points, staged_types):
                 if not (pt.check_point or "").strip():
                     continue
                 so_next += 1; n_next += 1
                 s_no = (pt.s_no or "").strip() or str(n_next)
                 cur2.execute("""INSERT INTO maintenance_pm_check_point
-                      (zone,line,machine_no,machine_name,s_no,check_point,judgement_standard,method,rev_no,rev_date,sort_order)
-                      VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                      (zone,line,machine_no,machine_name,s_no,check_point,judgement_standard,method,rev_no,rev_date,sort_order,type)
+                      VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (body.zone, body.line, body.machine_no, (pt.machine_name or mn_ctx), s_no,
                      pt.check_point.strip(), (pt.judgement_standard or "").strip(),
-                     (pt.method or "").strip(), str(new_rev), new_date, so_next))
+                     (pt.method or "").strip(), str(new_rev), new_date, so_next, ptype))
                 added += 1
         conn.commit()
     return {"ok": True, "old_rev": (cur_raw if cur_raw is not None else ""),
@@ -623,6 +724,7 @@ def check_points(zone: str = Query(""), line: str = Query(""),
     if line:
         where.append("line = %s"); params.append(line)
     table = "maintenance_pm_check_point"
+    _ensure_cp_type()
     with get_conn() as conn:
         cur = dict_cursor(conn)
         if rev_no:
@@ -635,7 +737,8 @@ def check_points(zone: str = Query(""), line: str = Query(""),
                 table = "maintenance_pm_check_point_rev"
                 where.append("rev_no = %s"); params.append(rev_no)
         cur.execute(f"""
-            SELECT id, s_no, check_point, judgement_standard, method, rev_no, rev_date
+            SELECT id, s_no, check_point, judgement_standard, method, rev_no, rev_date,
+                   COALESCE(type, 'ALPHABET') AS type
               FROM {table}
              WHERE {' AND '.join(where)}
              ORDER BY sort_order
@@ -805,6 +908,7 @@ def save_check_sheet_fill(body: CheckSheetFill, user=Depends(get_current_user)):
             400, f"All check points must be filled before saving — "
                  f"{len(unfilled)} of {len(body.entries)} have no STATUS "
                  f"(s_no: {', '.join(unfilled[:10])}{'…' if len(unfilled) > 10 else ''})")
+    _number_jaanch(body.entries)
     author = user.get("username") if isinstance(user, dict) else getattr(user, "username", "user")
     # Stage 1 of the chain: only the Team Member's own name + signature are
     # accepted here.  Engineer / In-Charge cells stay EMPTY until they verify
@@ -862,6 +966,7 @@ def resubmit_check_sheet_fill(fill_id: int, body: CheckSheetFill, user=Depends(g
     if unfilled:
         raise HTTPException(400, f"All check points must be filled before re-submitting — "
                                  f"{len(unfilled)} of {len(body.entries)} have no STATUS")
+    _number_jaanch(body.entries)
     sign_in = list(body.sign_imgs or [])
     prepared_sign = sign_in[0] if sign_in else None
     if not str(body.prepared_by or "").strip():
@@ -939,6 +1044,7 @@ def admin_update_check_sheet_fill(fill_id: int, body: CheckSheetFill,
     if unfilled:
         raise HTTPException(400, f"Every check point needs a STATUS — "
                                  f"{len(unfilled)} of {len(body.entries)} are empty")
+    _number_jaanch(body.entries)
 
     author = admin.get("username") if isinstance(admin, dict) else "admin"
     with get_conn() as conn:
