@@ -1006,15 +1006,16 @@ def delete_manual_slip(sid: int, admin=Depends(require_admin)):
     return {"ok": True, "deleted": sid, "spare_rows_removed": n_spare}
 
 
-# ANDON ke NAAPE HUE khaane — admin edit me bhi kabhi nahi badalte.
-# Wahi list frontend (ClosureFormModal ka AUTO_LOCKED_FIELDS) me bhi hai;
-# yahan dobara isliye ki rok agar sirf UI par ho to wo rok nahi, sujhav hai.
+# Admin edit me jo khaane KABHI nahi badalte.  Pehle yahan ANDON ke date /
+# time / downtime / response bhi the; user 2026-10-03: "auto slip edit karne
+# par time edit nahi ho raha -- edit ka matlab sab kuch edit" -> wo ab admin
+# badal sakta hai (form unhe sirf tab bhejta hai jab sach me badle hon; live
+# fill me UI unhe ab bhi lock rakhta hai).  Bache:
+#   problem_related_to -- wahi tay karta hai slip kis vibhag (Maintenance /
+#                         Tool Room) ki table me hai; badla to slip galat list me
+#   andon_event_id, prod_stage -- form bhejta hi nahi, likh dena saaf rehta hai
 _ANDON_LOCKED_COLS = {
-    "bd_start_date", "bd_end_date",
-    "bd_start_time", "bd_received_time", "bd_ok_time",
-    "response_time_minutes", "mc_down_time_minutes",
     "problem_related_to",
-    # Ye do form bhejta hi nahi, par likh dena saaf rehta hai.
     "andon_event_id", "prod_stage",
 }
 
@@ -1031,10 +1032,9 @@ def admin_update_auto_slip(sid: int, body: AutoSlipFill, admin=Depends(require_a
     baad me theek karne ke liye hai — isliye admin-only, aur stage ko haath
     hi nahi lagata.
 
-    ANDON ke naape hue khaane (date / time / downtime / response, aur kis
-    vibhag ko bulaya) yahan bhi lock hain — wo hardware ka record hai, kisi
-    ke bharne ka nahi.  Frontend bhi unhe lock rakhta hai; yahan dobara
-    rokna isliye zaroori hai ki UI ki rok asli rok nahi hoti.
+    ANDON ke date / time / downtime / response admin yahan BADAL sakta hai
+    (2026-10-03, user: "edit ka matlab sab kuch edit").  Sirf "kis vibhag ko
+    bulaya" (problem_related_to) lock hai -- slip usi vibhag ki table me hai.
     """
     _ensure_table()
     tbl   = _src_table(body.src or "maintenance")

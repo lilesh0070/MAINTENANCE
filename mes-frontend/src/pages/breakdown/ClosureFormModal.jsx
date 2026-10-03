@@ -156,7 +156,7 @@ const attendNames = (s) => {
 };
 const randomOf = (arr) => (arr.length ? arr[Math.floor(Math.random() * arr.length)] : "");
 
-export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose, onSave, token, pickLine = false, onEdit = null }) {
+export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose, onSave, token, pickLine = false, onEdit = null, adminEdit = false }) {
   // mode  : "fill" | "view"
   // phase : "production" → user can edit only the upper half (Production)
   //         "maintenance" → user can edit only the lower half (Maintenance)
@@ -221,12 +221,21 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   const _rt = ticket?.maintenance_data?.problem_related_to;
   const relToSetByAndon = !!(_rt && (_rt.maintenance || _rt.tool_room));
 
+  // Historical ka ADMIN edit (user 2026-10-03: "auto slip edit karne par time
+  // edit nahi ho raha -- edit ka matlab sab kuch edit"): wahan ANDON wale time /
+  // date bhi khulte hain.  Live fill (slip bharna) me lock waisa hi rehta hai.
+  // PROBLEM RELATED TO phir bhi lock -- wahi tay karta hai ki slip kis vibhag
+  // (Maintenance / Tool Room) ki table me hai; badalne se slip galat list me reh jaati.
+  const autoLock = isAutoSlip && !adminEdit;
+  const ANDON_TIME_KEYS = ["bd_start_date", "bd_end_date", "bd_start_time", "bd_received_time", "bd_ok_time"];
+  const andonPehle = useRef(null);       // khulte waqt ke time / date (admin ne badle ya nahi)
+
   const fieldEditable = (key) => {
     if (readOnly) return false;
     if (LOCKED_FIELDS.has(key)) return false;   // collector-stamped times/dates stay locked
     if (key === "problem_related_to")
       return isAutoSlip && relToSetByAndon ? false : (isProduction ? false : isMaintenance);
-    if (isAutoSlip && AUTO_LOCKED_FIELDS.has(key)) return false;  // ANDON ki date — na chhedo
+    if (autoLock && AUTO_LOCKED_FIELDS.has(key)) return false;  // ANDON ki date — na chhedo (admin edit me khula)
     if (isProduction)  return PROD_FIELDS.has(key);
     // Maintenance-driven fill = the WHOLE slip is editable (both the upper
     // Production half + the Maintenance half), so a single user can fill it.
@@ -314,6 +323,8 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
       ? (obj ?? { name: "" }) : { ...(obj || {}), name };
     const _rcvPick = readOnly ? "" : randomOf(attendNames(_att));
     autoRcv.current = "";
+    andonPehle.current = { bd_start_date: _sd, bd_end_date: _ed, bd_start_time: _st,
+                           bd_received_time: _rcv, bd_ok_time: _ok };
 
     // Auto-locked timestamps always sourced from collector — never from
     // any saved blob — so they reflect the live record.
@@ -587,13 +598,23 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
   // Extract just the slice of `data` that the active phase is responsible
   // for.  The parent passes this to its API call so the *other* half
   // doesn't get overwritten.
+  // AUTO slip ka ANDON wala khaana bhejna hai?  Live fill me KABHI nahi.  Admin
+  // edit me tabhi jab admin ne time / date SACH ME badla ho -- tab unse gine
+  // response / downtime bhi jaate hain; warna ANDON ka naapa hua (power-cut wali
+  // slip ka asli downtime) jyon ka tyon.  problem_related_to kabhi nahi.
+  const andonBadla = () => adminEdit && isAutoSlip && !!andonPehle.current
+    && ANDON_TIME_KEYS.some((k) => String(data[k] ?? "") !== String(andonPehle.current[k] ?? ""));
+  const bhejo = (k, badla) => !(isAutoSlip && AUTO_LOCKED_FIELDS.has(k))
+    || (k !== "problem_related_to" && badla);
+
   const subsetForPhase = () => {
     // AUTO slip me ANDON ke naape hue khaane (start/received/ok time, dates,
-    // down/response minutes) KABHI nahi bheje jaate — na production half se, na
-    // maintenance se.  Form khula ho aur usi waqt call band ho jaye, to form ki
-    // purani/khali value DB ki nayi (asli) value ko nahi mita sakti.
+    // down/response minutes) live fill me KABHI nahi bheje jaate — na production
+    // half se, na maintenance se.  Form khula ho aur usi waqt call band ho jaye,
+    // to form ki purani/khali value DB ki nayi (asli) value ko nahi mita sakti.
+    const badla = andonBadla();
     const pick = (set) => Object.fromEntries(
-      Object.entries(data).filter(([k]) => set.has(k) && !(isAutoSlip && AUTO_LOCKED_FIELDS.has(k))),
+      Object.entries(data).filter(([k]) => set.has(k) && bhejo(k, badla)),
     );
     if (isProduction)  return pick(PROD_FIELDS);
     if (isMaintenance) return pick(MAINT_FIELDS);
@@ -625,8 +646,11 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
     };
     // Auto-computed (response_time / mc_down_time) + the raw spare fields never
     // block via the generic check — spares get their own rule right below.
+    // Admin edit (auto slip): ANDON ke time / date bhi khule hain, par purani slip
+    // me koi khaali ho (jaise ACK time) to wo baaki sudhaar ka Save na roke.
     const OPTIONAL = new Set(["spares", "spares_used",
-                              "response_time_minutes", "mc_down_time_minutes"]);
+                              "response_time_minutes", "mc_down_time_minutes",
+                              ...(adminEdit && isAutoSlip ? ANDON_TIME_KEYS : [])]);
     // Jo khaana user BHAR hi nahi sakta (AUTO slip ke ANDON-locked time/date, ya
     // koi bhi locked field) wo Submit ko rok nahi sakta.  Warna live breakdown me
     // (call abhi khuli → OK-time/end-date khali hi hain) production ka "Half
@@ -653,9 +677,10 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
       // ANDON ki asli date row me jyon ki tyon rehti hai.  Ye sirf UI lock se
       // zyada pukhta hai: call agar form khula hone ke DAURAAN band ho jaye, tab
       // bhi form ki purani (khali/stale) date DB ki nayi date ko nahi mitaayegi.
+      const badla = andonBadla();
       const prodExtra = isMaintenance
         ? Object.fromEntries(Object.entries(data).filter(
-            ([k]) => PROD_FIELDS.has(k) && !(isAutoSlip && AUTO_LOCKED_FIELDS.has(k))))
+            ([k]) => PROD_FIELDS.has(k) && bhejo(k, badla)))
         : null;
       await onSave(subsetForPhase(), phase, prodExtra, effLineId);
     } finally { setSaving(false); }
@@ -1072,7 +1097,9 @@ export function ClosureFormModal({ ticket, mode, phase = "maintenance", onClose,
               re-computes the two auto totals via setTime / setStartDate.
               AUTO (ANDON) slip me time + date dono LOCK hain (AUTO_LOCKED_FIELDS)
               — wahan ye khaane PLC se aate hain, isliye kuch re-compute hi nahi
-              hota.  FREQUENCY dono slip me editable hai. */}
+              hota.  Historical ke ADMIN edit (`adminEdit`) me khule hain aur
+              badalne par totals dobara gine jaate hain.  FREQUENCY dono slip me
+              editable hai. */}
           <div className="bds-grid bds-grid-3">
             <BdsCell label="B/D START TIME" type="time"
                      value={data.bd_start_time}    readOnly={!fieldEditable("bd_start_time")}

@@ -434,8 +434,9 @@ export default function MaintenanceHistorical() {
      rehta hai aur modal har doosri jagah pehle jaisa hi hai.
      AUTO (ANDON) slip ka edit ALAG raaste se hota hai (`saveAutoEdit` →
      PUT /api/breakdown-slips/auto/{id}), kyunki ye wala PUT sirf MANUAL
-     table me likhta hai.  Wahan bhi ANDON ke naape hue khaane (date/time/
-     downtime/response) lock rehte hain — UI me bhi aur server par bhi. */
+     table me likhta hai.  ANDON ke date / time (aur unse gine downtime /
+     response) admin edit me KHULE hain (user 2026-10-03: "edit ka matlab sab
+     kuch edit") -- `adminEdit` prop; sirf "Problem related to" lock. */
   const [editing, setEditing] = useState(false);
   const [editErr, setEditErr] = useState("");
   // AUTO slip ka apna edit-flag — uska modal alag hai (viewAuto), isliye
@@ -463,8 +464,8 @@ export default function MaintenanceHistorical() {
      Manual slip se ALAG endpoint isliye ki `PUT /api/breakdown-slips/{id}`
      sirf MANUAL table me likhta hai — usi se auto slip save karna data
      galat table me daal deta.  Auto ka apna `PUT /auto/{id}` hai, jo stage
-     ko haath nahi lagata aur ANDON ke naape hue khaane (date/time/downtime)
-     server par bhi lock rakhta hai. */
+     ko haath nahi lagata; time / date / downtime ab yahan se badal sakte hain
+     (form unhe sirf tab bhejta hai jab admin ne sach me badla ho). */
   const saveAutoEdit = async (maintSlice, _phase, prodExtra) => {
     const t = viewAuto;
     if (!t?.id) return;
@@ -1631,6 +1632,7 @@ export default function MaintenanceHistorical() {
         <ClosureFormModal
           ticket={viewAuto}
           mode={editingAuto ? "fill" : "view"}
+          adminEdit={editingAuto}
           onEdit={isAdmin ? () => setEditingAuto(true) : null}
           onClose={() => { setEditingAuto(false); setEditErr(""); setViewAuto(null); }}
           onSave={saveAutoEdit}
