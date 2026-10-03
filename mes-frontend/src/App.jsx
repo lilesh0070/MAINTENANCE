@@ -36,7 +36,6 @@ const MaintenanceCAPA       = lazyRetry(() => import("./pages/MaintenanceCAPA"))
 const MaintenanceDeviations = lazyRetry(() => import("./pages/MaintenanceDeviations"));
 const PMPanel               = lazyRetry(() => import("./pages/PMPanel"));
 const MaintenanceKPI        = lazyRetry(() => import("./pages/MaintenanceKPI"));
-const MaintenanceOverview   = lazyRetry(() => import("./pages/MaintenanceOverview"));
 const AndonSystem           = lazyRetry(() => import("./pages/AndonSystem"));
 const MaintenanceBreakdown  = lazyRetry(() => import("./pages/MaintenanceBreakdown"));
 const BDHistory             = lazyRetry(() => import("./pages/BDHistory"));
@@ -228,10 +227,8 @@ function AppRoutes() {
         <Protected requiredAccess="maintenance-pm"><PMPanel /></Protected>
       } />
 
-      {/* Maintenance Overview — management dashboard (KPI tiles + charts, our data). */}
-      <Route path="/maintenance-overview" element={
-        <Protected requiredAccess="maintenance-overview"><MaintenanceOverview /></Protected>
-      } />
+      {/* Overview page HATAYA (user 2026-10-03).  Purana /maintenance-overview
+          link neeche ke "*" se seedha Dashboard par chala jaata hai. */}
 
       {/* ANDON Management System — standalone module (config · live board · reports). */}
       <Route path="/andon-system" element={

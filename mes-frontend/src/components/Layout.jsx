@@ -1,7 +1,6 @@
 import { useLocation } from "react-router-dom";
 import SlideNav from "./SlideNav";
 import FullscreenButton from "./FullscreenButton";
-import DisplayToolbar from "./DisplayToolbar";
 import AIAssistant from "./AIAssistant";
 import AppSettings from "./AppSettings";
 import WalkiePresence from "./WalkiePresence";
@@ -9,13 +8,8 @@ import AppDiag from "./AppDiag";
 import ErrorBoundary from "./ErrorBoundary";
 import { isNativeApp } from "../constants/apiBase";
 
-// The wall-dashboard pages get the full display toolbar (Light/Dark + aspect +
-// fullscreen); every other page keeps just the plain full-screen button.
-const DISPLAY_ROUTES = new Set(["/maintenance-overview", "/maintenance-dashboard"]);
-
 export default function Layout({ children }) {
   const { pathname } = useLocation();
-  const isDisplay = DISPLAY_ROUTES.has(pathname);
   return (
     <div style={{
       minHeight: "100vh",
@@ -58,20 +52,17 @@ export default function Layout({ children }) {
           page par", isliye chhoot hata di.)  Bottom-RIGHT par baithti hai. */}
       <AIAssistant pageContext={{ page: pathname }} />
 
-      {/* Display controls — full toolbar on the wall-dashboard pages,
-          otherwise just the full-screen toggle. */}
+      {/* Full-screen button.  (Light/Dark + aspect wala DisplayToolbar sirf
+          Overview par aata tha -- Overview hata to wo bhi hata, 2026-10-03.) */}
       {pathname === "/maintenance-dashboard"
         ? null   /* dashboard has its own topbar ⛶ Fullscreen — no floating control */
         : isNativeApp()
           /* APK me ye DONO bemaani hain: app khud poori screen par hai, aur
              DisplayToolbar ka LIGHT/Fill/⛶ deewar par lagi TV ke liye hai.
              Aur dono upar-daayen THEEK wahi jagah gherte hain jahan ⚙ Settings
-             baithta hai — Overview par to kaali patti title ke UPAR chadh kar
-             use dhak hi rahi thi.  Website/TV par jaisa tha waisa hi. */
+             baithta hai.  Website/TV par jaisa tha waisa hi. */
           ? null
-          : isDisplay
-            ? <DisplayToolbar showTheme={pathname === "/maintenance-overview"} />
-            : <FullscreenButton />}
+          : <FullscreenButton />}
     </div>
   );
 }

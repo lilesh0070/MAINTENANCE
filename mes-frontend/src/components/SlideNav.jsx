@@ -40,7 +40,6 @@ export default function SlideNav() {
       const adminMaint = {
         section: "Maintenance",
         items: [
-          { key: "maintenance-overview",    label: "Overview",             icon: "📈",                   path: "/maintenance-overview" },
           { key: "andon-system",            label: "ANDON",                icon: "🚦",                   path: "/andon-system" },
           { key: "walkie-talkie",           label: "Walkie-Talkie",        icon: "🎙",                   path: "/walkie-talkie" },
           { key: "maintenance-update-plan", label: "Update Plan",           icon: "📝",                   path: "/maintenance-update-plan" },
@@ -81,7 +80,6 @@ export default function SlideNav() {
     const adminMaint = {
       section: "Maintenance",
       items: [
-        { key: "maintenance-overview",    label: "Overview",             icon: "📈",                   path: "/maintenance-overview" },
         { key: "andon-system",            label: "ANDON",                icon: "🚦",                   path: "/andon-system" },
         { key: "walkie-talkie",           label: "Walkie-Talkie",        icon: "🎙",                   path: "/walkie-talkie" },
         { key: "maintenance-update-plan", label: "Update Plan",           icon: "📝",                   path: "/maintenance-update-plan" },

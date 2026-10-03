@@ -75,7 +75,6 @@ export const ROLE_PILL = {
 export const PAGE_PERM_GROUPS = [
   { group: "Maintenance — Pages", items: [
     { key: "dashboard",                  label: "Dashboard (home / landing)" },
-    { key: "maintenance-overview",       label: "Overview" },
     { key: "andon-system",               label: "ANDON", children: [
       /* Kram wahi jo ANDON page ke tabs ka hai, taaki dono milte-julte lagein. */
       { key: "andon-board",   label: "Live Board" },
