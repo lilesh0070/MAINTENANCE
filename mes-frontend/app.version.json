@@ -1,5 +1,5 @@
 {
-  "version": "1.4.141",
-  "notes": "Leave: apply in your own name; approvals follow the hierarchy (Assistant Manager, Deputy Manager, Manager); Records tab with date / name / status filters and Excel; admin can delete a leave record. Attendance names follow the hierarchy in every row; the dashboard shows both shifts (current shift on top). PM check sheet: Spares Used (YES / NO) column in Format 2, and spare details are shown on verify and history. Log Book entries can be edited. Turning the Internet switch off now also stops ANDON over the internet.",
-  "released_at": "2026-10-03T11:04:53"
+  "version": "1.4.142",
+  "notes": "PM check sheet: number points take a reading (start with the number, e.g. 8 AMP, 120 VAC); point Type (Alphabet / Number) chosen in Document Update. Spares Used: tap NO, then YES; the spare list shows just 'Point N'. Production Breakdown Slip: the Maintenance tab no longer shows other slips. Permission changes now apply in the app without restarting it.",
+  "released_at": "2026-10-03T12:14:03"
 }
