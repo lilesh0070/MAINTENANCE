@@ -1,5 +1,5 @@
 {
-  "version": "1.4.148",
-  "notes": "Historical Data: admin can now edit the time, date, down-time and response time of an auto (ANDON) breakdown slip too - the totals update from the new times. Problem Related To stays as ANDON set it.",
-  "released_at": "2026-10-03T18:56:54"
+  "version": "1.4.149",
+  "notes": "Historical: Date limited to the selected Month; Dashboard Pending Breakdown shows 'Above N min' (Slip Threshold)",
+  "released_at": "2026-10-03T20:47:15"
 }
