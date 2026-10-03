@@ -40,11 +40,12 @@ export default function SlideNav() {
       const adminMaint = {
         section: "Maintenance",
         items: [
+          // Sabse upar + bada (big) -- user 2026-10-03: "Maintenance Dashboard sabse upar, uske baad KPI; thoda bada, highlight ho".
+          { key: "maintenance-dashboard",   label: "Maintenance Dashboard", icon: "/dashboard-icon.png",  iconImg: true, path: "/maintenance-dashboard", big: true },
+          { key: "maintenance-kpi",         label: "Maintenance KPI",       icon: "📊",                   path: "/maintenance-kpi", big: true },
           { key: "andon-system",            label: "ANDON",                icon: "🚦",                   path: "/andon-system" },
           { key: "walkie-talkie",           label: "Walkie-Talkie",        icon: "🎙",                   path: "/walkie-talkie" },
           { key: "maintenance-update-plan", label: "Update Plan",           icon: "📝",                   path: "/maintenance-update-plan" },
-          { key: "maintenance-dashboard",   label: "Maintenance Dashboard", icon: "/dashboard-icon.png",  iconImg: true, path: "/maintenance-dashboard" },
-          { key: "maintenance-kpi",         label: "Maintenance KPI",       icon: "📊",                   path: "/maintenance-kpi" },
           { key: "maintenance-breakdown",   label: "Breakdown",             icon: "🚨",                   path: "/maintenance-breakdown" },
           { key: "production-breakdown-slip", label: "Production Breakdown Slip", icon: "🏭",     path: "/production-breakdown-slip" },
           // "Breakdown Slip" sidebar item removed — the manual slip is opened
@@ -80,11 +81,12 @@ export default function SlideNav() {
     const adminMaint = {
       section: "Maintenance",
       items: [
+        // Sabse upar + bada (big) -- user 2026-10-03: "Maintenance Dashboard sabse upar, uske baad KPI; thoda bada, highlight ho".
+        { key: "maintenance-dashboard",   label: "Maintenance Dashboard", icon: "/dashboard-icon.png",  iconImg: true, path: "/maintenance-dashboard", big: true },
+        { key: "maintenance-kpi",         label: "Maintenance KPI",       icon: "📊",                   path: "/maintenance-kpi", big: true },
         { key: "andon-system",            label: "ANDON",                icon: "🚦",                   path: "/andon-system" },
         { key: "walkie-talkie",           label: "Walkie-Talkie",        icon: "🎙",                   path: "/walkie-talkie" },
         { key: "maintenance-update-plan", label: "Update Plan",           icon: "📝",                   path: "/maintenance-update-plan" },
-        { key: "maintenance-dashboard",   label: "Maintenance Dashboard", icon: "/dashboard-icon.png",  iconImg: true, path: "/maintenance-dashboard" },
-        { key: "maintenance-kpi",         label: "Maintenance KPI",       icon: "📊",                   path: "/maintenance-kpi" },
         { key: "maintenance-breakdown",   label: "Breakdown",             icon: "🚨",                   path: "/maintenance-breakdown" },
           { key: "production-breakdown-slip", label: "Production Breakdown Slip", icon: "🏭",     path: "/production-breakdown-slip" },
         { key: "skill-training",          label: "Skill & Training",      icon: "🎓",                   path: "/skill-training" },
@@ -318,6 +320,9 @@ export default function SlideNav() {
                 </div>
                 {visibleItems.map(item => {
                   const active = isActive(item.path);
+                  // `big` (Dashboard / KPI): thoda bada font + halka accent rang, taaki alag dikhe
+                  const idleBg = item.big ? "rgba(59,130,246,.07)" : "transparent";
+                  const idleFg = item.big ? "var(--text-primary, #0f172a)" : "var(--text-secondary, #334155)";
                   return (
                     <button
                       key={item.key}
@@ -326,13 +331,14 @@ export default function SlideNav() {
                         display: "flex", alignItems: "center", gap: 12,
                         width: "calc(100% - 24px)",
                         margin: "2px 12px",
-                        padding: "10px 16px",
+                        padding: item.big ? "12px 16px" : "10px 16px",
                         borderRadius: 8,
                         border: active ? `1px solid ${theme.soft.replace(/\.0?\d+\)/, '.25)')}` : "1px solid transparent",
-                        background: active ? theme.soft : "transparent",
-                        color: active ? theme.accentDark : "var(--text-secondary, #334155)",
+                        background: active ? theme.soft : idleBg,
+                        color: active ? theme.accentDark : idleFg,
                         cursor: "pointer",
-                        fontSize: 13, fontWeight: active ? 600 : 500,
+                        fontSize: item.big ? 14 : 13, fontWeight: item.big ? 700 : (active ? 600 : 500),
+                        whiteSpace: item.big ? "nowrap" : undefined,
                         textAlign: "left",
                         transition: "all 0.12s ease",
                       }}
@@ -344,14 +350,14 @@ export default function SlideNav() {
                       }}
                       onMouseLeave={e => {
                         if (!active) {
-                          e.currentTarget.style.background = "transparent";
-                          e.currentTarget.style.color = "var(--text-secondary, #334155)";
+                          e.currentTarget.style.background = idleBg;
+                          e.currentTarget.style.color = idleFg;
                         }
                       }}
                     >
-                      <span style={{ width: 20, height: 20, textAlign: "center", fontSize: 15, flexShrink: 0, display:"inline-flex", alignItems:"center", justifyContent:"center" }}>
+                      <span style={{ width: item.big ? 24 : 20, height: item.big ? 24 : 20, textAlign: "center", fontSize: item.big ? 18 : 15, flexShrink: 0, display:"inline-flex", alignItems:"center", justifyContent:"center" }}>
                         {item.iconImg
-                          ? <img src={item.icon} alt="" style={{ width:18, height:18, objectFit:"contain" }}/>
+                          ? <img src={item.icon} alt="" style={{ width: item.big ? 22 : 18, height: item.big ? 22 : 18, objectFit:"contain" }}/>
                           : item.icon}
                       </span>
                       {item.label}
