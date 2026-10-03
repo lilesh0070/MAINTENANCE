@@ -13,7 +13,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import AndonMonitor from "./AndonMonitor";
 import { PROD_ZONES } from "../constants/zones";
 
 const PRIORITIES = ["Critical", "High", "Normal", "Low"];
@@ -44,15 +43,6 @@ const deptColor = (ev) => {
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
   return FALLBACK[h % FALLBACK.length];
 };
-// Call History me tareekh + samay — "30-Aug 10:41:06" (chhota, nowrap-friendly)
-const fmtDT = (iso) => {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (isNaN(d)) return String(iso).slice(0, 19).replace("T", " ");
-  const p2 = (n) => String(n).padStart(2, "0");
-  const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  return `${p2(d.getDate())}-${MON[d.getMonth()]} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
-};
 const fmtClock = (s) => {
   s = Math.max(0, Math.floor(s || 0));
   const p2 = (n) => String(n).padStart(2, "0");
@@ -72,16 +62,17 @@ const ACK_PARENT = { 2: 1, 4: 3 };
 // hai: yahan, AuthContext ke SUBPAGE_PARENT me, aur admin ke
 // PAGE_PERM_GROUPS me — teeno na ho to tab ya chhup jaata hai ya grant
 // hi nahi ho paata.
-const TAB_KEY = { board: "andon-board", monitor: "andon-monitor",
-                  faults: "andon-faults", calls: "andon-calls",
-                  config: "andon-config", callout: "andon-callout",
-                  reports: "andon-reports" };
+// 2026-10-03 (user): Monitor / Fault History / Call History / Reports tab
+// HATAYE -- sirf screen se.  Backend endpoint aur andon_history ka data
+// waisa hi hai (koi data delete nahi), purani app bhi chalti rahe.
+const TAB_KEY = { board: "andon-board",
+                  config: "andon-config", callout: "andon-callout" };
 // Call→Output: departments jinka bit RESPONSE (acknowledge) pe off hota hai
 // (inme ACK output hai — DO2/DO4); baaki call band hone par hi off.
 const OUT_ACK_DEPTS = ["maintenance", "tool room", "toolroom"];
 const outDeptOffAck = (d) => OUT_ACK_DEPTS.includes(String(d || "").trim().toLowerCase());
 
-// Fault History — FY ke 12 mahine (Apr..Mar)
+// FY ke 12 mahine (Apr..Mar) -- Live Board ka Month filter
 function fyMonthsList(fy) {
   const y = parseInt(String(fy).split("-")[0], 10);
   if (isNaN(y)) return [];
@@ -92,6 +83,9 @@ function fyMonthsList(fy) {
 }
 const FH_LBL = { display: "flex", flexDirection: "column", gap: 3, fontSize: 10.5, fontWeight: 700, color: "#64748b" };
 const FH_SEL = { padding: "6px 8px", minWidth: 118 };
+const ymdOf = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+// Plant-day: 7 baje se pehle = kal ka din (backend ki 07:00 window jaisa)
+const plantToday = () => { const d = new Date(); if (d.getHours() < 7) d.setDate(d.getDate() - 1); return ymdOf(d); };
 
 /* PLC ki connection haalat.  Sirf "Disconnected" likhne se maintenance wale
    ghanton phaste hain — ping chal rahi hoti hai, PLC ki light jal rahi hoti
@@ -293,7 +287,7 @@ export default function AndonSystem() {
   // Guard (early-return + firstOk !== tab) loop rokta hai.
   useEffect(() => {
     if (canAccess(TAB_KEY[tab])) return;
-    const firstOk = ["board", "monitor", "faults", "calls", "config", "callout", "reports"]
+    const firstOk = ["board", "config", "callout"]
       .find((t) => canAccess(TAB_KEY[t]));
     if (firstOk && firstOk !== tab) setTab(firstOk);
   }, [tab, user]);   // eslint-disable-line react-hooks/exhaustive-deps
@@ -357,62 +351,8 @@ export default function AndonSystem() {
       flash(String(e?.message || e).slice(0, 140));
     } finally { setHistDel(null); }
   };
-  const openHistory = (dept) => { setHistDept(dept); setHistData(null); loadHistory(dept); };
-
-  // ── Reports → TOTAL LOSS (union) ──────────────────────────────────────
-  // Sab department ke call-windows ko MERGE karke total plant-downtime.  Ek
-  // waqt par ek hi loss (overlap ek baar) — Maintenance chalu me Toolroom bhi
-  // dab jaye to bhi wo time ek hi baar gina jaata hai.  Backend: /total-loss.
-  const [tlData, setTlData] = useState(null);   // {total_loss_seconds, raw_sum_seconds, calls, from, to}
-  const [tlLoad, setTlLoad] = useState(false);
-  const [tlFrom, setTlFrom] = useState("");
-  const [tlTo,   setTlTo]   = useState("");
-  // Total Loss ke filter — FY / Month / Zone / Line.  Month sabse pakka
-  // (server par bhi wahi kram), phir FY, phir From-To.
-  const [tlFy, setTlFy]       = useState("");
-  const [tlMonth, setTlMonth] = useState("");
-  const [tlZone, setTlZone]   = useState("");
-  const [tlLine, setTlLine]   = useState("");
-
-  const loadTotalLoss = useCallback(async (from, to, extra) => {
-    setTlLoad(true);
-    try {
-      const q = new URLSearchParams();
-      if (from) q.set("from", from);
-      if (to)   q.set("to", to);
-      const ex = extra || {};
-      if (ex.fy)    q.set("fy", ex.fy);
-      if (ex.month) q.set("month", ex.month);
-      if (ex.zone)  q.set("zone", ex.zone);
-      if (ex.line)  q.set("line", ex.line);
-      const d = await api(`/total-loss${q.toString() ? "?" + q.toString() : ""}`);
-      setTlData(d || null);
-      setTlFrom(d?.from || ""); setTlTo(d?.to || "");
-    } catch (e) { flash(String(e.message || e).slice(0, 120)); setTlData(null); }
-    finally { setTlLoad(false); }
-  }, [api]);
-  // reports tab khulte hi aaj ka total; phir har 3s refresh taaki chalu calls
-  // (jinka end = abhi) ka loss live badhta rahe.  Sirf tabhi jab range aaj ho.
-  useEffect(() => {
-    if (!token || tab !== "reports") return;
-    let alive = true;
-    // Pehla load bhi FILTERS ke saath — warna dropdown me "Aug 2026" dikhta
-    // aur data aaj ka aata, jo aapas me mel nahi khaata.
-    if (!tlData) loadTotalLoss(null, null, { fy: tlFy, month: tlMonth, zone: tlZone, line: tlLine });
-    const id = setInterval(() => {
-      const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
-      const n = new Date(); const d = new Date(n); if (n.getHours() < 7) d.setDate(d.getDate()-1);
-      const today = ymd(d);
-      // Auto-refresh sirf tab jab range AAJ ho — aur zone/line filter SAATH
-      // le jaana zaroori hai, warna har 3 second me filter apne aap ud jaata.
-      // FY/Month lagi ho to wo range aaj ki hai hi nahi, isliye refresh chhoot
-      // jaata hai — wahi theek hai (purani range live nahi badalti).
-      if (alive && tlFrom === today && tlTo === today && !tlFy && !tlMonth) {
-        loadTotalLoss(tlFrom, tlTo, { zone: tlZone, line: tlLine });
-      }
-    }, 3000);
-    return () => { alive = false; clearInterval(id); };
-  }, [token, tab, tlFrom, tlTo, tlData, loadTotalLoss, tlFy, tlMonth, tlZone, tlLine]);
+  // Card ki history wahi range kholti hai jo Live Board ke filter me chuni hai
+  const openHistory = (dept) => { setHistDept(dept); setHistData(null); loadHistory(dept, bdWin?.from, bdWin?.to); };
 
   const load = useCallback(async () => {
     try {
@@ -460,8 +400,6 @@ export default function AndonSystem() {
         for (const k of Object.keys(refs)) if (!live.has(Number(k))) delete refs[k];  // band calls bhulo
         setEvents(list);
       }).catch(() => {});
-      // aaj ka per-department total loss — upar ke cards ke liye (same poll)
-      api("/today-totals").then((t) => { if (alive) setTotals(t?.departments || []); }).catch(() => {});
     };
     pull();
     // 300ms par — PLC bit press karte hi call turant screen pe aaye (backend poll
@@ -656,107 +594,66 @@ export default function AndonSystem() {
   }, [api]);
   const outLinesFor = (z) => z ? [...new Set(master.filter((m) => m.zone_name === z).map((m) => m.line_name).filter(Boolean))].sort() : [];
 
-  // ── Fault History (live) — zone/line/machine/fault group + count ──
-  const [fhFy, setFhFy] = useState("");
-  const [fhMonth, setFhMonth] = useState("");
-  const [fhDate, setFhDate] = useState("");
-  const [fhZone, setFhZone] = useState("");
-  const [fhLine, setFhLine] = useState("");
-  const [fhMachine, setFhMachine] = useState("");
-  const [fhFault, setFhFault] = useState("");
-  // ── Call History (raw andon_history) ────────────────────────────────
-  // Report sirf jod-ghata dikhati hai; yahan ASLI rows dikhti hain, taaki
-  // admin kachra row (testing ki 2-second call, galat department) hata sake.
-  const [chRows, setChRows]       = useState([]);
-  const [chLoading, setChLoading] = useState(false);
-  const [chSel, setChSel]         = useState(() => new Set());
-  const [chLimit, setChLimit]     = useState(200);
-  const [chDept, setChDept]       = useState("");     // "" = saare department
-
-  // Filter client-side hai — rows pehle se load hain, to chunav turant lagta
-  // hai (server ko dobara nahi poochte).
-  const chShown = useMemo(
-    () => (chDept ? chRows.filter((r) => (r.department || r.display_name) === chDept) : chRows),
-    [chRows, chDept]);
+  // ── Live Board ka filter: Financial Year / Month / Date (user 2026-10-03) ──
+  // Default = chaalu FY + chaalu mahina + AAJ (plant-day) -- yaani khulte hi
+  // pehle jaisa "aaj ka" total.  Date clear = poora mahina, Month "All" = poora
+  // FY.  Ye sirf upar ke department card (total loss) par lagta hai; neeche
+  // ki chalu calls hamesha live hain.
   const isAdmin = user?.role === "admin";
-
-  const loadCallHistory = useCallback(async () => {
-    setChLoading(true);
-    try {
-      const d = await api(`/history?limit=${chLimit}`);
-      setChRows(Array.isArray(d) ? d : []);
-      setChSel(new Set());          // list badli to purana selection bekaar
-    } catch { setChRows([]); }
-    finally { setChLoading(false); }
-  }, [api, chLimit]);
-
-  useEffect(() => {
-    if (!token || tab !== "calls") return;
-    loadCallHistory();
-  }, [token, tab, loadCallHistory]);
-
-  const chToggle = (id) => setChSel((prev) => {
-    const n = new Set(prev);
-    if (n.has(id)) n.delete(id); else n.add(id);
-    return n;
-  });
-
-  const chDelete = async () => {
-    const ids = [...chSel];
-    if (!ids.length) return;
-    // Delete wapas nahi aata — isliye ginti ke saath saaf poochte hain.
-    if (!window.confirm(
-      `${ids.length} call history rows will be permanently deleted.
-` +
-      `This cannot be undone. Continue?`)) return;
-    try {
-      const r = await api("/history/delete", { method: "POST", body: JSON.stringify({ ids }) });
-      flash(`${r.deleted} rows deleted`);
-      await loadCallHistory();
-    } catch (e) {
-      flash(String(e?.message || e).slice(0, 140));
-    }
-  };
-
-  const [fhRows, setFhRows] = useState([]);
-  const [fhFaultOpts, setFhFaultOpts] = useState([]);
-  const [fhYears, setFhYears] = useState([]);
-  const fhZones = useMemo(() => [...new Set(master.map((m) => m.zone_name).filter(Boolean))].sort(), [master]);
-  const fhLines = useMemo(() => [...new Set(master.filter((m) => !fhZone || m.zone_name === fhZone).map((m) => m.line_name).filter(Boolean))].sort(), [master, fhZone]);
-  const fhMachines = useMemo(() => [...new Set(master.filter((m) => (!fhZone || m.zone_name === fhZone) && (!fhLine || m.line_name === fhLine)).map((m) => m.machine_no).filter(Boolean))].sort(), [master, fhZone, fhLine]);
-  // FY list + default = current FY & current month
+  const [bdYears, setBdYears] = useState([]);
+  const [bdFy, setBdFy]       = useState("");
+  const [bdMonth, setBdMonth] = useState("");
+  const [bdDate, setBdDate]   = useState("");
   useEffect(() => {
     if (!token) return;
     fetch("/api/maintenance-kpi/financial-years", { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => (r.ok ? r.json() : [])).then((list) => {
         const arr = Array.isArray(list) ? list : [];
-        setFhYears(arr);
+        setBdYears(arr);
         const cur = arr.find((v) => v.is_current) || arr[0];
         if (cur) {
-          setFhFy(cur.fy);
-          const now = new Date();
-          const cm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-          const inFy = fyMonthsList(cur.fy).some((m) => m.value === cm);
-          if (inFy) setFhMonth(cm);
-          // Total Loss ke filter bhi CHAALU FY + CHAALU MAHINE par khulein,
-          // taaki page kholte hi is mahine ka poora data (line-wise) dikhe.
-          setTlFy(cur.fy);
-          if (inFy) setTlMonth(cm);
+          setBdFy(cur.fy);
+          const today = plantToday();
+          if (fyMonthsList(cur.fy).some((m) => m.value === today.slice(0, 7))) {
+            setBdMonth(today.slice(0, 7));
+            setBdDate(today);
+          }
         }
       }).catch(() => {});
   }, [token]);
-  const loadFaultHistory = useCallback(async () => {
-    const qs = new URLSearchParams();
-    for (const [k, v] of [["fy", fhFy], ["month", fhMonth], ["date", fhDate], ["zone", fhZone], ["line", fhLine], ["machine_no", fhMachine], ["fault", fhFault]]) if (v) qs.set(k, v);
-    const d = await api(`/fault-history?${qs.toString()}`).catch(() => null);
-    if (d) { setFhRows(d.rows || []); setFhFaultOpts(d.faults || []); }
-  }, [api, fhFy, fhMonth, fhDate, fhZone, fhLine, fhMachine, fhFault]);
+  const bdMonthOpts = useMemo(() => (bdFy ? fyMonthsList(bdFy) : []), [bdFy]);
+  // Month (warna FY) ki range -- Date ke picker ki seema yahi.
+  const bdMonthWin = useMemo(() => {
+    if (bdMonth) {
+      const [y, m] = bdMonth.split("-").map(Number);
+      return { from: `${bdMonth}-01`, to: `${bdMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}` };
+    }
+    if (bdFy) {
+      const y = parseInt(bdFy, 10);
+      if (!isNaN(y)) return { from: `${y}-04-01`, to: `${y + 1}-03-31` };
+    }
+    return null;
+  }, [bdFy, bdMonth]);
+  // Date > Month > FY.  null = kuch nahi chuna -> server ka default (aaj).
+  const bdWin = useMemo(() => (bdDate ? { from: bdDate, to: bdDate } : bdMonthWin), [bdDate, bdMonthWin]);
+  // Chuni range me AAJ hai?  Tabhi card par chalu calls ka live time judta hai.
+  const bdToday = plantToday();
+  const bdHasToday = !bdWin || (bdWin.from <= bdToday && bdToday <= bdWin.to);
+  // Department card ka total loss -- Live Board ke FY / Month / Date filter se.
+  // Range me aaj ho to 300ms (pehle jaisa: call band hote hi card me jud jaaye),
+  // warna purana data hai -- 30s kaafi.  `alive` se filter badalne par purana
+  // jawab naye ke upar nahi chadhta.
+  const bdFrom = bdWin?.from || "", bdTo = bdWin?.to || "";
   useEffect(() => {
-    if (!token || tab !== "faults") return;
-    loadFaultHistory();
-    const id = setInterval(loadFaultHistory, 3000);   // live refresh
-    return () => clearInterval(id);
-  }, [token, tab, loadFaultHistory]);
+    if (!token || tab !== "board") return;
+    let alive = true;
+    const q = bdFrom ? `?from=${bdFrom}&to=${bdTo}` : "";
+    const get = () => api(`/today-totals${q}`)
+      .then((t) => { if (alive) setTotals(t?.departments || []); }).catch(() => {});
+    get();
+    const id = setInterval(get, bdHasToday ? 300 : 30000);
+    return () => { alive = false; clearInterval(id); };
+  }, [token, tab, api, bdFrom, bdTo, bdHasToday]);
   // Output mapping target: no zone = the shared Default template; zone + line =
   // the PLC sitting on that zone/line (its own override).
   const pickOutTarget = (zone, line) => {
@@ -950,7 +847,7 @@ export default function AndonSystem() {
 
         <div className="an-body">
           <div className="an-tabs">
-            {[["board","Live Board"],["monitor","Monitor"],["faults","Fault History"],["calls","Call History"],["config","Configuration"],["callout","Call → Output"],["reports","Reports"]]
+            {[["board","Live Board"],["config","Configuration"],["callout","Call → Output"]]
               .filter(([k]) => canAccess(TAB_KEY[k]))
               .map(([k, l]) => (
               <button key={k} className={`an-tab${tab === k ? " on" : ""}`} onClick={() => setTab(k)}>{l}</button>
@@ -1261,7 +1158,6 @@ export default function AndonSystem() {
             </>
           )}
 
-          {tab === "monitor" && canAccess("andon-board") && <AndonMonitor embedded />}
 
           {tab === "callout" && canAccess("andon-config") && (
             <>
@@ -1540,8 +1436,42 @@ export default function AndonSystem() {
                 </span>
               </div>
 
-              {/* ── Aaj ka per-department TOTAL LOSS — chote cards (7AM–6:30AM plant day).
-                  band + chalu dono calls ka down-time; response yahan nahi. ── */}
+              {/* ── Filter: Financial Year / Month / Date -- sirf neeche ke department
+                  card par.  Date ka picker chune Month ke andar; Date chuno to Month
+                  usi ka.  Date clear = poora mahina. ── */}
+              <div className="an-row an-bdfilter" style={{ marginBottom:12, gap:10, flexWrap:"wrap", alignItems:"flex-end" }}>
+                <label style={FH_LBL}>Financial Year
+                  <select className="an-in" style={FH_SEL} value={bdFy}
+                          onChange={(e) => { setBdFy(e.target.value); setBdMonth(""); setBdDate(""); }}>
+                    {bdYears.map((y) => <option key={y.fy} value={y.fy}>{y.fy}{y.is_current ? " (current)" : ""}</option>)}
+                  </select>
+                </label>
+                <label style={FH_LBL}>Month
+                  <select className="an-in" style={FH_SEL} value={bdMonth}
+                          onChange={(e) => { setBdMonth(e.target.value); setBdDate(""); }}>
+                    <option value="">All Months</option>
+                    {bdMonthOpts.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                </label>
+                <label style={FH_LBL}>Date
+                  <input type="date" className="an-in" style={FH_SEL} value={bdDate}
+                         min={bdMonthWin?.from} max={bdMonthWin?.to}
+                         onChange={(e) => {
+                           const v = e.target.value;
+                           if (v && bdMonthWin && (v < bdMonthWin.from || v > bdMonthWin.to)) return;
+                           setBdDate(v);
+                           if (v && bdMonthOpts.some((m) => m.value === v.slice(0, 7))) setBdMonth(v.slice(0, 7));
+                         }} />
+                </label>
+                {bdDate && (
+                  <button className="an-btn" style={{ padding:"6px 12px" }} onClick={() => setBdDate("")}
+                          title="Show the whole month">✕ Clear date</button>
+                )}
+              </div>
+
+              {/* ── Per-department TOTAL LOSS — chote cards (7AM–6:30AM plant day),
+                  upar ke filter ki range ke.  band + chalu dono calls ka down-time;
+                  response yahan nahi. ── */}
               <div className="an-dept-cards"
                    style={{ display:"grid", gap:10, marginBottom:16,
                             gridTemplateColumns:`repeat(${Math.max(totals.length,1)}, minmax(0,1fr))` }}>
@@ -1566,8 +1496,10 @@ export default function AndonSystem() {
                           SMOOTH elapsed — isliye card bhi har second tick karta hai */}
                       {fmtClock(
                         (t.closed_loss_seconds ?? t.total_loss_seconds ?? 0) +
-                        events.filter((ev) => ev.department === t.department)
-                              .reduce((s, ev) => s + liveElapsed(ev), 0)
+                        (bdHasToday   /* purani range me chalu calls ka time nahi judta */
+                          ? events.filter((ev) => ev.department === t.department)
+                                  .reduce((s, ev) => s + liveElapsed(ev), 0)
+                          : 0)
                       )}
                     </div>
                     <div style={{ fontSize:10.5, color:"#94a3b8", fontWeight:600,
@@ -1635,403 +1567,6 @@ export default function AndonSystem() {
               )}
             </>
           )}
-          {tab === "faults" && canAccess("andon-faults") && (
-            <>
-              <div className="an-card" style={{ marginBottom:14 }}>
-                <div className="an-row" style={{ gap:10, flexWrap:"wrap", alignItems:"flex-end" }}>
-                  <label style={FH_LBL}>FY
-                    <select className="an-in" style={FH_SEL} value={fhFy} onChange={(e)=>{ setFhFy(e.target.value); setFhMonth(""); }}>
-                      <option value="">All</option>
-                      {fhYears.map((y)=><option key={y.fy} value={y.fy}>{y.label || y.fy}</option>)}
-                    </select></label>
-                  <label style={FH_LBL}>Month
-                    <select className="an-in" style={FH_SEL} value={fhMonth} onChange={(e)=>setFhMonth(e.target.value)}>
-                      <option value="">All</option>
-                      {fyMonthsList(fhFy).map((m)=><option key={m.value} value={m.value}>{m.label}</option>)}
-                    </select></label>
-                  <label style={FH_LBL}>Date
-                    <input type="date" className="an-in" style={FH_SEL} value={fhDate} onChange={(e)=>setFhDate(e.target.value)} /></label>
-                  <label style={FH_LBL}>Zone
-                    <select className="an-in" style={FH_SEL} value={fhZone} onChange={(e)=>{ setFhZone(e.target.value); setFhLine(""); setFhMachine(""); }}>
-                      <option value="">All</option>{fhZones.map((z)=><option key={z} value={z}>{z}</option>)}
-                    </select></label>
-                  <label style={FH_LBL}>Line
-                    <select className="an-in" style={FH_SEL} value={fhLine} onChange={(e)=>{ setFhLine(e.target.value); setFhMachine(""); }}>
-                      <option value="">All</option>{fhLines.map((l)=><option key={l} value={l}>{l}</option>)}
-                    </select></label>
-                  <label style={FH_LBL}>Machine
-                    <select className="an-in" style={FH_SEL} value={fhMachine} onChange={(e)=>setFhMachine(e.target.value)}>
-                      <option value="">All</option>{fhMachines.map((m)=><option key={m} value={m}>{m}</option>)}
-                    </select></label>
-                  <label style={FH_LBL}>Fault
-                    <select className="an-in" style={FH_SEL} value={fhFault} onChange={(e)=>setFhFault(e.target.value)}>
-                      <option value="">All</option>{fhFaultOpts.map((f)=><option key={f} value={f}>{f}</option>)}
-                    </select></label>
-                  <button className="an-btn gh sm" onClick={()=>{ setFhMonth(""); setFhDate(""); setFhZone(""); setFhLine(""); setFhMachine(""); setFhFault(""); }}>Reset</button>
-                </div>
-              </div>
-              <div className="an-card">
-                <div className="an-row" style={{ marginBottom:6 }}>
-                  <b style={{ fontSize:14 }}>Fault History</b>
-                  <span style={{ fontSize:10.5, fontWeight:800, color:"#16a34a" }}>● live</span>
-                  <span style={{ marginLeft:"auto", fontSize:11.5, color:"#94a3b8" }}>
-                    {fhRows.reduce((s,r)=>s+Number(r.total||0),0)} total · {fhRows.length} row{fhRows.length===1?"":"s"}
-                  </span>
-                </div>
-                <table className="an-tbl">
-                  <thead><tr><th style={{ width:40 }}>#</th><th>Zone</th><th>Line</th><th>Machine No</th><th>Fault Name</th><th style={{ width:90 }}>Total</th></tr></thead>
-                  <tbody>
-                    {fhRows.map((r,i)=>(
-                      <tr key={i}>
-                        <td style={{ color:"#94a3b8" }}>{i+1}</td>
-                        <td>{r.zone||"—"}</td><td>{r.line||"—"}</td><td>{r.machine_no||"—"}</td>
-                        <td style={{ fontWeight:700 }}>{r.fault}</td>
-                        <td><span className="an-chip" style={{ background:"#dbeafe", color:"#1d4ed8", fontWeight:800, padding:"2px 10px" }}>{r.total}</span></td>
-                      </tr>
-                    ))}
-                    {!fhRows.length && <tr><td colSpan={6} style={{ color:"#94a3b8" }}>No fault records in this range.</td></tr>}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-          {/* ── Call History ────────────────────────────────────────────
-              Raw andon_history rows.  Reports jod-ghata dikhati hai; yahan
-              ek-ek call dikhti hai, taaki admin kachra row hata sake
-              (testing ki 2-second call, ya galat department wali). */}
-          {tab === "calls" && canAccess("andon-calls") && (
-            <div className="an-card">
-              <div className="an-row" style={{ gap:10, flexWrap:"wrap", alignItems:"center", marginBottom:12 }}>
-                <b style={{ fontSize:15 }}>Call History</b>
-                <span style={{ color:"#94a3b8", fontSize:12 }}>
-                  {chLoading
-                    ? "Loading…"
-                    : `${chShown.length} call${chShown.length === 1 ? "" : "s"}` +
-                      (chDept ? ` of ${chRows.length}` : "")}
-                </span>
-                <label style={{ fontSize:12, color:"#64748b", fontWeight:700 }}>
-                  Department{" "}
-                  <select className="an-in" style={{ padding:"4px 8px", minWidth:150 }}
-                          value={chDept} onChange={(e) => setChDept(e.target.value)}>
-                    <option value="">All departments</option>
-                    {depts.map((d) => <option key={d.id} value={d.name}>{d.name}</option>)}
-                  </select>
-                </label>
-                <label style={{ fontSize:12, color:"#64748b", fontWeight:700 }}>
-                  Show latest{" "}
-                  <select className="an-in" style={{ padding:"4px 8px", width:90 }}
-                          value={chLimit} onChange={(e) => setChLimit(Number(e.target.value))}>
-                    {[100, 200, 500, 1000].map((n) => <option key={n} value={n}>{n}</option>)}
-                  </select>
-                </label>
-                <button className="an-btn gh sm" onClick={loadCallHistory}>↻ Refresh</button>
-                <span style={{ marginLeft:"auto", display:"flex", gap:10, alignItems:"center" }}>
-                  {isAdmin ? (
-                    <>
-                      <span style={{ fontSize:12, color:"#64748b", fontWeight:700 }}>
-                        {chSel.size} selected
-                      </span>
-                      <button className="an-btn" disabled={!chSel.size}
-                              style={{ background: chSel.size ? "#dc2626" : "#e2e8f0",
-                                       color: chSel.size ? "#fff" : "#94a3b8",
-                                       cursor: chSel.size ? "pointer" : "default" }}
-                              onClick={chDelete}>
-                        🗑 Delete selected
-                      </button>
-                    </>
-                  ) : (
-                    <span style={{ fontSize:11.5, color:"#94a3b8" }}>
-                      only an admin can delete
-                    </span>
-                  )}
-                </span>
-              </div>
-
-              <div style={{ maxHeight:520, overflowY:"auto" }}>
-                {/* `an-stack` -- phone par har row ek chhota card.  Dus column
-                    804px maangte hain aur card me 367px hi hain. */}
-                <table className="an-tbl an-stack">
-                  <thead><tr>
-                    {isAdmin && <th style={{ width:34 }}>
-                      <input type="checkbox"
-                             title="Select all shown"
-                             checked={!!chShown.length && chSel.size === chShown.length}
-                             onChange={(e) => setChSel(e.target.checked
-                               ? new Set(chShown.map((r) => r.id)) : new Set())} />
-                    </th>}
-                    <th style={{ width:60 }}>ID</th>
-                    <th>Department</th><th>Zone</th><th>Line</th><th>Machine</th>
-                    <th>Started</th><th>Ended</th>
-                    <th style={{ width:100, textAlign:"center" }}>Response</th>
-                    <th style={{ width:90, textAlign:"center" }}>Total</th>
-                  </tr></thead>
-                  <tbody>
-                    {chLoading && <tr><td colSpan={isAdmin ? 10 : 9} style={{ color:"#94a3b8" }}>Loading…</td></tr>}
-                    {!chLoading && !chShown.length &&
-                      <tr><td colSpan={isAdmin ? 10 : 9} style={{ color:"#94a3b8" }}>
-                        {chRows.length ? `No calls for ${chDept}.` : "No closed calls yet."}
-                      </td></tr>}
-                    {!chLoading && chShown.map((r) => (
-                      <tr key={r.id} style={{ background: chSel.has(r.id) ? "#fef2f2" : undefined }}>
-                        {isAdmin && <td data-lbl="Select">
-                          <input type="checkbox" checked={chSel.has(r.id)}
-                                 onChange={() => chToggle(r.id)} />
-                        </td>}
-                        <td data-lbl="ID" style={{ color:"#94a3b8" }}>{r.id}</td>
-                        <td className="an-stk-hdr" style={{ fontWeight:700 }}>{r.department || r.display_name || "—"}</td>
-                        <td data-lbl="Zone">{r.zone || "—"}</td>
-                        <td data-lbl="Line">{r.line || "—"}</td>
-                        <td data-lbl="Machine" className="an-mno">{r.machine_no || "—"}</td>
-                        <td data-lbl="Started" style={{ whiteSpace:"nowrap", fontSize:12 }}>{fmtDT(r.started_at)}</td>
-                        <td data-lbl="Ended" style={{ whiteSpace:"nowrap", fontSize:12 }}>{fmtDT(r.ended_at)}</td>
-                        <td data-lbl="Response" style={{ textAlign:"center" }}>
-                          {r.response_seconds == null
-                            ? <span style={{ color:"#94a3b8" }}>—</span>
-                            : `${r.response_seconds}s`}
-                        </td>
-                        <td data-lbl="Total" style={{ textAlign:"center", fontWeight:800 }}>
-                          {r.duration_seconds == null ? "—" : `${r.duration_seconds}s`}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {tab === "reports" && canAccess("andon-reports") && (() => {
-            const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
-            const plantToday = () => { const n = new Date(); const d = new Date(n); if (n.getHours() < 7) d.setDate(d.getDate()-1); return ymd(d); };
-            const addDays = (s, n) => { if (!s) return plantToday(); const [y,m,dd] = s.split("-").map(Number); const dt = new Date(y, m-1, dd); dt.setDate(dt.getDate()+n); return ymd(dt); };
-            const sameRange = tlData && tlFrom === tlTo;
-            // FY / Month — wahi list aur wahi label jo poore app me hai
-            // (`fhYears` = /api/maintenance-kpi/financial-years, `fyMonthsList`
-            // = "Apr 2026" wale labels).  Alag list banana bhram paida karta.
-            const tlFyOpts    = fhYears.map((y) => ({ value: y.fy, label: (y.label || y.fy) + (y.is_current ? "  (current)" : "") }));
-            const tlMonthOpts = fyMonthsList(tlFy || (fhYears.find((y) => y.is_current) || fhYears[0] || {}).fy || "");
-            // Zone — sirf PRODUCTION zones (PROD_ZONES), jaisa baaki app me.
-            // Line uske andar Machine Master se.
-            const tlZoneOpts = PROD_ZONES.map((z) => ({ value: z, label: z }));
-            const tlLineOpts = tlZone
-              ? [...new Set(master.filter((m) => m.zone_name === tlZone).map((m) => m.line_name).filter(Boolean))]
-                  .sort().map((l) => ({ value: l, label: l }))
-              : [];
-            const overlap = tlData ? Math.max(0, (tlData.raw_sum_seconds || 0) - (tlData.total_loss_seconds || 0)) : 0;
-            return (
-            <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-              {/* Total Loss card */}
-              <div style={{ background:"#fff", border:"1px solid #e2e8f0", borderRadius:16,
-                            boxShadow:"0 1px 3px rgba(0,0,0,.06)", overflow:"hidden", maxWidth:820 }}>
-                {/* header + date filter */}
-                <div style={{ padding:"16px 20px", borderBottom:"1px solid #f1f5f9" }}>
-                  <div style={{ fontSize:16, fontWeight:800, color:"#0f172a" }}>Total Loss</div>
-                  <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", marginTop:12 }}>
-                    {[["Today", 0], ["Yesterday", -1]].map(([lbl, off]) => {
-                      const dt = addDays(plantToday(), off);
-                      const active = tlFrom === dt && tlTo === dt;
-                      return (
-                        <button key={lbl} onClick={() => loadTotalLoss(dt, dt)}
-                                style={{ border:"1px solid #cbd5e1", borderRadius:8, padding:"6px 12px",
-                                         fontWeight:700, fontSize:12.5, cursor:"pointer",
-                                         background: active ? "#1e40af" : "#fff",
-                                         color: active ? "#fff" : "#334155" }}>{lbl}</button>
-                      );
-                    })}
-                    <span style={{ color:"#cbd5e1" }}>|</span>
-                    <label style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>From
-                      <input type="date" value={tlFrom} onChange={(e) => setTlFrom(e.target.value)}
-                             style={{ marginLeft:6, padding:"5px 8px", border:"1px solid #cbd5e1", borderRadius:7, fontSize:12.5 }} />
-                    </label>
-                    <label style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>To
-                      <input type="date" value={tlTo} min={tlFrom} onChange={(e) => setTlTo(e.target.value)}
-                             style={{ marginLeft:6, padding:"5px 8px", border:"1px solid #cbd5e1", borderRadius:7, fontSize:12.5 }} />
-                    </label>
-                    <button onClick={() => { setTlFy(""); setTlMonth("");
-                              loadTotalLoss(tlFrom, tlTo, { zone: tlZone, line: tlLine }); }}
-                            style={{ border:"none", background:"#1e40af", color:"#fff", borderRadius:8,
-                                     padding:"6px 14px", fontWeight:700, fontSize:12.5, cursor:"pointer" }}>View</button>
-                  </div>
-
-                  {/* ── FY · Month · Zone · Line ──
-                      Zone/Line ke option MACHINE MASTER se (project ka niyam).
-                      FY ya Month chuno to From-To ki jagah wahi window chalti hai. */}
-                  <div style={{ display:"flex", alignItems:"flex-end", gap:10, flexWrap:"wrap", marginTop:12 }}>
-                    {[["Financial Year", tlFy, (v) => { setTlFy(v); setTlMonth("");
-                          loadTotalLoss(null, null, { fy: v, zone: tlZone, line: tlLine }); },
-                       [{ value:"", label:"All FY" }, ...tlFyOpts]],
-                      ["Month", tlMonth, (v) => { setTlMonth(v);
-                          loadTotalLoss(null, null, { fy: v ? "" : tlFy, month: v, zone: tlZone, line: tlLine }); },
-                       [{ value:"", label:"All Months" }, ...tlMonthOpts]],
-                      ["Zone", tlZone, (v) => { setTlZone(v); setTlLine("");
-                          loadTotalLoss(tlFy || tlMonth ? null : tlFrom, tlFy || tlMonth ? null : tlTo,
-                                        { fy: tlFy, month: tlMonth, zone: v }); },
-                       [{ value:"", label:"All Zones" }, ...tlZoneOpts]],
-                      ["Line", tlLine, (v) => { setTlLine(v);
-                          loadTotalLoss(tlFy || tlMonth ? null : tlFrom, tlFy || tlMonth ? null : tlTo,
-                                        { fy: tlFy, month: tlMonth, zone: tlZone, line: v }); },
-                       [{ value:"", label:"All Lines" }, ...tlLineOpts]],
-                    ].map(([lbl, val, on, opts]) => (
-                      <div key={lbl} style={{ display:"flex", flexDirection:"column", gap:4 }}>
-                        <label style={{ fontSize:10.5, fontWeight:800, letterSpacing:".04em",
-                                        textTransform:"uppercase", color:"#94a3b8" }}>{lbl}</label>
-                        <select value={val} onChange={(e) => on(e.target.value)}
-                                disabled={lbl === "Line" && !tlZone}
-                                style={{ padding:"6px 9px", border:"1px solid #cbd5e1", borderRadius:7,
-                                         fontSize:12.5, fontWeight:600, minWidth:132,
-                                         background: (lbl === "Line" && !tlZone) ? "#f1f5f9" : "#fff" }}>
-                          {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                      </div>
-                    ))}
-                    {(tlFy || tlMonth || tlZone || tlLine) && (
-                      <button onClick={() => { setTlFy(""); setTlMonth(""); setTlZone(""); setTlLine("");
-                                               loadTotalLoss(tlFrom, tlTo); }}
-                              style={{ border:"1px solid #cbd5e1", background:"#fff", borderRadius:8,
-                                       padding:"6px 12px", fontWeight:700, fontSize:12.5, cursor:"pointer",
-                                       color:"#475569" }}>✕ Clear</button>
-                    )}
-                  </div>
-                </div>
-                {/* value */}
-                <div style={{ padding:"22px 20px" }}>
-                  {tlLoad && !tlData ? (
-                    <div style={{ color:"#94a3b8", fontSize:14 }}>Loading…</div>
-                  ) : (
-                    <>
-                      <div style={{ fontSize:12, color:"#64748b", fontWeight:700, letterSpacing:.3, textTransform:"uppercase" }}>
-                        {sameRange ? tlFrom : `${tlFrom} → ${tlTo}`}
-                      </div>
-                      <div style={{ fontSize:40, fontWeight:900, color:"#dc2626", lineHeight:1.1, marginTop:6,
-                                    fontVariantNumeric:"tabular-nums" }}>
-                        {fmtClock(tlData?.total_loss_seconds || 0)}
-                      </div>
-                      <div style={{ display:"flex", gap:22, flexWrap:"wrap", marginTop:14 }}>
-                        <div>
-                          <div style={{ fontSize:11, color:"#94a3b8", fontWeight:700, textTransform:"uppercase" }}>Total Calls</div>
-                          <div style={{ fontSize:18, fontWeight:800, color:"#0f172a" }}>{tlData?.calls ?? 0}</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize:11, color:"#94a3b8", fontWeight:700, textTransform:"uppercase" }}>Raw Sum</div>
-                          <div style={{ fontSize:18, fontWeight:800, color:"#475569" }}>{fmtClock(tlData?.raw_sum_seconds || 0)}</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize:11, color:"#94a3b8", fontWeight:700, textTransform:"uppercase" }}>Overlap Saved</div>
-                          <div style={{ fontSize:18, fontWeight:800, color:"#0d9488" }}>{fmtClock(overlap)}</div>
-                        </div>
-                      </div>
-
-                      {/* Department-wise — jo call BAAD me dabi wo us lamhe ki
-                          maalik.  Purani call, agar abhi khuli hai, nayi ke
-                          khatam hote hi phir se ginne lagti hai — isliye in
-                          tukdon ka JOD upar wale TOTAL ke barabar rehta hai. */}
-                      {(tlData?.by_department || []).length > 0 && (
-                        <div style={{ marginTop:18, borderTop:"1px solid #f1f5f9", paddingTop:14 }}>
-                          <div style={{ fontSize:11, color:"#94a3b8", fontWeight:700,
-                                        textTransform:"uppercase", marginBottom:8 }}>
-                            Department-wise (time counted against each)
-                          </div>
-                          <table style={{ width:"100%", borderCollapse:"collapse" }}>
-                            <tbody>
-                              {tlData.by_department.map((d) => {
-                                const pct = tlData.total_loss_seconds
-                                  ? Math.round((d.seconds / tlData.total_loss_seconds) * 100) : 0;
-                                return (
-                                  <tr key={d.department}>
-                                    <td style={{ padding:"5px 0", fontSize:13, fontWeight:700, color:"#334155",
-                                                 whiteSpace:"nowrap", width:150 }}>{d.department}</td>
-                                    <td style={{ padding:"5px 8px", width:"100%" }}>
-                                      <div style={{ background:"#f1f5f9", borderRadius:99, height:8 }}>
-                                        <div style={{ width:`${pct}%`, background:"#dc2626",
-                                                      height:8, borderRadius:99 }} />
-                                      </div>
-                                    </td>
-                                    <td style={{ padding:"5px 0", fontSize:13, fontWeight:800, color:"#0f172a",
-                                                 textAlign:"right", whiteSpace:"nowrap",
-                                                 fontVariantNumeric:"tabular-nums" }}>{fmtClock(d.seconds)}</td>
-                                    <td style={{ padding:"5px 0 5px 10px", fontSize:11.5, color:"#94a3b8",
-                                                 textAlign:"right", width:44 }}>{pct}%</td>
-                                  </tr>
-                                );
-                              })}
-                              <tr>
-                                <td style={{ paddingTop:9, fontSize:13, fontWeight:800, color:"#0f172a",
-                                             borderTop:"1px solid #e2e8f0" }}>Total</td>
-                                <td style={{ borderTop:"1px solid #e2e8f0" }} />
-                                <td style={{ paddingTop:9, fontSize:13, fontWeight:900, color:"#dc2626",
-                                             textAlign:"right", borderTop:"1px solid #e2e8f0",
-                                             fontVariantNumeric:"tabular-nums" }}>
-                                  {fmtClock(tlData.by_department.reduce((a, b) => a + b.seconds, 0))}
-                                </td>
-                                <td style={{ borderTop:"1px solid #e2e8f0" }} />
-                              </tr>
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-
-                      {/* ── Date x Zone x Line ──
-                          HAR LINE apni alag hai: ek line ki call doosri line ko
-                          nahi rokti, isliye preemption har line ke ANDAR alag
-                          lagti hai aur yahan ka Total un sab ka JOD hai.  Kal
-                          naye ANDON jude to unki line apne aap is table me
-                          aa jayegi — kuch badalna nahi padega. */}
-                      {(tlData?.by_line || []).length > 0 && (
-                        <div style={{ marginTop:18, borderTop:"1px solid #f1f5f9", paddingTop:14 }}>
-                          <div style={{ fontSize:11, color:"#94a3b8", fontWeight:700,
-                                        textTransform:"uppercase", marginBottom:8 }}>
-                            Line-wise loss
-                          </div>
-                          <div style={{ overflowX:"auto" }}>
-                            <table style={{ width:"100%", borderCollapse:"collapse", minWidth:420 }}>
-                              <thead>
-                                <tr>
-                                  {["Date","Zone","Line","Calls","Total Loss"].map((h,i) => (
-                                    <th key={h} style={{ textAlign: i>2 ? "right" : "left",
-                                                         padding:"6px 8px", fontSize:10.5, fontWeight:800,
-                                                         letterSpacing:".04em", textTransform:"uppercase",
-                                                         color:"#64748b", background:"#f8fafc",
-                                                         borderBottom:"1px solid #e2e8f0", whiteSpace:"nowrap" }}>{h}</th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {tlData.by_line.map((r, i) => (
-                                  <tr key={`${r.date}|${r.zone}|${r.line}`}
-                                      style={{ background: i % 2 ? "#fafbfc" : "#fff" }}>
-                                    <td style={{ padding:"6px 8px", fontSize:12.5, whiteSpace:"nowrap" }}>{r.date}</td>
-                                    <td style={{ padding:"6px 8px", fontSize:12.5 }}>{r.zone}</td>
-                                    <td style={{ padding:"6px 8px", fontSize:12.5, fontWeight:700, color:"#334155" }}>{r.line}</td>
-                                    <td style={{ padding:"6px 8px", fontSize:12.5, textAlign:"right", color:"#64748b" }}>{r.calls}</td>
-                                    <td style={{ padding:"6px 8px", fontSize:13, fontWeight:800, color:"#0f172a",
-                                                 textAlign:"right", fontVariantNumeric:"tabular-nums" }}>{fmtClock(r.seconds)}</td>
-                                  </tr>
-                                ))}
-                                <tr>
-                                  <td colSpan={3} style={{ padding:"9px 8px", fontSize:13, fontWeight:800,
-                                                           color:"#0f172a", borderTop:"1.5px solid #cbd5e1" }}>Total</td>
-                                  <td style={{ padding:"9px 8px", fontSize:12.5, textAlign:"right", color:"#64748b",
-                                               borderTop:"1.5px solid #cbd5e1" }}>
-                                    {tlData.by_line.reduce((a,b) => a + (b.calls || 0), 0)}
-                                  </td>
-                                  <td style={{ padding:"9px 8px", fontSize:14, fontWeight:900, color:"#dc2626",
-                                               textAlign:"right", borderTop:"1.5px solid #cbd5e1",
-                                               fontVariantNumeric:"tabular-nums" }}>
-                                    {fmtClock(tlData.by_line.reduce((a,b) => a + b.seconds, 0))}
-                                  </td>
-                                </tr>
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-            );
-          })()}
         </div>
       </div>
       {msg && <div className="an-msg">{msg}</div>}

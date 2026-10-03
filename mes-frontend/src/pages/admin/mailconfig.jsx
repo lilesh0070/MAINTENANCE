@@ -78,12 +78,8 @@ export const PAGE_PERM_GROUPS = [
     { key: "andon-system",               label: "ANDON", children: [
       /* Kram wahi jo ANDON page ke tabs ka hai, taaki dono milte-julte lagein. */
       { key: "andon-board",   label: "Live Board" },
-      { key: "andon-monitor", label: "Monitor" },
-      { key: "andon-faults",  label: "Fault History" },
-      { key: "andon-calls",   label: "Call History (delete admin-only)" },
       { key: "andon-config",  label: "Configuration" },
       { key: "andon-callout", label: "Call → Output" },
-      { key: "andon-reports", label: "Reports" },
     ]},
     { key: "walkie-talkie",              label: "Walkie-Talkie", children: [
       /* ⚠ IN TEENO KA NIYAM BAAKI SE ALAG HAI (jaan-boojh kar):

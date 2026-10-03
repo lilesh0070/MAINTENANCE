@@ -3586,12 +3586,30 @@ def today_calls(frm: Optional[str] = Query(None, alias="from"),
 
 
 @router.get("/today-totals")
-def today_totals(user=Depends(get_current_user)):
+def today_totals(frm: Optional[str] = Query(None, alias="from"),
+                 to:  Optional[str] = None,
+                 user=Depends(get_current_user)):
+    """Department-wise total loss.  Bina `from` = aaj ka plant-day (pehle jaisa,
+    purani app isi par chalti hai).  `from` / `to` (YYYY-MM-DD, plant-day) =
+    Live Board ka FY / Month / Date filter (2026-10-03) -- window wahi jo
+    /dept-history aur /total-loss ki hai, taaki card aur history ka jod mile."""
     _ensure_tables()
-    day_start = (
-        "(CASE WHEN NOW()::time >= TIME '07:00' "
-        "      THEN CURRENT_DATE + TIME '07:00' "
-        "      ELSE (CURRENT_DATE - INTERVAL '1 day') + TIME '07:00' END)")
+    args = []
+    if frm:
+        try:
+            f = datetime.strptime(str(frm)[:10], "%Y-%m-%d").date().isoformat()
+            t = datetime.strptime(str(to or frm)[:10], "%Y-%m-%d").date().isoformat()
+        except ValueError:
+            raise HTTPException(400, "from / to must be YYYY-MM-DD")
+        if t < f:
+            f, t = t, f
+        win = ("{c}.started_at >= (%s::date + TIME '07:00') "
+               "AND {c}.started_at < ((%s::date + INTERVAL '1 day') + TIME '06:30')")
+        args = [f, t]
+    else:
+        win = ("{c}.started_at >= (CASE WHEN NOW()::time >= TIME '07:00' "
+               "      THEN CURRENT_DATE + TIME '07:00' "
+               "      ELSE (CURRENT_DATE - INTERVAL '1 day') + TIME '07:00' END)")
     with get_conn() as conn:
         cur = dict_cursor(conn)
         cur.execute(f"""
@@ -3600,8 +3618,8 @@ def today_totals(user=Depends(get_current_user)):
                    COUNT(*) AS calls
               FROM andon_history h
               LEFT JOIN andon_departments dep ON dep.id = h.department_id
-             WHERE h.started_at >= {day_start}
-             GROUP BY 1""")
+             WHERE {win.format(c="h")}
+             GROUP BY 1""", args)
         closed = {r["dept"]: r for r in cur.fetchall()}
         cur.execute(f"""
             SELECT COALESCE(dep.name, e.display_name) AS dept,
@@ -3609,8 +3627,8 @@ def today_totals(user=Depends(get_current_user)):
                    COUNT(*) AS calls
               FROM andon_system e
               LEFT JOIN andon_departments dep ON dep.id = e.department_id
-             WHERE e.state = 'OPEN' AND e.started_at >= {day_start}
-             GROUP BY 1""")
+             WHERE e.state = 'OPEN' AND {win.format(c="e")}
+             GROUP BY 1""", args)
         openc = {r["dept"]: r for r in cur.fetchall()}
         cur.execute("SELECT name, color FROM andon_departments ORDER BY id")
         depts = cur.fetchall()
