@@ -1,5 +1,5 @@
 {
-  "version": "2.0.1",
-  "notes": "ANDON Live Board: Financial Year / Month / Date filter (default today; clear the date to see the whole month). Monitor, Fault History, Call History and Reports tabs removed. Full-screen button only on the TV. Spare card fix.",
-  "released_at": "2026-10-03T22:09:51"
+  "version": "2.0.2",
+  "notes": "ANDON Configuration: PLC Assign now shows only ANDON (Model / Fault screens removed). Includes 2.0.1: Live Board Financial Year / Month / Date filter.",
+  "released_at": "2026-10-03T22:17:48"
 }
