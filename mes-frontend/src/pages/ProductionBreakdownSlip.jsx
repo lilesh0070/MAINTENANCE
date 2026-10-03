@@ -246,7 +246,7 @@ export default function ProductionBreakdownSlip() {
           nahi aata tha jo app me 52/60 padding lagati hai; nateeja: title ka
           daaya kinara gear ke neeche chala jaata tha (naapa -- 4px ka takrav). */}
       <div className="pbs-top"
-           style={{ background: "#fff", borderBottom: "1px solid #e2e8f0", padding: "0 30px", height: 60,
+           style={{ background: "#fff", borderBottom: "1px solid #e2e8f0", padding: "0 30px 0 74px", height: 60,
                     display: "flex", alignItems: "center", gap: 16, position: "sticky", top: 0, zIndex: 40,
                     boxShadow: "0 1px 3px rgba(0,0,0,.06)" }}>
         <button className="pbs-back" onClick={() => nav(-1)} style={{ border: "1px solid #cbd5e1", background: "#fff", color: "#334155",

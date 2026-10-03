@@ -2462,3 +2462,9 @@ body.in-app .dmc-scroll > div {
  * canvas `none`) wo jyon ke tyon rehte hain.
  */
 :where(html.in-app-tv), :where(html.in-app-tv) * { touch-action: manipulation; }
+
+/* ── Website: slide-nav ke logo (6..48px, left 18..60) ke neeche kuch na aaye
+ * (2026-10-03).  PM ke header ki koi topbar class nahi thi, uska title logo
+ * ke neeche tha.  App (`body.in-app`) me logo chhota hai aur apne niyam hain
+ * -- wahan ye nahi lagta. */
+body:not(.in-app) .pm-head { padding-left: 50px; }

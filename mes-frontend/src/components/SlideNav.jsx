@@ -168,16 +168,21 @@ export default function SlideNav() {
 
   return (
     <>
-      {/* ── Floating Logo Button ── */}
+      {/* ── Floating Logo Button ──
+          Website: 6..48px (2026-10-03, user: "logo upar thoda left me; neeche
+          ki line kaat raha hai").  Scroll par har sticky header 0 par chipak
+          jaata hai aur sabse chhota 56.7px ka hai (neeli line 54.7 se) --
+          purana 13..58 use kaatta tha.  App / TV ka naap responsive.css me
+          (!important), wahan ye nahi lagta. */}
       <button
         onClick={() => setOpen(o => !o)}
         style={{
           display: open ? "none" : "flex",
           position: "fixed",
-          top: 13,
-          left: 30,
-          width: 45,
-          height: 45,
+          top: 6,
+          left: 18,
+          width: 42,
+          height: 42,
           borderRadius: "40%",
           border: "none",
           padding: 0,

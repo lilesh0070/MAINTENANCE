@@ -782,8 +782,8 @@ export default function PMPanel() {
         .pm-cell-in { transition: transform .12s, box-shadow .12s; }
         .pm-cell-in:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(15,23,42,.12) !important; }
       `}</style>
-      {/* header */}
-      <div style={{ display:"flex", alignItems:"center", gap:12, flexWrap:"wrap", marginBottom:14 }}>
+      {/* header -- `pm-head`: website par baayein slide-nav ke logo ki jagah (responsive.css) */}
+      <div className="pm-head" style={{ display:"flex", alignItems:"center", gap:12, flexWrap:"wrap", marginBottom:14 }}>
         <span style={{ fontSize:18, fontWeight:900, color:"#0f172a" }}>🛠 Preventive Maintenance</span>
         <div className="pm-tabs" style={{ display:"flex", gap:4, background:"#e2e8f0", borderRadius:8, padding:3 }}>
           {[["schedule","Schedule",0],["fillpend","🖊 Fill Check Sheets",retData?.total || 0],
